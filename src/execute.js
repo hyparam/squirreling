@@ -20,9 +20,17 @@ function evaluateExpr(node, row) {
   }
 
   if (node.type === 'unary') {
-    const val = evaluateExpr(node.argument, row)
     if (node.op === 'NOT') {
+      const val = evaluateExpr(node.argument, row)
       return !val
+    }
+    if (node.op === 'IS NULL') {
+      const val = evaluateExpr(node.argument, row)
+      return val === null || val === undefined
+    }
+    if (node.op === 'IS NOT NULL') {
+      const val = evaluateExpr(node.argument, row)
+      return val !== null && val !== undefined
     }
     throw new Error('Unsupported unary operator ' + (/** @type {any} */ (node).op))
   }

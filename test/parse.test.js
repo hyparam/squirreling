@@ -292,6 +292,61 @@ describe('parseSql', () => {
         expect(ast.where.right).toMatchObject({ type: 'literal', value: null })
       }
     })
+
+    it('should parse WHERE with IS NULL', () => {
+      const ast = parseSql('SELECT * FROM users WHERE email IS NULL')
+      expect(ast.where).toMatchObject({
+        type: 'unary',
+        op: 'IS NULL',
+        argument: { type: 'identifier', name: 'email' },
+      })
+    })
+
+    it('should parse WHERE with IS NOT NULL', () => {
+      const ast = parseSql('SELECT * FROM users WHERE email IS NOT NULL')
+      expect(ast.where).toMatchObject({
+        type: 'unary',
+        op: 'IS NOT NULL',
+        argument: { type: 'identifier', name: 'email' },
+      })
+    })
+
+    it('should parse WHERE with IS NULL in complex expression', () => {
+      const ast = parseSql('SELECT * FROM users WHERE email IS NULL AND age > 18')
+      expect(ast.where).toMatchObject({
+        type: 'binary',
+        op: 'AND',
+        left: {
+          type: 'unary',
+          op: 'IS NULL',
+          argument: { type: 'identifier', name: 'email' },
+        },
+        right: {
+          type: 'binary',
+          op: '>',
+          left: { type: 'identifier', name: 'age' },
+          right: { type: 'literal', value: 18 },
+        },
+      })
+    })
+
+    it('should parse WHERE with IS NOT NULL in OR expression', () => {
+      const ast = parseSql('SELECT * FROM users WHERE email IS NOT NULL OR phone IS NOT NULL')
+      expect(ast.where).toMatchObject({
+        type: 'binary',
+        op: 'OR',
+        left: {
+          type: 'unary',
+          op: 'IS NOT NULL',
+          argument: { type: 'identifier', name: 'email' },
+        },
+        right: {
+          type: 'unary',
+          op: 'IS NOT NULL',
+          argument: { type: 'identifier', name: 'phone' },
+        },
+      })
+    })
   })
 
   describe('GROUP BY clause', () => {

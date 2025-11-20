@@ -89,6 +89,58 @@ describe('executeSql', () => {
       const result = executeSql(users, 'SELECT * FROM users WHERE active = TRUE')
       expect(result).toHaveLength(4)
     })
+
+    it('should handle IS NULL', () => {
+      const data = [
+        { id: 1, name: 'Alice', email: 'alice@example.com' },
+        { id: 2, name: 'Bob', email: null },
+        { id: 3, name: 'Charlie', email: null },
+        { id: 4, name: 'Diana', email: 'diana@example.com' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE email IS NULL')
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Charlie'])
+    })
+
+    it('should handle IS NOT NULL', () => {
+      const data = [
+        { id: 1, name: 'Alice', email: 'alice@example.com' },
+        { id: 2, name: 'Bob', email: null },
+        { id: 3, name: 'Charlie', email: null },
+        { id: 4, name: 'Diana', email: 'diana@example.com' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE email IS NOT NULL')
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Diana'])
+    })
+
+    it('should handle IS NULL with undefined values', () => {
+      const data = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob', email: 'bob@example.com' },
+        { id: 3, name: 'Charlie' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE email IS NULL')
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('should handle IS NULL/IS NOT NULL with AND/OR', () => {
+      const data = [
+        { id: 1, name: 'Alice', email: 'alice@example.com', phone: '123' },
+        { id: 2, name: 'Bob', email: null, phone: '456' },
+        { id: 3, name: 'Charlie', email: null, phone: null },
+        { id: 4, name: 'Diana', email: 'diana@example.com', phone: null },
+      ]
+
+      const result1 = executeSql(data, 'SELECT * FROM users WHERE email IS NULL AND phone IS NOT NULL')
+      expect(result1).toHaveLength(1)
+      expect(result1[0].name).toBe('Bob')
+
+      const result2 = executeSql(data, 'SELECT * FROM users WHERE email IS NULL OR phone IS NULL')
+      expect(result2).toHaveLength(3)
+      expect(result2.map(r => r.name).sort()).toEqual(['Bob', 'Charlie', 'Diana'])
+    })
   })
 
   describe('aggregate functions', () => {

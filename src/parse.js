@@ -9,6 +9,7 @@ const KEYWORDS = new Set([
   'AND',
   'OR',
   'NOT',
+  'IS',
   'GROUP',
   'BY',
   'ORDER',
@@ -21,6 +22,13 @@ const KEYWORDS = new Set([
   'TRUE',
   'FALSE',
   'NULL',
+  'JOIN',
+  'INNER',
+  'LEFT',
+  'RIGHT',
+  'FULL',
+  'OUTER',
+  'ON',
 ])
 
 // Keywords that cannot be used as implicit aliases after a column
@@ -603,6 +611,27 @@ function parseNot(state) {
 function parseComparison(state) {
   const left = parsePrimary(state)
   const tok = current(state)
+
+  // Handle IS NULL and IS NOT NULL
+  if (tok.type === 'keyword' && tok.value === 'IS') {
+    consume(state)
+    const notToken = current(state)
+    if (notToken.type === 'keyword' && notToken.value === 'NOT') {
+      consume(state)
+      expectKeyword(state, 'NULL')
+      return {
+        type: 'unary',
+        op: 'IS NOT NULL',
+        argument: left,
+      }
+    }
+    expectKeyword(state, 'NULL')
+    return {
+      type: 'unary',
+      op: 'IS NULL',
+      argument: left,
+    }
+  }
 
   if (tok.type === 'operator' && isComparisonOperator(tok.value)) {
     consume(state)

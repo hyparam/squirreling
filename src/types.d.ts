@@ -44,7 +44,7 @@ export interface IdentifierNode {
 
 export interface UnaryNode {
   type: 'unary'
-  op: 'NOT'
+  op: 'NOT' | 'IS NULL' | 'IS NOT NULL'
   argument: ExprNode
 }
 
