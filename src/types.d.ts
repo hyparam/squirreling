@@ -106,7 +106,7 @@ export interface SelectAst {
   offset: number | null
 }
 
-interface ParserState {
+export interface ParserState {
   tokens: Token[]
   pos: number
 }

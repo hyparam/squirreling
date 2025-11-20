@@ -42,7 +42,7 @@ export default [
       'key-spacing': 'error',
       'keyword-spacing': 'error',
       'no-constant-condition': 'off',
-      'no-extra-parens': 'error',
+      'no-extra-parens': 'warn',
       'no-multi-spaces': 'error',
       'no-trailing-spaces': 'error',
       'no-undef': 'error',

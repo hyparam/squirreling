@@ -1,13 +1,14 @@
 /**
- * @import { SelectAst, ExprNode, AggregateColumn, OrderByItem, Row } from './types.js'
+ * @import { SelectAst, ExprNode, AggregateColumn, OrderByItem, Row, SqlPrimitive } from './types.js'
  */
 
 import { parseSql } from './parse.js'
 
 /**
- * @param {ExprNode} node
- * @param {Row} row
- * @returns {any}
+ * Evaluates an expression node against a row of data
+ * @param {ExprNode} node - The expression node to evaluate
+ * @param {Row} row - The data row to evaluate against
+ * @returns {SqlPrimitive | boolean} The result of the evaluation
  */
 function evaluateExpr(node, row) {
   if (node.type === 'literal') {
@@ -21,21 +22,21 @@ function evaluateExpr(node, row) {
   if (node.type === 'unary') {
     const val = evaluateExpr(node.argument, row)
     if (node.op === 'NOT') {
-      return !Boolean(val)
+      return !val
     }
-    throw new Error('Unsupported unary operator ' + /** @type {any} */ (node).op)
+    throw new Error('Unsupported unary operator ' + (/** @type {any} */ (node).op))
   }
 
   if (node.type === 'binary') {
     if (node.op === 'AND') {
       const leftVal = evaluateExpr(node.left, row)
-      if (!Boolean(leftVal)) return false
+      if (!leftVal) return false
       return Boolean(evaluateExpr(node.right, row))
     }
 
     if (node.op === 'OR') {
       const leftVal = evaluateExpr(node.left, row)
-      if (Boolean(leftVal)) return true
+      if (leftVal) return true
       return Boolean(evaluateExpr(node.right, row))
     }
 
@@ -52,17 +53,18 @@ function evaluateExpr(node, row) {
     throw new Error('Unsupported binary operator ' + node.op)
   }
 
-  throw new Error('Unknown expression node type ' + /** @type {any} */ (node).type)
+  throw new Error('Unknown expression node type ' + (/** @type {any} */ (node).type))
 }
 
 /**
- * @param {AggregateColumn} col
- * @param {Row[]} rows
- * @returns {any}
+ * Evaluates an aggregate function over a set of rows
+ * @param {AggregateColumn} col - The aggregate column definition
+ * @param {Row[]} rows - The rows to aggregate
+ * @returns {number | null} The aggregated result
  */
 function evaluateAggregate(col, rows) {
-  const func = col.func
-  const arg = col.arg
+  const { func } = col
+  const { arg } = col
 
   if (func === 'COUNT') {
     if (arg.kind === 'star') return rows.length
@@ -116,8 +118,9 @@ function evaluateAggregate(col, rows) {
 }
 
 /**
- * @param {AggregateColumn} col
- * @returns {string}
+ * Generates a default alias name for an aggregate function
+ * @param {AggregateColumn} col - The aggregate column definition
+ * @returns {string} The generated alias (e.g., "count_all", "sum_amount")
  */
 function defaultAggregateAlias(col) {
   const base = col.func.toLowerCase()
@@ -126,8 +129,9 @@ function defaultAggregateAlias(col) {
 }
 
 /**
- * @param {Row} row
- * @returns {string}
+ * Creates a stable string key for a row to enable deduplication
+ * @param {Row} row - The data row
+ * @returns {string} A stable string representation of the row
  */
 function stableRowKey(row) {
   const keys = Object.keys(row).sort()
@@ -142,9 +146,10 @@ function stableRowKey(row) {
 }
 
 /**
- * @param {any} a
- * @param {any} b
- * @returns {number}
+ * Compares two SQL values for sorting
+ * @param {SqlPrimitive} a - First value to compare
+ * @param {SqlPrimitive} b - Second value to compare
+ * @returns {number} Negative if a < b, positive if a > b, 0 if equal
  */
 function compareValues(a, b) {
   if (a === b) return 0
@@ -165,9 +170,10 @@ function compareValues(a, b) {
 }
 
 /**
- * @param {Row[]} rows
- * @param {boolean} distinct
- * @returns {Row[]}
+ * Applies DISTINCT filtering to remove duplicate rows
+ * @param {Row[]} rows - The input rows
+ * @param {boolean} distinct - Whether to apply deduplication
+ * @returns {Row[]} The deduplicated rows
  */
 function applyDistinct(rows, distinct) {
   if (!distinct) return rows
@@ -186,9 +192,10 @@ function applyDistinct(rows, distinct) {
 }
 
 /**
- * @param {Row[]} rows
- * @param {OrderByItem[]} orderBy
- * @returns {Row[]}
+ * Applies ORDER BY sorting to rows
+ * @param {Row[]} rows - The input rows
+ * @param {OrderByItem[]} orderBy - The sort specifications
+ * @returns {Row[]} The sorted rows
  */
 function applyOrderBy(rows, orderBy) {
   if (!orderBy || orderBy.length === 0) return rows
@@ -200,8 +207,8 @@ function applyOrderBy(rows, orderBy) {
       const term = orderBy[i]
       const key = term.expr
       const dir = term.direction
-      const av = /** @type {any} */ (a)[key]
-      const bv = /** @type {any} */ (b)[key]
+      const av = /** @type {any} */ a[key]
+      const bv = /** @type {any} */ b[key]
       const cmp = compareValues(av, bv)
       if (cmp !== 0) {
         return dir === 'DESC' ? -cmp : cmp
@@ -214,9 +221,10 @@ function applyOrderBy(rows, orderBy) {
 }
 
 /**
- * @param {SelectAst} ast
- * @param {Row[]} rows
- * @returns {Row[]}
+ * Evaluates a parsed SELECT AST against data rows
+ * @param {SelectAst} ast - The parsed SQL AST
+ * @param {Row[]} rows - The data rows
+ * @returns {Row[]} The filtered, projected, and sorted result rows
  */
 function evaluateSelectAst(ast, rows) {
   // WHERE
@@ -226,7 +234,7 @@ function evaluateSelectAst(ast, rows) {
     const filtered = []
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i]
-      if (Boolean(evaluateExpr(ast.where, row))) {
+      if (evaluateExpr(ast.where, row)) {
         filtered.push(row)
       }
     }
@@ -234,10 +242,10 @@ function evaluateSelectAst(ast, rows) {
   }
 
   const hasAggregate = ast.columns.some(col => col.kind === 'aggregate')
-  const useGrouping = hasAggregate || (ast.groupBy && ast.groupBy.length > 0)
+  const useGrouping = hasAggregate || ast.groupBy && ast.groupBy.length > 0
 
   /** @type {Row[]} */
-  let projected = []
+  const projected = []
 
   if (useGrouping) {
     /** @typedef {{ groupValues: Row, rows: Row[] }} Group */
@@ -271,7 +279,7 @@ function evaluateSelectAst(ast, rows) {
     } else {
       groups.push({
         groupValues: {},
-        rows: working
+        rows: working,
       })
     }
 
@@ -299,7 +307,7 @@ function evaluateSelectAst(ast, rows) {
         if (col.kind === 'column') {
           const name = col.column
           const alias = col.alias ?? name
-          /** @type {any} */
+          /** @type {SqlPrimitive} */
           let value = null
           if (ast.groupBy && ast.groupBy.indexOf(name) !== -1) {
             value = group.groupValues[name]
@@ -363,9 +371,10 @@ function evaluateSelectAst(ast, rows) {
 }
 
 /**
- * @param {Record<string, any>[]} rows
- * @param {string} sql
- * @returns {Record<string, any>[]}
+ * Executes a SQL SELECT query against an array of data rows
+ * @param {Row[]} rows - The data rows to query
+ * @param {string} sql - The SQL query string
+ * @returns {Row[]} The result rows matching the query
  */
 export function executeSql(rows, sql) {
   const ast = parseSql(sql)

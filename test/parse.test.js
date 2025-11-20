@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tokenize, parseSql } from '../src/parse.js'
+import { parseSql, tokenize } from '../src/parse.js'
 
 describe('tokenize', () => {
   it('should tokenize simple SELECT query', () => {
@@ -9,7 +9,7 @@ describe('tokenize', () => {
       { type: 'identifier', value: 'name' },
       { type: 'keyword', value: 'FROM' },
       { type: 'identifier', value: 'users' },
-      { type: 'eof' }
+      { type: 'eof' },
     ])
   })
 
@@ -22,7 +22,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize string literals with single quotes', () => {
-    const tokens = tokenize("'hello world'")
+    const tokens = tokenize('\'hello world\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'hello world' })
   })
 
@@ -32,8 +32,8 @@ describe('tokenize', () => {
   })
 
   it('should handle escaped quotes in strings', () => {
-    const tokens = tokenize("'can''t'")
-    expect(tokens[0]).toMatchObject({ type: 'string', value: "can't" })
+    const tokens = tokenize('\'can\'\'t\'')
+    expect(tokens[0]).toMatchObject({ type: 'string', value: 'can\'t' })
   })
 
   it('should tokenize operators', () => {
@@ -46,7 +46,7 @@ describe('tokenize', () => {
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
-      { type: 'eof' }
+      { type: 'eof' },
     ])
   })
 
@@ -55,7 +55,7 @@ describe('tokenize', () => {
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
-      { type: 'eof' }
+      { type: 'eof' },
     ])
   })
 
@@ -64,7 +64,7 @@ describe('tokenize', () => {
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
-      { type: 'eof' }
+      { type: 'eof' },
     ])
   })
 
@@ -80,7 +80,7 @@ describe('tokenize', () => {
       { type: 'paren', value: '(' },
       { type: 'paren', value: ')' },
       { type: 'semicolon', value: ';' },
-      { type: 'eof' }
+      { type: 'eof' },
     ])
   })
 
@@ -90,7 +90,7 @@ describe('tokenize', () => {
       { type: 'identifier', value: 'table' },
       { type: 'dot', value: '.' },
       { type: 'identifier', value: 'column' },
-      { type: 'eof' }
+      { type: 'eof' },
     ])
   })
 
@@ -111,14 +111,14 @@ describe('parseSql', () => {
         groupBy: [],
         orderBy: [],
         limit: null,
-        offset: null
+        offset: null,
       })
     })
 
     it('should parse SELECT with single column', () => {
       const ast = parseSql('SELECT name FROM users')
       expect(ast.columns).toMatchObject([
-        { kind: 'column', column: 'name' }
+        { kind: 'column', column: 'name' },
       ])
     })
 
@@ -127,7 +127,7 @@ describe('parseSql', () => {
       expect(ast.columns).toMatchObject([
         { kind: 'column', column: 'name' },
         { kind: 'column', column: 'age' },
-        { kind: 'column', column: 'email' }
+        { kind: 'column', column: 'email' },
       ])
     })
 
@@ -146,14 +146,14 @@ describe('parseSql', () => {
     it('should parse column alias with AS', () => {
       const ast = parseSql('SELECT name AS full_name FROM users')
       expect(ast.columns).toMatchObject([
-        { kind: 'column', column: 'name', alias: 'full_name' }
+        { kind: 'column', column: 'name', alias: 'full_name' },
       ])
     })
 
     it('should parse column alias without AS', () => {
       const ast = parseSql('SELECT name full_name FROM users')
       expect(ast.columns).toMatchObject([
-        { kind: 'column', column: 'name', alias: 'full_name' }
+        { kind: 'column', column: 'name', alias: 'full_name' },
       ])
     })
 
@@ -168,28 +168,28 @@ describe('parseSql', () => {
     it('should parse COUNT(*)', () => {
       const ast = parseSql('SELECT COUNT(*) FROM users')
       expect(ast.columns).toMatchObject([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' } }
+        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' } },
       ])
     })
 
     it('should parse COUNT with column', () => {
       const ast = parseSql('SELECT COUNT(id) FROM users')
       expect(ast.columns).toMatchObject([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'column', column: 'id' } }
+        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'column', column: 'id' } },
       ])
     })
 
     it('should parse SUM', () => {
       const ast = parseSql('SELECT SUM(amount) FROM transactions')
       expect(ast.columns).toMatchObject([
-        { kind: 'aggregate', func: 'SUM', arg: { kind: 'column', column: 'amount' } }
+        { kind: 'aggregate', func: 'SUM', arg: { kind: 'column', column: 'amount' } },
       ])
     })
 
     it('should parse AVG', () => {
       const ast = parseSql('SELECT AVG(score) FROM tests')
       expect(ast.columns).toMatchObject([
-        { kind: 'aggregate', func: 'AVG', arg: { kind: 'column', column: 'score' } }
+        { kind: 'aggregate', func: 'AVG', arg: { kind: 'column', column: 'score' } },
       ])
     })
 
@@ -197,14 +197,14 @@ describe('parseSql', () => {
       const ast = parseSql('SELECT MIN(price), MAX(price) FROM products')
       expect(ast.columns).toMatchObject([
         { kind: 'aggregate', func: 'MIN', arg: { kind: 'column', column: 'price' } },
-        { kind: 'aggregate', func: 'MAX', arg: { kind: 'column', column: 'price' } }
+        { kind: 'aggregate', func: 'MAX', arg: { kind: 'column', column: 'price' } },
       ])
     })
 
     it('should parse aggregate with alias', () => {
       const ast = parseSql('SELECT COUNT(*) AS total FROM users')
       expect(ast.columns).toMatchObject([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' }
+        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' },
       ])
     })
   })
@@ -216,30 +216,33 @@ describe('parseSql', () => {
         type: 'binary',
         op: '=',
         left: { type: 'identifier', name: 'age' },
-        right: { type: 'literal', value: 25 }
+        right: { type: 'literal', value: 25 },
       })
     })
 
     it('should parse WHERE with string literal', () => {
-      const ast = parseSql("SELECT * FROM users WHERE name = 'John'")
+      const ast = parseSql('SELECT * FROM users WHERE name = \'John\'')
       expect(ast.where).toMatchObject({
         type: 'binary',
         op: '=',
         left: { type: 'identifier', name: 'name' },
-        right: { type: 'literal', value: 'John' }
+        right: { type: 'literal', value: 'John' },
       })
     })
 
     it('should parse WHERE with comparison operators', () => {
       const ast = parseSql('SELECT * FROM users WHERE age > 18')
-      expect(ast.where?.op).toBe('>')
+      expect(ast.where?.type).toBe('binary')
+      if (ast.where?.type === 'binary') {
+        expect(ast.where.op).toBe('>')
+      }
     })
 
     it('should parse WHERE with AND', () => {
       const ast = parseSql('SELECT * FROM users WHERE age > 18 AND city = "NYC"')
       expect(ast.where).toMatchObject({
         type: 'binary',
-        op: 'AND'
+        op: 'AND',
       })
     })
 
@@ -247,7 +250,7 @@ describe('parseSql', () => {
       const ast = parseSql('SELECT * FROM users WHERE age < 18 OR age > 65')
       expect(ast.where).toMatchObject({
         type: 'binary',
-        op: 'OR'
+        op: 'OR',
       })
     })
 
@@ -256,7 +259,7 @@ describe('parseSql', () => {
       expect(ast.where).toMatchObject({
         type: 'unary',
         op: 'NOT',
-        argument: { type: 'identifier', name: 'active' }
+        argument: { type: 'identifier', name: 'active' },
       })
     })
 
@@ -264,21 +267,30 @@ describe('parseSql', () => {
       const ast = parseSql('SELECT * FROM users WHERE (age > 18 AND age < 65)')
       expect(ast.where).toMatchObject({
         type: 'binary',
-        op: 'AND'
+        op: 'AND',
       })
     })
 
     it('should parse WHERE with boolean literals', () => {
       const ast1 = parseSql('SELECT * FROM users WHERE active = TRUE')
-      expect(ast1.where?.right).toMatchObject({ type: 'literal', value: true })
+      expect(ast1.where?.type).toBe('binary')
+      if (ast1.where?.type === 'binary') {
+        expect(ast1.where.right).toMatchObject({ type: 'literal', value: true })
+      }
 
       const ast2 = parseSql('SELECT * FROM users WHERE deleted = FALSE')
-      expect(ast2.where?.right).toMatchObject({ type: 'literal', value: false })
+      expect(ast2.where?.type).toBe('binary')
+      if (ast2.where?.type === 'binary') {
+        expect(ast2.where.right).toMatchObject({ type: 'literal', value: false })
+      }
     })
 
     it('should parse WHERE with NULL', () => {
       const ast = parseSql('SELECT * FROM users WHERE email = NULL')
-      expect(ast.where?.right).toMatchObject({ type: 'literal', value: null })
+      expect(ast.where?.type).toBe('binary')
+      if (ast.where?.type === 'binary') {
+        expect(ast.where.right).toMatchObject({ type: 'literal', value: null })
+      }
     })
   })
 
@@ -298,21 +310,21 @@ describe('parseSql', () => {
     it('should parse ORDER BY with default ASC', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY name')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'name', direction: 'ASC' }
+        { expr: 'name', direction: 'ASC' },
       ])
     })
 
     it('should parse ORDER BY with explicit ASC', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY name ASC')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'name', direction: 'ASC' }
+        { expr: 'name', direction: 'ASC' },
       ])
     })
 
     it('should parse ORDER BY with DESC', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY age DESC')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'age', direction: 'DESC' }
+        { expr: 'age', direction: 'DESC' },
       ])
     })
 
@@ -320,7 +332,7 @@ describe('parseSql', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY city ASC, age DESC')
       expect(ast.orderBy).toMatchObject([
         { expr: 'city', direction: 'ASC' },
-        { expr: 'age', direction: 'DESC' }
+        { expr: 'age', direction: 'DESC' },
       ])
     })
   })
@@ -361,7 +373,7 @@ describe('parseSql', () => {
         from: 'users',
         groupBy: ['city'],
         limit: 5,
-        offset: 10
+        offset: 10,
       })
       expect(ast.columns).toHaveLength(2)
       expect(ast.orderBy).toHaveLength(1)
@@ -374,7 +386,9 @@ describe('parseSql', () => {
         WHERE (age > 18 AND age < 65) OR status = 'admin'
       `)
       expect(ast.where?.type).toBe('binary')
-      expect(ast.where?.op).toBe('OR')
+      if (ast.where?.type === 'binary') {
+        expect(ast.where.op).toBe('OR')
+      }
     })
   })
 

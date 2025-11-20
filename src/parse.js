@@ -20,7 +20,7 @@ const KEYWORDS = new Set([
   'DISTINCT',
   'TRUE',
   'FALSE',
-  'NULL'
+  'NULL',
 ])
 
 // Keywords that cannot be used as implicit aliases after a column
@@ -30,7 +30,7 @@ const RESERVED_AFTER_COLUMN = new Set([
   'GROUP',
   'ORDER',
   'LIMIT',
-  'OFFSET'
+  'OFFSET',
 ])
 
 /** @type {Set<AggregateFunc>} */
@@ -39,7 +39,7 @@ const AGG_FUNCS = new Set([
   'SUM',
   'AVG',
   'MIN',
-  'MAX'
+  'MAX',
 ])
 
 /**
@@ -63,7 +63,7 @@ function isDigit(ch) {
  * @returns {boolean}
  */
 function isAlpha(ch) {
-  return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_' || ch === '$'
+  return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch === '_' || ch === '$'
 }
 
 /**
@@ -81,7 +81,7 @@ function isAlphaNumeric(ch) {
 export function tokenize(sql) {
   /** @type {import('./types.js').Token[]} */
   const tokens = []
-  const length = sql.length
+  const { length } = sql
   let i = 0
 
   /**
@@ -103,7 +103,7 @@ export function tokenize(sql) {
   }
 
   while (i < length) {
-    let ch = peek()
+    const ch = peek()
 
     if (isWhitespace(ch)) {
       nextChar()
@@ -159,7 +159,7 @@ export function tokenize(sql) {
         type: 'number',
         value: text,
         position: pos,
-        numericValue: num
+        numericValue: num,
       })
       continue
     }
@@ -175,13 +175,13 @@ export function tokenize(sql) {
         tokens.push({
           type: 'keyword',
           value: upper,
-          position: pos
+          position: pos,
         })
       } else {
         tokens.push({
           type: 'identifier',
           value: text,
-          position: pos
+          position: pos,
         })
       }
       continue
@@ -211,7 +211,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'string',
         value: text,
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -227,7 +227,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'operator',
         value: op,
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -238,7 +238,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'operator',
         value: op,
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -248,7 +248,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'comma',
         value: ',',
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -258,7 +258,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'dot',
         value: '.',
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -268,7 +268,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'paren',
         value: p,
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -278,7 +278,7 @@ export function tokenize(sql) {
       tokens.push({
         type: 'semicolon',
         value: ';',
-        position: pos
+        position: pos,
       })
       continue
     }
@@ -289,7 +289,7 @@ export function tokenize(sql) {
   tokens.push({
     type: 'eof',
     value: '',
-    position: length
+    position: length,
   })
 
   return tokens
@@ -482,7 +482,7 @@ function parseSelectItem(state) {
   return {
     kind: 'column',
     column: columnName,
-    alias
+    alias,
   }
 }
 
@@ -506,7 +506,7 @@ function parseAggregateItem(state) {
     const colTok = expectIdentifier(state)
     arg = {
       kind: 'column',
-      column: colTok.value
+      column: colTok.value,
     }
   }
 
@@ -532,7 +532,7 @@ function parseAggregateItem(state) {
     kind: 'aggregate',
     func: funcUpper,
     arg,
-    alias
+    alias,
   }
 }
 
@@ -556,7 +556,7 @@ function parseOr(state) {
       type: 'binary',
       op: 'OR',
       left: node,
-      right
+      right,
     }
   }
   return node
@@ -574,7 +574,7 @@ function parseAnd(state) {
       type: 'binary',
       op: 'AND',
       left: node,
-      right
+      right,
     }
   }
   return node
@@ -590,7 +590,7 @@ function parseNot(state) {
     return {
       type: 'unary',
       op: 'NOT',
-      argument
+      argument,
     }
   }
   return parseComparison(state)
@@ -601,7 +601,7 @@ function parseNot(state) {
  * @returns {ExprNode}
  */
 function parseComparison(state) {
-  let left = parsePrimary(state)
+  const left = parsePrimary(state)
   const tok = current(state)
 
   if (tok.type === 'operator' && isComparisonOperator(tok.value)) {
@@ -611,7 +611,7 @@ function parseComparison(state) {
       type: 'binary',
       op: tok.value,
       left,
-      right
+      right,
     }
   }
 
@@ -636,7 +636,7 @@ function parsePrimary(state) {
     consume(state)
     return {
       type: 'identifier',
-      name: tok.value
+      name: tok.value,
     }
   }
 
@@ -644,7 +644,7 @@ function parsePrimary(state) {
     consume(state)
     return {
       type: 'literal',
-      value: tok.numericValue ?? null
+      value: tok.numericValue ?? null,
     }
   }
 
@@ -652,7 +652,7 @@ function parsePrimary(state) {
     consume(state)
     return {
       type: 'literal',
-      value: tok.value
+      value: tok.value,
     }
   }
 
@@ -731,7 +731,7 @@ function parseSelectInternal(state) {
       }
       orderBy.push({
         expr: ident.value,
-        direction
+        direction,
       })
       if (!match(state, 'comma')) break
     }
@@ -787,7 +787,7 @@ function parseSelectInternal(state) {
     groupBy,
     orderBy,
     limit,
-    offset
+    offset,
   }
 }
 

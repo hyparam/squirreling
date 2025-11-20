@@ -3,7 +3,7 @@ import packageJson from '../package.json' with { type: 'json' }
 
 describe('package.json', () => {
   it('should have the correct name', () => {
-    expect(packageJson.name).toBe('parquet-grep')
+    expect(packageJson.name).toBe('jsql')
   })
   it('should have a valid version', () => {
     expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+$/)
