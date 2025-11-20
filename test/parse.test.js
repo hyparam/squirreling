@@ -347,6 +347,16 @@ describe('parseSql', () => {
         },
       })
     })
+
+    it('should parse WHERE with LIKE', () => {
+      const ast = parseSql('SELECT * FROM users WHERE name LIKE \'John%\'')
+      expect(ast.where).toMatchObject({
+        type: 'binary',
+        op: 'LIKE',
+        left: { type: 'identifier', name: 'name' },
+        right: { type: 'literal', value: 'John%' },
+      })
+    })
   })
 
   describe('GROUP BY clause', () => {

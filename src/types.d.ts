@@ -31,6 +31,7 @@ export type BinaryOp =
   | '>'
   | '<='
   | '>='
+  | 'LIKE'
 
 export interface LiteralNode {
   type: 'literal'

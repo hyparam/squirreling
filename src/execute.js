@@ -66,6 +66,20 @@ function evaluateExpr(node, row) {
     if (node.op === '<=') return left <= right
     if (node.op === '>=') return left >= right
 
+    if (node.op === 'LIKE') {
+      const str = String(left)
+      const pattern = String(right)
+      // Convert SQL LIKE pattern to regex
+      // % matches zero or more characters
+      // _ matches exactly one character
+      const regexPattern = pattern
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
+        .replace(/%/g, '.*') // Replace % with .*
+        .replace(/_/g, '.') // Replace _ with .
+      const regex = new RegExp('^' + regexPattern + '$', 'i')
+      return regex.test(str)
+    }
+
     throw new Error('Unsupported binary operator ' + node.op)
   }
 

@@ -659,6 +659,18 @@ function parseComparison(state) {
     }
   }
 
+  // Handle LIKE
+  if (tok.type === 'keyword' && tok.value === 'LIKE') {
+    consume(state)
+    const right = parsePrimary(state)
+    return {
+      type: 'binary',
+      op: 'LIKE',
+      left,
+      right,
+    }
+  }
+
   if (tok.type === 'operator' && isComparisonOperator(tok.value)) {
     consume(state)
     const right = parsePrimary(state)

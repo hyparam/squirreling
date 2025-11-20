@@ -169,6 +169,42 @@ describe('executeSql', () => {
       const result = executeSql(data, 'SELECT * FROM users WHERE value = NULL')
       expect(result).toHaveLength(0) // NULL comparisons should return false
     })
+
+    it('should filter with LIKE', () => {
+      const data = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' },
+        { id: 4, name: 'Diana' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE name LIKE \'%li%\'')
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('should filter with LIKE using underscore wildcard', () => {
+      const data = [
+        { id: 1, code: 'A123' },
+        { id: 2, code: 'B456' },
+        { id: 3, code: 'A1X3' },
+        { id: 4, code: 'A12' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE code LIKE \'A1_3\'')
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.code).sort()).toEqual(['A123', 'A1X3'])
+    })
+
+    it('should filter with LIKE combining % and _ wildcards', () => {
+      const data = [
+        { id: 1, email: 'alice@example.com' },
+        { id: 2, email: 'bob@test.com' },
+        { id: 3, email: 'charlie@example.org' },
+        { id: 4, email: 'diana@example.com' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE email LIKE \'_____@example.___\'')
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.email).sort()).toEqual(['alice@example.com', 'diana@example.com'])
+    })
   })
 
   describe('aggregate functions', () => {
