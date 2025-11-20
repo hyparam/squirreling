@@ -107,11 +107,11 @@ describe('parseSql', () => {
         distinct: false,
         columns: [{ kind: 'star' }],
         from: 'users',
-        where: null,
+        where: undefined,
         groupBy: [],
         orderBy: [],
-        limit: null,
-        offset: null,
+        limit: undefined,
+        offset: undefined,
       })
     })
 
@@ -159,7 +159,7 @@ describe('parseSql', () => {
 
     it('should not treat FROM as implicit alias', () => {
       const ast = parseSql('SELECT name FROM users')
-      expect(ast.columns[0].alias).toBeNull()
+      expect(ast.columns[0].alias).toBeUndefined()
       expect(ast.from).toBe('users')
     })
   })
@@ -246,8 +246,8 @@ describe('parseSql', () => {
           func: 'CONCAT',
           args: [
             { type: 'identifier', name: 'first_name' },
-            { type: 'identifier', name: 'last_name' }
-          ]
+            { type: 'identifier', name: 'last_name' },
+          ],
         },
       ])
     })
@@ -261,8 +261,8 @@ describe('parseSql', () => {
           args: [
             { type: 'identifier', name: 'first_name' },
             { type: 'literal', value: ' ' },
-            { type: 'identifier', name: 'last_name' }
-          ]
+            { type: 'identifier', name: 'last_name' },
+          ],
         },
       ])
     })
@@ -276,8 +276,8 @@ describe('parseSql', () => {
           args: [
             { type: 'identifier', name: 'name' },
             { type: 'literal', value: 1 },
-            { type: 'literal', value: 3 }
-          ]
+            { type: 'literal', value: 3 },
+          ],
         },
       ])
     })
@@ -485,12 +485,15 @@ describe('parseSql', () => {
   describe('GROUP BY clause', () => {
     it('should parse GROUP BY with single column', () => {
       const ast = parseSql('SELECT city, COUNT(*) FROM users GROUP BY city')
-      expect(ast.groupBy).toEqual(['city'])
+      expect(ast.groupBy).toEqual([{ type: 'identifier', name: 'city' }])
     })
 
     it('should parse GROUP BY with multiple columns', () => {
       const ast = parseSql('SELECT city, state, COUNT(*) FROM users GROUP BY city, state')
-      expect(ast.groupBy).toEqual(['city', 'state'])
+      expect(ast.groupBy).toEqual([
+        { type: 'identifier', name: 'city' },
+        { type: 'identifier', name: 'state' },
+      ])
     })
   })
 
@@ -498,29 +501,29 @@ describe('parseSql', () => {
     it('should parse ORDER BY with default ASC', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY name')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'name', direction: 'ASC' },
+        { expr: { type: 'identifier', name: 'name' }, direction: 'ASC' },
       ])
     })
 
     it('should parse ORDER BY with explicit ASC', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY name ASC')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'name', direction: 'ASC' },
+        { expr: { type: 'identifier', name: 'name' }, direction: 'ASC' },
       ])
     })
 
     it('should parse ORDER BY with DESC', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY age DESC')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'age', direction: 'DESC' },
+        { expr: { type: 'identifier', name: 'age' }, direction: 'DESC' },
       ])
     })
 
     it('should parse ORDER BY with multiple columns', () => {
       const ast = parseSql('SELECT * FROM users ORDER BY city ASC, age DESC')
       expect(ast.orderBy).toMatchObject([
-        { expr: 'city', direction: 'ASC' },
-        { expr: 'age', direction: 'DESC' },
+        { expr: { type: 'identifier', name: 'city' }, direction: 'ASC' },
+        { expr: { type: 'identifier', name: 'age' }, direction: 'DESC' },
       ])
     })
   })
@@ -529,7 +532,7 @@ describe('parseSql', () => {
     it('should parse LIMIT', () => {
       const ast = parseSql('SELECT * FROM users LIMIT 10')
       expect(ast.limit).toBe(10)
-      expect(ast.offset).toBeNull()
+      expect(ast.offset).toBeUndefined()
     })
 
     it('should parse LIMIT with OFFSET', () => {
@@ -540,7 +543,7 @@ describe('parseSql', () => {
 
     it('should parse OFFSET without LIMIT', () => {
       const ast = parseSql('SELECT * FROM users OFFSET 20')
-      expect(ast.limit).toBeNull()
+      expect(ast.limit).toBeUndefined()
       expect(ast.offset).toBe(20)
     })
   })
@@ -559,7 +562,7 @@ describe('parseSql', () => {
       expect(ast).toMatchObject({
         distinct: true,
         from: 'users',
-        groupBy: ['city'],
+        groupBy: [{ type: 'identifier', name: 'city' }],
         limit: 5,
         offset: 10,
       })

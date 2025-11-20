@@ -19,6 +19,7 @@ export interface Token {
   value: string
   position: number
   numericValue?: number
+  originalValue?: string
 }
 
 export type BinaryOp =
@@ -56,7 +57,13 @@ export interface BinaryNode {
   right: ExprNode
 }
 
-export type ExprNode = LiteralNode | IdentifierNode | UnaryNode | BinaryNode
+export interface FunctionNode {
+  type: 'function'
+  name: string
+  args: ExprNode[]
+}
+
+export type ExprNode = LiteralNode | IdentifierNode | UnaryNode | BinaryNode | FunctionNode
 
 export interface StarColumn {
   kind: 'star'
@@ -89,10 +96,17 @@ export interface AggregateColumn {
   alias?: string | null
 }
 
-export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn
+export interface FunctionColumn {
+  kind: 'function'
+  func: string
+  args: ExprNode[]
+  alias?: string | null
+}
+
+export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | FunctionColumn
 
 export interface OrderByItem {
-  expr: string
+  expr: ExprNode
   direction: 'ASC' | 'DESC'
 }
 
@@ -110,7 +124,7 @@ export interface SelectAst {
   from: string | null
   joins: JoinClause[]
   where: ExprNode | null
-  groupBy: string[]
+  groupBy: ExprNode[]
   orderBy: OrderByItem[]
   limit: number | null
   offset: number | null

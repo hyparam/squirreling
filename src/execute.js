@@ -1,5 +1,5 @@
 /**
- * @import { SelectAst, ExprNode, AggregateColumn, OrderByItem, Row, SqlPrimitive } from './types.js'
+ * @import { SelectAst, ExprNode, AggregateColumn, FunctionColumn, FunctionNode, OrderByItem, Row, SqlPrimitive } from './types.js'
  */
 
 import { parseSql } from './parse.js'
@@ -83,6 +83,73 @@ function evaluateExpr(node, row) {
     throw new Error('Unsupported binary operator ' + node.op)
   }
 
+  if (node.type === 'function') {
+    const funcName = node.name.toUpperCase()
+    const args = node.args.map(arg => evaluateExpr(arg, row))
+
+    if (funcName === 'UPPER') {
+      if (args.length !== 1) throw new Error('UPPER requires exactly 1 argument')
+      const val = args[0]
+      if (val === null || val === undefined) return null
+      return String(val).toUpperCase()
+    }
+
+    if (funcName === 'LOWER') {
+      if (args.length !== 1) throw new Error('LOWER requires exactly 1 argument')
+      const val = args[0]
+      if (val === null || val === undefined) return null
+      return String(val).toLowerCase()
+    }
+
+    if (funcName === 'CONCAT') {
+      if (args.length < 1) throw new Error('CONCAT requires at least 1 argument')
+      // SQL CONCAT returns NULL if any argument is NULL
+      for (let i = 0; i < args.length; i += 1) {
+        if (args[i] === null || args[i] === undefined) return null
+      }
+      return args.map(a => String(a)).join('')
+    }
+
+    if (funcName === 'LENGTH') {
+      if (args.length !== 1) throw new Error('LENGTH requires exactly 1 argument')
+      const val = args[0]
+      if (val === null || val === undefined) return null
+      return String(val).length
+    }
+
+    if (funcName === 'SUBSTRING') {
+      if (args.length < 2 || args.length > 3) {
+        throw new Error('SUBSTRING requires 2 or 3 arguments')
+      }
+      const str = args[0]
+      if (str === null || str === undefined) return null
+      const strVal = String(str)
+      const start = Number(args[1])
+      if (!Number.isInteger(start) || start < 1) {
+        throw new Error('SUBSTRING start position must be a positive integer')
+      }
+      // SQL uses 1-based indexing
+      const startIdx = start - 1
+      if (args.length === 3) {
+        const len = Number(args[2])
+        if (!Number.isInteger(len) || len < 0) {
+          throw new Error('SUBSTRING length must be a non-negative integer')
+        }
+        return strVal.substring(startIdx, startIdx + len)
+      }
+      return strVal.substring(startIdx)
+    }
+
+    if (funcName === 'TRIM') {
+      if (args.length !== 1) throw new Error('TRIM requires exactly 1 argument')
+      const val = args[0]
+      if (val === null || val === undefined) return null
+      return String(val).trim()
+    }
+
+    throw new Error('Unsupported function ' + funcName)
+  }
+
   throw new Error('Unknown expression node type ' + (/** @type {any} */ (node).type))
 }
 
@@ -156,6 +223,23 @@ function defaultAggregateAlias(col) {
   const base = col.func.toLowerCase()
   if (col.arg.kind === 'star') return base + '_all'
   return base + '_' + col.arg.column
+}
+
+/**
+ * Generates a default alias name for a string function
+ * @param {FunctionColumn} col - The function column definition
+ * @returns {string} The generated alias (e.g., "upper_name", "concat_a_b")
+ */
+function defaultFunctionAlias(col) {
+  const base = col.func.toLowerCase()
+  // Try to extract column names from identifier arguments
+  const columnNames = col.args
+    .filter(arg => arg.type === 'identifier')
+    .map(arg => /** @type {any} */ (arg).name)
+  if (columnNames.length > 0) {
+    return base + '_' + columnNames.join('_')
+  }
+  return base
 }
 
 /**
@@ -235,10 +319,9 @@ function applyOrderBy(rows, orderBy) {
   sorted.sort((a, b) => {
     for (let i = 0; i < orderBy.length; i += 1) {
       const term = orderBy[i]
-      const key = term.expr
       const dir = term.direction
-      const av = /** @type {any} */ a[key]
-      const bv = /** @type {any} */ b[key]
+      const av = evaluateExpr(term.expr, a)
+      const bv = evaluateExpr(term.expr, b)
       const cmp = compareValues(av, bv)
       if (cmp !== 0) {
         return dir === 'DESC' ? -cmp : cmp
@@ -283,7 +366,7 @@ function evaluateSelectAst(ast, rows) {
   const projected = []
 
   if (useGrouping) {
-    /** @typedef {{ groupValues: Row, rows: Row[] }} Group */
+    /** @typedef {Row[]} Group */
     /** @type {Group[]} */
     const groups = []
 
@@ -294,28 +377,22 @@ function evaluateSelectAst(ast, rows) {
         const row = working[i]
         /** @type {string[]} */
         const keyParts = []
-        /** @type {Row} */
-        const groupValues = {}
         for (let j = 0; j < ast.groupBy.length; j += 1) {
-          const colName = ast.groupBy[j]
-          const v = row[colName]
+          const expr = ast.groupBy[j]
+          const v = evaluateExpr(expr, row)
           keyParts.push(JSON.stringify(v))
-          groupValues[colName] = v
         }
         const key = keyParts.join('|')
         let group = map.get(key)
         if (!group) {
-          group = { groupValues, rows: [] }
+          group = []
           map.set(key, group)
           groups.push(group)
         }
-        group.rows.push(row)
+        group.push(row)
       }
     } else {
-      groups.push({
-        groupValues: {},
-        rows: working,
-      })
+      groups.push(working)
     }
 
     const hasStar = ast.columns.some(col => col.kind === 'star')
@@ -330,7 +407,7 @@ function evaluateSelectAst(ast, rows) {
       for (let c = 0; c < ast.columns.length; c += 1) {
         const col = ast.columns[c]
         if (col.kind === 'star') {
-          const firstRow = group.rows[0] || {}
+          const firstRow = group[0] || {}
           const keys = Object.keys(firstRow)
           for (let k = 0; k < keys.length; k += 1) {
             const key = keys[k]
@@ -342,20 +419,25 @@ function evaluateSelectAst(ast, rows) {
         if (col.kind === 'column') {
           const name = col.column
           const alias = col.alias ?? name
-          /** @type {SqlPrimitive} */
-          let value = null
-          if (ast.groupBy && ast.groupBy.indexOf(name) !== -1) {
-            value = group.groupValues[name]
-          } else if (group.rows.length > 0) {
-            value = group.rows[0][name]
-          }
+          // Evaluate on first row of group (all rows have same value for GROUP BY columns)
+          const value = group.length > 0 ? group[0][name] : null
+          resultRow[alias] = value
+          continue
+        }
+
+        if (col.kind === 'function') {
+          // Evaluate function on the first row of the group
+          /** @type {FunctionNode} */
+          const funcNode = { type: 'function', name: col.func, args: col.args }
+          const value = group.length > 0 ? evaluateExpr(funcNode, group[0]) : null
+          const alias = col.alias ?? defaultFunctionAlias(col)
           resultRow[alias] = value
           continue
         }
 
         if (col.kind === 'aggregate') {
           const alias = col.alias ?? defaultAggregateAlias(col)
-          const value = evaluateAggregate(col, group.rows)
+          const value = evaluateAggregate(col, group)
           resultRow[alias] = value
           continue
         }
@@ -379,6 +461,12 @@ function evaluateSelectAst(ast, rows) {
           const name = col.column
           const alias = col.alias ?? name
           outRow[alias] = row[name]
+        } else if (col.kind === 'function') {
+          /** @type {FunctionNode} */
+          const funcNode = { type: 'function', name: col.func, args: col.args }
+          const value = evaluateExpr(funcNode, row)
+          const alias = col.alias ?? defaultFunctionAlias(col)
+          outRow[alias] = value
         } else if (col.kind === 'aggregate') {
           throw new Error(
             'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'

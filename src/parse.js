@@ -202,6 +202,7 @@ export function tokenize(sql) {
         tokens.push({
           type: 'keyword',
           value: upper,
+          originalValue: text,
           position: pos,
         })
       } else {
@@ -502,11 +503,21 @@ function parseSelectItem(state) {
     columnName = columnName + '.' + columnTok.value
   }
 
-  /** @type {string | null | undefined} */
-  let alias = null
+  /** @type {string | undefined} */
+  let alias
   if (matchKeyword(state, 'AS')) {
-    const aliasTok = expectIdentifier(state)
-    alias = aliasTok.value
+    // After AS, allow keywords as aliases (except reserved ones)
+    const aliasTok = current(state)
+    if (aliasTok.type === 'identifier') {
+      consume(state)
+      alias = aliasTok.value
+    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
+      consume(state)
+      // Use original case for keywords used as aliases
+      alias = aliasTok.originalValue || aliasTok.value
+    } else {
+      throw new Error('Expected alias after AS at position ' + aliasTok.position)
+    }
   } else {
     const maybeAlias = current(state)
     if (
@@ -551,11 +562,21 @@ function parseAggregateItem(state) {
 
   expect(state, 'paren', ')')
 
-  /** @type {string | null | undefined} */
-  let alias = null
+  /** @type {string | undefined} */
+  let alias
   if (matchKeyword(state, 'AS')) {
-    const aliasTok = expectIdentifier(state)
-    alias = aliasTok.value
+    // After AS, allow keywords as aliases (except reserved ones)
+    const aliasTok = current(state)
+    if (aliasTok.type === 'identifier') {
+      consume(state)
+      alias = aliasTok.value
+    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
+      consume(state)
+      // Use original case for keywords used as aliases
+      alias = aliasTok.originalValue || aliasTok.value
+    } else {
+      throw new Error('Expected alias after AS at position ' + aliasTok.position)
+    }
   } else {
     const maybeAlias = current(state)
     if (
@@ -598,11 +619,21 @@ function parseStringFunctionItem(state) {
 
   expect(state, 'paren', ')')
 
-  /** @type {string | null | undefined} */
-  let alias = null
+  /** @type {string | undefined} */
+  let alias
   if (matchKeyword(state, 'AS')) {
-    const aliasTok = expectIdentifier(state)
-    alias = aliasTok.value
+    // After AS, allow keywords as aliases (except reserved ones)
+    const aliasTok = current(state)
+    if (aliasTok.type === 'identifier') {
+      consume(state)
+      alias = aliasTok.value
+    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
+      consume(state)
+      // Use original case for keywords used as aliases
+      alias = aliasTok.originalValue || aliasTok.value
+    } else {
+      throw new Error('Expected alias after AS at position ' + aliasTok.position)
+    }
   } else {
     const maybeAlias = current(state)
     if (
@@ -752,6 +783,35 @@ function parsePrimary(state) {
   }
 
   if (tok.type === 'identifier') {
+    const next = peekToken(state, 1)
+
+    // Check if this is a function call
+    if (next.type === 'paren' && next.value === '(') {
+      const funcName = tok.value
+      consume(state) // consume function name
+      consume(state) // consume '('
+
+      /** @type {ExprNode[]} */
+      const args = []
+
+      // Parse comma-separated arguments
+      if (current(state).type !== 'paren' || current(state).value !== ')') {
+        while (true) {
+          const arg = parseExpression(state)
+          args.push(arg)
+          if (!match(state, 'comma')) break
+        }
+      }
+
+      expect(state, 'paren', ')')
+
+      return {
+        type: 'function',
+        name: funcName,
+        args,
+      }
+    }
+
     consume(state)
     let name = tok.value
 
@@ -897,16 +957,16 @@ function parseSelectInternal(state) {
   // Parse JOIN clauses
   const joins = parseJoins(state)
 
-  /** @type {ExprNode | null} */
-  let where = null
-  /** @type {string[]} */
+  /** @type {ExprNode | undefined} */
+  let where
+  /** @type {ExprNode[]} */
   const groupBy = []
   /** @type {OrderByItem[]} */
   const orderBy = []
-  /** @type {number | null} */
-  let limit = null
-  /** @type {number | null} */
-  let offset = null
+  /** @type {number | undefined} */
+  let limit
+  /** @type {number | undefined} */
+  let offset
 
   if (matchKeyword(state, 'WHERE')) {
     where = parseExpression(state)
@@ -915,8 +975,8 @@ function parseSelectInternal(state) {
   if (matchKeyword(state, 'GROUP')) {
     expectKeyword(state, 'BY')
     while (true) {
-      const ident = expectIdentifier(state)
-      groupBy.push(ident.value)
+      const expr = parseExpression(state)
+      groupBy.push(expr)
       if (!match(state, 'comma')) break
     }
   }
@@ -924,7 +984,7 @@ function parseSelectInternal(state) {
   if (matchKeyword(state, 'ORDER')) {
     expectKeyword(state, 'BY')
     while (true) {
-      const ident = expectIdentifier(state)
+      const expr = parseExpression(state)
       /** @type {'ASC' | 'DESC'} */
       let direction = 'ASC'
       if (matchKeyword(state, 'ASC')) {
@@ -933,7 +993,7 @@ function parseSelectInternal(state) {
         direction = 'DESC'
       }
       orderBy.push({
-        expr: ident.value,
+        expr,
         direction,
       })
       if (!match(state, 'comma')) break
