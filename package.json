@@ -1,0 +1,26 @@
+{
+  "name": "jsql",
+  "version": "0.1.0",
+  "author": "Hyperparam",
+  "homepage": "https://hyperparam.app",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyparam/jsql.git"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "coverage": "vitest run --coverage --coverage.include=src",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "3.2.4",
+    "eslint": "9.36.0",
+    "eslint-plugin-jsdoc": "60.6.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
