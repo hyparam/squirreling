@@ -1,5 +1,5 @@
 /**
- * @import { SelectAst, SelectColumn, AggregateColumn, AggregateArg, AggregateFunc, ExprNode, BinaryOp, OrderByItem } from './types.js';
+ * @import { SelectAst, SelectColumn, AggregateColumn, AggregateArg, AggregateFunc, ExprNode, BinaryOp, OrderByItem, JoinClause, JoinType } from './types.d.ts'
  */
 
 const KEYWORDS = new Set([
@@ -469,7 +469,14 @@ function parseSelectItem(state) {
   }
 
   consume(state)
-  const columnName = tok.value
+  let columnName = tok.value
+
+  // Handle dot notation (table.column)
+  if (current(state).type === 'dot') {
+    consume(state) // consume the dot
+    const columnTok = expectIdentifier(state)
+    columnName = columnName + '.' + columnTok.value
+  }
 
   /** @type {string | null | undefined} */
   let alias = null
@@ -663,9 +670,18 @@ function parsePrimary(state) {
 
   if (tok.type === 'identifier') {
     consume(state)
+    let name = tok.value
+
+    // Handle dot notation (table.column)
+    if (current(state).type === 'dot') {
+      consume(state) // consume the dot
+      const columnTok = expectIdentifier(state)
+      name = name + '.' + columnTok.value
+    }
+
     return {
       type: 'identifier',
-      name: tok.value,
+      name,
     }
   }
 
@@ -707,6 +723,78 @@ function parsePrimary(state) {
 
 /**
  * @param {import('./types.js').ParserState} state
+ * @returns {JoinClause[]}
+ */
+function parseJoins(state) {
+  /** @type {JoinClause[]} */
+  const joins = []
+
+  while (true) {
+    const tok = current(state)
+
+    // Check for join keywords
+    /** @type {JoinType} */
+    let joinType = 'INNER'
+
+    if (tok.type === 'keyword') {
+      if (tok.value === 'INNER') {
+        consume(state)
+        joinType = 'INNER'
+      } else if (tok.value === 'LEFT') {
+        consume(state)
+        if (matchKeyword(state, 'OUTER')) {
+          // LEFT OUTER JOIN
+        }
+        joinType = 'LEFT'
+      } else if (tok.value === 'RIGHT') {
+        consume(state)
+        if (matchKeyword(state, 'OUTER')) {
+          // RIGHT OUTER JOIN
+        }
+        joinType = 'RIGHT'
+      } else if (tok.value === 'FULL') {
+        consume(state)
+        if (matchKeyword(state, 'OUTER')) {
+          // FULL OUTER JOIN
+        }
+        joinType = 'FULL'
+      } else if (tok.value === 'JOIN') {
+        // Just JOIN (defaults to INNER)
+        consume(state)
+      } else {
+        // Not a join keyword, stop parsing joins
+        break
+      }
+
+      // If we consumed a join type keyword (INNER/LEFT/RIGHT/FULL), expect JOIN
+      if (tok.value !== 'JOIN') {
+        expectKeyword(state, 'JOIN')
+      }
+    } else {
+      // No more joins
+      break
+    }
+
+    // Parse table name
+    const tableTok = expectIdentifier(state)
+    const tableName = tableTok.value
+
+    // Parse ON condition
+    expectKeyword(state, 'ON')
+    const condition = parseExpression(state)
+
+    joins.push({
+      type: joinType,
+      table: tableName,
+      on: condition,
+    })
+  }
+
+  return joins
+}
+
+/**
+ * @param {import('./types.js').ParserState} state
  * @returns {SelectAst}
  */
 function parseSelectInternal(state) {
@@ -722,6 +810,9 @@ function parseSelectInternal(state) {
   expectKeyword(state, 'FROM')
   const fromTok = expectIdentifier(state)
   const fromName = fromTok.value
+
+  // Parse JOIN clauses
+  const joins = parseJoins(state)
 
   /** @type {ExprNode | null} */
   let where = null
@@ -812,6 +903,7 @@ function parseSelectInternal(state) {
     distinct,
     columns,
     from: fromName,
+    joins,
     where,
     groupBy,
     orderBy,

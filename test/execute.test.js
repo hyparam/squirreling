@@ -360,6 +360,13 @@ describe('executeSql', () => {
     })
   })
 
+  describe('JOIN queries', () => {
+    it('should throw error for JOIN queries', () => {
+      expect(() => executeSql(users, 'SELECT * FROM users JOIN orders ON users.id = orders.user_id'))
+        .toThrow('JOIN is not supported')
+    })
+  })
+
   describe('edge cases', () => {
     it('should handle rows with different keys', () => {
       const data = [

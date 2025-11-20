@@ -235,6 +235,11 @@ function applyOrderBy(rows, orderBy) {
  * @returns {Row[]} The filtered, projected, and sorted result rows
  */
 function evaluateSelectAst(ast, rows) {
+  // Check for unsupported JOIN operations
+  if (ast.joins && ast.joins.length > 0) {
+    throw new Error('JOIN is not supported')
+  }
+
   // WHERE
   let working = rows
   if (ast.where) {

@@ -95,10 +95,19 @@ export interface OrderByItem {
   direction: 'ASC' | 'DESC'
 }
 
+export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'
+
+export interface JoinClause {
+  type: JoinType
+  table: string
+  on: ExprNode | null
+}
+
 export interface SelectAst {
   distinct: boolean
   columns: SelectColumn[]
   from: string | null
+  joins: JoinClause[]
   where: ExprNode | null
   groupBy: string[]
   orderBy: OrderByItem[]

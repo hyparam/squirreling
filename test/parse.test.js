@@ -447,6 +447,70 @@ describe('parseSql', () => {
     })
   })
 
+  describe('JOIN queries', () => {
+    it('should parse simple INNER JOIN', () => {
+      const ast = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id')
+      expect(ast.from).toBe('users')
+      expect(ast.joins).toHaveLength(1)
+      expect(ast.joins[0]).toMatchObject({
+        type: 'INNER',
+        table: 'orders',
+      })
+      expect(ast.joins[0].on).toBeTruthy()
+    })
+
+    it('should parse explicit INNER JOIN', () => {
+      const ast = parseSql('SELECT * FROM users INNER JOIN orders ON users.id = orders.user_id')
+      expect(ast.joins[0].type).toBe('INNER')
+    })
+
+    it('should parse LEFT JOIN', () => {
+      const ast = parseSql('SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id')
+      expect(ast.joins[0]).toMatchObject({
+        type: 'LEFT',
+        table: 'orders',
+      })
+    })
+
+    it('should parse LEFT OUTER JOIN', () => {
+      const ast = parseSql('SELECT * FROM users LEFT OUTER JOIN orders ON users.id = orders.user_id')
+      expect(ast.joins[0].type).toBe('LEFT')
+    })
+
+    it('should parse RIGHT JOIN', () => {
+      const ast = parseSql('SELECT * FROM users RIGHT JOIN orders ON users.id = orders.user_id')
+      expect(ast.joins[0].type).toBe('RIGHT')
+    })
+
+    it('should parse FULL JOIN', () => {
+      const ast = parseSql('SELECT * FROM users FULL JOIN orders ON users.id = orders.user_id')
+      expect(ast.joins[0].type).toBe('FULL')
+    })
+
+    it('should parse multiple JOINs', () => {
+      const ast = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id JOIN products ON orders.product_id = products.id')
+      expect(ast.joins).toHaveLength(2)
+      expect(ast.joins[0].table).toBe('orders')
+      expect(ast.joins[1].table).toBe('products')
+    })
+
+    it('should parse JOIN with WHERE clause', () => {
+      const ast = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id WHERE orders.total > 100')
+      expect(ast.joins).toHaveLength(1)
+      expect(ast.where).toBeTruthy()
+    })
+
+    it('should parse qualified column names in WHERE', () => {
+      const ast = parseSql('SELECT * FROM users WHERE users.age > 18')
+      expect(ast.where).toMatchObject({
+        type: 'binary',
+        op: '>',
+        left: { type: 'identifier', name: 'users.age' },
+        right: { type: 'literal', value: 18 },
+      })
+    })
+  })
+
   describe('error cases', () => {
     it('should throw error on missing FROM', () => {
       expect(() => parseSql('SELECT name')).toThrow()
