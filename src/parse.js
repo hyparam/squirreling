@@ -483,8 +483,13 @@ function parseSelectItem(state) {
   const next = peekToken(state, 1)
   const upper = tok.value.toUpperCase()
 
-  if (next.type === 'paren' && next.value === '(' && AGG_FUNCS.has(/** @type {AggregateFunc} */ (upper))) {
-    return parseAggregateItem(state)
+  if (next.type === 'paren' && next.value === '(') {
+    if (AGG_FUNCS.has(/** @type {AggregateFunc} */ (upper))) {
+      return parseAggregateItem(state)
+    }
+    if (STRING_FUNCS.has(upper)) {
+      return parseStringFunctionItem(state)
+    }
   }
 
   consume(state)
@@ -566,6 +571,53 @@ function parseAggregateItem(state) {
     kind: 'aggregate',
     func: funcUpper,
     arg,
+    alias,
+  }
+}
+
+/**
+ * @param {import('./types.js').ParserState} state
+ * @returns {SelectColumn}
+ */
+function parseStringFunctionItem(state) {
+  const funcTok = expectIdentifier(state)
+  const funcUpper = funcTok.value.toUpperCase()
+  expect(state, 'paren', '(')
+
+  /** @type {ExprNode[]} */
+  const args = []
+
+  // Parse comma-separated arguments
+  if (current(state).type !== 'paren' || current(state).value !== ')') {
+    while (true) {
+      const arg = parsePrimary(state)
+      args.push(arg)
+      if (!match(state, 'comma')) break
+    }
+  }
+
+  expect(state, 'paren', ')')
+
+  /** @type {string | null | undefined} */
+  let alias = null
+  if (matchKeyword(state, 'AS')) {
+    const aliasTok = expectIdentifier(state)
+    alias = aliasTok.value
+  } else {
+    const maybeAlias = current(state)
+    if (
+      maybeAlias.type === 'identifier' &&
+      !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())
+    ) {
+      consume(state)
+      alias = maybeAlias.value
+    }
+  }
+
+  return {
+    kind: 'function',
+    func: funcUpper,
+    args,
     alias,
   }
 }

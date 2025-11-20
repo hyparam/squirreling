@@ -209,6 +209,129 @@ describe('parseSql', () => {
     })
   })
 
+  describe('string functions', () => {
+    it('should parse UPPER function', () => {
+      const ast = parseSql('SELECT UPPER(name) FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'UPPER', args: [{ type: 'identifier', name: 'name' }] },
+      ])
+    })
+
+    it('should parse LOWER function', () => {
+      const ast = parseSql('SELECT LOWER(email) FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'LOWER', args: [{ type: 'identifier', name: 'email' }] },
+      ])
+    })
+
+    it('should parse LENGTH function', () => {
+      const ast = parseSql('SELECT LENGTH(name) FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'LENGTH', args: [{ type: 'identifier', name: 'name' }] },
+      ])
+    })
+
+    it('should parse TRIM function', () => {
+      const ast = parseSql('SELECT TRIM(name) FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'TRIM', args: [{ type: 'identifier', name: 'name' }] },
+      ])
+    })
+
+    it('should parse CONCAT function with two arguments', () => {
+      const ast = parseSql('SELECT CONCAT(first_name, last_name) FROM users')
+      expect(ast.columns).toMatchObject([
+        {
+          kind: 'function',
+          func: 'CONCAT',
+          args: [
+            { type: 'identifier', name: 'first_name' },
+            { type: 'identifier', name: 'last_name' }
+          ]
+        },
+      ])
+    })
+
+    it('should parse CONCAT function with string literals', () => {
+      const ast = parseSql('SELECT CONCAT(first_name, \' \', last_name) FROM users')
+      expect(ast.columns).toMatchObject([
+        {
+          kind: 'function',
+          func: 'CONCAT',
+          args: [
+            { type: 'identifier', name: 'first_name' },
+            { type: 'literal', value: ' ' },
+            { type: 'identifier', name: 'last_name' }
+          ]
+        },
+      ])
+    })
+
+    it('should parse SUBSTRING function with three arguments', () => {
+      const ast = parseSql('SELECT SUBSTRING(name, 1, 3) FROM users')
+      expect(ast.columns).toMatchObject([
+        {
+          kind: 'function',
+          func: 'SUBSTRING',
+          args: [
+            { type: 'identifier', name: 'name' },
+            { type: 'literal', value: 1 },
+            { type: 'literal', value: 3 }
+          ]
+        },
+      ])
+    })
+
+    it('should parse string function with alias using AS', () => {
+      const ast = parseSql('SELECT UPPER(name) AS upper_name FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'UPPER', args: [{ type: 'identifier', name: 'name' }], alias: 'upper_name' },
+      ])
+    })
+
+    it('should parse string function with implicit alias', () => {
+      const ast = parseSql('SELECT LOWER(email) user_email FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'LOWER', args: [{ type: 'identifier', name: 'email' }], alias: 'user_email' },
+      ])
+    })
+
+    it('should parse multiple string functions', () => {
+      const ast = parseSql('SELECT UPPER(first_name), LOWER(last_name), LENGTH(email) FROM users')
+      expect(ast.columns).toHaveLength(3)
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'UPPER', args: [{ type: 'identifier', name: 'first_name' }] },
+        { kind: 'function', func: 'LOWER', args: [{ type: 'identifier', name: 'last_name' }] },
+        { kind: 'function', func: 'LENGTH', args: [{ type: 'identifier', name: 'email' }] },
+      ])
+    })
+
+    it('should parse string function with qualified column name', () => {
+      const ast = parseSql('SELECT UPPER(users.name) FROM users')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'UPPER', args: [{ type: 'identifier', name: 'users.name' }] },
+      ])
+    })
+
+    it('should parse mix of string functions and regular columns', () => {
+      const ast = parseSql('SELECT id, UPPER(name), email FROM users')
+      expect(ast.columns).toHaveLength(3)
+      expect(ast.columns).toMatchObject([
+        { kind: 'column', column: 'id' },
+        { kind: 'function', func: 'UPPER', args: [{ type: 'identifier', name: 'name' }] },
+        { kind: 'column', column: 'email' },
+      ])
+    })
+
+    it('should parse string functions with aggregate functions', () => {
+      const ast = parseSql('SELECT UPPER(city), COUNT(*) FROM users GROUP BY city')
+      expect(ast.columns).toMatchObject([
+        { kind: 'function', func: 'UPPER', args: [{ type: 'identifier', name: 'city' }] },
+        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' } },
+      ])
+    })
+  })
+
   describe('WHERE clause', () => {
     it('should parse WHERE with equality', () => {
       const ast = parseSql('SELECT * FROM users WHERE age = 25')
