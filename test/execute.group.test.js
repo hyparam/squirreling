@@ -48,4 +48,34 @@ describe('executeSql - GROUP BY', () => {
     const result = executeSql(data, 'SELECT * FROM users WHERE age > 100 GROUP BY city')
     expect(result).toEqual([])
   })
+
+  it('should group by multiple columns with ORDER BY', () => {
+    const result = executeSql(users, `
+      SELECT city, active, COUNT(*) AS count
+      FROM users
+      GROUP BY city, active
+      ORDER BY city, active DESC
+    `)
+    expect(result.length).toBeGreaterThan(0)
+    expect(result.every(r => r.count > 0)).toBe(true)
+  })
+
+  it('should aggregate with multiple group columns', () => {
+    const sales = [
+      { region: 'North', product: 'A', amount: 100 },
+      { region: 'North', product: 'B', amount: 150 },
+      { region: 'South', product: 'A', amount: 200 },
+      { region: 'South', product: 'B', amount: 120 },
+      { region: 'North', product: 'A', amount: 80 },
+    ]
+    const result = executeSql(sales, `
+      SELECT region, product, SUM(amount) AS total, COUNT(*) AS sales_count
+      FROM users
+      GROUP BY region, product
+      ORDER BY region, product
+    `)
+    const northA = result.find(r => r.region === 'North' && r.product === 'A')
+    expect(northA.total).toBe(180)
+    expect(northA.sales_count).toBe(2)
+  })
 })

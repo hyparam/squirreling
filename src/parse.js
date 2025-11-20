@@ -12,6 +12,7 @@ const KEYWORDS = new Set([
   'IS',
   'GROUP',
   'BY',
+  'HAVING',
   'ORDER',
   'ASC',
   'DESC',
@@ -22,6 +23,14 @@ const KEYWORDS = new Set([
   'TRUE',
   'FALSE',
   'NULL',
+  'LIKE',
+  'IN',
+  'BETWEEN',
+  'CASE',
+  'WHEN',
+  'THEN',
+  'ELSE',
+  'END',
   'JOIN',
   'INNER',
   'LEFT',
@@ -36,6 +45,7 @@ const RESERVED_AFTER_COLUMN = new Set([
   'FROM',
   'WHERE',
   'GROUP',
+  'HAVING',
   'ORDER',
   'LIMIT',
   'OFFSET',
@@ -48,6 +58,15 @@ const AGG_FUNCS = new Set([
   'AVG',
   'MIN',
   'MAX',
+])
+
+const STRING_FUNCS = new Set([
+  'UPPER',
+  'LOWER',
+  'CONCAT',
+  'LENGTH',
+  'SUBSTRING',
+  'TRIM',
 ])
 
 /**

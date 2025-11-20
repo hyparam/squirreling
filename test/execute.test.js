@@ -63,6 +63,24 @@ describe('executeSql', () => {
       expect(result.map(u => u.name).sort()).toEqual(['Bob', 'Charlie'])
     })
 
+    it('should handle complex WHERE with parentheses', () => {
+      const result = executeSql(users, `
+        SELECT * FROM users
+        WHERE (age < 28 OR age > 32) AND city = 'NYC'
+      `)
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('Charlie')
+    })
+
+    it('should handle OR precedence without parentheses', () => {
+      const result = executeSql(users, `
+        SELECT * FROM users
+        WHERE city = 'NYC' AND age = 30 OR city = 'LA'
+      `)
+      // Should be: (city = 'NYC' AND age = 30) OR (city = 'LA')
+      expect(result).toHaveLength(4)
+    })
+
     it('should filter with NOT', () => {
       const result = executeSql(users, 'SELECT * FROM users WHERE NOT active')
       expect(result).toHaveLength(1)
@@ -367,6 +385,35 @@ describe('executeSql', () => {
     })
   })
 
+  describe('null handling in aggregates', () => {
+    it('should handle null in aggregate functions correctly', () => {
+      const data = [
+        { id: 1, value: 10 },
+        { id: 2, value: null },
+        { id: 3, value: null },
+      ]
+      const result = executeSql(data, 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM users')
+      expect(result[0]).toEqual({ total: 3, non_null: 1 })
+    })
+
+    it('should handle null in GROUP BY', () => {
+      const data = [
+        { id: 1, category: 'A', value: 10 },
+        { id: 2, category: null, value: 20 },
+        { id: 3, category: null, value: 30 },
+        { id: 4, category: 'A', value: 40 },
+      ]
+      const result = executeSql(data, `
+        SELECT category, SUM(value) AS total
+        FROM users
+        GROUP BY category
+      `)
+      expect(result).toHaveLength(2)
+      const nullGroup = result.find(r => r.category === null)
+      expect(nullGroup.total).toBe(50)
+    })
+  })
+
   describe('edge cases', () => {
     it('should handle rows with different keys', () => {
       const data = [
@@ -405,6 +452,45 @@ describe('executeSql', () => {
       const result = executeSql(data, 'SELECT * FROM users WHERE value')
       expect(result).toHaveLength(2)
       expect(result.every(r => r.value)).toBe(true)
+    })
+
+    it('should handle empty string in comparisons', () => {
+      const data = [
+        { id: 1, value: '' },
+        { id: 2, value: 'hello' },
+        { id: 3, value: null },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE value = \'\'')
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(1)
+    })
+
+    it('should handle special characters in strings', () => {
+      const data = [
+        { id: 1, name: 'O\'Brien' },
+        { id: 2, name: 'Smith' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE name = \'O\'\'Brien\'')
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('O\'Brien')
+    })
+
+    it('should handle mixed types in ORDER BY', () => {
+      const data = [
+        { id: 1, value: 10 },
+        { id: 2, value: '5' },
+        { id: 3, value: 20 },
+        { id: 4, value: '15' },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users ORDER BY value')
+      // Should sort lexicographically for mixed types
+      expect(result[0].value).toBe(10)
+    })
+
+    it('should handle very long column names', () => {
+      const data = [{ id: 1, very_long_column_name_that_exceeds_normal_limits: 'value' }]
+      const result = executeSql(data, 'SELECT very_long_column_name_that_exceeds_normal_limits FROM users')
+      expect(result[0].very_long_column_name_that_exceeds_normal_limits).toBe('value')
     })
   })
 })
