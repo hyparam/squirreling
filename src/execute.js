@@ -51,6 +51,14 @@ function evaluateExpr(node, row) {
     const left = evaluateExpr(node.left, row)
     const right = evaluateExpr(node.right, row)
 
+    // In SQL, NULL comparisons with =, !=, <> always return false (unknown)
+    // You must use IS NULL or IS NOT NULL to check for NULL
+    if (left === null || left === undefined || right === null || right === undefined) {
+      if (node.op === '=' || node.op === '!=' || node.op === '<>') {
+        return false
+      }
+    }
+
     if (node.op === '=') return left === right
     if (node.op === '!=' || node.op === '<>') return left !== right
     if (node.op === '<') return left < right

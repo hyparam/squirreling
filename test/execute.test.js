@@ -159,6 +159,16 @@ describe('executeSql', () => {
       expect(result2).toHaveLength(3)
       expect(result2.map(r => r.name).sort()).toEqual(['Bob', 'Charlie', 'Diana'])
     })
+
+    it('should NOT match NULL with equality', () => {
+      const data = [
+        { id: 1, value: null },
+        { id: 2, value: 0 },
+        { id: 3, value: false },
+      ]
+      const result = executeSql(data, 'SELECT * FROM users WHERE value = NULL')
+      expect(result).toHaveLength(0) // NULL comparisons should return false
+    })
   })
 
   describe('aggregate functions', () => {
