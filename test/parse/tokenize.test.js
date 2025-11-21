@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tokenize } from '../src/tokenize.js'
+import { tokenize } from '../../src/parse/tokenize.js'
 
 describe('tokenize', () => {
   it('should tokenize simple SELECT query', () => {

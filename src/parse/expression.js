@@ -1,5 +1,5 @@
 /**
- * @import { ExprNode, BinaryOp, Token, TokenType } from './types.js'
+ * @import { ExprNode, BinaryOp, Token, TokenType } from '../types.js'
  */
 
 /**

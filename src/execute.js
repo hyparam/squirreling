@@ -2,7 +2,7 @@
  * @import { SelectAst, ExprNode, AggregateColumn, FunctionColumn, FunctionNode, OrderByItem, Row, SqlPrimitive } from './types.js'
  */
 
-import { parseSql } from './parse.js'
+import { parseSql } from './parse/parse.js'
 
 /**
  * Evaluates an expression node against a row of data

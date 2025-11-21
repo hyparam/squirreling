@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSql } from '../src/parse.js'
+import { parseSql } from '../../src/parse/parse.js'
 
 describe('parseSql', () => {
   describe('basic SELECT queries', () => {

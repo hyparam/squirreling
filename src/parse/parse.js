@@ -1,5 +1,5 @@
 /**
- * @import { AggregateColumn, AggregateArg, AggregateFunc, BinaryOp, ExprNode, SelectAst, SelectColumn, ParserState, Token, TokenType, OrderByItem, JoinClause, JoinType } from './types.js'
+ * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, SelectAst, SelectColumn, ParserState, Token, TokenType, OrderByItem, JoinClause, JoinType } from '../types.js'
  */
 
 import { tokenize } from './tokenize.js'
@@ -143,7 +143,7 @@ function expectIdentifier(state) {
 /**
  * Creates an ExprCursor adapter for the ParserState.
  * @param {ParserState} state
- * @returns {import('./types.js').ExprCursor}
+ * @returns {ExprCursor}
  */
 function createExprCursor(state) {
   return {

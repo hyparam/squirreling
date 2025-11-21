@@ -1,5 +1,5 @@
 /**
- * @import { Token } from './types.d.ts'
+ * @import { Token } from '../types.d.ts'
  */
 
 const KEYWORDS = new Set([
