@@ -3,6 +3,7 @@
  */
 
 import { tokenize } from './tokenize.js'
+import { parseExpression, parsePrimary } from './expression.js'
 
 // Keywords that cannot be used as implicit aliases after a column
 const RESERVED_AFTER_COLUMN = new Set([
@@ -140,19 +141,21 @@ function expectIdentifier(state) {
 }
 
 /**
- * @param {string} op
- * @returns {op is BinaryOp}
+ * Creates an ExprCursor adapter for the ParserState.
+ * @param {ParserState} state
+ * @returns {import('./types.js').ExprCursor}
  */
-function isComparisonOperator(op) {
-  return (
-    op === '=' ||
-    op === '!=' ||
-    op === '<>' ||
-    op === '<' ||
-    op === '>' ||
-    op === '<=' ||
-    op === '>='
-  )
+function createExprCursor(state) {
+  return {
+    current: () => current(state),
+    peek: (offset) => peekToken(state, offset),
+    consume: () => consume(state),
+    match: (type, value) => match(state, type, value),
+    matchKeyword: (keywordUpper) => matchKeyword(state, keywordUpper),
+    expect: (type, value) => expect(state, type, value),
+    expectKeyword: (keywordUpper) => expectKeyword(state, keywordUpper),
+    expectIdentifier: () => expectIdentifier(state),
+  }
 }
 
 // --- parsing ---
@@ -320,8 +323,9 @@ function parseStringFunctionItem(state) {
 
   // Parse comma-separated arguments
   if (current(state).type !== 'paren' || current(state).value !== ')') {
+    const cursor = createExprCursor(state)
     while (true) {
-      const arg = parsePrimary(state)
+      const arg = parsePrimary(cursor)
       args.push(arg)
       if (!match(state, 'comma')) break
     }
@@ -361,217 +365,6 @@ function parseStringFunctionItem(state) {
     args,
     alias,
   }
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parseExpression(state) {
-  return parseOr(state)
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parseOr(state) {
-  let node = parseAnd(state)
-  while (matchKeyword(state, 'OR')) {
-    const right = parseAnd(state)
-    node = {
-      type: 'binary',
-      op: 'OR',
-      left: node,
-      right,
-    }
-  }
-  return node
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parseAnd(state) {
-  let node = parseNot(state)
-  while (matchKeyword(state, 'AND')) {
-    const right = parseNot(state)
-    node = {
-      type: 'binary',
-      op: 'AND',
-      left: node,
-      right,
-    }
-  }
-  return node
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parseNot(state) {
-  if (matchKeyword(state, 'NOT')) {
-    const argument = parseNot(state)
-    return {
-      type: 'unary',
-      op: 'NOT',
-      argument,
-    }
-  }
-  return parseComparison(state)
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parseComparison(state) {
-  const left = parsePrimary(state)
-  const tok = current(state)
-
-  // Handle IS NULL and IS NOT NULL
-  if (tok.type === 'keyword' && tok.value === 'IS') {
-    consume(state)
-    const notToken = current(state)
-    if (notToken.type === 'keyword' && notToken.value === 'NOT') {
-      consume(state)
-      expectKeyword(state, 'NULL')
-      return {
-        type: 'unary',
-        op: 'IS NOT NULL',
-        argument: left,
-      }
-    }
-    expectKeyword(state, 'NULL')
-    return {
-      type: 'unary',
-      op: 'IS NULL',
-      argument: left,
-    }
-  }
-
-  // Handle LIKE
-  if (tok.type === 'keyword' && tok.value === 'LIKE') {
-    consume(state)
-    const right = parsePrimary(state)
-    return {
-      type: 'binary',
-      op: 'LIKE',
-      left,
-      right,
-    }
-  }
-
-  if (tok.type === 'operator' && isComparisonOperator(tok.value)) {
-    consume(state)
-    const right = parsePrimary(state)
-    return {
-      type: 'binary',
-      op: tok.value,
-      left,
-      right,
-    }
-  }
-
-  return left
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parsePrimary(state) {
-  const tok = current(state)
-
-  if (tok.type === 'paren' && tok.value === '(') {
-    consume(state)
-    const expr = parseExpression(state)
-    expect(state, 'paren', ')')
-    return expr
-  }
-
-  if (tok.type === 'identifier') {
-    const next = peekToken(state, 1)
-
-    // Check if this is a function call
-    if (next.type === 'paren' && next.value === '(') {
-      const funcName = tok.value
-      consume(state) // consume function name
-      consume(state) // consume '('
-
-      /** @type {ExprNode[]} */
-      const args = []
-
-      // Parse comma-separated arguments
-      if (current(state).type !== 'paren' || current(state).value !== ')') {
-        while (true) {
-          const arg = parseExpression(state)
-          args.push(arg)
-          if (!match(state, 'comma')) break
-        }
-      }
-
-      expect(state, 'paren', ')')
-
-      return {
-        type: 'function',
-        name: funcName,
-        args,
-      }
-    }
-
-    consume(state)
-    let name = tok.value
-
-    // Handle dot notation (table.column)
-    if (current(state).type === 'dot') {
-      consume(state) // consume the dot
-      const columnTok = expectIdentifier(state)
-      name = name + '.' + columnTok.value
-    }
-
-    return {
-      type: 'identifier',
-      name,
-    }
-  }
-
-  if (tok.type === 'number') {
-    consume(state)
-    return {
-      type: 'literal',
-      value: tok.numericValue ?? null,
-    }
-  }
-
-  if (tok.type === 'string') {
-    consume(state)
-    return {
-      type: 'literal',
-      value: tok.value,
-    }
-  }
-
-  if (tok.type === 'keyword') {
-    if (tok.value === 'TRUE') {
-      consume(state)
-      return { type: 'literal', value: true }
-    }
-    if (tok.value === 'FALSE') {
-      consume(state)
-      return { type: 'literal', value: false }
-    }
-    if (tok.value === 'NULL') {
-      consume(state)
-      return { type: 'literal', value: null }
-    }
-  }
-
-  throw new Error(
-    'Unexpected token in expression at position ' + tok.position + ': ' + tok.type + ' ' + tok.value
-  )
 }
 
 /**
@@ -634,7 +427,8 @@ function parseJoins(state) {
 
     // Parse ON condition
     expectKeyword(state, 'ON')
-    const condition = parseExpression(state)
+    const cursor = createExprCursor(state)
+    const condition = parseExpression(cursor)
 
     joins.push({
       type: joinType,
@@ -678,14 +472,16 @@ function parseSelectInternal(state) {
   /** @type {number | undefined} */
   let offset
 
+  const cursor = createExprCursor(state)
+
   if (matchKeyword(state, 'WHERE')) {
-    where = parseExpression(state)
+    where = parseExpression(cursor)
   }
 
   if (matchKeyword(state, 'GROUP')) {
     expectKeyword(state, 'BY')
     while (true) {
-      const expr = parseExpression(state)
+      const expr = parseExpression(cursor)
       groupBy.push(expr)
       if (!match(state, 'comma')) break
     }
@@ -694,7 +490,7 @@ function parseSelectInternal(state) {
   if (matchKeyword(state, 'ORDER')) {
     expectKeyword(state, 'BY')
     while (true) {
-      const expr = parseExpression(state)
+      const expr = parseExpression(cursor)
       /** @type {'ASC' | 'DESC'} */
       let direction = 'ASC'
       if (matchKeyword(state, 'ASC')) {

@@ -134,3 +134,14 @@ export interface ParserState {
   tokens: Token[]
   pos: number
 }
+
+export interface ExprCursor {
+  current(): Token
+  peek(offset?: number): Token
+  consume(): Token
+  match(type: TokenType, value?: string): boolean
+  matchKeyword(keywordUpper: string): boolean
+  expect(type: TokenType, value?: string): Token
+  expectKeyword(keywordUpper: string): Token
+  expectIdentifier(): Token
+}
