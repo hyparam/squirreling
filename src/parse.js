@@ -1,44 +1,8 @@
 /**
- * @import { SelectAst, SelectColumn, AggregateColumn, AggregateArg, AggregateFunc, ExprNode, BinaryOp, OrderByItem, JoinClause, JoinType } from './types.d.ts'
+ * @import { AggregateColumn, AggregateArg, AggregateFunc, BinaryOp, ExprNode, SelectAst, SelectColumn, ParserState, Token, TokenType, OrderByItem, JoinClause, JoinType } from './types.js'
  */
 
-const KEYWORDS = new Set([
-  'SELECT',
-  'FROM',
-  'WHERE',
-  'AND',
-  'OR',
-  'NOT',
-  'IS',
-  'GROUP',
-  'BY',
-  'HAVING',
-  'ORDER',
-  'ASC',
-  'DESC',
-  'LIMIT',
-  'OFFSET',
-  'AS',
-  'DISTINCT',
-  'TRUE',
-  'FALSE',
-  'NULL',
-  'LIKE',
-  'IN',
-  'BETWEEN',
-  'CASE',
-  'WHEN',
-  'THEN',
-  'ELSE',
-  'END',
-  'JOIN',
-  'INNER',
-  'LEFT',
-  'RIGHT',
-  'FULL',
-  'OUTER',
-  'ON',
-])
+import { tokenize } from './tokenize.js'
 
 // Keywords that cannot be used as implicit aliases after a column
 const RESERVED_AFTER_COLUMN = new Set([
@@ -70,271 +34,17 @@ const STRING_FUNCS = new Set([
 ])
 
 /**
- * @param {string} ch
- * @returns {boolean}
- */
-function isWhitespace(ch) {
-  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r'
-}
-
-/**
- * @param {string} ch
- * @returns {boolean}
- */
-function isDigit(ch) {
-  return ch >= '0' && ch <= '9'
-}
-
-/**
- * @param {string} ch
- * @returns {boolean}
- */
-function isAlpha(ch) {
-  return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch === '_' || ch === '$'
-}
-
-/**
- * @param {string} ch
- * @returns {boolean}
- */
-function isAlphaNumeric(ch) {
-  return isAlpha(ch) || isDigit(ch)
-}
-
-/**
- * @param {string} sql
- * @returns {import('./types.js').Token[]}
- */
-export function tokenize(sql) {
-  /** @type {import('./types.js').Token[]} */
-  const tokens = []
-  const { length } = sql
-  let i = 0
-
-  /**
-   * @returns {string}
-   */
-  function peek() {
-    if (i >= length) return ''
-    return sql[i]
-  }
-
-  /**
-   * @returns {string}
-   */
-  function nextChar() {
-    if (i >= length) return ''
-    const ch = sql[i]
-    i += 1
-    return ch
-  }
-
-  while (i < length) {
-    const ch = peek()
-
-    if (isWhitespace(ch)) {
-      nextChar()
-      continue
-    }
-
-    // line comment --
-    if (ch === '-' && i + 1 < length && sql[i + 1] === '-') {
-      while (i < length && sql[i] !== '\n') {
-        i += 1
-      }
-      continue
-    }
-
-    // block comment /* ... */
-    if (ch === '/' && i + 1 < length && sql[i + 1] === '*') {
-      i += 2
-      while (i < length) {
-        if (sql[i] === '*' && i + 1 < length && sql[i + 1] === '/') {
-          i += 2
-          break
-        }
-        i += 1
-      }
-      continue
-    }
-
-    const pos = i
-
-    // numbers
-    if (isDigit(ch)) {
-      let text = ''
-      while (isDigit(peek())) {
-        text += nextChar()
-      }
-      if (peek() === '.') {
-        text += nextChar()
-        while (isDigit(peek())) {
-          text += nextChar()
-        }
-      }
-      if (peek() === 'e' || peek() === 'E') {
-        text += nextChar()
-        if (peek() === '+' || peek() === '-') {
-          text += nextChar()
-        }
-        while (isDigit(peek())) {
-          text += nextChar()
-        }
-      }
-      const num = parseFloat(text)
-      tokens.push({
-        type: 'number',
-        value: text,
-        position: pos,
-        numericValue: num,
-      })
-      continue
-    }
-
-    // identifiers / keywords
-    if (isAlpha(ch)) {
-      let text = ''
-      while (isAlphaNumeric(peek())) {
-        text += nextChar()
-      }
-      const upper = text.toUpperCase()
-      if (KEYWORDS.has(upper)) {
-        tokens.push({
-          type: 'keyword',
-          value: upper,
-          originalValue: text,
-          position: pos,
-        })
-      } else {
-        tokens.push({
-          type: 'identifier',
-          value: text,
-          position: pos,
-        })
-      }
-      continue
-    }
-
-    // string literals: single or double quotes
-    if (ch === '\'' || ch === '"') {
-      const quote = nextChar()
-      let text = ''
-      while (i < length) {
-        const c = nextChar()
-        if (c === quote) {
-          if (peek() === quote) {
-            text += quote
-            nextChar()
-            continue
-          }
-          break
-        }
-        if (c === '\\' && i < length) {
-          const esc = nextChar()
-          text += esc
-        } else {
-          text += c
-        }
-      }
-      tokens.push({
-        type: 'string',
-        value: text,
-        position: pos,
-      })
-      continue
-    }
-
-    // two-character operators
-    if (ch === '<' || ch === '>' || ch === '!' || ch === '=') {
-      let op = nextChar()
-      if ((op === '<' || op === '>' || op === '!') && peek() === '=') {
-        op += nextChar()
-      } else if (op === '<' && peek() === '>') {
-        op += nextChar()
-      }
-      tokens.push({
-        type: 'operator',
-        value: op,
-        position: pos,
-      })
-      continue
-    }
-
-    // single-char operators
-    if (ch === '*' || ch === '+' || ch === '-' || ch === '/' || ch === '%') {
-      const op = nextChar()
-      tokens.push({
-        type: 'operator',
-        value: op,
-        position: pos,
-      })
-      continue
-    }
-
-    if (ch === ',') {
-      nextChar()
-      tokens.push({
-        type: 'comma',
-        value: ',',
-        position: pos,
-      })
-      continue
-    }
-
-    if (ch === '.') {
-      nextChar()
-      tokens.push({
-        type: 'dot',
-        value: '.',
-        position: pos,
-      })
-      continue
-    }
-
-    if (ch === '(' || ch === ')') {
-      const p = nextChar()
-      tokens.push({
-        type: 'paren',
-        value: p,
-        position: pos,
-      })
-      continue
-    }
-
-    if (ch === ';') {
-      nextChar()
-      tokens.push({
-        type: 'semicolon',
-        value: ';',
-        position: pos,
-      })
-      continue
-    }
-
-    throw new Error('Unexpected character at position ' + pos + ': ' + ch)
-  }
-
-  tokens.push({
-    type: 'eof',
-    value: '',
-    position: length,
-  })
-
-  return tokens
-}
-
-/**
- * @param {import('./types.js').ParserState} state
- * @returns {import('./types.js').Token}
+ * @param {ParserState} state
+ * @returns {Token}
  */
 function current(state) {
   return state.tokens[state.pos]
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @param {number} [offset=0]
- * @returns {import('./types.js').Token}
+ * @returns {Token}
  */
 function peekToken(state, offset = 0) {
   const idx = state.pos + offset
@@ -345,8 +55,8 @@ function peekToken(state, offset = 0) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
- * @returns {import('./types.js').Token}
+ * @param {ParserState} state
+ * @returns {Token}
  */
 function consume(state) {
   const tok = current(state)
@@ -357,8 +67,8 @@ function consume(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
- * @param {import('./types.js').TokenType} type
+ * @param {ParserState} state
+ * @param {TokenType} type
  * @param {string} [value]
  * @returns {boolean}
  */
@@ -371,7 +81,7 @@ function match(state, type, value) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @param {string} keywordUpper
  * @returns {boolean}
  */
@@ -385,10 +95,10 @@ function matchKeyword(state, keywordUpper) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
- * @param {import('./types.js').TokenType} type
+ * @param {ParserState} state
+ * @param {TokenType} type
  * @param {string} [value]
- * @returns {import('./types.js').Token}
+ * @returns {Token}
  */
 function expect(state, type, value) {
   const tok = current(state)
@@ -403,9 +113,9 @@ function expect(state, type, value) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @param {string} keywordUpper
- * @returns {import('./types.js').Token}
+ * @returns {Token}
  */
 function expectKeyword(state, keywordUpper) {
   const tok = current(state)
@@ -417,8 +127,8 @@ function expectKeyword(state, keywordUpper) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
- * @returns {import('./types.js').Token}
+ * @param {ParserState} state
+ * @returns {Token}
  */
 function expectIdentifier(state) {
   const tok = current(state)
@@ -448,7 +158,7 @@ function isComparisonOperator(op) {
 // --- parsing ---
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {SelectColumn[]}
  */
 function parseSelectList(state) {
@@ -472,7 +182,7 @@ function parseSelectList(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {SelectColumn}
  */
 function parseSelectItem(state) {
@@ -537,7 +247,7 @@ function parseSelectItem(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {AggregateColumn}
  */
 function parseAggregateItem(state) {
@@ -597,7 +307,7 @@ function parseAggregateItem(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {SelectColumn}
  */
 function parseStringFunctionItem(state) {
@@ -654,7 +364,7 @@ function parseStringFunctionItem(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
 function parseExpression(state) {
@@ -662,7 +372,7 @@ function parseExpression(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
 function parseOr(state) {
@@ -680,7 +390,7 @@ function parseOr(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
 function parseAnd(state) {
@@ -698,7 +408,7 @@ function parseAnd(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
 function parseNot(state) {
@@ -714,7 +424,7 @@ function parseNot(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
 function parseComparison(state) {
@@ -769,7 +479,7 @@ function parseComparison(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
 function parsePrimary(state) {
@@ -865,7 +575,7 @@ function parsePrimary(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {JoinClause[]}
  */
 function parseJoins(state) {
@@ -937,7 +647,7 @@ function parseJoins(state) {
 }
 
 /**
- * @param {import('./types.js').ParserState} state
+ * @param {ParserState} state
  * @returns {SelectAst}
  */
 function parseSelectInternal(state) {
@@ -1061,7 +771,7 @@ function parseSelectInternal(state) {
  */
 export function parseSql(sql) {
   const tokens = tokenize(sql)
-  /** @type {import('./types.js').ParserState} */
+  /** @type {ParserState} */
   const state = { tokens, pos: 0 }
   const ast = parseSelectInternal(state)
 
