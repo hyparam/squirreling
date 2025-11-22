@@ -33,6 +33,7 @@ export function parsePrimary(c) {
     // function call
     if (next.type === 'paren' && next.value === '(') {
       const funcName = tok.value
+      // TODO: validate function name
       c.consume() // function name
       c.consume() // '('
 

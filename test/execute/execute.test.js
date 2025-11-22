@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executeSql } from '../src/execute.js'
+import { executeSql } from '../../src/execute/execute.js'
 
 describe('executeSql', () => {
   const users = [

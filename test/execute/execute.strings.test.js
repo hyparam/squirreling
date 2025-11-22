@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executeSql } from '../src/execute.js'
+import { executeSql } from '../../src/execute/execute.js'
 
 describe('string functions', () => {
   const users = [
@@ -286,6 +286,9 @@ describe('string functions', () => {
   })
 
   describe('null handling', () => {
+    /** @type {null} */
+    const NULL = null
+
     it('should handle null values in UPPER', () => {
       const data = [
         { id: 1, name: 'Alice' },
@@ -305,25 +308,25 @@ describe('string functions', () => {
     })
 
     it('should handle null values in CONCAT', () => {
-      const data = [{ id: 1, first: 'Alice', last: /** @type {null} */ (null) }]
+      const data = [{ id: 1, first: 'Alice', last: NULL }]
       const result = executeSql(data, 'SELECT CONCAT(first, last) AS full FROM users')
       expect(result[0].full).toBeNull()
     })
 
     it('should handle null values in LENGTH', () => {
-      const data = [{ id: 1, text: /** @type {null} */ (null) }]
+      const data = [{ id: 1, text: NULL }]
       const result = executeSql(data, 'SELECT LENGTH(text) AS len FROM users')
       expect(result[0].len).toBeNull()
     })
 
     it('should handle null values in SUBSTRING', () => {
-      const data = [{ id: 1, text: /** @type {null} */ (null) }]
+      const data = [{ id: 1, text: NULL }]
       const result = executeSql(data, 'SELECT SUBSTRING(text, 1, 5) AS sub FROM users')
       expect(result[0].sub).toBeNull()
     })
 
     it('should handle null values in TRIM', () => {
-      const data = [{ id: 1, text: /** @type {null} */ (null) }]
+      const data = [{ id: 1, text: NULL }]
       const result = executeSql(data, 'SELECT TRIM(text) AS trimmed FROM users')
       expect(result[0].trimmed).toBeNull()
     })

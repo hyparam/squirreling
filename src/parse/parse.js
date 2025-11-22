@@ -308,11 +308,9 @@ function parseStringFunctionItem(state, func) {
       throw parseError(state, 'alias')
     }
   } else {
+    // Implicit alias SELECT UPPER(name) name_upper
     const maybeAlias = current(state)
-    if (
-      maybeAlias.type === 'identifier' &&
-      !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())
-    ) {
+    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
       consume(state)
       alias = maybeAlias.value
     }

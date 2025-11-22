@@ -1,228 +1,20 @@
 /**
- * @import { SelectAst, ExprNode, AggregateColumn, FunctionColumn, FunctionNode, OrderByItem, Row, SqlPrimitive } from './types.js'
+ * @import { SelectAst, FunctionColumn, FunctionNode, OrderByItem, Row, SqlPrimitive } from '../types.js'
  */
 
-import { parseSql } from './parse/parse.js'
+import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
+import { evaluateExpr } from './expression.js'
+import { parseSql } from '../parse/parse.js'
 
 /**
- * Evaluates an expression node against a row of data
- * @param {ExprNode} node - The expression node to evaluate
- * @param {Row} row - The data row to evaluate against
- * @returns {SqlPrimitive | boolean} The result of the evaluation
+ * Executes a SQL SELECT query against an array of data rows
+ * @param {Row[]} rows - The data rows to query
+ * @param {string} sql - The SQL query string
+ * @returns {Row[]} The result rows matching the query
  */
-function evaluateExpr(node, row) {
-  if (node.type === 'literal') {
-    return node.value
-  }
-
-  if (node.type === 'identifier') {
-    return row[node.name]
-  }
-
-  if (node.type === 'unary') {
-    if (node.op === 'NOT') {
-      const val = evaluateExpr(node.argument, row)
-      return !val
-    }
-    if (node.op === 'IS NULL') {
-      const val = evaluateExpr(node.argument, row)
-      return val === null || val === undefined
-    }
-    if (node.op === 'IS NOT NULL') {
-      const val = evaluateExpr(node.argument, row)
-      return val !== null && val !== undefined
-    }
-    throw new Error('Unsupported unary operator ' + (/** @type {any} */ (node).op))
-  }
-
-  if (node.type === 'binary') {
-    if (node.op === 'AND') {
-      const leftVal = evaluateExpr(node.left, row)
-      if (!leftVal) return false
-      return Boolean(evaluateExpr(node.right, row))
-    }
-
-    if (node.op === 'OR') {
-      const leftVal = evaluateExpr(node.left, row)
-      if (leftVal) return true
-      return Boolean(evaluateExpr(node.right, row))
-    }
-
-    const left = evaluateExpr(node.left, row)
-    const right = evaluateExpr(node.right, row)
-
-    // In SQL, NULL comparisons with =, !=, <> always return false (unknown)
-    // You must use IS NULL or IS NOT NULL to check for NULL
-    if (left === null || left === undefined || right === null || right === undefined) {
-      if (node.op === '=' || node.op === '!=' || node.op === '<>') {
-        return false
-      }
-    }
-
-    if (node.op === '=') return left === right
-    if (node.op === '!=' || node.op === '<>') return left !== right
-    if (node.op === '<') return left < right
-    if (node.op === '>') return left > right
-    if (node.op === '<=') return left <= right
-    if (node.op === '>=') return left >= right
-
-    if (node.op === 'LIKE') {
-      const str = String(left)
-      const pattern = String(right)
-      // Convert SQL LIKE pattern to regex
-      // % matches zero or more characters
-      // _ matches exactly one character
-      const regexPattern = pattern
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
-        .replace(/%/g, '.*') // Replace % with .*
-        .replace(/_/g, '.') // Replace _ with .
-      const regex = new RegExp('^' + regexPattern + '$', 'i')
-      return regex.test(str)
-    }
-
-    throw new Error('Unsupported binary operator ' + node.op)
-  }
-
-  if (node.type === 'function') {
-    const funcName = node.name.toUpperCase()
-    const args = node.args.map(arg => evaluateExpr(arg, row))
-
-    if (funcName === 'UPPER') {
-      if (args.length !== 1) throw new Error('UPPER requires exactly 1 argument')
-      const val = args[0]
-      if (val === null || val === undefined) return null
-      return String(val).toUpperCase()
-    }
-
-    if (funcName === 'LOWER') {
-      if (args.length !== 1) throw new Error('LOWER requires exactly 1 argument')
-      const val = args[0]
-      if (val === null || val === undefined) return null
-      return String(val).toLowerCase()
-    }
-
-    if (funcName === 'CONCAT') {
-      if (args.length < 1) throw new Error('CONCAT requires at least 1 argument')
-      // SQL CONCAT returns NULL if any argument is NULL
-      for (let i = 0; i < args.length; i += 1) {
-        if (args[i] === null || args[i] === undefined) return null
-      }
-      return args.map(a => String(a)).join('')
-    }
-
-    if (funcName === 'LENGTH') {
-      if (args.length !== 1) throw new Error('LENGTH requires exactly 1 argument')
-      const val = args[0]
-      if (val === null || val === undefined) return null
-      return String(val).length
-    }
-
-    if (funcName === 'SUBSTRING') {
-      if (args.length < 2 || args.length > 3) {
-        throw new Error('SUBSTRING requires 2 or 3 arguments')
-      }
-      const str = args[0]
-      if (str === null || str === undefined) return null
-      const strVal = String(str)
-      const start = Number(args[1])
-      if (!Number.isInteger(start) || start < 1) {
-        throw new Error('SUBSTRING start position must be a positive integer')
-      }
-      // SQL uses 1-based indexing
-      const startIdx = start - 1
-      if (args.length === 3) {
-        const len = Number(args[2])
-        if (!Number.isInteger(len) || len < 0) {
-          throw new Error('SUBSTRING length must be a non-negative integer')
-        }
-        return strVal.substring(startIdx, startIdx + len)
-      }
-      return strVal.substring(startIdx)
-    }
-
-    if (funcName === 'TRIM') {
-      if (args.length !== 1) throw new Error('TRIM requires exactly 1 argument')
-      const val = args[0]
-      if (val === null || val === undefined) return null
-      return String(val).trim()
-    }
-
-    throw new Error('Unsupported function ' + funcName)
-  }
-
-  throw new Error('Unknown expression node type ' + (/** @type {any} */ (node).type))
-}
-
-/**
- * Evaluates an aggregate function over a set of rows
- * @param {AggregateColumn} col - The aggregate column definition
- * @param {Row[]} rows - The rows to aggregate
- * @returns {number | null} The aggregated result
- */
-function evaluateAggregate(col, rows) {
-  const { func } = col
-  const { arg } = col
-
-  if (func === 'COUNT') {
-    if (arg.kind === 'star') return rows.length
-    const field = arg.column
-    let count = 0
-    for (let i = 0; i < rows.length; i += 1) {
-      const v = rows[i][field]
-      if (v !== null && v !== undefined) {
-        count += 1
-      }
-    }
-    return count
-  }
-
-  if (func === 'SUM' || func === 'AVG' || func === 'MIN' || func === 'MAX') {
-    if (arg.kind === 'star') {
-      throw new Error(func + '(*) is not supported, use a column name')
-    }
-    const field = arg.column
-    let sum = 0
-    let count = 0
-    /** @type {number | null} */
-    let min = null
-    /** @type {number | null} */
-    let max = null
-
-    for (let i = 0; i < rows.length; i += 1) {
-      const raw = rows[i][field]
-      if (raw === null || raw === undefined) continue
-      const num = Number(raw)
-      if (!Number.isFinite(num)) continue
-
-      if (count === 0) {
-        min = num
-        max = num
-      } else {
-        if (min === null || num < min) min = num
-        if (max === null || num > max) max = num
-      }
-      sum += num
-      count += 1
-    }
-
-    if (func === 'SUM') return sum
-    if (func === 'AVG') return count === 0 ? null : sum / count
-    if (func === 'MIN') return min
-    if (func === 'MAX') return max
-  }
-
-  throw new Error('Unsupported aggregate function ' + func)
-}
-
-/**
- * Generates a default alias name for an aggregate function
- * @param {AggregateColumn} col - The aggregate column definition
- * @returns {string} The generated alias (e.g., "count_all", "sum_amount")
- */
-function defaultAggregateAlias(col) {
-  const base = col.func.toLowerCase()
-  if (col.arg.kind === 'star') return base + '_all'
-  return base + '_' + col.arg.column
+export function executeSql(rows, sql) {
+  const ast = parseSql(sql)
+  return evaluateSelectAst(ast, rows)
 }
 
 /**
@@ -235,7 +27,7 @@ function defaultFunctionAlias(col) {
   // Try to extract column names from identifier arguments
   const columnNames = col.args
     .filter(arg => arg.type === 'identifier')
-    .map(arg => /** @type {any} */ (arg).name)
+    .map(arg => arg.name)
   if (columnNames.length > 0) {
     return base + '_' + columnNames.join('_')
   }
@@ -491,15 +283,4 @@ function evaluateSelectAst(ast, rows) {
   }
 
   return result
-}
-
-/**
- * Executes a SQL SELECT query against an array of data rows
- * @param {Row[]} rows - The data rows to query
- * @param {string} sql - The SQL query string
- * @returns {Row[]} The result rows matching the query
- */
-export function executeSql(rows, sql) {
-  const ast = parseSql(sql)
-  return evaluateSelectAst(ast, rows)
 }
