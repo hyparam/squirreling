@@ -226,11 +226,24 @@ function parseAggregateItem(state, func) {
   if (cur.type === 'operator' && cur.value === '*') {
     consume(state)
     arg = { kind: 'star' }
+  } else if (cur.type === 'identifier' && cur.value === 'CAST') {
+    // Handle CAST inside aggregate: SUM(CAST(x AS type))
+    expectIdentifier(state) // consume CAST
+    expect(state, 'paren', '(')
+    const cursor = createExprCursor(state)
+    const expr = parseExpression(cursor)
+    expect(state, 'keyword', 'AS')
+    const typeTok = expectIdentifier(state)
+    expect(state, 'paren', ')')
+    arg = {
+      kind: 'expression',
+      expr: { type: 'cast', expr, toType: typeTok.value },
+    }
   } else {
     const colTok = expectIdentifier(state)
     arg = {
-      kind: 'column',
-      column: colTok.value,
+      kind: 'expression',
+      expr: { type: 'identifier', name: colTok.value },
     }
   }
 

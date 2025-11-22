@@ -78,6 +78,16 @@ describe('executeSql', () => {
       expect(result[0].name).toBe('Alice') // First row
       expect(result[0].count_all).toBe(5)
     })
+
+    it('should handle nested cast in aggregate', () => {
+      const data = [
+        { size: 10 },
+        { size: 20 },
+        { size: 30 },
+      ]
+      const result = executeSql(data, 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM users')
+      expect(result).toEqual([{ total_size: 60 }])
+    })
   })
 
   describe('null handling in aggregates', () => {

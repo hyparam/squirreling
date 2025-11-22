@@ -1,8 +1,9 @@
+import { evaluateExpr } from './expression.js'
 
 /**
  * Evaluates an aggregate function over a set of rows
  *
- * @import { AggregateColumn, Row } from '../types.js'
+ * @import { AggregateColumn, ExprNode, Row } from '../types.js'
  * @param {AggregateColumn} col - aggregate column definition
  * @param {Row[]} rows - rows to aggregate
  * @returns {number | null} aggregated result
@@ -12,10 +13,9 @@ export function evaluateAggregate(col, rows) {
 
   if (func === 'COUNT') {
     if (arg.kind === 'star') return rows.length
-    const field = arg.column
     let count = 0
     for (let i = 0; i < rows.length; i += 1) {
-      const v = rows[i][field]
+      const v = evaluateExpr(arg.expr, rows[i])
       if (v !== null && v !== undefined) {
         count += 1
       }
@@ -27,7 +27,6 @@ export function evaluateAggregate(col, rows) {
     if (arg.kind === 'star') {
       throw new Error(func + '(*) is not supported, use a column name')
     }
-    const field = arg.column
     let sum = 0
     let count = 0
     /** @type {number | null} */
@@ -36,7 +35,7 @@ export function evaluateAggregate(col, rows) {
     let max = null
 
     for (let i = 0; i < rows.length; i += 1) {
-      const raw = rows[i][field]
+      const raw = evaluateExpr(arg.expr, rows[i])
       if (raw == null) continue
       const num = Number(raw)
       if (!Number.isFinite(num)) continue
@@ -63,11 +62,39 @@ export function evaluateAggregate(col, rows) {
 
 /**
  * Generates a default alias name for an aggregate function
- * @param {AggregateColumn} col - The aggregate column definition
- * @returns {string} The generated alias (e.g., "count_all", "sum_amount")
+ * (e.g., "count_all", "sum_amount")
+ *
+ * @param {AggregateColumn} col
+ * @returns {string}
  */
 export function defaultAggregateAlias(col) {
   const base = col.func.toLowerCase()
   if (col.arg.kind === 'star') return base + '_all'
-  return base + '_' + col.arg.column
+  return base + '_' + defaultAggregateAliasExpr(col.arg.expr)
+}
+
+/**
+ * @param {ExprNode} expr
+ * @returns {string}
+ */
+export
+function defaultAggregateAliasExpr(expr) {
+  if (expr.type === 'identifier') {
+    return expr.name
+  }
+  if (expr.type === 'literal') {
+    return String(expr.value)
+  }
+  if (expr.type === 'cast') {
+    return defaultAggregateAliasExpr(expr.expr) + '_as_' + expr.toType
+  }
+  if (expr.type === 'unary') {
+    return expr.op + '_' + defaultAggregateAliasExpr(expr.argument)
+  }
+  if (expr.type === 'binary') {
+    return defaultAggregateAliasExpr(expr.left) + '_' + expr.op + '_' + defaultAggregateAliasExpr(expr.right)
+  }
+  if (expr.type === 'function') {
+    return expr.name.toLowerCase() + '_' + expr.args.map(defaultAggregateAliasExpr).join('_')
+  }
 }

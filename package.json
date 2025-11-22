@@ -1,12 +1,12 @@
 {
   "name": "squirreling",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Hyperparam",
   "homepage": "https://hyperparam.app",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hyparam/squirrel.git"
+    "url": "git+https://github.com/hyparam/squirreling.git"
   },
   "type": "module",
   "sideEffects": false,

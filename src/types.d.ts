@@ -102,12 +102,12 @@ export interface AggregateArgStar {
   kind: 'star'
 }
 
-export interface AggregateArgColumn {
-  kind: 'column'
-  column: string
+export interface AggregateArgExpression {
+  kind: 'expression'
+  expr: ExprNode
 }
 
-export type AggregateArg = AggregateArgStar | AggregateArgColumn
+export type AggregateArg = AggregateArgStar | AggregateArgExpression
 
 export interface AggregateColumn {
   kind: 'aggregate'

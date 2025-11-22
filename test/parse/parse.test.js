@@ -123,29 +123,29 @@ describe('parseSql', () => {
     it('should parse COUNT with column', () => {
       const select = parseSql('SELECT COUNT(id) FROM users')
       expect(select.columns).toMatchObject([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'column', column: 'id' } },
+        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'expression', expr: { type: 'identifier', name: 'id' } } },
       ])
     })
 
     it('should parse SUM', () => {
       const select = parseSql('SELECT SUM(amount) FROM transactions')
       expect(select.columns).toMatchObject([
-        { kind: 'aggregate', func: 'SUM', arg: { kind: 'column', column: 'amount' } },
+        { kind: 'aggregate', func: 'SUM', arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount' } } },
       ])
     })
 
     it('should parse AVG', () => {
       const select = parseSql('SELECT AVG(score) FROM tests')
       expect(select.columns).toMatchObject([
-        { kind: 'aggregate', func: 'AVG', arg: { kind: 'column', column: 'score' } },
+        { kind: 'aggregate', func: 'AVG', arg: { kind: 'expression', expr: { type: 'identifier', name: 'score' } } },
       ])
     })
 
     it('should parse MIN and MAX', () => {
       const select = parseSql('SELECT MIN(price), MAX(price) FROM products')
       expect(select.columns).toMatchObject([
-        { kind: 'aggregate', func: 'MIN', arg: { kind: 'column', column: 'price' } },
-        { kind: 'aggregate', func: 'MAX', arg: { kind: 'column', column: 'price' } },
+        { kind: 'aggregate', func: 'MIN', arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' } } },
+        { kind: 'aggregate', func: 'MAX', arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' } } },
       ])
     })
 
@@ -551,6 +551,25 @@ describe('parseSql', () => {
             toType: 'STRING',
           },
           alias: 'age_str',
+        },
+      ])
+    })
+
+    it('should parse nested cast in aggregate', () => {
+      const select = parseSql('SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM files')
+      expect(select.columns).toMatchObject([
+        {
+          kind: 'aggregate',
+          func: 'SUM',
+          arg: {
+            kind: 'expression',
+            expr: {
+              type: 'cast',
+              expr: { type: 'identifier', name: 'size' },
+              toType: 'BIGINT',
+            },
+          },
+          alias: 'total_size',
         },
       ])
     })
