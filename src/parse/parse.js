@@ -159,6 +159,22 @@ function parseSelectItem(state) {
     throw parseError(state, 'column name or expression')
   }
 
+  if (tok.type === 'identifier' && tok.value === 'CAST') {
+    expectIdentifier(state) // consume CAST
+    expect(state, 'paren', '(')
+    const cursor = createExprCursor(state)
+    const expr = parseExpression(cursor)
+    expect(state, 'keyword', 'AS')
+    const typeTok = expectIdentifier(state)
+    expect(state, 'paren', ')')
+    const alias = parseAs(state)
+    return {
+      kind: 'operation',
+      expr: { type: 'cast', expr, toType: typeTok.value },
+      alias,
+    }
+  }
+
   if (tok.type === 'operator') {
     // Handle SELECT expression AS alias
     const cursor = createExprCursor(state)

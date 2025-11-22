@@ -539,6 +539,21 @@ describe('parseSql', () => {
         expect(select.where.op).toBe('OR')
       }
     })
+
+    it('should parse cast', () => {
+      const select = parseSql('SELECT CAST(age AS STRING) AS age_str FROM users')
+      expect(select.columns).toMatchObject([
+        {
+          kind: 'operation',
+          expr: {
+            type: 'cast',
+            expr: { type: 'identifier', name: 'age' },
+            toType: 'STRING',
+          },
+          alias: 'age_str',
+        },
+      ])
+    })
   })
 
   describe('JOIN queries', () => {

@@ -1,6 +1,6 @@
 export type Row = Record<string, any>
 
-export type SqlPrimitive = string | number | boolean | null
+export type SqlPrimitive = string | number | bigint | boolean | null
 
 export interface SelectStatement {
   distinct: boolean
@@ -75,7 +75,13 @@ export interface FunctionNode {
   args: ExprNode[]
 }
 
-export type ExprNode = LiteralNode | IdentifierNode | UnaryNode | BinaryNode | FunctionNode
+export interface CastNode {
+  type: 'cast'
+  expr: ExprNode
+  toType: string
+}
+
+export type ExprNode = LiteralNode | IdentifierNode | UnaryNode | BinaryNode | FunctionNode | CastNode
 
 export interface StarColumn {
   kind: 'star'

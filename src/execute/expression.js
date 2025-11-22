@@ -147,5 +147,31 @@ export function evaluateExpr(node, row) {
     throw new Error('Unsupported function ' + funcName)
   }
 
-  throw new Error('Unknown expression node type ' + node)
+  if (node.type === 'cast') {
+    const val = evaluateExpr(node.expr, row)
+    if (val == null) return null
+    const toType = node.toType.toUpperCase()
+    if (toType === 'INTEGER' || toType === 'INT') {
+      const num = Number(val)
+      if (isNaN(num)) return null
+      return Math.trunc(num)
+    }
+    if (toType === 'BIGINT') {
+      return BigInt(val)
+    }
+    if (toType === 'FLOAT' || toType === 'REAL' || toType === 'DOUBLE') {
+      const num = Number(val)
+      if (isNaN(num)) return null
+      return num
+    }
+    if (toType === 'TEXT' || toType === 'STRING') {
+      return String(val)
+    }
+    if (toType === 'BOOLEAN' || toType === 'BOOL') {
+      return Boolean(val)
+    }
+    throw new Error('Unsupported CAST to type ' + node.toType)
+  }
+
+  throw new Error('Unknown expression node type ' + node.type)
 }

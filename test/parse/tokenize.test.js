@@ -133,21 +133,18 @@ describe('tokenize', () => {
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'line1\nline2\tend' })
   })
 
-  // it('should tokenize negative numbers', () => {
-  //   const tokens = tokenize('from \'bunnies.csv\' where "Lifespan" * -1 > -6;')
-  //   expect(tokens).toMatchObject([
-  //     { type: 'keyword', value: 'FROM' },
-  //     { type: 'string', value: 'bunnies.csv' },
-  //     { type: 'keyword', value: 'WHERE' },
-  //     { type: 'identifier', value: 'Lifespan' },
-  //     { type: 'operator', value: '*' },
-  //     { type: 'number', value: '-1', numericValue: -1 },
-  //     { type: 'operator', value: '>' },
-  //     { type: 'number', value: '-6', numericValue: -6 },
-  //     { type: 'semicolon', value: ';' },
-  //     { type: 'eof' },
-  //   ])
-  // })
+  it('should tokenize CAST', () => {
+    const tokens = tokenize('CAST(value AS INTEGER)')
+    expect(tokens).toMatchObject([
+      { type: 'identifier', value: 'CAST' },
+      { type: 'paren', value: '(' },
+      { type: 'identifier', value: 'value' },
+      { type: 'keyword', value: 'AS' },
+      { type: 'identifier', value: 'INTEGER' },
+      { type: 'paren', value: ')' },
+      { type: 'eof' },
+    ])
+  })
 
   it('should throw error on unterminated string literal', () => {
     expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')

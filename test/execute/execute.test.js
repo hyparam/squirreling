@@ -361,6 +361,21 @@ describe('executeSql', () => {
     })
   })
 
+  describe('CAST calls', () => {
+    it('should handle CAST to INTEGER', () => {
+      const data = [
+        { id: 1, age: '30' },
+        { id: 2, age: '25' },
+        { id: 3, age: '35' },
+      ]
+      const result = executeSql(data, 'SELECT CAST(age AS INTEGER) as age_int FROM users')
+      expect(result).toHaveLength(3)
+      expect(result[0].age_int).toBe(30)
+      expect(result[1].age_int).toBe(25)
+      expect(result[2].age_int).toBe(35)
+    })
+  })
+
   describe('edge cases', () => {
     it('should handle negative select', () => {
       const result = executeSql(users, 'SELECT -age as neg_age FROM users')
