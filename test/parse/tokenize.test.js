@@ -172,6 +172,23 @@ describe('tokenize', () => {
     ])
   })
 
+  it('should tokenize BETWEEN clause', () => {
+    const tokens = tokenize('SELECT * FROM users WHERE age BETWEEN 18 AND 65')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'operator', value: '*' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'users' },
+      { type: 'keyword', value: 'WHERE' },
+      { type: 'identifier', value: 'age' },
+      { type: 'keyword', value: 'BETWEEN' },
+      { type: 'number', value: '18', numericValue: 18 },
+      { type: 'keyword', value: 'AND' },
+      { type: 'number', value: '65', numericValue: 65 },
+      { type: 'eof' },
+    ])
+  })
+
   it('should throw error on unterminated string literal', () => {
     expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
   })

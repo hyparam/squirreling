@@ -82,7 +82,21 @@ export interface CastNode {
   toType: string
 }
 
-export type ExprNode = LiteralNode | IdentifierNode | UnaryNode | BinaryNode | FunctionNode | CastNode
+export interface BetweenNode {
+  type: 'between' | 'not between'
+  expr: ExprNode
+  lower: ExprNode
+  upper: ExprNode
+}
+
+export type ExprNode =
+  | LiteralNode
+  | IdentifierNode
+  | UnaryNode
+  | BinaryNode
+  | FunctionNode
+  | CastNode
+  | BetweenNode
 
 export interface StarColumn {
   kind: 'star'

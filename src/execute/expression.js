@@ -79,6 +79,21 @@ export function evaluateExpr(node, row) {
     }
   }
 
+  // BETWEEN and NOT BETWEEN
+  if (node.type === 'between' || node.type === 'not between') {
+    const expr = evaluateExpr(node.expr, row)
+    const lower = evaluateExpr(node.lower, row)
+    const upper = evaluateExpr(node.upper, row)
+
+    // If any value is NULL, return false (SQL behavior)
+    if (expr == null || lower == null || upper == null) {
+      return false
+    }
+
+    const isBetween = expr >= lower && expr <= upper
+    return node.type === 'between' ? isBetween : !isBetween
+  }
+
   // Function calls
   if (node.type === 'function') {
     const funcName = node.name.toUpperCase()

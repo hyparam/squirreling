@@ -83,6 +83,20 @@ export function evaluateHavingExpr(expr, context, group) {
     }
   }
 
+  if (expr.type === 'between' || expr.type === 'not between') {
+    const exprVal = evaluateHavingValue(expr.expr, context, group)
+    const lower = evaluateHavingValue(expr.lower, context, group)
+    const upper = evaluateHavingValue(expr.upper, context, group)
+
+    // If any value is NULL, return false (SQL behavior)
+    if (exprVal == null || lower == null || upper == null) {
+      return false
+    }
+
+    const isBetween = exprVal >= lower && exprVal <= upper
+    return expr.type === 'between' ? isBetween : !isBetween
+  }
+
   // For other expression types, use the context row
   return Boolean(evaluateExpr(expr, context))
 }
@@ -103,7 +117,7 @@ function evaluateHavingValue(expr, context, group) {
   }
 
   // For binary expressions, we need to use evaluateHavingExpr to properly handle aggregates
-  if (expr.type === 'binary' || expr.type === 'unary') {
+  if (expr.type === 'binary' || expr.type === 'unary' || expr.type === 'between' || expr.type === 'not between') {
     return evaluateHavingExpr(expr, context, group)
   }
 

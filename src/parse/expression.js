@@ -226,6 +226,37 @@ function parseComparison(c) {
     }
   }
 
+  // [NOT] BETWEEN
+  if (tok.type === 'keyword' && tok.value === 'NOT') {
+    const nextTok = c.peek(1)
+    if (nextTok.type === 'keyword' && nextTok.value === 'BETWEEN') {
+      c.consume() // NOT
+      c.consume() // BETWEEN
+      const lower = parsePrimary(c)
+      c.expect('keyword', 'AND')
+      const upper = parsePrimary(c)
+      return {
+        type: 'not between',
+        expr: left,
+        lower,
+        upper,
+      }
+    }
+  }
+
+  if (tok.type === 'keyword' && tok.value === 'BETWEEN') {
+    c.consume()
+    const lower = parsePrimary(c)
+    c.expect('keyword', 'AND')
+    const upper = parsePrimary(c)
+    return {
+      type: 'between',
+      expr: left,
+      lower,
+      upper,
+    }
+  }
+
   if (tok.type === 'operator' && isComparisonOperator(tok.value)) {
     c.consume()
     const right = parsePrimary(c)
