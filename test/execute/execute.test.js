@@ -456,7 +456,7 @@ describe('executeSql', () => {
       `)
       expect(result).toHaveLength(2)
       const nullGroup = result.find(r => r.category === null)
-      expect(nullGroup.total).toBe(50)
+      expect(nullGroup?.total).toBe(50)
     })
   })
 

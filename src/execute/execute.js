@@ -1,5 +1,5 @@
 /**
- * @import { SelectAst, FunctionColumn, FunctionNode, OrderByItem, Row, SqlPrimitive } from '../types.js'
+ * @import { FunctionColumn, FunctionNode, OrderByItem, Row, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
@@ -13,8 +13,8 @@ import { parseSql } from '../parse/parse.js'
  * @returns {Row[]} The result rows matching the query
  */
 export function executeSql(rows, sql) {
-  const ast = parseSql(sql)
-  return evaluateSelectAst(ast, rows)
+  const select = parseSql(sql)
+  return evaluateSelectAst(select, rows)
 }
 
 /**
@@ -59,8 +59,8 @@ function stableRowKey(row) {
  */
 function compareValues(a, b) {
   if (a === b) return 0
-  if (a === null || a === undefined) return -1
-  if (b === null || b === undefined) return 1
+  if (a == null) return -1
+  if (b == null) return 1
 
   if (typeof a === 'number' && typeof b === 'number') {
     if (a < b) return -1
@@ -127,32 +127,32 @@ function applyOrderBy(rows, orderBy) {
 
 /**
  * Evaluates a parsed SELECT AST against data rows
- * @param {SelectAst} ast - The parsed SQL AST
+ * @param {SelectStatement} select - The parsed SQL AST
  * @param {Row[]} rows - The data rows
  * @returns {Row[]} The filtered, projected, and sorted result rows
  */
-function evaluateSelectAst(ast, rows) {
+function evaluateSelectAst(select, rows) {
   // Check for unsupported JOIN operations
-  if (ast.joins && ast.joins.length > 0) {
+  if (select.joins.length) {
     throw new Error('JOIN is not supported')
   }
 
   // WHERE
   let working = rows
-  if (ast.where) {
+  if (select.where) {
     /** @type {Row[]} */
     const filtered = []
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i]
-      if (evaluateExpr(ast.where, row)) {
+      if (evaluateExpr(select.where, row)) {
         filtered.push(row)
       }
     }
     working = filtered
   }
 
-  const hasAggregate = ast.columns.some(col => col.kind === 'aggregate')
-  const useGrouping = hasAggregate || ast.groupBy && ast.groupBy.length > 0
+  const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
+  const useGrouping = hasAggregate || select.groupBy && select.groupBy.length > 0
 
   /** @type {Row[]} */
   const projected = []
@@ -162,15 +162,15 @@ function evaluateSelectAst(ast, rows) {
     /** @type {Group[]} */
     const groups = []
 
-    if (ast.groupBy && ast.groupBy.length > 0) {
+    if (select.groupBy && select.groupBy.length > 0) {
       /** @type {Map<string, Group>} */
       const map = new Map()
       for (let i = 0; i < working.length; i += 1) {
         const row = working[i]
         /** @type {string[]} */
         const keyParts = []
-        for (let j = 0; j < ast.groupBy.length; j += 1) {
-          const expr = ast.groupBy[j]
+        for (let j = 0; j < select.groupBy.length; j += 1) {
+          const expr = select.groupBy[j]
           const v = evaluateExpr(expr, row)
           keyParts.push(JSON.stringify(v))
         }
@@ -187,7 +187,7 @@ function evaluateSelectAst(ast, rows) {
       groups.push(working)
     }
 
-    const hasStar = ast.columns.some(col => col.kind === 'star')
+    const hasStar = select.columns.some(col => col.kind === 'star')
     if (hasStar && hasAggregate) {
       throw new Error('SELECT * with aggregate functions is not supported in this implementation')
     }
@@ -196,8 +196,8 @@ function evaluateSelectAst(ast, rows) {
       const group = groups[g]
       /** @type {Row} */
       const resultRow = {}
-      for (let c = 0; c < ast.columns.length; c += 1) {
-        const col = ast.columns[c]
+      for (let c = 0; c < select.columns.length; c += 1) {
+        const col = select.columns[c]
         if (col.kind === 'star') {
           const firstRow = group[0] || {}
           const keys = Object.keys(firstRow)
@@ -212,8 +212,7 @@ function evaluateSelectAst(ast, rows) {
           const name = col.column
           const alias = col.alias ?? name
           // Evaluate on first row of group (all rows have same value for GROUP BY columns)
-          const value = group.length > 0 ? group[0][name] : null
-          resultRow[alias] = value
+          resultRow[alias] = group.length > 0 ? group[0][name] : undefined
           continue
         }
 
@@ -221,8 +220,8 @@ function evaluateSelectAst(ast, rows) {
           // Evaluate function on the first row of the group
           /** @type {FunctionNode} */
           const funcNode = { type: 'function', name: col.func, args: col.args }
-          const value = group.length > 0 ? evaluateExpr(funcNode, group[0]) : null
           const alias = col.alias ?? defaultFunctionAlias(col)
+          const value = group.length > 0 ? evaluateExpr(funcNode, group[0]) : undefined
           resultRow[alias] = value
           continue
         }
@@ -241,8 +240,8 @@ function evaluateSelectAst(ast, rows) {
       const row = working[i]
       /** @type {Row} */
       const outRow = {}
-      for (let c = 0; c < ast.columns.length; c += 1) {
-        const col = ast.columns[c]
+      for (let c = 0; c < select.columns.length; c += 1) {
+        const col = select.columns[c]
         if (col.kind === 'star') {
           const keys = Object.keys(row)
           for (let k = 0; k < keys.length; k += 1) {
@@ -271,15 +270,14 @@ function evaluateSelectAst(ast, rows) {
 
   let result = projected
 
-  result = applyDistinct(result, ast.distinct)
-  result = applyOrderBy(result, ast.orderBy)
+  result = applyDistinct(result, select.distinct)
+  result = applyOrderBy(result, select.orderBy)
 
-  if (typeof ast.offset === 'number' && ast.offset > 0) {
-    result = result.slice(ast.offset)
+  if (typeof select.offset === 'number' && select.offset > 0) {
+    result = result.slice(select.offset)
   }
-
-  if (typeof ast.limit === 'number') {
-    result = result.slice(0, ast.limit)
+  if (typeof select.limit === 'number') {
+    result = result.slice(0, select.limit)
   }
 
   return result

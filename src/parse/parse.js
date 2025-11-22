@@ -1,5 +1,5 @@
 /**
- * @import { AggregateColumn, AggregateArg, AggregateFunc, StringFunc, ExprCursor, ExprNode, SelectAst, SelectColumn, ParserState, Token, TokenType, OrderByItem, JoinClause, JoinType } from '../types.js'
+ * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, StringFunc, Token, TokenType } from '../types.js'
  */
 
 import { tokenize } from './tokenize.js'
@@ -18,20 +18,20 @@ const RESERVED_AFTER_COLUMN = new Set([
 
 /**
  * @param {string} sql
- * @returns {SelectAst}
+ * @returns {SelectStatement}
  */
 export function parseSql(sql) {
   const tokens = tokenize(sql)
   /** @type {ParserState} */
   const state = { tokens, pos: 0 }
-  const ast = parseSelectInternal(state)
+  const select = parseSelectInternal(state)
 
   const tok = current(state)
   if (tok.type !== 'eof') {
     throw parseError(state, 'end of query')
   }
 
-  return ast
+  return select
 }
 
 /**
@@ -394,7 +394,7 @@ function parseJoins(state) {
 
 /**
  * @param {ParserState} state
- * @returns {SelectAst}
+ * @returns {SelectStatement}
  */
 function parseSelectInternal(state) {
   expect(state, 'keyword', 'SELECT')

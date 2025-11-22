@@ -75,7 +75,7 @@ describe('executeSql - GROUP BY', () => {
       ORDER BY region, product
     `)
     const northA = result.find(r => r.region === 'North' && r.product === 'A')
-    expect(northA.total).toBe(180)
-    expect(northA.sales_count).toBe(2)
+    expect(northA?.total).toBe(180)
+    expect(northA?.sales_count).toBe(2)
   })
 })

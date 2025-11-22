@@ -10,6 +10,14 @@
   },
   "type": "module",
   "sideEffects": false,
+  "types": "src/index.d.ts",
+  "main": "src/index.js",
+  "export": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
   "files": [
     "src"
   ],

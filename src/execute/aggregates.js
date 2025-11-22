@@ -3,13 +3,12 @@
  * Evaluates an aggregate function over a set of rows
  *
  * @import { AggregateColumn, Row } from '../types.js'
- * @param {AggregateColumn} col - The aggregate column definition
- * @param {Row[]} rows - The rows to aggregate
- * @returns {number | null} The aggregated result
+ * @param {AggregateColumn} col - aggregate column definition
+ * @param {Row[]} rows - rows to aggregate
+ * @returns {number | null} aggregated result
  */
 export function evaluateAggregate(col, rows) {
-  const { func } = col
-  const { arg } = col
+  const { arg, func } = col
 
   if (func === 'COUNT') {
     if (arg.kind === 'star') return rows.length
@@ -38,7 +37,7 @@ export function evaluateAggregate(col, rows) {
 
     for (let i = 0; i < rows.length; i += 1) {
       const raw = rows[i][field]
-      if (raw === null || raw === undefined) continue
+      if (raw == null) continue
       const num = Number(raw)
       if (!Number.isFinite(num)) continue
 
@@ -46,8 +45,8 @@ export function evaluateAggregate(col, rows) {
         min = num
         max = num
       } else {
-        if (min === null || num < min) min = num
-        if (max === null || num > max) max = num
+        if (min == null || num < min) min = num
+        if (max == null || num > max) max = num
       }
       sum += num
       count += 1

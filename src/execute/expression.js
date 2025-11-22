@@ -18,16 +18,13 @@ export function evaluateExpr(node, row) {
 
   if (node.type === 'unary') {
     if (node.op === 'NOT') {
-      const val = evaluateExpr(node.argument, row)
-      return !val
+      return !evaluateExpr(node.argument, row)
     }
     if (node.op === 'IS NULL') {
-      const val = evaluateExpr(node.argument, row)
-      return val === null || val === undefined
+      return evaluateExpr(node.argument, row) == null
     }
     if (node.op === 'IS NOT NULL') {
-      const val = evaluateExpr(node.argument, row)
-      return val !== null && val !== undefined
+      return evaluateExpr(node.argument, row) != null
     }
   }
 
@@ -49,7 +46,7 @@ export function evaluateExpr(node, row) {
 
     // In SQL, NULL comparisons with =, !=, <> always return false (unknown)
     // You must use IS NULL or IS NOT NULL to check for NULL
-    if (left === null || left === undefined || right === null || right === undefined) {
+    if (left == null || right == null) {
       if (node.op === '=' || node.op === '!=' || node.op === '<>') {
         return false
       }
@@ -85,14 +82,14 @@ export function evaluateExpr(node, row) {
     if (funcName === 'UPPER') {
       if (args.length !== 1) throw new Error('UPPER requires exactly 1 argument')
       const val = args[0]
-      if (val === null || val === undefined) return null
+      if (val == null) return null
       return String(val).toUpperCase()
     }
 
     if (funcName === 'LOWER') {
       if (args.length !== 1) throw new Error('LOWER requires exactly 1 argument')
       const val = args[0]
-      if (val === null || val === undefined) return null
+      if (val == null) return null
       return String(val).toLowerCase()
     }
 
@@ -100,7 +97,7 @@ export function evaluateExpr(node, row) {
       if (args.length < 1) throw new Error('CONCAT requires at least 1 argument')
       // SQL CONCAT returns NULL if any argument is NULL
       for (let i = 0; i < args.length; i += 1) {
-        if (args[i] === null || args[i] === undefined) return null
+        if (args[i] == null) return null
       }
       return args.map(a => String(a)).join('')
     }
@@ -108,7 +105,7 @@ export function evaluateExpr(node, row) {
     if (funcName === 'LENGTH') {
       if (args.length !== 1) throw new Error('LENGTH requires exactly 1 argument')
       const val = args[0]
-      if (val === null || val === undefined) return null
+      if (val == null) return null
       return String(val).length
     }
 
@@ -117,7 +114,7 @@ export function evaluateExpr(node, row) {
         throw new Error('SUBSTRING requires 2 or 3 arguments')
       }
       const str = args[0]
-      if (str === null || str === undefined) return null
+      if (str == null) return null
       const strVal = String(str)
       const start = Number(args[1])
       if (!Number.isInteger(start) || start < 1) {
@@ -138,7 +135,7 @@ export function evaluateExpr(node, row) {
     if (funcName === 'TRIM') {
       if (args.length !== 1) throw new Error('TRIM requires exactly 1 argument')
       const val = args[0]
-      if (val === null || val === undefined) return null
+      if (val == null) return null
       return String(val).trim()
     }
 

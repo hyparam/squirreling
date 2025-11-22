@@ -2,6 +2,18 @@ export type Row = Record<string, any>
 
 export type SqlPrimitive = string | number | boolean | null
 
+export interface SelectStatement {
+  distinct: boolean
+  columns: SelectColumn[]
+  from?: string
+  joins: JoinClause[]
+  where?: ExprNode
+  groupBy: ExprNode[]
+  orderBy: OrderByItem[]
+  limit?: number
+  offset?: number
+}
+
 export type TokenType =
   | 'keyword'
   | 'identifier'
@@ -67,13 +79,13 @@ export type ExprNode = LiteralNode | IdentifierNode | UnaryNode | BinaryNode | F
 
 export interface StarColumn {
   kind: 'star'
-  alias?: string | null
+  alias?: string
 }
 
 export interface SimpleColumn {
   kind: 'column'
   column: string
-  alias?: string | null
+  alias?: string
 }
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX'
@@ -95,14 +107,14 @@ export interface AggregateColumn {
   kind: 'aggregate'
   func: AggregateFunc
   arg: AggregateArg
-  alias?: string | null
+  alias?: string
 }
 
 export interface FunctionColumn {
   kind: 'function'
   func: StringFunc
   args: ExprNode[]
-  alias?: string | null
+  alias?: string
 }
 
 export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | FunctionColumn
@@ -117,19 +129,7 @@ export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'
 export interface JoinClause {
   type: JoinType
   table: string
-  on: ExprNode | null
-}
-
-export interface SelectAst {
-  distinct: boolean
-  columns: SelectColumn[]
-  from: string | null
-  joins: JoinClause[]
-  where: ExprNode | null
-  groupBy: ExprNode[]
-  orderBy: OrderByItem[]
-  limit: number | null
-  offset: number | null
+  on?: ExprNode
 }
 
 export interface ParserState {
