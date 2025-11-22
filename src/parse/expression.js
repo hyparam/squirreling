@@ -1,21 +1,5 @@
 /**
- * @import { ExprNode, BinaryOp, Token, TokenType } from '../types.js'
- */
-
-/**
- * A minimal interface the expression parser needs to see.
- *
- * It hides ParserState and token storage details.
- *
- * @typedef {object} ExprCursor
- * @property {() => Token} current
- * @property {(offset?: number) => Token} peek
- * @property {() => Token} consume
- * @property {(type: TokenType, value?: string) => boolean} match
- * @property {(keywordUpper: string) => boolean} matchKeyword
- * @property {(type: TokenType, value?: string) => Token} expect
- * @property {(keywordUpper: string) => Token} expectKeyword
- * @property {() => Token} expectIdentifier
+ * @import { ExprCursor, ExprNode, BinaryOp } from '../types.js'
  */
 
 /**
@@ -135,7 +119,7 @@ export function parsePrimary(c) {
  */
 function parseOr(c) {
   let node = parseAnd(c)
-  while (c.matchKeyword('OR')) {
+  while (c.match('keyword', 'OR')) {
     const right = parseAnd(c)
     node = {
       type: 'binary',
@@ -153,7 +137,7 @@ function parseOr(c) {
  */
 function parseAnd(c) {
   let node = parseNot(c)
-  while (c.matchKeyword('AND')) {
+  while (c.match('keyword', 'AND')) {
     const right = parseNot(c)
     node = {
       type: 'binary',
@@ -170,7 +154,7 @@ function parseAnd(c) {
  * @returns {ExprNode}
  */
 function parseNot(c) {
-  if (c.matchKeyword('NOT')) {
+  if (c.match('keyword', 'NOT')) {
     const argument = parseNot(c)
     return {
       type: 'unary',
@@ -195,14 +179,14 @@ function parseComparison(c) {
     const notToken = c.current()
     if (notToken.type === 'keyword' && notToken.value === 'NOT') {
       c.consume()
-      c.expectKeyword('NULL')
+      c.expect('keyword', 'NULL')
       return {
         type: 'unary',
         op: 'IS NOT NULL',
         argument: left,
       }
     }
-    c.expectKeyword('NULL')
+    c.expect('keyword', 'NULL')
     return {
       type: 'unary',
       op: 'IS NULL',

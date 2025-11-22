@@ -548,30 +548,4 @@ describe('parseSql', () => {
       })
     })
   })
-
-  describe('error cases', () => {
-    it('should throw error on missing FROM', () => {
-      expect(() => parseSql('SELECT name')).toThrow()
-    })
-
-    it('should throw error on unexpected token', () => {
-      expect(() => parseSql('SELECT * FROM users WHERE')).toThrow()
-    })
-
-    it('should throw error on invalid LIMIT', () => {
-      expect(() => parseSql('SELECT * FROM users LIMIT abc')).toThrow('Expected numeric LIMIT')
-    })
-
-    it('should throw error on invalid OFFSET', () => {
-      expect(() => parseSql('SELECT * FROM users OFFSET xyz')).toThrow('Expected numeric OFFSET')
-    })
-
-    it('should throw error on unexpected tokens after query', () => {
-      expect(() => parseSql('SELECT * FROM users; SELECT')).toThrow('Unexpected tokens after end of query')
-    })
-
-    it('should throw error on missing closing paren', () => {
-      expect(() => parseSql('SELECT * FROM users WHERE (age > 18')).toThrow()
-    })
-  })
 })

@@ -78,6 +78,8 @@ export interface SimpleColumn {
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX'
 
+export type StringFunc = 'UPPER' | 'LOWER' | 'CONCAT' | 'LENGTH' | 'SUBSTRING' | 'TRIM'
+
 export interface AggregateArgStar {
   kind: 'star'
 }
@@ -98,7 +100,7 @@ export interface AggregateColumn {
 
 export interface FunctionColumn {
   kind: 'function'
-  func: string
+  func: StringFunc
   args: ExprNode[]
   alias?: string | null
 }
@@ -140,8 +142,6 @@ export interface ExprCursor {
   peek(offset?: number): Token
   consume(): Token
   match(type: TokenType, value?: string): boolean
-  matchKeyword(keywordUpper: string): boolean
-  expect(type: TokenType, value?: string): Token
-  expectKeyword(keywordUpper: string): Token
+  expect(type: TokenType, value: string): Token
   expectIdentifier(): Token
 }
