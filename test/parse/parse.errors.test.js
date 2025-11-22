@@ -44,11 +44,11 @@ describe('parseSql error handling', () => {
 
   describe('SELECT list errors', () => {
     it('should throw error on invalid column name', () => {
-      expect(() => parseSql('SELECT FROM users')).toThrow('Expected column name or function after "SELECT" at position 7')
+      expect(() => parseSql('SELECT FROM users')).toThrow('Expected column name or expression after "SELECT" at position 7')
     })
 
     it('should throw error on missing column after comma', () => {
-      expect(() => parseSql('SELECT name, FROM users')).toThrow('Expected column name or function after "," at position 13')
+      expect(() => parseSql('SELECT name, FROM users')).toThrow('Expected column name or expression after "," at position 13')
     })
 
     it('should throw error on missing alias after AS', () => {

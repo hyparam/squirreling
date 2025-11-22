@@ -362,7 +362,13 @@ describe('executeSql', () => {
   })
 
   describe('edge cases', () => {
-    it('should handle negative operator', () => {
+    it('should handle negative select', () => {
+      const result = executeSql(users, 'SELECT -age as neg_age FROM users')
+      expect(result).toHaveLength(5)
+      expect(result[0].neg_age).toBe(-30)
+    })
+
+    it('should handle negative where', () => {
       const data = [
         { id: 1, value: -10 },
         { id: 2, value: 5 },

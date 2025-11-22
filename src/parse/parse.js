@@ -141,8 +141,7 @@ function parseSelectList(state) {
   }
 
   while (true) {
-    const col = parseSelectItem(state)
-    cols.push(col)
+    cols.push(parseSelectItem(state))
     if (!match(state, 'comma')) break
   }
 
@@ -155,8 +154,17 @@ function parseSelectList(state) {
  */
 function parseSelectItem(state) {
   const tok = current(state)
-  if (tok.type !== 'identifier') {
-    throw parseError(state, 'column name or function')
+
+  if (tok.type !== 'identifier' && tok.type !== 'operator') {
+    throw parseError(state, 'column name or expression')
+  }
+
+  if (tok.type === 'operator') {
+    // Handle SELECT expression AS alias
+    const cursor = createExprCursor(state)
+    const expr = parseExpression(cursor)
+    const alias = parseAs(state)
+    return { kind: 'operation', expr, alias }
   }
 
   const next = peekToken(state, 1)
@@ -182,28 +190,7 @@ function parseSelectItem(state) {
     column += '.' + columnTok.value
   }
 
-  /** @type {string | undefined} */
-  let alias
-  if (match(state, 'keyword', 'AS')) {
-    // After AS, allow keywords as aliases (except reserved ones)
-    const aliasTok = current(state)
-    if (aliasTok.type === 'identifier') {
-      consume(state)
-      alias = aliasTok.value
-    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
-      consume(state)
-      // Use original case for keywords used as aliases
-      alias = aliasTok.originalValue ?? aliasTok.value
-    } else {
-      throw parseError(state, 'alias')
-    }
-  } else {
-    const maybeAlias = current(state)
-    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
-      consume(state)
-      alias = maybeAlias.value
-    }
-  }
+  const alias = parseAs(state)
 
   return { kind: 'column', column, alias }
 }
@@ -233,28 +220,7 @@ function parseAggregateItem(state, func) {
 
   expect(state, 'paren', ')')
 
-  /** @type {string | undefined} */
-  let alias
-  if (match(state, 'keyword', 'AS')) {
-    // After AS, allow keywords as aliases (except reserved ones)
-    const aliasTok = current(state)
-    if (aliasTok.type === 'identifier') {
-      consume(state)
-      alias = aliasTok.value
-    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
-      consume(state)
-      // Use original case for keywords used as aliases
-      alias = aliasTok.originalValue ?? aliasTok.value
-    } else {
-      throw parseError(state, 'alias')
-    }
-  } else {
-    const maybeAlias = current(state)
-    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
-      consume(state)
-      alias = maybeAlias.value
-    }
-  }
+  const alias = parseAs(state)
 
   return { kind: 'aggregate', func, arg, alias }
 }
@@ -282,18 +248,26 @@ function parseStringFunctionItem(state, func) {
 
   expect(state, 'paren', ')')
 
-  /** @type {string | undefined} */
-  let alias
+  const alias = parseAs(state)
+
+  return { kind: 'function', func, args, alias }
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {string | undefined}
+ */
+function parseAs(state) {
   if (match(state, 'keyword', 'AS')) {
     // After AS, allow keywords as aliases (except reserved ones)
     const aliasTok = current(state)
     if (aliasTok.type === 'identifier') {
       consume(state)
-      alias = aliasTok.value
+      return aliasTok.value
     } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
       consume(state)
       // Use original case for keywords used as aliases
-      alias = aliasTok.originalValue ?? aliasTok.value
+      return aliasTok.originalValue ?? aliasTok.value
     } else {
       throw parseError(state, 'alias')
     }
@@ -302,11 +276,9 @@ function parseStringFunctionItem(state, func) {
     const maybeAlias = current(state)
     if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
       consume(state)
-      alias = maybeAlias.value
+      return maybeAlias.value
     }
   }
-
-  return { kind: 'function', func, args, alias }
 }
 
 /**

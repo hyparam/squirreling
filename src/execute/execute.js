@@ -43,8 +43,7 @@ function stableRowKey(row) {
   const keys = Object.keys(row).sort()
   /** @type {string[]} */
   const parts = []
-  for (let i = 0; i < keys.length; i += 1) {
-    const k = keys[i]
+  for (const k of keys) {
     const v = row[k]
     parts.push(k + ':' + JSON.stringify(v))
   }
@@ -87,8 +86,7 @@ function applyDistinct(rows, distinct) {
   const seen = new Set()
   /** @type {Row[]} */
   const result = []
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i]
+  for (const row of rows) {
     const key = stableRowKey(row)
     if (seen.has(key)) continue
     seen.add(key)
@@ -109,8 +107,7 @@ function applyOrderBy(rows, orderBy) {
   const sorted = rows.slice()
 
   sorted.sort((a, b) => {
-    for (let i = 0; i < orderBy.length; i += 1) {
-      const term = orderBy[i]
+    for (const term of orderBy) {
       const dir = term.direction
       const av = evaluateExpr(term.expr, a)
       const bv = evaluateExpr(term.expr, b)
@@ -142,8 +139,7 @@ function evaluateSelectAst(select, rows) {
   if (select.where) {
     /** @type {Row[]} */
     const filtered = []
-    for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i]
+    for (const row of rows) {
       if (evaluateExpr(select.where, row)) {
         filtered.push(row)
       }
@@ -152,25 +148,22 @@ function evaluateSelectAst(select, rows) {
   }
 
   const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
-  const useGrouping = hasAggregate || select.groupBy && select.groupBy.length > 0
+  const useGrouping = hasAggregate || select.groupBy?.length > 0
 
   /** @type {Row[]} */
   const projected = []
 
   if (useGrouping) {
-    /** @typedef {Row[]} Group */
-    /** @type {Group[]} */
+    /** @type {Row[][]} */
     const groups = []
 
-    if (select.groupBy && select.groupBy.length > 0) {
-      /** @type {Map<string, Group>} */
+    if (select.groupBy?.length) {
+      /** @type {Map<string, Row[]>} */
       const map = new Map()
-      for (let i = 0; i < working.length; i += 1) {
-        const row = working[i]
+      for (const row of working) {
         /** @type {string[]} */
         const keyParts = []
-        for (let j = 0; j < select.groupBy.length; j += 1) {
-          const expr = select.groupBy[j]
+        for (const expr of select.groupBy) {
           const v = evaluateExpr(expr, row)
           keyParts.push(JSON.stringify(v))
         }
@@ -192,17 +185,14 @@ function evaluateSelectAst(select, rows) {
       throw new Error('SELECT * with aggregate functions is not supported in this implementation')
     }
 
-    for (let g = 0; g < groups.length; g += 1) {
-      const group = groups[g]
+    for (const group of groups) {
       /** @type {Row} */
       const resultRow = {}
-      for (let c = 0; c < select.columns.length; c += 1) {
-        const col = select.columns[c]
+      for (const col of select.columns) {
         if (col.kind === 'star') {
           const firstRow = group[0] || {}
           const keys = Object.keys(firstRow)
-          for (let k = 0; k < keys.length; k += 1) {
-            const key = keys[k]
+          for (const key of keys) {
             resultRow[key] = firstRow[key]
           }
           continue
@@ -232,20 +222,24 @@ function evaluateSelectAst(select, rows) {
           resultRow[alias] = value
           continue
         }
+
+        if (col.kind === 'operation') {
+          const alias = col.alias ?? 'expr'
+          const value = group.length > 0 ? evaluateExpr(col.expr, group[0]) : undefined
+          resultRow[alias] = value
+          continue
+        }
       }
       projected.push(resultRow)
     }
   } else {
-    for (let i = 0; i < working.length; i += 1) {
-      const row = working[i]
+    for (const row of working) {
       /** @type {Row} */
       const outRow = {}
-      for (let c = 0; c < select.columns.length; c += 1) {
-        const col = select.columns[c]
+      for (const col of select.columns) {
         if (col.kind === 'star') {
           const keys = Object.keys(row)
-          for (let k = 0; k < keys.length; k += 1) {
-            const key = keys[k]
+          for (const key of keys) {
             outRow[key] = row[key]
           }
         } else if (col.kind === 'column') {
@@ -257,6 +251,10 @@ function evaluateSelectAst(select, rows) {
           const funcNode = { type: 'function', name: col.func, args: col.args }
           const value = evaluateExpr(funcNode, row)
           const alias = col.alias ?? defaultFunctionAlias(col)
+          outRow[alias] = value
+        } else if (col.kind === 'operation') {
+          const alias = col.alias ?? 'expr'
+          const value = evaluateExpr(col.expr, row)
           outRow[alias] = value
         } else if (col.kind === 'aggregate') {
           throw new Error(

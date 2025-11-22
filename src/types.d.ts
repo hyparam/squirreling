@@ -117,7 +117,13 @@ export interface FunctionColumn {
   alias?: string
 }
 
-export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | FunctionColumn
+export interface OperationColumn {
+  kind: 'operation'
+  expr: ExprNode
+  alias?: string
+}
+
+export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | FunctionColumn | OperationColumn
 
 export interface OrderByItem {
   expr: ExprNode

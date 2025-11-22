@@ -42,6 +42,21 @@ describe('parseSql', () => {
       const select = parseSql('SELECT * FROM users;')
       expect(select.from).toBe('users')
     })
+
+    it('should parse SELECT with negative number', () => {
+      const select = parseSql('SELECT -age as neg_age FROM users')
+      expect(select.columns).toMatchObject([
+        {
+          kind: 'operation',
+          expr: {
+            type: 'unary',
+            op: '-',
+            argument: { type: 'identifier', name: 'age' },
+          },
+          alias: 'neg_age',
+        },
+      ])
+    })
   })
 
   describe('column aliases', () => {
