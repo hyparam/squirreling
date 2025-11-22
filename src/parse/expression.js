@@ -104,6 +104,16 @@ export function parsePrimary(c) {
     }
   }
 
+  if (tok.type === 'operator' && tok.value === '-') {
+    c.consume()
+    const argument = parsePrimary(c)
+    return {
+      type: 'unary',
+      op: '-',
+      argument,
+    }
+  }
+
   throw new Error(
     'Unexpected token in expression at position ' +
       tok.position +

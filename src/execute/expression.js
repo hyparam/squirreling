@@ -26,6 +26,11 @@ export function evaluateExpr(node, row) {
     if (node.op === 'IS NOT NULL') {
       return evaluateExpr(node.argument, row) != null
     }
+    if (node.op === '-') {
+      const val = evaluateExpr(node.argument, row)
+      if (val == null) return null
+      return -Number(val)
+    }
   }
 
   if (node.type === 'binary') {

@@ -21,6 +21,25 @@ describe('tokenize', () => {
     expect(tokens[3]).toMatchObject({ type: 'number', value: '3E-5', numericValue: 3e-5 })
   })
 
+  it('should tokenize negative numbers and expressions', () => {
+    expect(tokenize('-42')).toMatchObject([
+      { type: 'operator', value: '-' },
+      { type: 'number', value: '42', numericValue: 42 },
+      { type: 'eof' },
+    ])
+    expect(tokenize('x - 42')).toMatchObject([
+      { type: 'identifier', value: 'x' },
+      { type: 'operator', value: '-' },
+      { type: 'number', value: '42', numericValue: 42 },
+      { type: 'eof' },
+    ])
+    expect(tokenize('- x')).toMatchObject([
+      { type: 'operator', value: '-' },
+      { type: 'identifier', value: 'x' },
+      { type: 'eof' },
+    ])
+  })
+
   it('should tokenize string literals with single quotes', () => {
     const tokens = tokenize('\'hello world\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'hello world' })
@@ -113,6 +132,22 @@ describe('tokenize', () => {
     const tokens = tokenize('\'line1\nline2\tend\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'line1\nline2\tend' })
   })
+
+  // it('should tokenize negative numbers', () => {
+  //   const tokens = tokenize('from \'bunnies.csv\' where "Lifespan" * -1 > -6;')
+  //   expect(tokens).toMatchObject([
+  //     { type: 'keyword', value: 'FROM' },
+  //     { type: 'string', value: 'bunnies.csv' },
+  //     { type: 'keyword', value: 'WHERE' },
+  //     { type: 'identifier', value: 'Lifespan' },
+  //     { type: 'operator', value: '*' },
+  //     { type: 'number', value: '-1', numericValue: -1 },
+  //     { type: 'operator', value: '>' },
+  //     { type: 'number', value: '-6', numericValue: -6 },
+  //     { type: 'semicolon', value: ';' },
+  //     { type: 'eof' },
+  //   ])
+  // })
 
   it('should throw error on unterminated string literal', () => {
     expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')

@@ -58,7 +58,7 @@ export interface IdentifierNode {
 
 export interface UnaryNode {
   type: 'unary'
-  op: 'NOT' | 'IS NULL' | 'IS NOT NULL'
+  op: 'NOT' | 'IS NULL' | 'IS NOT NULL' | '-'
   argument: ExprNode
 }
 
@@ -139,7 +139,7 @@ export interface ParserState {
 
 export interface ExprCursor {
   current(): Token
-  peek(offset?: number): Token
+  peek(offset: number): Token
   consume(): Token
   match(type: TokenType, value?: string): boolean
   expect(type: TokenType, value: string): Token

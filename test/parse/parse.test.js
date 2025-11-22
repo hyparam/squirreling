@@ -294,6 +294,16 @@ describe('parseSql', () => {
       }
     })
 
+    it('should parse WHERE with negative numbers', () => {
+      const select = parseSql('SELECT * FROM users WHERE age > -18')
+      expect(select.where).toMatchObject({
+        type: 'binary',
+        op: '>',
+        left: { type: 'identifier', name: 'age' },
+        right: { type: 'unary', op: '-', argument: { type: 'literal', value: 18 } },
+      })
+    })
+
     it('should parse WHERE with AND', () => {
       const select = parseSql('SELECT * FROM users WHERE age > 18 AND city = "NYC"')
       expect(select.where).toMatchObject({
