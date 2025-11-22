@@ -64,7 +64,7 @@ export function tokenize(sql) {
   function nextChar() {
     if (i >= length) return ''
     const ch = sql[i]
-    i += 1
+    i++
     return ch
   }
 
@@ -79,7 +79,7 @@ export function tokenize(sql) {
     // line comment --
     if (ch === '-' && i + 1 < length && sql[i + 1] === '-') {
       while (i < length && sql[i] !== '\n') {
-        i += 1
+        i++
       }
       continue
     }
@@ -92,7 +92,7 @@ export function tokenize(sql) {
           i += 2
           break
         }
-        i += 1
+        i++
       }
       continue
     }
@@ -111,6 +111,7 @@ export function tokenize(sql) {
           text += nextChar()
         }
       }
+      // exponent
       if (peek() === 'e' || peek() === 'E') {
         text += nextChar()
         if (peek() === '+' || peek() === '-') {
@@ -120,7 +121,13 @@ export function tokenize(sql) {
           text += nextChar()
         }
       }
+      if (isAlpha(peek())) {
+        throw new Error('Invalid number at position ' + pos + ': ' + text + peek())
+      }
       const num = parseFloat(text)
+      if (isNaN(num)) {
+        throw new Error('Invalid number at position ' + pos + ': ' + text)
+      }
       tokens.push({
         type: 'number',
         value: text,
@@ -154,13 +161,17 @@ export function tokenize(sql) {
       continue
     }
 
-    // string literals: single or double quotes
-    if (ch === '\'' || ch === '"') {
+    // string literals: single quotes
+    if (ch === '\'') {
       const quote = nextChar()
       let text = ''
-      while (i < length) {
+      while (i <= length) {
+        if (i === length) {
+          throw new Error('Unterminated string literal starting at position ' + pos)
+        }
         const c = nextChar()
         if (c === quote) {
+          // check for escaped quote
           if (peek() === quote) {
             text += quote
             nextChar()
@@ -168,15 +179,38 @@ export function tokenize(sql) {
           }
           break
         }
-        if (c === '\\' && i < length) {
-          const esc = nextChar()
-          text += esc
-        } else {
-          text += c
-        }
+        text += c
       }
       tokens.push({
         type: 'string',
+        value: text,
+        position: pos,
+      })
+      continue
+    }
+
+    // quoted identifiers: double quotes
+    if (ch === '"') {
+      const quote = nextChar()
+      let text = ''
+      while (i <= length) {
+        if (i === length) {
+          throw new Error('Unterminated identifier starting at position ' + pos)
+        }
+        const c = nextChar()
+        if (c === quote) {
+          // check for escaped quote
+          if (peek() === quote) {
+            text += quote
+            nextChar()
+            continue
+          }
+          break
+        }
+        text += c
+      }
+      tokens.push({
+        type: 'identifier',
         value: text,
         position: pos,
       })
@@ -201,10 +235,10 @@ export function tokenize(sql) {
 
     // single-char operators
     if (ch === '*' || ch === '+' || ch === '-' || ch === '/' || ch === '%') {
-      const op = nextChar()
+      nextChar()
       tokens.push({
         type: 'operator',
-        value: op,
+        value: ch,
         position: pos,
       })
       continue
@@ -231,10 +265,10 @@ export function tokenize(sql) {
     }
 
     if (ch === '(' || ch === ')') {
-      const p = nextChar()
+      nextChar()
       tokens.push({
         type: 'paren',
-        value: p,
+        value: ch,
         position: pos,
       })
       continue
@@ -250,6 +284,9 @@ export function tokenize(sql) {
       continue
     }
 
+    if (tokens.length === 0) {
+      throw new Error('Expected SELECT at position ' + pos)
+    }
     throw new Error('Unexpected character at position ' + pos + ': ' + ch)
   }
 

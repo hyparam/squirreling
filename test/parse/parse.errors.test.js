@@ -31,6 +31,12 @@ describe('parseSql error handling', () => {
       expect(() => parseSql('')).toThrow('Expected SELECT at position 0')
     })
 
+    it('should throw error on nonsense', () => {
+      expect(() => parseSql('@')).toThrow('Expected SELECT at position 0')
+      expect(() => parseSql(' #')).toThrow('Expected SELECT at position 1')
+      expect(() => parseSql('.')).toThrow('Expected SELECT at position 0')
+    })
+
     it('should throw error on unexpected tokens after query', () => {
       expect(() => parseSql('SELECT * FROM users; SELECT')).toThrow('Expected end of query after ";" at position 21')
     })

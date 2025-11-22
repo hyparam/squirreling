@@ -66,6 +66,37 @@ describe('parseSql', () => {
     })
   })
 
+  describe('quoted identifiers', () => {
+    it('should parse column names with spaces using double quotes', () => {
+      const select = parseSql('SELECT "first name", "last name" FROM users')
+      expect(select.columns).toMatchObject([
+        { kind: 'column', column: 'first name' },
+        { kind: 'column', column: 'last name' },
+      ])
+    })
+
+    it('should parse quoted table names with spaces', () => {
+      const select = parseSql('SELECT * FROM "user data"')
+      expect(select.from).toBe('user data')
+    })
+
+    it('should parse quoted column with alias', () => {
+      const select = parseSql('SELECT "first name" AS fname FROM users')
+      expect(select.columns).toMatchObject([
+        { kind: 'column', column: 'first name', alias: 'fname' },
+      ])
+    })
+
+    it('should parse mixed quoted and unquoted identifiers', () => {
+      const select = parseSql('SELECT id, "full name", email FROM users')
+      expect(select.columns).toMatchObject([
+        { kind: 'column', column: 'id' },
+        { kind: 'column', column: 'full name' },
+        { kind: 'column', column: 'email' },
+      ])
+    })
+  })
+
   describe('aggregate functions', () => {
     it('should parse COUNT(*)', () => {
       const select = parseSql('SELECT COUNT(*) FROM users')

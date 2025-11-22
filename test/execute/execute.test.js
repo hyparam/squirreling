@@ -538,5 +538,44 @@ describe('executeSql', () => {
       const result = executeSql(data, 'SELECT very_long_column_name_that_exceeds_normal_limits FROM users')
       expect(result[0].very_long_column_name_that_exceeds_normal_limits).toBe('value')
     })
+
+    it('should handle column names with spaces using double quotes', () => {
+      const data = [
+        { id: 1, 'first name': 'Alice', 'last name': 'Smith', age: 30 },
+        { id: 2, 'first name': 'Bob', 'last name': 'Jones', age: 25 },
+        { id: 3, 'first name': 'Charlie', 'last name': 'Brown', age: 35 },
+      ]
+      const result = executeSql(data, 'SELECT "first name", "last name", age FROM users WHERE age > 25')
+      expect(result).toHaveLength(2)
+      expect(result[0]).toEqual({ 'first name': 'Alice', 'last name': 'Smith', age: 30 })
+      expect(result[1]).toEqual({ 'first name': 'Charlie', 'last name': 'Brown', age: 35 })
+    })
+
+    it('should handle column names with spaces in ORDER BY', () => {
+      const data = [
+        { id: 1, 'full name': 'Charlie', score: 85 },
+        { id: 2, 'full name': 'Alice', score: 95 },
+        { id: 3, 'full name': 'Bob', score: 90 },
+      ]
+      const result = executeSql(data, 'SELECT "full name", score FROM users ORDER BY "full name"')
+      expect(result).toHaveLength(3)
+      expect(result[0]['full name']).toBe('Alice')
+      expect(result[1]['full name']).toBe('Bob')
+      expect(result[2]['full name']).toBe('Charlie')
+    })
+
+    it('should handle column names with spaces in aggregates', () => {
+      const data = [
+        { id: 1, 'product name': 'Widget', 'total sales': 100 },
+        { id: 2, 'product name': 'Gadget', 'total sales': 200 },
+        { id: 3, 'product name': 'Widget', 'total sales': 150 },
+      ]
+      const result = executeSql(data, 'SELECT "product name", SUM("total sales") AS total FROM users GROUP BY "product name"')
+      expect(result).toHaveLength(2)
+      const widget = result.find(r => r['product name'] === 'Widget')
+      expect(widget?.total).toBe(250)
+      const gadget = result.find(r => r['product name'] === 'Gadget')
+      expect(gadget?.total).toBe(200)
+    })
   })
 })

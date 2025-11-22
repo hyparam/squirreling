@@ -26,14 +26,29 @@ describe('tokenize', () => {
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'hello world' })
   })
 
-  it('should tokenize string literals with double quotes', () => {
+  it('should tokenize identifier with double quotes', () => {
     const tokens = tokenize('"test string"')
-    expect(tokens[0]).toMatchObject({ type: 'string', value: 'test string' })
+    expect(tokens[0]).toMatchObject({ type: 'identifier', value: 'test string' })
   })
 
-  it('should handle escaped quotes in strings', () => {
+  it('should handle escaped single quotes in string literals', () => {
     const tokens = tokenize('\'can\'\'t\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'can\'t' })
+  })
+
+  it('should handle double quotes in string literals', () => {
+    const tokens = tokenize('\'first "middle" "" last\'')
+    expect(tokens[0]).toMatchObject({ type: 'string', value: 'first "middle" "" last' })
+  })
+
+  it('should handle escaped double quotes in identifiers', () => {
+    const tokens = tokenize('"double""quote"')
+    expect(tokens[0]).toMatchObject({ type: 'identifier', value: 'double"quote' })
+  })
+
+  it('should handle single quotes in identifiers', () => {
+    const tokens = tokenize('"it\'s an \'\' identifier"')
+    expect(tokens[0]).toMatchObject({ type: 'identifier', value: 'it\'s an \'\' identifier' })
   })
 
   it('should tokenize operators', () => {
@@ -94,7 +109,30 @@ describe('tokenize', () => {
     ])
   })
 
+  it('should handle special characters in string literals', () => {
+    const tokens = tokenize('\'line1\nline2\tend\'')
+    expect(tokens[0]).toMatchObject({ type: 'string', value: 'line1\nline2\tend' })
+  })
+
+  it('should throw error on unterminated string literal', () => {
+    expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
+  })
+
+  it('should throw error on unterminated identifier', () => {
+    expect(() => tokenize('"unterminated identifier')).toThrow('Unterminated identifier starting at position 0')
+  })
+
+  it('should throw on backticks', () => {
+    expect(() => tokenize('`backtick`')).toThrow('Expected SELECT at position 0')
+    expect(() => tokenize('SELECT `backtick` FROM table')).toThrow('Unexpected character at position 7: `')
+  })
+
+  it('should throw error on invalid number', () => {
+    expect(() => tokenize('12.34n')).toThrow('Invalid number at position 0: 12.34n')
+  })
+
   it('should throw error on unexpected character', () => {
-    expect(() => tokenize('@invalid')).toThrow('Unexpected character')
+    expect(() => tokenize('@invalid')).toThrow('Expected SELECT at position 0')
+    expect(() => tokenize(' #invalid')).toThrow('Expected SELECT at position 1')
   })
 })

@@ -44,10 +44,10 @@ function current(state) {
 
 /**
  * @param {ParserState} state
- * @param {number} [offset=0]
+ * @param {number} offset
  * @returns {Token}
  */
-function peekToken(state, offset = 0) {
+function peekToken(state, offset) {
   const idx = state.pos + offset
   if (idx >= state.tokens.length) {
     return state.tokens[state.tokens.length - 1]
@@ -173,13 +173,13 @@ function parseSelectItem(state) {
   }
 
   consume(state)
-  let columnName = tok.value
+  let column = tok.value
 
   // Handle dot notation (table.column)
   if (current(state).type === 'dot') {
     consume(state) // consume the dot
     const columnTok = expectIdentifier(state)
-    columnName = columnName + '.' + columnTok.value
+    column += '.' + columnTok.value
   }
 
   /** @type {string | undefined} */
@@ -193,26 +193,19 @@ function parseSelectItem(state) {
     } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
       consume(state)
       // Use original case for keywords used as aliases
-      alias = aliasTok.originalValue || aliasTok.value
+      alias = aliasTok.originalValue ?? aliasTok.value
     } else {
       throw parseError(state, 'alias')
     }
   } else {
     const maybeAlias = current(state)
-    if (
-      maybeAlias.type === 'identifier' &&
-      !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())
-    ) {
+    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
       consume(state)
       alias = maybeAlias.value
     }
   }
 
-  return {
-    kind: 'column',
-    column: columnName,
-    alias,
-  }
+  return { kind: 'column', column, alias }
 }
 
 /**
@@ -251,16 +244,13 @@ function parseAggregateItem(state, func) {
     } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
       consume(state)
       // Use original case for keywords used as aliases
-      alias = aliasTok.originalValue || aliasTok.value
+      alias = aliasTok.originalValue ?? aliasTok.value
     } else {
       throw parseError(state, 'alias')
     }
   } else {
     const maybeAlias = current(state)
-    if (
-      maybeAlias.type === 'identifier' &&
-      !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())
-    ) {
+    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
       consume(state)
       alias = maybeAlias.value
     }
@@ -303,7 +293,7 @@ function parseStringFunctionItem(state, func) {
     } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
       consume(state)
       // Use original case for keywords used as aliases
-      alias = aliasTok.originalValue || aliasTok.value
+      alias = aliasTok.originalValue ?? aliasTok.value
     } else {
       throw parseError(state, 'alias')
     }
@@ -407,8 +397,7 @@ function parseSelectInternal(state) {
   const columns = parseSelectList(state)
 
   expect(state, 'keyword', 'FROM')
-  const fromTok = expectIdentifier(state)
-  const fromName = fromTok.value
+  const from = expectIdentifier(state).value // table name
 
   // Parse JOIN clauses
   const joins = parseJoins(state)
@@ -503,7 +492,7 @@ function parseSelectInternal(state) {
   return {
     distinct,
     columns,
-    from: fromName,
+    from,
     joins,
     where,
     groupBy,
