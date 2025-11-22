@@ -42,8 +42,17 @@ export function parsePrimary(c) {
 
       if (c.current().type !== 'paren' || c.current().value !== ')') {
         while (true) {
-          const arg = parseExpression(c)
-          args.push(arg)
+          // Handle COUNT(*) - treat * as a special identifier
+          if (c.current().type === 'operator' && c.current().value === '*') {
+            c.consume()
+            args.push({
+              type: 'identifier',
+              name: '*',
+            })
+          } else {
+            const arg = parseExpression(c)
+            args.push(arg)
+          }
           if (!c.match('comma')) break
         }
       }

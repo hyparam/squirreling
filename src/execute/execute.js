@@ -4,6 +4,7 @@
 
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
+import { createHavingContext, evaluateHavingExpr } from './having.js'
 import { parseSql } from '../parse/parse.js'
 
 /**
@@ -230,6 +231,17 @@ function evaluateSelectAst(select, rows) {
           continue
         }
       }
+
+      // Apply HAVING filter before adding to projected results
+      if (select.having) {
+        // For HAVING, we need to evaluate aggregates in the context of the group
+        // Create a special row context that includes both the group data and aggregate values
+        const havingContext = createHavingContext(resultRow, group)
+        if (!evaluateHavingExpr(select.having, havingContext, group)) {
+          continue
+        }
+      }
+
       projected.push(resultRow)
     }
   } else {

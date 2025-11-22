@@ -9,6 +9,7 @@ export interface SelectStatement {
   joins: JoinClause[]
   where?: ExprNode
   groupBy: ExprNode[]
+  having?: ExprNode
   orderBy: OrderByItem[]
   limit?: number
   offset?: number

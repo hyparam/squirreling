@@ -407,6 +407,8 @@ function parseSelectInternal(state) {
   let where
   /** @type {ExprNode[]} */
   const groupBy = []
+  /** @type {ExprNode | undefined} */
+  let having
   /** @type {OrderByItem[]} */
   const orderBy = []
   /** @type {number | undefined} */
@@ -427,6 +429,10 @@ function parseSelectInternal(state) {
       groupBy.push(expr)
       if (!match(state, 'comma')) break
     }
+  }
+
+  if (match(state, 'keyword', 'HAVING')) {
+    having = parseExpression(cursor)
   }
 
   if (match(state, 'keyword', 'ORDER')) {
@@ -497,6 +503,7 @@ function parseSelectInternal(state) {
     joins,
     where,
     groupBy,
+    having,
     orderBy,
     limit,
     offset,

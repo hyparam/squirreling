@@ -455,6 +455,80 @@ describe('parseSql', () => {
     })
   })
 
+  describe('HAVING clause', () => {
+    it('should parse HAVING with simple condition', () => {
+      const select = parseSql('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5')
+      expect(select.having).toMatchObject({
+        type: 'binary',
+        op: '>',
+        left: {
+          type: 'function',
+          name: 'COUNT',
+          args: [{ type: 'identifier', name: '*' }],
+        },
+        right: { type: 'literal', value: 5 },
+      })
+    })
+
+    it('should parse HAVING with aggregate comparison', () => {
+      const select = parseSql('SELECT product, SUM(sales) as total FROM orders GROUP BY product HAVING SUM(sales) > 1000')
+      expect(select.having).toMatchObject({
+        type: 'binary',
+        op: '>',
+        left: {
+          type: 'function',
+          name: 'SUM',
+          args: [{ type: 'identifier', name: 'sales' }],
+        },
+        right: { type: 'literal', value: 1000 },
+      })
+    })
+
+    it('should parse HAVING with multiple conditions', () => {
+      const select = parseSql('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5 AND AVG(age) > 25')
+      expect(select.having).toMatchObject({
+        type: 'binary',
+        op: 'AND',
+      })
+    })
+
+    it('should parse HAVING with column reference', () => {
+      const select = parseSql('SELECT city, COUNT(*) as cnt FROM users GROUP BY city HAVING city = \'NYC\'')
+      expect(select.having).toMatchObject({
+        type: 'binary',
+        op: '=',
+        left: { type: 'identifier', name: 'city' },
+        right: { type: 'literal', value: 'NYC' },
+      })
+    })
+
+    it('should parse GROUP BY with HAVING and ORDER BY', () => {
+      const select = parseSql('SELECT city, COUNT(*) as cnt FROM users GROUP BY city HAVING COUNT(*) > 5 ORDER BY cnt DESC')
+      expect(select.having).toBeTruthy()
+      expect(select.orderBy).toHaveLength(1)
+    })
+
+    it('should parse complex query with WHERE, GROUP BY, HAVING, ORDER BY, LIMIT', () => {
+      const select = parseSql(`
+        SELECT city, COUNT(*) as cnt, AVG(age) as avg_age
+        FROM users
+        WHERE age > 18
+        GROUP BY city
+        HAVING COUNT(*) >= 10 AND AVG(age) < 50
+        ORDER BY cnt DESC
+        LIMIT 5
+      `)
+      expect(select.where).toBeTruthy()
+      expect(select.groupBy).toHaveLength(1)
+      expect(select.having).toMatchObject({
+        type: 'binary',
+        op: 'AND',
+      })
+      expect(select.orderBy).toHaveLength(1)
+      expect(select.limit).toBe(5)
+    })
+  })
+
   describe('ORDER BY clause', () => {
     it('should parse ORDER BY with default ASC', () => {
       const select = parseSql('SELECT * FROM users ORDER BY name')

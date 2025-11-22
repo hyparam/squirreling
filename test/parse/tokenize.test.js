@@ -146,6 +146,32 @@ describe('tokenize', () => {
     ])
   })
 
+  it('should tokenize HAVING clause', () => {
+    const tokens = tokenize('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'identifier', value: 'city' },
+      { type: 'comma', value: ',' },
+      { type: 'identifier', value: 'COUNT' },
+      { type: 'paren', value: '(' },
+      { type: 'operator', value: '*' },
+      { type: 'paren', value: ')' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'users' },
+      { type: 'keyword', value: 'GROUP' },
+      { type: 'keyword', value: 'BY' },
+      { type: 'identifier', value: 'city' },
+      { type: 'keyword', value: 'HAVING' },
+      { type: 'identifier', value: 'COUNT' },
+      { type: 'paren', value: '(' },
+      { type: 'operator', value: '*' },
+      { type: 'paren', value: ')' },
+      { type: 'operator', value: '>' },
+      { type: 'number', value: '5', numericValue: 5 },
+      { type: 'eof' },
+    ])
+  })
+
   it('should throw error on unterminated string literal', () => {
     expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
   })

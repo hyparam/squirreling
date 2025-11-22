@@ -1,11 +1,14 @@
 # Squirreling SQL Engine
 
+![squirreling engine](squirreling.jpg)
+
 [![npm](https://img.shields.io/npm/v/squirreling)](https://www.npmjs.com/package/squirreling)
 [![downloads](https://img.shields.io/npm/dt/squirreling)](https://www.npmjs.com/package/squirreling)
 [![minzipped](https://img.shields.io/bundlephobia/minzip/squirreling)](https://www.npmjs.com/package/squirreling)
 [![workflow status](https://github.com/hyparam/squirreling/actions/workflows/ci.yml/badge.svg)](https://github.com/hyparam/squirreling/actions)
 [![mit license](https://img.shields.io/badge/License-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![dependencies](https://img.shields.io/badge/Dependencies-0-blueviolet)](https://www.npmjs.com/package/squirreling?activeTab=dependencies)
+
 Squirreling is a lightweight SQL engine for JavaScript applications, designed to provide efficient and easy-to-use database functionalities in the browser.
 
 ## Features
