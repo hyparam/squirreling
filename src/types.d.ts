@@ -10,7 +10,7 @@ export interface DataSource {
 
 export interface ExecuteSqlOptions {
   source: Record<string, any>[] | DataSource
-  sql: string
+  query: string
 }
 
 export type SqlPrimitive = string | number | bigint | boolean | null

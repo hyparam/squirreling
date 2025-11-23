@@ -30,7 +30,7 @@ const source = [
   { id: 2, name: 'Bob' },
 ]
 
-const result = executeSql({ source, sql: 'SELECT UPPER(name) AS name_upper FROM users' })
+const result = executeSql({ source, query: 'SELECT UPPER(name) AS name_upper FROM users' })
 console.log(result)
 // Output: [ { name_upper: 'ALICE' }, { name_upper: 'BOB' } ]
 ```

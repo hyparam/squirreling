@@ -16,4 +16,4 @@ export function executeSql(options: ExecuteSqlOptions): Record<string, any>[]
  * @param sql - SQL query string to parse
  * @returns parsed SQL select statement
  */
-export function parseSql(sql: string): SelectStatement
+export function parseSql(query: string): SelectStatement

@@ -12,7 +12,7 @@ describe('executeSql', () => {
 
   describe('aggregate functions', () => {
     it('should count all rows with COUNT(*)', () => {
-      const result = executeSql({ source, sql: 'SELECT COUNT(*) FROM users' })
+      const result = executeSql({ source, query: 'SELECT COUNT(*) FROM users' })
       expect(result).toEqual([{ count_all: 5 }])
     })
 
@@ -22,32 +22,32 @@ describe('executeSql', () => {
         { id: 2, name: null },
         { id: 3, name: 'Charlie' },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT COUNT(name) FROM users' })
+      const result = executeSql({ source: data, query: 'SELECT COUNT(name) FROM users' })
       expect(result).toEqual([{ count_name: 2 }])
     })
 
     it('should calculate SUM', () => {
-      const result = executeSql({ source, sql: 'SELECT SUM(age) FROM users' })
+      const result = executeSql({ source, query: 'SELECT SUM(age) FROM users' })
       expect(result).toEqual([{ sum_age: 148 }])
     })
 
     it('should calculate AVG', () => {
-      const result = executeSql({ source, sql: 'SELECT AVG(age) FROM users' })
+      const result = executeSql({ source, query: 'SELECT AVG(age) FROM users' })
       expect(result).toEqual([{ avg_age: 29.6 }])
     })
 
     it('should calculate MIN and MAX', () => {
-      const result = executeSql({ source, sql: 'SELECT MIN(age) AS min_age, MAX(age) AS max_age FROM users' })
+      const result = executeSql({ source, query: 'SELECT MIN(age) AS min_age, MAX(age) AS max_age FROM users' })
       expect(result).toEqual([{ min_age: 25, max_age: 35 }])
     })
 
     it('should handle aggregate with alias', () => {
-      const result = executeSql({ source, sql: 'SELECT COUNT(*) AS total FROM users' })
+      const result = executeSql({ source, query: 'SELECT COUNT(*) AS total FROM users' })
       expect(result).toEqual([{ total: 5 }])
     })
 
     it('should handle empty dataset for aggregates', () => {
-      const result = executeSql({ source: [], sql: 'SELECT AVG(age) FROM users' })
+      const result = executeSql({ source: [], query: 'SELECT AVG(age) FROM users' })
       expect(result).toEqual([{ avg_age: null }])
     })
 
@@ -58,22 +58,22 @@ describe('executeSql', () => {
         { id: 3, value: 'abc' },
         { id: 4, value: 20 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT SUM(value) AS total, AVG(value) AS avg FROM users' })
+      const result = executeSql({ source: data, query: 'SELECT SUM(value) AS total, AVG(value) AS avg FROM users' })
       expect(result).toEqual([{ total: 30, avg: 15 }])
     })
 
     it('should throw error for SUM/AVG/MIN/MAX with star', () => {
-      expect(() => executeSql({ source, sql: 'SELECT SUM(*) FROM users' }))
+      expect(() => executeSql({ source, query: 'SELECT SUM(*) FROM users' }))
         .toThrow('SUM(*) is not supported')
     })
 
     it('should handle aggregate without GROUP BY (single group)', () => {
-      const result = executeSql({ source, sql: 'SELECT COUNT(*) FROM users' })
+      const result = executeSql({ source, query: 'SELECT COUNT(*) FROM users' })
       expect(result).toEqual([{ count_all: 5 }])
     })
 
     it('should handle mixing columns with aggregates without GROUP BY (takes first row)', () => {
-      const result = executeSql({ source, sql: 'SELECT name, COUNT(*) FROM users' })
+      const result = executeSql({ source, query: 'SELECT name, COUNT(*) FROM users' })
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice') // First row
       expect(result[0].count_all).toBe(5)
@@ -85,7 +85,7 @@ describe('executeSql', () => {
         { size: 20 },
         { size: 30 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM users' })
+      const result = executeSql({ source: data, query: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM users' })
       expect(result).toEqual([{ total_size: 60 }])
     })
   })
@@ -97,7 +97,7 @@ describe('executeSql', () => {
         { id: 2, value: null },
         { id: 3, value: null },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM users' })
+      const result = executeSql({ source: data, query: 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM users' })
       expect(result[0]).toEqual({ total: 3, non_null: 1 })
     })
 
@@ -108,7 +108,7 @@ describe('executeSql', () => {
         { id: 3, category: null, value: 30 },
         { id: 4, category: 'A', value: 40 },
       ]
-      const result = executeSql({ source: data, sql: `
+      const result = executeSql({ source: data, query: `
         SELECT category, SUM(value) AS total
         FROM users
         GROUP BY category

@@ -4,7 +4,7 @@
 
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
-import { createHavingContext, evaluateHavingExpr } from './having.js'
+import { evaluateHavingExpr } from './having.js'
 import { parseSql } from '../parse/parse.js'
 import { createMemorySource, createRowAccessor } from '../backend/memory.js'
 
@@ -14,8 +14,8 @@ import { createMemorySource, createRowAccessor } from '../backend/memory.js'
  * @param {ExecuteSqlOptions} options - the execution options
  * @returns {Record<string, any>[]} the result rows matching the query
  */
-export function executeSql({ source, sql }) {
-  const select = parseSql(sql)
+export function executeSql({ source, query }) {
+  const select = parseSql(query)
   const dataSource = Array.isArray(source) ? createMemorySource(source) : source
   return evaluateSelectAst(select, dataSource)
 }
@@ -142,6 +142,8 @@ function evaluateSelectAst(select, dataSource) {
     throw new Error('JOIN is not supported')
   }
 
+  // SQL priority: from, where, group by, having, select, order by, offset, limit
+
   // WHERE clause filtering
   /** @type {RowSource[]} */
   const working = []
@@ -244,8 +246,7 @@ function evaluateSelectAst(select, dataSource) {
       if (select.having) {
         // For HAVING, we need to evaluate aggregates in the context of the group
         // Create a special row context that includes both the group data and aggregate values
-        const havingContext = createHavingContext(resultRow, group)
-        if (!evaluateHavingExpr(select.having, havingContext, group)) {
+        if (!evaluateHavingExpr(select.having, resultRow, group)) {
           continue
         }
       }

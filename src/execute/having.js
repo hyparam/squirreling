@@ -12,7 +12,7 @@ import { evaluateExpr } from './expression.js'
  * @param {RowSource[]} group - the group of rows
  * @returns {RowSource} a context row for HAVING evaluation
  */
-export function createHavingContext(resultRow, group) {
+function createHavingContext(resultRow, group) {
   // Include the first row of the group (for GROUP BY columns)
   const firstRow = group[0]
   /** @type {Record<string, any>} */
@@ -41,11 +41,13 @@ export function createHavingContext(resultRow, group) {
  * Evaluates a HAVING expression with support for aggregate functions
  *
  * @param {ExprNode} expr - the HAVING expression
- * @param {RowSource} context - the context row with aggregated values
+ * @param {Record<string, any>} row - the aggregated result row
  * @param {RowSource[]} group - the group of rows for re-evaluating aggregates
  * @returns {boolean} whether the HAVING condition is satisfied
  */
-export function evaluateHavingExpr(expr, context, group) {
+export function evaluateHavingExpr(expr, row, group) {
+  const context = createHavingContext(row, group)
+
   // For HAVING, we need special handling of aggregate functions
   // They need to be re-evaluated against the group
   if (expr.type === 'function') {

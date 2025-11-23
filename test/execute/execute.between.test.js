@@ -12,25 +12,25 @@ describe('executeSql - BETWEEN', () => {
 
   describe('basic BETWEEN queries', () => {
     it('should filter with BETWEEN using numbers', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 28 AND 32' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 28 AND 32' })
       expect(result).toHaveLength(3)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Diana', 'Eve'])
     })
 
     it('should include boundary values', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30' })
       expect(result).toHaveLength(4)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob', 'Diana', 'Eve'])
     })
 
     it('should filter with NOT BETWEEN', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age NOT BETWEEN 28 AND 32' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age NOT BETWEEN 28 AND 32' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Charlie'])
     })
 
     it('should handle BETWEEN with equal bounds', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 30 AND 30' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 30 AND 30' })
       expect(result).toHaveLength(2)
       expect(result.every(r => r.age === 30)).toBe(true)
     })
@@ -38,7 +38,7 @@ describe('executeSql - BETWEEN', () => {
 
   describe('BETWEEN with strings', () => {
     it('should filter with BETWEEN using strings', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE name BETWEEN \'B\' AND \'D\'' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE name BETWEEN \'B\' AND \'D\'' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Charlie'])
     })
@@ -50,7 +50,7 @@ describe('executeSql - BETWEEN', () => {
         { id: 3, name: 'Charlie' },
         { id: 4, name: 'Diana' },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE name BETWEEN \'Alice\' AND \'Charlie\'' })
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE name BETWEEN \'Alice\' AND \'Charlie\'' })
       expect(result).toHaveLength(3)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob', 'Charlie'])
     })
@@ -58,13 +58,13 @@ describe('executeSql - BETWEEN', () => {
 
   describe('BETWEEN in complex expressions', () => {
     it('should filter with BETWEEN and AND', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30 AND city = \'NYC\'' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30 AND city = \'NYC\'' })
       expect(result).toHaveLength(2)
       expect(result.every(r => r.city === 'NYC' && r.age >= 25 && r.age <= 30)).toBe(true)
     })
 
     it('should filter with BETWEEN and OR', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 25 AND 28 OR age = 35' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 28 OR age = 35' })
       expect(result).toHaveLength(3)
       expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Charlie', 'Diana'])
     })
@@ -76,13 +76,13 @@ describe('executeSql - BETWEEN', () => {
         { id: 3, age: 35, score: 70 },
         { id: 4, age: 28, score: 85 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30 AND score BETWEEN 80 AND 90' })
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30 AND score BETWEEN 80 AND 90' })
       expect(result).toHaveLength(3)
       expect(result.map(r => r.id).sort()).toEqual([1, 2, 4])
     })
 
     it('should handle BETWEEN with NOT', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE NOT (age BETWEEN 28 AND 32)' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE NOT (age BETWEEN 28 AND 32)' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Charlie'])
     })
@@ -96,7 +96,7 @@ describe('executeSql - BETWEEN', () => {
         { id: 3, value: null },
         { id: 4, value: 15 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE value BETWEEN 8 AND 12' })
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE value BETWEEN 8 AND 12' })
       expect(result).toHaveLength(1)
       expect(result[0].id).toBe(2)
     })
@@ -108,14 +108,14 @@ describe('executeSql - BETWEEN', () => {
         { id: 3 },
         { id: 4, value: 15 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE value BETWEEN 8 AND 12' })
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE value BETWEEN 8 AND 12' })
       expect(result).toHaveLength(1)
       expect(result[0].id).toBe(2)
     })
 
     it('should handle BETWEEN with inverted bounds', () => {
       // BETWEEN with lower > upper should return no results
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 35 AND 25' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 35 AND 25' })
       expect(result).toHaveLength(0)
     })
 
@@ -126,7 +126,7 @@ describe('executeSql - BETWEEN', () => {
         { id: 3, value: 0 },
         { id: 4, value: 5 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE value BETWEEN -8 AND 2' })
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE value BETWEEN -8 AND 2' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.id).sort()).toEqual([2, 3])
     })
@@ -138,7 +138,7 @@ describe('executeSql - BETWEEN', () => {
         { id: 3, price: 20.00 },
         { id: 4, price: 25.99 },
       ]
-      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE price BETWEEN 15 AND 21' })
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE price BETWEEN 15 AND 21' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.id).sort()).toEqual([2, 3])
     })
@@ -146,7 +146,7 @@ describe('executeSql - BETWEEN', () => {
 
   describe('BETWEEN with SELECT columns', () => {
     it('should work with BETWEEN and column selection', () => {
-      const result = executeSql({ source, sql: 'SELECT name, age FROM users WHERE age BETWEEN 28 AND 32' })
+      const result = executeSql({ source, query: 'SELECT name, age FROM users WHERE age BETWEEN 28 AND 32' })
       expect(result).toHaveLength(3)
       expect(result[0]).toHaveProperty('name')
       expect(result[0]).toHaveProperty('age')
@@ -154,14 +154,14 @@ describe('executeSql - BETWEEN', () => {
     })
 
     it('should work with BETWEEN and ORDER BY', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 25 AND 32 ORDER BY age ASC' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 32 ORDER BY age ASC' })
       expect(result).toHaveLength(4)
       expect(result[0].age).toBe(25)
       expect(result[result.length - 1].age).toBe(30)
     })
 
     it('should work with BETWEEN and LIMIT', () => {
-      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age BETWEEN 25 AND 35 ORDER BY age LIMIT 2' })
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 35 ORDER BY age LIMIT 2' })
       expect(result).toHaveLength(2)
       expect(result[0].age).toBe(25)
       expect(result[1].age).toBe(28)
