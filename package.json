@@ -1,8 +1,17 @@
 {
   "name": "squirreling",
-  "version": "0.1.2",
+  "version": "0.2.0",
+  "description": "",
   "author": "Hyperparam",
   "homepage": "https://hyperparam.app",
+  "keywords": [
+    "sql",
+    "data",
+    "dataset",
+    "hyperparam",
+    "hyparquet",
+    "parquet"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
