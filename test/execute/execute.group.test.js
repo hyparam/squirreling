@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { executeSql } from '../../src/execute/execute.js'
 
 describe('executeSql - GROUP BY', () => {
-  const users = [
+  const source = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
     { id: 2, name: 'Bob', age: 25, city: 'LA', active: true },
     { id: 3, name: 'Charlie', age: 35, city: 'NYC', active: false },
@@ -11,7 +11,7 @@ describe('executeSql - GROUP BY', () => {
   ]
 
   it('should group by single column', () => {
-    const result = executeSql(users, 'SELECT city, COUNT(*) AS count FROM users GROUP BY city')
+    const result = executeSql({ source, sql: 'SELECT city, COUNT(*) AS count FROM users GROUP BY city' })
     expect(result).toHaveLength(2)
     const nycGroup = result.find(r => r.city === 'NYC')
     const laGroup = result.find(r => r.city === 'LA')
@@ -20,21 +20,21 @@ describe('executeSql - GROUP BY', () => {
   })
 
   it('should group by multiple columns', () => {
-    const result = executeSql(users, 'SELECT city, age, COUNT(*) AS count FROM users GROUP BY city, age')
+    const result = executeSql({ source, sql: 'SELECT city, age, COUNT(*) AS count FROM users GROUP BY city, age' })
     expect(result.length).toBeGreaterThan(2)
     const nycAge30 = result.find(r => r.city === 'NYC' && r.age === 30)
     expect(nycAge30?.count).toBe(2)
   })
 
   it('should handle aggregates with GROUP BY', () => {
-    const result = executeSql(users, 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city')
+    const result = executeSql({ source, sql: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city' })
     expect(result).toHaveLength(2)
     const nycGroup = result.find(r => r.city === 'NYC')
     expect(nycGroup?.avg_age).toBeCloseTo(31.67, 1)
   })
 
   it('should select non-grouped column (takes first value)', () => {
-    const result = executeSql(users, 'SELECT city, name, COUNT(*) AS count FROM users GROUP BY city')
+    const result = executeSql({ source, sql: 'SELECT city, name, COUNT(*) AS count FROM users GROUP BY city' })
     expect(result).toHaveLength(2)
     expect(result.every(r => r.name)).toBe(true)
   })
@@ -45,17 +45,17 @@ describe('executeSql - GROUP BY', () => {
       { id: 2, city: 'LA', age: 25 },
     ]
     // Filter creates empty result, then GROUP BY
-    const result = executeSql(data, 'SELECT * FROM users WHERE age > 100 GROUP BY city')
+    const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE age > 100 GROUP BY city' })
     expect(result).toEqual([])
   })
 
   it('should group by multiple columns with ORDER BY', () => {
-    const result = executeSql(users, `
+    const result = executeSql({ source, sql: `
       SELECT city, active, COUNT(*) AS count
       FROM users
       GROUP BY city, active
       ORDER BY city, active DESC
-    `)
+    ` })
     expect(result.length).toBeGreaterThan(0)
     expect(result.every(r => r.count > 0)).toBe(true)
   })
@@ -68,12 +68,12 @@ describe('executeSql - GROUP BY', () => {
       { region: 'South', product: 'B', amount: 120 },
       { region: 'North', product: 'A', amount: 80 },
     ]
-    const result = executeSql(sales, `
+    const result = executeSql({ source: sales, sql: `
       SELECT region, product, SUM(amount) AS total, COUNT(*) AS sales_count
       FROM users
       GROUP BY region, product
       ORDER BY region, product
-    `)
+    ` })
     const northA = result.find(r => r.region === 'North' && r.product === 'A')
     expect(northA?.total).toBe(180)
     expect(northA?.sales_count).toBe(2)

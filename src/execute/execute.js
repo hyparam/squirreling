@@ -1,5 +1,5 @@
 /**
- * @import { FunctionColumn, FunctionNode, OrderByItem, Row, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { ExecuteSqlOptions, FunctionColumn, FunctionNode, OrderByItem, Row, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
@@ -10,13 +10,12 @@ import { parseSql } from '../parse/parse.js'
 /**
  * Executes a SQL SELECT query against an array of data rows
  *
- * @param {Row[]} rows - the data rows to query
- * @param {string} sql - the SQL query string
+ * @param {ExecuteSqlOptions} options - the execution options
  * @returns {Row[]} the result rows matching the query
  */
-export function executeSql(rows, sql) {
+export function executeSql({ source, sql }) {
   const select = parseSql(sql)
-  return evaluateSelectAst(select, rows)
+  return evaluateSelectAst(select, source)
 }
 
 /**

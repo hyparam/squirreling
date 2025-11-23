@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { executeSql } from '../../src/execute/execute.js'
 
 describe('executeSql', () => {
-  const users = [
+  const source = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
     { id: 2, name: 'Bob', age: 25, city: 'LA', active: true },
     { id: 3, name: 'Charlie', age: 35, city: 'NYC', active: false },
@@ -12,71 +12,71 @@ describe('executeSql', () => {
 
   describe('WHERE clause', () => {
     it('should filter with equality', () => {
-      const result = executeSql(users, 'SELECT * FROM users WHERE name = \'Alice\'')
+      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE name = \'Alice\'' })
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice')
     })
 
     it('should filter with comparison operators', () => {
-      const result = executeSql(users, 'SELECT * FROM users WHERE age > 30')
+      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age > 30' })
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Charlie')
     })
 
     it('should filter with AND', () => {
-      const result = executeSql(users, 'SELECT * FROM users WHERE city = \'NYC\' AND age = 30')
+      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE city = \'NYC\' AND age = 30' })
       expect(result).toHaveLength(2)
       expect(result.every(u => u.city === 'NYC' && u.age === 30)).toBe(true)
     })
 
     it('should filter with OR', () => {
-      const result = executeSql(users, 'SELECT * FROM users WHERE age < 26 OR age > 33')
+      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE age < 26 OR age > 33' })
       expect(result).toHaveLength(2)
       expect(result.map(u => u.name).sort()).toEqual(['Bob', 'Charlie'])
     })
 
     it('should handle complex WHERE with parentheses', () => {
-      const result = executeSql(users, `
+      const result = executeSql({ source, sql: `
         SELECT * FROM users
         WHERE (age < 28 OR age > 32) AND city = 'NYC'
-      `)
+      ` })
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Charlie')
     })
 
     it('should handle OR precedence without parentheses', () => {
-      const result = executeSql(users, `
+      const result = executeSql({ source, sql: `
         SELECT * FROM users
         WHERE city = 'NYC' AND age = 30 OR city = 'LA'
-      `)
+      ` })
       // Should be: (city = 'NYC' AND age = 30) OR (city = 'LA')
       expect(result).toHaveLength(4)
     })
 
     it('should filter with NOT', () => {
-      const result = executeSql(users, 'SELECT * FROM users WHERE NOT active')
+      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE NOT active' })
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Charlie')
     })
 
     it('should handle inequality operators', () => {
-      const result1 = executeSql(users, 'SELECT * FROM users WHERE age != 30')
+      const result1 = executeSql({ source, sql: 'SELECT * FROM users WHERE age != 30' })
       expect(result1).toHaveLength(3)
 
-      const result2 = executeSql(users, 'SELECT * FROM users WHERE age <> 30')
+      const result2 = executeSql({ source, sql: 'SELECT * FROM users WHERE age <> 30' })
       expect(result2).toHaveLength(3)
     })
 
     it('should handle <= and >= operators', () => {
-      const result1 = executeSql(users, 'SELECT * FROM users WHERE age <= 28')
+      const result1 = executeSql({ source, sql: 'SELECT * FROM users WHERE age <= 28' })
       expect(result1).toHaveLength(2)
 
-      const result2 = executeSql(users, 'SELECT * FROM users WHERE age >= 30')
+      const result2 = executeSql({ source, sql: 'SELECT * FROM users WHERE age >= 30' })
       expect(result2).toHaveLength(3)
     })
 
     it('should handle literal values in WHERE', () => {
-      const result = executeSql(users, 'SELECT * FROM users WHERE active = TRUE')
+      const result = executeSql({ source, sql: 'SELECT * FROM users WHERE active = TRUE' })
       expect(result).toHaveLength(4)
     })
 
@@ -87,7 +87,7 @@ describe('executeSql', () => {
         { id: 3, name: 'Charlie', email: null },
         { id: 4, name: 'Diana', email: 'diana@example.com' },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE email IS NULL')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE email IS NULL' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Charlie'])
     })
@@ -99,7 +99,7 @@ describe('executeSql', () => {
         { id: 3, name: 'Charlie', email: null },
         { id: 4, name: 'Diana', email: 'diana@example.com' },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE email IS NOT NULL')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE email IS NOT NULL' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Diana'])
     })
@@ -110,7 +110,7 @@ describe('executeSql', () => {
         { id: 2, name: 'Bob', email: 'bob@example.com' },
         { id: 3, name: 'Charlie' },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE email IS NULL')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE email IS NULL' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
     })
@@ -123,11 +123,11 @@ describe('executeSql', () => {
         { id: 4, name: 'Diana', email: 'diana@example.com', phone: null },
       ]
 
-      const result1 = executeSql(data, 'SELECT * FROM users WHERE email IS NULL AND phone IS NOT NULL')
+      const result1 = executeSql({ source: data, sql: 'SELECT * FROM users WHERE email IS NULL AND phone IS NOT NULL' })
       expect(result1).toHaveLength(1)
       expect(result1[0].name).toBe('Bob')
 
-      const result2 = executeSql(data, 'SELECT * FROM users WHERE email IS NULL OR phone IS NULL')
+      const result2 = executeSql({ source: data, sql: 'SELECT * FROM users WHERE email IS NULL OR phone IS NULL' })
       expect(result2).toHaveLength(3)
       expect(result2.map(r => r.name).sort()).toEqual(['Bob', 'Charlie', 'Diana'])
     })
@@ -138,7 +138,7 @@ describe('executeSql', () => {
         { id: 2, value: 0 },
         { id: 3, value: false },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE value = NULL')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE value = NULL' })
       expect(result).toHaveLength(0) // NULL comparisons should return false
     })
 
@@ -149,7 +149,7 @@ describe('executeSql', () => {
         { id: 3, name: 'Charlie' },
         { id: 4, name: 'Diana' },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE name LIKE \'%li%\'')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE name LIKE \'%li%\'' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
     })
@@ -161,7 +161,7 @@ describe('executeSql', () => {
         { id: 3, code: 'A1X3' },
         { id: 4, code: 'A12' },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE code LIKE \'A1_3\'')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE code LIKE \'A1_3\'' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.code).sort()).toEqual(['A123', 'A1X3'])
     })
@@ -173,7 +173,7 @@ describe('executeSql', () => {
         { id: 3, email: 'charlie@example.org' },
         { id: 4, email: 'diana@example.com' },
       ]
-      const result = executeSql(data, 'SELECT * FROM users WHERE email LIKE \'_____@example.___\'')
+      const result = executeSql({ source: data, sql: 'SELECT * FROM users WHERE email LIKE \'_____@example.___\'' })
       expect(result).toHaveLength(2)
       expect(result.map(r => r.email).sort()).toEqual(['alice@example.com', 'diana@example.com'])
     })

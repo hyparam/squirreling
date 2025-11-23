@@ -1,5 +1,10 @@
 export type Row = Record<string, any>
 
+export interface ExecuteSqlOptions {
+  source: Row[]
+  sql: string
+}
+
 export type SqlPrimitive = string | number | bigint | boolean | null
 
 export interface SelectStatement {
