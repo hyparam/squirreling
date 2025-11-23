@@ -36,6 +36,10 @@
     "lint:fix": "eslint --fix",
     "test": "vitest run"
   },
+  "dependencies": {
+    "hyparquet": "1.21.0",
+    "hyparquet-compressors": "1.1.1"
+  },
   "devDependencies": {
     "@types/node": "24.10.2",
     "@vitest/coverage-v8": "4.0.15",

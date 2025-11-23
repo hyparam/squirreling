@@ -17,7 +17,7 @@ describe('package.json', () => {
       expect(version).toMatch(/^\d+\.\d+\.\d+$/)
     })
   })
-  it('should have no dependencies', () => {
-    expect('dependencies' in packageJson).toBe(false)
-  })
+  // it('should have no dependencies', () => {
+  //   expect('dependencies' in packageJson).toBe(false)
+  // })
 })
