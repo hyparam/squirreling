@@ -1,7 +1,7 @@
 {
   "name": "squirreling",
-  "version": "0.2.0",
-  "description": "",
+  "version": "0.2.1",
+  "description": "Squirreling SQL Engine",
   "author": "Hyperparam",
   "homepage": "https://hyperparam.app",
   "keywords": [
