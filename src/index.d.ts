@@ -1,4 +1,4 @@
-import type { Row, SelectStatement } from './types.js'
+import type { RowSource, SelectStatement } from './types.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows
@@ -7,7 +7,7 @@ import type { Row, SelectStatement } from './types.js'
  * @param sql - SQL query string
  * @returns rows matching the query
  */
-export function executeSql(rows: Row[], sql: string): Row[]
+export function executeSql(rows: RowSource[], sql: string): RowSource[]
 
 /**
  * Parses a SQL query string into an abstract syntax tree

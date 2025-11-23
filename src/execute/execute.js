@@ -1,21 +1,23 @@
 /**
- * @import { ExecuteSqlOptions, FunctionColumn, FunctionNode, OrderByItem, Row, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { DataSource, ExecuteSqlOptions, FunctionColumn, FunctionNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
 import { createHavingContext, evaluateHavingExpr } from './having.js'
 import { parseSql } from '../parse/parse.js'
+import { createMemorySource, createRowAccessor } from '../backend/memory.js'
 
 /**
- * Executes a SQL SELECT query against an array of data rows
+ * Executes a SQL SELECT query against a data source
  *
  * @param {ExecuteSqlOptions} options - the execution options
- * @returns {Row[]} the result rows matching the query
+ * @returns {Record<string, any>[]} the result rows matching the query
  */
 export function executeSql({ source, sql }) {
   const select = parseSql(sql)
-  return evaluateSelectAst(select, source)
+  const dataSource = Array.isArray(source) ? createMemorySource(source) : source
+  return evaluateSelectAst(select, dataSource)
 }
 
 /**
@@ -39,7 +41,7 @@ function defaultFunctionAlias(col) {
 /**
  * Creates a stable string key for a row to enable deduplication
  *
- * @param {Row} row
+ * @param {Record<string, any>} row
  * @returns {string} a stable string representation of the row
  */
 function stableRowKey(row) {
@@ -81,15 +83,15 @@ function compareValues(a, b) {
 /**
  * Applies DISTINCT filtering to remove duplicate rows
  *
- * @param {Row[]} rows - The input rows
+ * @param {Record<string, any>[]} rows - The input rows
  * @param {boolean} distinct - Whether to apply deduplication
- * @returns {Row[]} The deduplicated rows
+ * @returns {Record<string, any>[]} The deduplicated rows
  */
 function applyDistinct(rows, distinct) {
   if (!distinct) return rows
   /** @type {Set<string>} */
   const seen = new Set()
-  /** @type {Row[]} */
+  /** @type {Record<string, any>[]} */
   const result = []
   for (const row of rows) {
     const key = stableRowKey(row)
@@ -103,9 +105,9 @@ function applyDistinct(rows, distinct) {
 /**
  * Applies ORDER BY sorting to rows
  *
- * @param {Row[]} rows - the input rows
+ * @param {Record<string, any>[]} rows - the input rows
  * @param {OrderByItem[]} orderBy - the sort specifications
- * @returns {Row[]} the sorted rows
+ * @returns {Record<string, any>[]} the sorted rows
  */
 function applyOrderBy(rows, orderBy) {
   if (!orderBy?.length) return rows
@@ -114,8 +116,8 @@ function applyOrderBy(rows, orderBy) {
   sorted.sort((a, b) => {
     for (const term of orderBy) {
       const dir = term.direction
-      const av = evaluateExpr(term.expr, a)
-      const bv = evaluateExpr(term.expr, b)
+      const av = evaluateExpr(term.expr, createRowAccessor(a))
+      const bv = evaluateExpr(term.expr, createRowAccessor(b))
       const cmp = compareValues(av, bv)
       if (cmp !== 0) {
         return dir === 'DESC' ? -cmp : cmp
@@ -131,41 +133,39 @@ function applyOrderBy(rows, orderBy) {
  * Evaluates a parsed SELECT AST against data rows
  *
  * @param {SelectStatement} select - the parsed SQL AST
- * @param {Row[]} rows - the data rows
- * @returns {Row[]} the filtered, projected, and sorted result rows
+ * @param {DataSource} dataSource - the data source
+ * @returns {Record<string, any>[]} the filtered, projected, and sorted result rows
  */
-function evaluateSelectAst(select, rows) {
+function evaluateSelectAst(select, dataSource) {
   // Check for unsupported JOIN operations
   if (select.joins.length) {
     throw new Error('JOIN is not supported')
   }
 
   // WHERE clause filtering
-  let working = rows
-  if (select.where) {
-    /** @type {Row[]} */
-    const filtered = []
-    for (const row of rows) {
-      if (evaluateExpr(select.where, row)) {
-        filtered.push(row)
-      }
+  /** @type {RowSource[]} */
+  const working = []
+  const length = dataSource.getNumRows()
+  for (let i = 0; i < length; i++) {
+    const row = dataSource.getRow(i)
+    if (!select.where || evaluateExpr(select.where, row)) {
+      working.push(row)
     }
-    working = filtered
   }
 
   const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
   const useGrouping = hasAggregate || select.groupBy?.length > 0
 
-  /** @type {Row[]} */
+  /** @type {Record<string, any>[]} */
   const projected = []
 
   if (useGrouping) {
     // Grouping due to GROUP BY or aggregate functions
-    /** @type {Row[][]} */
+    /** @type {RowSource[][]} */
     const groups = []
 
     if (select.groupBy?.length) {
-      /** @type {Map<string, Row[]>} */
+      /** @type {Map<string, RowSource[]>} */
       const map = new Map()
       for (const row of working) {
         /** @type {string[]} */
@@ -193,14 +193,16 @@ function evaluateSelectAst(select, rows) {
     }
 
     for (const group of groups) {
-      /** @type {Row} */
+      /** @type {Record<string, any>} */
       const resultRow = {}
       for (const col of select.columns) {
         if (col.kind === 'star') {
-          const firstRow = group[0] || {}
-          const keys = Object.keys(firstRow)
-          for (const key of keys) {
-            resultRow[key] = firstRow[key]
+          const firstRow = group[0]
+          if (firstRow) {
+            const keys = firstRow.getKeys()
+            for (const key of keys) {
+              resultRow[key] = firstRow.getCell(key)
+            }
           }
           continue
         }
@@ -209,7 +211,7 @@ function evaluateSelectAst(select, rows) {
           const name = col.column
           const alias = col.alias ?? name
           // Evaluate on first row of group (all rows have same value for GROUP BY columns)
-          resultRow[alias] = group.length > 0 ? group[0][name] : undefined
+          resultRow[alias] = group[0]?.getCell(name)
           continue
         }
 
@@ -253,18 +255,18 @@ function evaluateSelectAst(select, rows) {
   } else {
     // No grouping, simple projection
     for (const row of working) {
-      /** @type {Row} */
+      /** @type {Record<string, any>} */
       const outRow = {}
       for (const col of select.columns) {
         if (col.kind === 'star') {
-          const keys = Object.keys(row)
+          const keys = row.getKeys()
           for (const key of keys) {
-            outRow[key] = row[key]
+            outRow[key] = row.getCell(key)
           }
         } else if (col.kind === 'column') {
           const name = col.column
           const alias = col.alias ?? name
-          outRow[alias] = row[name]
+          outRow[alias] = row.getCell(name)
         } else if (col.kind === 'function') {
           /** @type {FunctionNode} */
           const funcNode = { type: 'function', name: col.func, args: col.args }

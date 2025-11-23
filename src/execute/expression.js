@@ -2,9 +2,9 @@
 /**
  * Evaluates an expression node against a row of data
  *
- * @import { ExprNode, Row, SqlPrimitive } from '../types.js'
+ * @import { ExprNode, RowSource, SqlPrimitive } from '../types.js'
  * @param {ExprNode} node - The expression node to evaluate
- * @param {Row} row - The data row to evaluate against
+ * @param {RowSource} row - The data row to evaluate against
  * @returns {SqlPrimitive} The result of the evaluation
  */
 export function evaluateExpr(node, row) {
@@ -13,7 +13,7 @@ export function evaluateExpr(node, row) {
   }
 
   if (node.type === 'identifier') {
-    return row[node.name]
+    return row.getCell(node.name)
   }
 
   // Unary operators

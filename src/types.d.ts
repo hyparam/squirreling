@@ -1,7 +1,15 @@
-export type Row = Record<string, any>
+export interface RowSource {
+  getCell(name: string): any
+  getKeys(): string[]
+}
+
+export interface DataSource {
+  getNumRows(): number
+  getRow(index: number): RowSource
+}
 
 export interface ExecuteSqlOptions {
-  source: Row[]
+  source: Record<string, any>[] | DataSource
   sql: string
 }
 
