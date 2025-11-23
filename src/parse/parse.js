@@ -4,6 +4,7 @@
 
 import { tokenize } from './tokenize.js'
 import { parseExpression, parsePrimary } from './expression.js'
+import { isAggregateFunc, isStringFunc } from '../validation.js'
 
 // Keywords that cannot be used as implicit aliases after a column
 const RESERVED_AFTER_COLUMN = new Set([
@@ -521,20 +522,4 @@ function parseError(state, expected) {
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken ? ` after "${prevToken.originalValue ?? prevToken.value}"` : ''
   return new Error(`Expected ${expected}${after} at position ${tok.position}`)
-}
-
-/**
- * @param {string} name
- * @returns {name is AggregateFunc}
- */
-function isAggregateFunc(name) {
-  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)
-}
-
-/**
- * @param {string} name
- * @returns {name is StringFunc}
- */
-function isStringFunc(name) {
-  return ['UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'SUBSTRING', 'TRIM'].includes(name)
 }

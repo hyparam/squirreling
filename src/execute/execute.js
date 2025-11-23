@@ -9,9 +9,10 @@ import { parseSql } from '../parse/parse.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows
- * @param {Row[]} rows - The data rows to query
- * @param {string} sql - The SQL query string
- * @returns {Row[]} The result rows matching the query
+ *
+ * @param {Row[]} rows - the data rows to query
+ * @param {string} sql - the SQL query string
+ * @returns {Row[]} the result rows matching the query
  */
 export function executeSql(rows, sql) {
   const select = parseSql(sql)
@@ -20,8 +21,9 @@ export function executeSql(rows, sql) {
 
 /**
  * Generates a default alias name for a string function
- * @param {FunctionColumn} col - The function column definition
- * @returns {string} The generated alias (e.g., "upper_name", "concat_a_b")
+ *
+ * @param {FunctionColumn} col - the function column definition
+ * @returns {string} the generated alias (e.g., "upper_name", "concat_a_b")
  */
 function defaultFunctionAlias(col) {
   const base = col.func.toLowerCase()
@@ -37,8 +39,9 @@ function defaultFunctionAlias(col) {
 
 /**
  * Creates a stable string key for a row to enable deduplication
- * @param {Row} row - The data row
- * @returns {string} A stable string representation of the row
+ *
+ * @param {Row} row
+ * @returns {string} a stable string representation of the row
  */
 function stableRowKey(row) {
   const keys = Object.keys(row).sort()
@@ -53,9 +56,10 @@ function stableRowKey(row) {
 
 /**
  * Compares two SQL values for sorting
- * @param {SqlPrimitive} a - First value to compare
- * @param {SqlPrimitive} b - Second value to compare
- * @returns {number} Negative if a < b, positive if a > b, 0 if equal
+ *
+ * @param {SqlPrimitive} a
+ * @param {SqlPrimitive} b
+ * @returns {number} negative if a < b, positive if a > b, 0 if equal
  */
 function compareValues(a, b) {
   if (a === b) return 0
@@ -77,6 +81,7 @@ function compareValues(a, b) {
 
 /**
  * Applies DISTINCT filtering to remove duplicate rows
+ *
  * @param {Row[]} rows - The input rows
  * @param {boolean} distinct - Whether to apply deduplication
  * @returns {Row[]} The deduplicated rows
@@ -98,15 +103,15 @@ function applyDistinct(rows, distinct) {
 
 /**
  * Applies ORDER BY sorting to rows
- * @param {Row[]} rows - The input rows
- * @param {OrderByItem[]} orderBy - The sort specifications
- * @returns {Row[]} The sorted rows
+ *
+ * @param {Row[]} rows - the input rows
+ * @param {OrderByItem[]} orderBy - the sort specifications
+ * @returns {Row[]} the sorted rows
  */
 function applyOrderBy(rows, orderBy) {
-  if (!orderBy || orderBy.length === 0) return rows
+  if (!orderBy?.length) return rows
 
   const sorted = rows.slice()
-
   sorted.sort((a, b) => {
     for (const term of orderBy) {
       const dir = term.direction
@@ -125,9 +130,10 @@ function applyOrderBy(rows, orderBy) {
 
 /**
  * Evaluates a parsed SELECT AST against data rows
- * @param {SelectStatement} select - The parsed SQL AST
- * @param {Row[]} rows - The data rows
- * @returns {Row[]} The filtered, projected, and sorted result rows
+ *
+ * @param {SelectStatement} select - the parsed SQL AST
+ * @param {Row[]} rows - the data rows
+ * @returns {Row[]} the filtered, projected, and sorted result rows
  */
 function evaluateSelectAst(select, rows) {
   // Check for unsupported JOIN operations
@@ -135,7 +141,7 @@ function evaluateSelectAst(select, rows) {
     throw new Error('JOIN is not supported')
   }
 
-  // WHERE
+  // WHERE clause filtering
   let working = rows
   if (select.where) {
     /** @type {Row[]} */
@@ -155,6 +161,7 @@ function evaluateSelectAst(select, rows) {
   const projected = []
 
   if (useGrouping) {
+    // Grouping due to GROUP BY or aggregate functions
     /** @type {Row[][]} */
     const groups = []
 
@@ -245,6 +252,7 @@ function evaluateSelectAst(select, rows) {
       projected.push(resultRow)
     }
   } else {
+    // No grouping, simple projection
     for (const row of working) {
       /** @type {Row} */
       const outRow = {}

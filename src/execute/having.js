@@ -1,14 +1,16 @@
 /**
- * @import { ExprNode, Row, SqlPrimitive } from '../types.js'
+ * @import { AggregateFunc, ExprNode, Row, SqlPrimitive } from '../types.js'
  */
 
+import { isAggregateFunc } from '../validation.js'
 import { evaluateExpr } from './expression.js'
 
 /**
  * Creates a context for evaluating HAVING expressions
- * @param {Row} resultRow - The aggregated result row
- * @param {Row[]} group - The group of rows
- * @returns {Row} A context row for HAVING evaluation
+ *
+ * @param {Row} resultRow - the aggregated result row
+ * @param {Row[]} group - the group of rows
+ * @returns {Row} a context row for HAVING evaluation
  */
 export function createHavingContext(resultRow, group) {
   // Include the first row of the group (for GROUP BY columns)
@@ -19,17 +21,18 @@ export function createHavingContext(resultRow, group) {
 
 /**
  * Evaluates a HAVING expression with support for aggregate functions
- * @param {ExprNode} expr - The HAVING expression
- * @param {Row} context - The context row with aggregated values
- * @param {Row[]} group - The group of rows for re-evaluating aggregates
- * @returns {boolean} Whether the HAVING condition is satisfied
+ *
+ * @param {ExprNode} expr - the HAVING expression
+ * @param {Row} context - the context row with aggregated values
+ * @param {Row[]} group - the group of rows for re-evaluating aggregates
+ * @returns {boolean} whether the HAVING condition is satisfied
  */
 export function evaluateHavingExpr(expr, context, group) {
   // For HAVING, we need special handling of aggregate functions
   // They need to be re-evaluated against the group
   if (expr.type === 'function') {
     const funcName = expr.name.toUpperCase()
-    if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(funcName)) {
+    if (isAggregateFunc(funcName)) {
       // Evaluate aggregate function on the group
       return Boolean(evaluateAggregateFunction(funcName, expr.args, group))
     }
@@ -103,15 +106,16 @@ export function evaluateHavingExpr(expr, context, group) {
 
 /**
  * Evaluates a value in a HAVING expression
- * @param {ExprNode} expr - The expression
- * @param {Row} context - The context row
- * @param {Row[]} group - The group of rows
- * @returns {SqlPrimitive} The evaluated value
+ *
+ * @param {ExprNode} expr
+ * @param {Row} context - the context row
+ * @param {Row[]} group - the group of rows
+ * @returns {SqlPrimitive} the evaluated value
  */
 function evaluateHavingValue(expr, context, group) {
   if (expr.type === 'function') {
     const funcName = expr.name.toUpperCase()
-    if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(funcName)) {
+    if (isAggregateFunc(funcName)) {
       return evaluateAggregateFunction(funcName, expr.args, group)
     }
   }
@@ -126,10 +130,11 @@ function evaluateHavingValue(expr, context, group) {
 
 /**
  * Evaluates an aggregate function on a group
- * @param {string} funcName - The aggregate function name
- * @param {ExprNode[]} args - The function arguments
- * @param {Row[]} group - The group of rows
- * @returns {SqlPrimitive} The aggregate result
+ *
+ * @param {AggregateFunc} funcName - aggregate function name
+ * @param {ExprNode[]} args - function arguments
+ * @param {Row[]} group - the group of rows
+ * @returns {SqlPrimitive} the aggregate result
  */
 function evaluateAggregateFunction(funcName, args, group) {
   if (funcName === 'COUNT') {

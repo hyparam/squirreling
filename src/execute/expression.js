@@ -16,6 +16,7 @@ export function evaluateExpr(node, row) {
     return row[node.name]
   }
 
+  // Unary operators
   if (node.type === 'unary') {
     if (node.op === 'NOT') {
       return !evaluateExpr(node.argument, row)
@@ -33,6 +34,7 @@ export function evaluateExpr(node, row) {
     }
   }
 
+  // Binary operators
   if (node.type === 'binary') {
     if (node.op === 'AND') {
       const leftVal = evaluateExpr(node.left, row)

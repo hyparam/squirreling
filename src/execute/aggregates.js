@@ -77,8 +77,7 @@ export function defaultAggregateAlias(col) {
  * @param {ExprNode} expr
  * @returns {string}
  */
-export
-function defaultAggregateAliasExpr(expr) {
+export function defaultAggregateAliasExpr(expr) {
   if (expr.type === 'identifier') {
     return expr.name
   }
