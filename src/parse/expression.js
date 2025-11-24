@@ -123,14 +123,8 @@ export function parsePrimary(c) {
     }
   }
 
-  throw new Error(
-    'Unexpected token in expression at position ' +
-      tok.position +
-      ': ' +
-      tok.type +
-      ' ' +
-      tok.value
-  )
+  const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
+  throw new Error(`Expected expression but found ${found} at position ${tok.position}`)
 }
 
 /**

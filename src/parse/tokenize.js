@@ -122,11 +122,11 @@ export function tokenize(sql) {
         }
       }
       if (isAlpha(peek())) {
-        throw new Error('Invalid number at position ' + pos + ': ' + text + peek())
+        throw new Error(`Invalid number at position ${pos}: ${text}${peek()}`)
       }
       const num = parseFloat(text)
       if (isNaN(num)) {
-        throw new Error('Invalid number at position ' + pos + ': ' + text)
+        throw new Error(`Invalid number at position ${pos}: ${text}`)
       }
       tokens.push({
         type: 'number',
@@ -167,7 +167,7 @@ export function tokenize(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw new Error('Unterminated string literal starting at position ' + pos)
+          throw new Error(`Unterminated string literal starting at position ${pos}`)
         }
         const c = nextChar()
         if (c === quote) {
@@ -195,7 +195,7 @@ export function tokenize(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw new Error('Unterminated identifier starting at position ' + pos)
+          throw new Error(`Unterminated identifier starting at position ${pos}`)
         }
         const c = nextChar()
         if (c === quote) {
@@ -285,9 +285,9 @@ export function tokenize(sql) {
     }
 
     if (tokens.length === 0) {
-      throw new Error('Expected SELECT at position ' + pos)
+      throw new Error(`Expected SELECT but found "${ch}" at position ${pos}`)
     }
-    throw new Error('Unexpected character at position ' + pos + ': ' + ch)
+    throw new Error(`Unexpected character "${ch}" at position ${pos}`)
   }
 
   tokens.push({

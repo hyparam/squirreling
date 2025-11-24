@@ -198,8 +198,8 @@ describe('tokenize', () => {
   })
 
   it('should throw on backticks', () => {
-    expect(() => tokenize('`backtick`')).toThrow('Expected SELECT at position 0')
-    expect(() => tokenize('SELECT `backtick` FROM table')).toThrow('Unexpected character at position 7: `')
+    expect(() => tokenize('`backtick`')).toThrow('Expected SELECT but found "`" at position 0')
+    expect(() => tokenize('SELECT `backtick` FROM table')).toThrow('Unexpected character "`" at position 7')
   })
 
   it('should throw error on invalid number', () => {
@@ -207,7 +207,7 @@ describe('tokenize', () => {
   })
 
   it('should throw error on unexpected character', () => {
-    expect(() => tokenize('@invalid')).toThrow('Expected SELECT at position 0')
-    expect(() => tokenize(' #invalid')).toThrow('Expected SELECT at position 1')
+    expect(() => tokenize('@invalid')).toThrow('Expected SELECT but found "@" at position 0')
+    expect(() => tokenize(' #invalid')).toThrow('Expected SELECT but found "#" at position 1')
   })
 })

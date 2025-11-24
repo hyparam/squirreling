@@ -18,11 +18,11 @@ const RESERVED_AFTER_COLUMN = new Set([
 ])
 
 /**
- * @param {string} sql
+ * @param {string} query
  * @returns {SelectStatement}
  */
-export function parseSql(sql) {
-  const tokens = tokenize(sql)
+export function parseSql(query) {
+  const tokens = tokenize(query)
   /** @type {ParserState} */
   const state = { tokens, pos: 0 }
   const select = parseSelectInternal(state)
@@ -521,5 +521,6 @@ function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken ? ` after "${prevToken.originalValue ?? prevToken.value}"` : ''
-  return new Error(`Expected ${expected}${after} at position ${tok.position}`)
+  const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
+  return new Error(`Expected ${expected}${after} but found ${found} at position ${tok.position}`)
 }
