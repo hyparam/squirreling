@@ -281,6 +281,19 @@ describe('parseSql - WHERE clause', () => {
     })
   })
 
+  it('should parse WHERE with IN list of values', () => {
+    const select = parseSql('SELECT * FROM users WHERE name IN (\'Alice\', \'Bob\', \'Charlie\')')
+    expect(select.where).toEqual({
+      type: 'in valuelist',
+      expr: { type: 'identifier', name: 'name' },
+      values: [
+        { type: 'literal', value: 'Alice' },
+        { type: 'literal', value: 'Bob' },
+        { type: 'literal', value: 'Charlie' },
+      ],
+    })
+  })
+
   it('should parse WHERE with EXISTS subquery', () => {
     const select = parseSql('SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
     expect(select.where).toEqual({

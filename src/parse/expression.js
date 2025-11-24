@@ -296,28 +296,80 @@ function parseComparison(c) {
     if (nextTok.type === 'keyword' && nextTok.value === 'IN') {
       c.consume() // NOT
       c.consume() // IN
-      if (!c.parseSubquery) {
-        throw new Error('Subquery parsing not available in this context')
+
+      // Check if it's a subquery or a list of values by peeking ahead
+      // parseSubquery expects to consume the opening paren itself
+      const parenTok = c.current()
+      if (parenTok.type !== 'paren' || parenTok.value !== '(') {
+        throw new Error('Expected ( after IN')
       }
-      const subquery = c.parseSubquery()
-      return {
-        type: 'not in',
-        expr: left,
-        subquery,
+      const peekTok = c.peek(1)
+      if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
+        // Subquery - let parseSubquery handle the parens
+        if (!c.parseSubquery) {
+          throw new Error('Subquery parsing not available in this context')
+        }
+        const subquery = c.parseSubquery()
+        return {
+          type: 'not in',
+          expr: left,
+          subquery,
+        }
+      } else {
+        // Parse list of values - we handle the parens
+        c.consume() // '('
+        /** @type {ExprNode[]} */
+        const values = []
+        while (true) {
+          values.push(parseExpression(c))
+          if (!c.match('comma')) break
+        }
+        c.expect('paren', ')')
+        return {
+          type: 'not in valuelist',
+          expr: left,
+          values,
+        }
       }
     }
   }
 
   if (tok.type === 'keyword' && tok.value === 'IN') {
     c.consume() // IN
-    if (!c.parseSubquery) {
-      throw new Error('Subquery parsing not available in this context')
+
+    // Check if it's a subquery or a list of values by peeking ahead
+    // parseSubquery expects to consume the opening paren itself
+    const parenTok = c.current()
+    if (parenTok.type !== 'paren' || parenTok.value !== '(') {
+      throw new Error('Expected ( after IN')
     }
-    const subquery = c.parseSubquery()
-    return {
-      type: 'in',
-      expr: left,
-      subquery,
+    const peekTok = c.peek(1)
+    if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
+      // Subquery - let parseSubquery handle the parens
+      if (!c.parseSubquery) {
+        throw new Error('Subquery parsing not available in this context')
+      }
+      const subquery = c.parseSubquery()
+      return {
+        type: 'in',
+        expr: left,
+        subquery,
+      }
+    } else {
+      // Parse list of values - we handle the parens
+      c.consume() // '('
+      /** @type {ExprNode[]} */
+      const values = []
+      while (true) {
+        values.push(parseExpression(c))
+        if (!c.match('comma')) break
+      }
+      c.expect('paren', ')')
+      return {
+        type: 'in valuelist',
+        expr: left,
+        values,
+      }
     }
   }
 

@@ -178,6 +178,29 @@ describe('executeSql', () => {
       expect(result.map(r => r.email).sort()).toEqual(['alice@example.com', 'diana@example.com'])
     })
 
+    it('should filter with IN value list', () => {
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE name IN (\'Alice\', \'Charlie\', \'Eve\')' })
+      expect(result).toHaveLength(3)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie', 'Eve'])
+    })
+
+    it('should filter with IN value list of numbers', () => {
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE age IN (25, 28, 30)' })
+      expect(result).toHaveLength(4)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob', 'Diana', 'Eve'])
+    })
+
+    it('should filter with NOT IN value list', () => {
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE name NOT IN (\'Alice\', \'Bob\')' })
+      expect(result).toHaveLength(3)
+      expect(result.map(r => r.name).sort()).toEqual(['Charlie', 'Diana', 'Eve'])
+    })
+
+    it('should handle IN with empty result', () => {
+      const result = executeSql({ source, query: 'SELECT * FROM users WHERE name IN (\'Zara\', \'Xander\')' })
+      expect(result).toHaveLength(0)
+    })
+
     it('should filter with IN subquery', () => {
       const orders = [
         { id: 1, user_id: 1, amount: 100 },

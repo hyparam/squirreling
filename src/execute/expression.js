@@ -190,6 +190,24 @@ export function evaluateExpr(node, row) {
     throw new Error('Unsupported CAST to type ' + node.toType)
   }
 
+  // IN and NOT IN with value lists
+  if (node.type === 'in valuelist') {
+    const exprVal = evaluateExpr(node.expr, row)
+    for (const valueNode of node.values) {
+      const val = evaluateExpr(valueNode, row)
+      if (exprVal === val) return true
+    }
+    return false
+  }
+  if (node.type === 'not in valuelist') {
+    const exprVal = evaluateExpr(node.expr, row)
+    for (const valueNode of node.values) {
+      const val = evaluateExpr(valueNode, row)
+      if (exprVal === val) return false
+    }
+    return true
+  }
+
   // IN and NOT IN with subqueries
   if (node.type === 'in') {
     throw new Error('WHERE IN with subqueries is not yet supported.')

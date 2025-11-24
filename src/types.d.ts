@@ -108,10 +108,16 @@ export interface BetweenNode {
   upper: ExprNode
 }
 
-export interface InNode {
+export interface InSubqueryNode {
   type: 'in' | 'not in'
   expr: ExprNode
   subquery: SelectStatement
+}
+
+export interface InValuesNode {
+  type: 'in valuelist' | 'not in valuelist'
+  expr: ExprNode
+  values: ExprNode[]
 }
 
 export interface ExistsNode {
@@ -127,7 +133,8 @@ export type ExprNode =
   | FunctionNode
   | CastNode
   | BetweenNode
-  | InNode
+  | InSubqueryNode
+  | InValuesNode
   | ExistsNode
 
 export interface StarColumn {
