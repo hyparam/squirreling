@@ -30,6 +30,21 @@ export function parsePrimary(c) {
   if (tok.type === 'identifier') {
     const next = c.peek(1)
 
+    // CAST expression
+    if (tok.value === 'CAST' && next.type === 'paren' && next.value === '(') {
+      c.consume() // CAST
+      c.consume() // '('
+      const expr = parseExpression(c)
+      c.expect('keyword', 'AS')
+      const typeTok = c.expectIdentifier()
+      c.expect('paren', ')')
+      return {
+        type: 'cast',
+        expr,
+        toType: typeTok.value,
+      }
+    }
+
     // function call
     if (next.type === 'paren' && next.value === '(') {
       const funcName = tok.value

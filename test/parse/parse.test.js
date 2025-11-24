@@ -231,6 +231,20 @@ describe('parseSql', () => {
         { expr: { type: 'identifier', name: 'age' }, direction: 'DESC' },
       ])
     })
+
+    it('should parse ORDER BY with CAST expression', () => {
+      const select = parseSql('SELECT * FROM table ORDER BY CAST(size AS INTEGER)')
+      expect(select.orderBy).toEqual([
+        {
+          expr: {
+            type: 'cast',
+            expr: { type: 'identifier', name: 'size' },
+            toType: 'INTEGER',
+          },
+          direction: 'ASC',
+        },
+      ])
+    })
   })
 
   describe('LIMIT and OFFSET', () => {

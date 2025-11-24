@@ -98,6 +98,23 @@ describe('executeSql', () => {
       expect(result[0].name).toBe('Alice')
       expect(result[result.length - 1].name).toBe('Eve')
     })
+
+    it('should handle CAST in ORDER BY clause', () => {
+      const data = [
+        { path: '/file1.txt', size: '100' },
+        { path: '/file2.txt', size: '50' },
+        { path: '/file3.txt', size: '200' },
+        { path: '/file4.txt', size: '75' },
+        { path: '/file5.txt', size: '150' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT path, size FROM table ORDER BY CAST(size AS INTEGER) DESC LIMIT 5' })
+      expect(result).toHaveLength(5)
+      expect(result[0].path).toBe('/file3.txt') // size 200
+      expect(result[1].path).toBe('/file5.txt') // size 150
+      expect(result[2].path).toBe('/file1.txt') // size 100
+      expect(result[3].path).toBe('/file4.txt') // size 75
+      expect(result[4].path).toBe('/file2.txt') // size 50
+    })
   })
 
   describe('LIMIT and OFFSET', () => {
@@ -193,7 +210,7 @@ describe('executeSql', () => {
   })
 
   describe('CAST calls', () => {
-    it('should handle CAST to INTEGER', () => {
+    it('should handle CAST to INTEGER in SELECT', () => {
       const data = [
         { id: 1, age: '30' },
         { id: 2, age: '25' },
@@ -204,6 +221,33 @@ describe('executeSql', () => {
       expect(result[0].age_int).toBe(30)
       expect(result[1].age_int).toBe(25)
       expect(result[2].age_int).toBe(35)
+    })
+
+    it('should handle CAST in WHERE clause', () => {
+      const data = [
+        { id: 1, age: '30' },
+        { id: 2, age: '25' },
+        { id: 3, age: '35' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT * FROM users WHERE CAST(age AS INTEGER) > 28' })
+      expect(result).toHaveLength(2)
+      expect(result[0].id).toBe(1)
+      expect(result[1].id).toBe(3)
+    })
+
+    it('should handle CAST in HAVING clause', () => {
+      const data = [
+        { city: 'NYC', count: 5 },
+        { city: 'NYC', count: 3 },
+        { city: 'LA', count: 10 },
+        { city: 'SF', count: 2 },
+      ]
+      const result = executeSql({
+        source: data,
+        query: 'SELECT city, SUM(count) as total FROM users GROUP BY city HAVING total > CAST(\'5\' AS INTEGER)',
+      })
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.city).sort()).toEqual(['LA', 'NYC'])
     })
   })
 
