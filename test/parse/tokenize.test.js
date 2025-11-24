@@ -232,4 +232,55 @@ describe('tokenize', () => {
       { type: 'eof' },
     ])
   })
+
+  it('should tokenize IN with subquery in WHERE clause', () => {
+    const tokens = tokenize('SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1)')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'operator', value: '*' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'orders' },
+      { type: 'keyword', value: 'WHERE' },
+      { type: 'identifier', value: 'user_id' },
+      { type: 'keyword', value: 'IN' },
+      { type: 'paren', value: '(' },
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'identifier', value: 'id' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'users' },
+      { type: 'keyword', value: 'WHERE' },
+      { type: 'identifier', value: 'active' },
+      { type: 'operator', value: '=' },
+      { type: 'number', value: '1', numericValue: 1 },
+      { type: 'paren', value: ')' },
+      { type: 'eof' },
+    ])
+  })
+
+  it('should tokenize EXISTS with subquery in WHERE clause', () => {
+    const tokens = tokenize('SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM users WHERE users.id = orders.user_id)')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'operator', value: '*' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'orders' },
+      { type: 'keyword', value: 'WHERE' },
+      { type: 'keyword', value: 'EXISTS' },
+      { type: 'paren', value: '(' },
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'number', value: '1', numericValue: 1 },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'users' },
+      { type: 'keyword', value: 'WHERE' },
+      { type: 'identifier', value: 'users' },
+      { type: 'dot', value: '.' },
+      { type: 'identifier', value: 'id' },
+      { type: 'operator', value: '=' },
+      { type: 'identifier', value: 'orders' },
+      { type: 'dot', value: '.' },
+      { type: 'identifier', value: 'user_id' },
+      { type: 'paren', value: ')' },
+      { type: 'eof' },
+    ])
+  })
 })

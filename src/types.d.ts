@@ -108,6 +108,12 @@ export interface BetweenNode {
   upper: ExprNode
 }
 
+export interface InNode {
+  type: 'in' | 'not in'
+  expr: ExprNode
+  subquery: SelectStatement
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -116,6 +122,7 @@ export type ExprNode =
   | FunctionNode
   | CastNode
   | BetweenNode
+  | InNode
 
 export interface StarColumn {
   kind: 'star'
@@ -190,4 +197,5 @@ export interface ExprCursor {
   match(type: TokenType, value?: string): boolean
   expect(type: TokenType, value: string): Token
   expectIdentifier(): Token
+  parseSubquery?: () => SelectStatement
 }

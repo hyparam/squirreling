@@ -25,6 +25,7 @@ const KEYWORDS = new Set([
   'NULL',
   'LIKE',
   'IN',
+  'EXISTS',
   'BETWEEN',
   'CASE',
   'WHEN',

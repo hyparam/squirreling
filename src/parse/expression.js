@@ -1,5 +1,5 @@
 /**
- * @import { ExprCursor, ExprNode, BinaryOp } from '../types.js'
+ * @import { ExprCursor, ExprNode, BinaryOp, SelectStatement } from '../types.js'
  */
 
 /**
@@ -248,6 +248,37 @@ function parseComparison(c) {
       expr: left,
       lower,
       upper,
+    }
+  }
+
+  // [NOT] IN
+  if (tok.type === 'keyword' && tok.value === 'NOT') {
+    const nextTok = c.peek(1)
+    if (nextTok.type === 'keyword' && nextTok.value === 'IN') {
+      c.consume() // NOT
+      c.consume() // IN
+      if (!c.parseSubquery) {
+        throw new Error('Subquery parsing not available in this context')
+      }
+      const subquery = c.parseSubquery()
+      return {
+        type: 'not in',
+        expr: left,
+        subquery,
+      }
+    }
+  }
+
+  if (tok.type === 'keyword' && tok.value === 'IN') {
+    c.consume() // IN
+    if (!c.parseSubquery) {
+      throw new Error('Subquery parsing not available in this context')
+    }
+    const subquery = c.parseSubquery()
+    return {
+      type: 'in',
+      expr: left,
+      subquery,
     }
   }
 

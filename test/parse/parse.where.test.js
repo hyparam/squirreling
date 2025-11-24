@@ -255,4 +255,29 @@ describe('parseSql - WHERE clause', () => {
       upper: { type: 'literal', value: 65 },
     })
   })
+
+  it('should parse WHERE with IN subquery', () => {
+    const select = parseSql('SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1)')
+    expect(select.where).toEqual({
+      type: 'in',
+      expr: { type: 'identifier', name: 'user_id' },
+      subquery: {
+        distinct: false,
+        columns: [{ kind: 'column', column: 'id', alias: undefined }],
+        from: 'users',
+        joins: [],
+        where: {
+          type: 'binary',
+          op: '=',
+          left: { type: 'identifier', name: 'active' },
+          right: { type: 'literal', value: 1 },
+        },
+        groupBy: [],
+        having: undefined,
+        orderBy: [],
+        limit: undefined,
+        offset: undefined,
+      },
+    })
+  })
 })

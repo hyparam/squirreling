@@ -123,6 +123,12 @@ function createExprCursor(state) {
     match: (type, value) => match(state, type, value),
     expect: (type, value) => expect(state, type, value),
     expectIdentifier: () => expectIdentifier(state),
+    parseSubquery: () => {
+      expect(state, 'paren', '(')
+      const query = parseSelectInternal(state)
+      expect(state, 'paren', ')')
+      return query
+    },
   }
 }
 
