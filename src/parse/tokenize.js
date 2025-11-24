@@ -16,6 +16,7 @@ const KEYWORDS = new Set([
   'ORDER',
   'ASC',
   'DESC',
+  'NULLS',
   'LIMIT',
   'OFFSET',
   'AS',

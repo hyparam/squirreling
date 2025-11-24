@@ -188,6 +188,7 @@ export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | Functio
 export interface OrderByItem {
   expr: ExprNode
   direction: 'ASC' | 'DESC'
+  nulls?: 'FIRST' | 'LAST'
 }
 
 export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'

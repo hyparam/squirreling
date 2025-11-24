@@ -481,9 +481,24 @@ function parseSelectInternal(state) {
       } else if (match(state, 'keyword', 'DESC')) {
         direction = 'DESC'
       }
+      /** @type {'FIRST' | 'LAST' | undefined} */
+      let nulls
+      if (match(state, 'keyword', 'NULLS')) {
+        const tok = current(state)
+        if (tok.type === 'identifier' && tok.value.toUpperCase() === 'FIRST') {
+          consume(state)
+          nulls = 'FIRST'
+        } else if (tok.type === 'identifier' && tok.value.toUpperCase() === 'LAST') {
+          consume(state)
+          nulls = 'LAST'
+        } else {
+          throw parseError(state, 'FIRST or LAST after NULLS')
+        }
+      }
       orderBy.push({
         expr,
         direction,
+        nulls,
       })
       if (!match(state, 'comma')) break
     }

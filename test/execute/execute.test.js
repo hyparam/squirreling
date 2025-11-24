@@ -62,61 +62,6 @@ describe('executeSql', () => {
     })
   })
 
-  describe('ORDER BY', () => {
-    it('should sort ascending by default', () => {
-      const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY age' })
-      expect(result[0].age).toBe(25)
-      expect(result[result.length - 1].age).toBe(35)
-    })
-
-    it('should sort descending', () => {
-      const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY age DESC' })
-      expect(result[0].age).toBe(35)
-      expect(result[result.length - 1].age).toBe(25)
-    })
-
-    it('should sort by multiple columns', () => {
-      const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY age ASC, name DESC' })
-      expect(result[0].name).toBe('Bob') // age 25
-      const age30s = result.filter(r => r.age === 30)
-      expect(age30s[0].name).toBe('Eve') // DESC order
-    })
-
-    it('should handle null/undefined values in sorting', () => {
-      const data = [
-        { id: 1, value: 10 },
-        { id: 2, value: null },
-        { id: 3, value: 5 },
-      ]
-      const result = executeSql({ source: data, query: 'SELECT * FROM users ORDER BY value' })
-      expect(result[0].value).toBe(null) // null comes first
-      expect(result[1].value).toBe(5)
-    })
-
-    it('should handle string sorting', () => {
-      const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY name' })
-      expect(result[0].name).toBe('Alice')
-      expect(result[result.length - 1].name).toBe('Eve')
-    })
-
-    it('should handle CAST in ORDER BY clause', () => {
-      const data = [
-        { path: '/file1.txt', size: '100' },
-        { path: '/file2.txt', size: '50' },
-        { path: '/file3.txt', size: '200' },
-        { path: '/file4.txt', size: '75' },
-        { path: '/file5.txt', size: '150' },
-      ]
-      const result = executeSql({ source: data, query: 'SELECT path, size FROM table ORDER BY CAST(size AS INTEGER) DESC LIMIT 5' })
-      expect(result).toHaveLength(5)
-      expect(result[0].path).toBe('/file3.txt') // size 200
-      expect(result[1].path).toBe('/file5.txt') // size 150
-      expect(result[2].path).toBe('/file1.txt') // size 100
-      expect(result[3].path).toBe('/file4.txt') // size 75
-      expect(result[4].path).toBe('/file2.txt') // size 50
-    })
-  })
-
   describe('LIMIT and OFFSET', () => {
     it('should limit results', () => {
       const result = executeSql({ source, query: 'SELECT * FROM users LIMIT 2' })

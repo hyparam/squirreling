@@ -245,6 +245,28 @@ describe('parseSql', () => {
         },
       ])
     })
+
+    it('should parse ORDER BY with NULLS FIRST', () => {
+      const select = parseSql('SELECT * FROM users ORDER BY name NULLS FIRST')
+      expect(select.orderBy).toEqual([
+        {
+          expr: { type: 'identifier', name: 'name' },
+          direction: 'ASC',
+          nulls: 'FIRST',
+        },
+      ])
+    })
+
+    it('should parse ORDER BY with NULLS LAST', () => {
+      const select = parseSql('SELECT * FROM users ORDER BY age DESC NULLS LAST')
+      expect(select.orderBy).toEqual([
+        {
+          expr: { type: 'identifier', name: 'age' },
+          direction: 'DESC',
+          nulls: 'LAST',
+        },
+      ])
+    })
   })
 
   describe('LIMIT and OFFSET', () => {

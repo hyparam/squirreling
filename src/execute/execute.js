@@ -118,6 +118,24 @@ function applyOrderBy(rows, orderBy) {
       const dir = term.direction
       const av = evaluateExpr(term.expr, createRowAccessor(a))
       const bv = evaluateExpr(term.expr, createRowAccessor(b))
+
+      // Handle NULLS FIRST / NULLS LAST
+      const aIsNull = av == null
+      const bIsNull = bv == null
+
+      if (aIsNull || bIsNull) {
+        if (aIsNull && bIsNull) continue // both null, try next sort term
+
+        // Determine null ordering
+        const nullsFirst = term.nulls === 'LAST' ? false : true // default is NULLS FIRST
+
+        if (aIsNull) {
+          return nullsFirst ? -1 : 1
+        } else {
+          return nullsFirst ? 1 : -1
+        }
+      }
+
       const cmp = compareValues(av, bv)
       if (cmp !== 0) {
         return dir === 'DESC' ? -cmp : cmp
