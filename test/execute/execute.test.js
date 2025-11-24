@@ -342,4 +342,11 @@ describe('executeSql', () => {
       expect(gadget?.total).toBe(200)
     })
   })
+
+  describe('subqueries', () => {
+    it('should throw error for subquery in FROM clause', () => {
+      expect(() => executeSql({ source, query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u' }))
+        .toThrow('Subquery in FROM clause is not supported')
+    })
+  })
 })

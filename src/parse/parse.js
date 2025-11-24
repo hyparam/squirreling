@@ -1,5 +1,5 @@
 /**
- * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, StringFunc, Token, TokenType } from '../types.js'
+ * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, FromSubquery, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, StringFunc, Token, TokenType } from '../types.js'
  */
 
 import { tokenize } from './tokenize.js'
@@ -385,6 +385,24 @@ function parseJoins(state) {
 }
 
 /**
+ * Parses a subquery in parentheses with an alias
+ * @param {ParserState} state
+ * @returns {FromSubquery}
+ */
+function parseSubquery(state) {
+  expect(state, 'paren', '(')
+  const query = parseSelectInternal(state)
+  expect(state, 'paren', ')')
+  expect(state, 'keyword', 'AS')
+  const aliasTok = expectIdentifier(state)
+  return {
+    kind: 'subquery',
+    query,
+    alias: aliasTok.value,
+  }
+}
+
+/**
  * @param {ParserState} state
  * @returns {SelectStatement}
  */
@@ -399,7 +417,17 @@ function parseSelectInternal(state) {
   const columns = parseSelectList(state)
 
   expect(state, 'keyword', 'FROM')
-  const from = expectIdentifier(state).value // table name
+
+  // Check if it's a subquery or table name
+  let from
+  const tok = current(state)
+  if (tok.type === 'paren' && tok.value === '(') {
+    // Subquery: SELECT * FROM (SELECT ...) AS alias
+    from = parseSubquery(state)
+  } else {
+    // Simple table name: SELECT * FROM users
+    from = expectIdentifier(state).value
+  }
 
   // Parse JOIN clauses
   const joins = parseJoins(state)

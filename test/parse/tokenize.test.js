@@ -210,4 +210,26 @@ describe('tokenize', () => {
     expect(() => tokenize('@invalid')).toThrow('Expected SELECT but found "@" at position 0')
     expect(() => tokenize(' #invalid')).toThrow('Expected SELECT but found "#" at position 1')
   })
+
+  it('should tokenize subquery in FROM clause', () => {
+    const tokens = tokenize('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'identifier', value: 'name' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'paren', value: '(' },
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'operator', value: '*' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'users' },
+      { type: 'keyword', value: 'WHERE' },
+      { type: 'identifier', value: 'active' },
+      { type: 'operator', value: '=' },
+      { type: 'number', value: '1', numericValue: 1 },
+      { type: 'paren', value: ')' },
+      { type: 'keyword', value: 'AS' },
+      { type: 'identifier', value: 'u' },
+      { type: 'eof' },
+    ])
+  })
 })

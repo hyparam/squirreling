@@ -142,6 +142,11 @@ function evaluateSelectAst(select, dataSource) {
     throw new Error('JOIN is not supported')
   }
 
+  // Check for unsupported subquery in FROM clause
+  if (typeof select.from !== 'string') {
+    throw new Error('Subquery in FROM clause is not supported')
+  }
+
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
   // WHERE clause filtering

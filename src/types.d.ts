@@ -15,10 +15,16 @@ export interface ExecuteSqlOptions {
 
 export type SqlPrimitive = string | number | bigint | boolean | null
 
+export interface FromSubquery {
+  kind: 'subquery'
+  query: SelectStatement
+  alias: string
+}
+
 export interface SelectStatement {
   distinct: boolean
   columns: SelectColumn[]
-  from?: string
+  from?: string | FromSubquery
   joins: JoinClause[]
   where?: ExprNode
   groupBy: ExprNode[]

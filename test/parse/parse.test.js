@@ -332,6 +332,27 @@ describe('parseSql', () => {
         },
       ])
     })
+
+    it('should parse subquery in FROM clause', () => {
+      const select = parseSql('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
+      expect(select.columns).toEqual([
+        { kind: 'column', column: 'name', alias: undefined },
+      ])
+      expect(select.from).toMatchObject({
+        kind: 'subquery',
+        query: {
+          columns: [{ kind: 'star' }],
+          from: 'users',
+          where: {
+            type: 'binary',
+            op: '=',
+            left: { type: 'identifier', name: 'active' },
+            right: { type: 'literal', value: 1 },
+          },
+        },
+        alias: 'u',
+      })
+    })
   })
 
 })
