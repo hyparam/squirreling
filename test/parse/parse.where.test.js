@@ -280,4 +280,52 @@ describe('parseSql - WHERE clause', () => {
       },
     })
   })
+
+  it('should parse WHERE with EXISTS subquery', () => {
+    const select = parseSql('SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
+    expect(select.where).toEqual({
+      type: 'exists',
+      subquery: {
+        distinct: false,
+        columns: [{ kind: 'star' }],
+        from: 'users',
+        joins: [],
+        where: {
+          type: 'binary',
+          op: '=',
+          left: { type: 'identifier', name: 'users.id' },
+          right: { type: 'identifier', name: 'orders.user_id' },
+        },
+        groupBy: [],
+        having: undefined,
+        orderBy: [],
+        limit: undefined,
+        offset: undefined,
+      },
+    })
+  })
+
+  it('should parse WHERE with NOT EXISTS subquery', () => {
+    const select = parseSql('SELECT * FROM orders WHERE NOT EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
+    expect(select.where).toEqual({
+      type: 'not exists',
+      subquery: {
+        distinct: false,
+        columns: [{ kind: 'star' }],
+        from: 'users',
+        joins: [],
+        where: {
+          type: 'binary',
+          op: '=',
+          left: { type: 'identifier', name: 'users.id' },
+          right: { type: 'identifier', name: 'orders.user_id' },
+        },
+        groupBy: [],
+        having: undefined,
+        orderBy: [],
+        limit: undefined,
+        offset: undefined,
+      },
+    })
+  })
 })

@@ -114,6 +114,11 @@ export interface InNode {
   subquery: SelectStatement
 }
 
+export interface ExistsNode {
+  type: 'exists' | 'not exists'
+  subquery: SelectStatement
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -123,6 +128,7 @@ export type ExprNode =
   | CastNode
   | BetweenNode
   | InNode
+  | ExistsNode
 
 export interface StarColumn {
   kind: 'star'

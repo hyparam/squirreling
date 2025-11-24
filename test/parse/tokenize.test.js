@@ -258,7 +258,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize EXISTS with subquery in WHERE clause', () => {
-    const tokens = tokenize('SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM users WHERE users.id = orders.user_id)')
+    const tokens = tokenize('SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'operator', value: '*' },
@@ -268,7 +268,7 @@ describe('tokenize', () => {
       { type: 'keyword', value: 'EXISTS' },
       { type: 'paren', value: '(' },
       { type: 'keyword', value: 'SELECT' },
-      { type: 'number', value: '1', numericValue: 1 },
+      { type: 'operator', value: '*' },
       { type: 'keyword', value: 'FROM' },
       { type: 'identifier', value: 'users' },
       { type: 'keyword', value: 'WHERE' },

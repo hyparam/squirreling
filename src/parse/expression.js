@@ -111,6 +111,17 @@ export function parsePrimary(c) {
       c.consume()
       return { type: 'literal', value: null }
     }
+    if (tok.value === 'EXISTS') {
+      c.consume() // EXISTS
+      if (!c.parseSubquery) {
+        throw new Error('Subquery parsing not available in this context')
+      }
+      const subquery = c.parseSubquery()
+      return {
+        type: 'exists',
+        subquery,
+      }
+    }
   }
 
   if (tok.type === 'operator' && tok.value === '-') {
@@ -169,6 +180,19 @@ function parseAnd(c) {
  */
 function parseNot(c) {
   if (c.match('keyword', 'NOT')) {
+    // Check for NOT EXISTS
+    const nextTok = c.current()
+    if (nextTok.type === 'keyword' && nextTok.value === 'EXISTS') {
+      c.consume() // EXISTS
+      if (!c.parseSubquery) {
+        throw new Error('Subquery parsing not available in this context')
+      }
+      const subquery = c.parseSubquery()
+      return {
+        type: 'not exists',
+        subquery,
+      }
+    }
     const argument = parseNot(c)
     return {
       type: 'unary',

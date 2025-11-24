@@ -190,5 +190,21 @@ export function evaluateExpr(node, row) {
     throw new Error('Unsupported CAST to type ' + node.toType)
   }
 
+  // IN and NOT IN with subqueries
+  if (node.type === 'in') {
+    throw new Error('WHERE IN with subqueries is not yet supported.')
+  }
+  if (node.type === 'not in') {
+    throw new Error('WHERE NOT IN with subqueries is not yet supported.')
+  }
+
+  // EXISTS and NOT EXISTS with subqueries
+  if (node.type === 'exists') {
+    throw new Error('WHERE EXISTS with subqueries is not yet supported.')
+  }
+  if (node.type === 'not exists') {
+    throw new Error('WHERE NOT EXISTS with subqueries is not yet supported.')
+  }
+
   throw new Error('Unknown expression node type ' + node.type)
 }
