@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executeSql } from '../../src/execute/execute.js'
+import { collect, executeSql } from '../../src/index.js'
 
 describe('executeSql', () => {
   const users = [
@@ -11,108 +11,109 @@ describe('executeSql', () => {
   ]
 
   describe('aggregate functions', () => {
-    it('should count all rows with COUNT(*)', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users' })
+    it('should count all rows with COUNT(*)', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users' }))
       expect(result).toEqual([{ count_all: 5 }])
     })
 
-    it('should count column with COUNT(column)', () => {
+    it('should count column with COUNT(column)', async () => {
       const users = [
         { id: 1, name: 'Alice' },
         { id: 2, name: null },
         { id: 3, name: 'Charlie' },
       ]
-      const result = executeSql({ tables: { users }, query: 'SELECT COUNT(name) FROM users' })
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(name) FROM users' }))
       expect(result).toEqual([{ count_name: 2 }])
     })
 
-    it('should calculate SUM', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT SUM(age) FROM users' })
+    it('should calculate SUM', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT SUM(age) FROM users' }))
       expect(result).toEqual([{ sum_age: 148 }])
     })
 
-    it('should calculate AVG', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT AVG(age) FROM users' })
+    it('should calculate AVG', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT AVG(age) FROM users' }))
       expect(result).toEqual([{ avg_age: 29.6 }])
     })
 
-    it('should calculate MIN and MAX', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT MIN(age) AS min_age, MAX(age) AS max_age FROM users' })
+    it('should calculate MIN and MAX', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT MIN(age) AS min_age, MAX(age) AS max_age FROM users' }))
       expect(result).toEqual([{ min_age: 25, max_age: 35 }])
     })
 
-    it('should handle aggregate with alias', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT COUNT(*) AS total FROM users' })
+    it('should handle aggregate with alias', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(*) AS total FROM users' }))
       expect(result).toEqual([{ total: 5 }])
     })
 
-    it('should handle empty dataset for aggregates', () => {
-      const result = executeSql({ tables: { users: [] }, query: 'SELECT AVG(age) FROM users' })
+    it('should handle empty dataset for aggregates', async () => {
+      const result = await collect(executeSql({ tables: { users: [] }, query: 'SELECT AVG(age) FROM users' }))
       expect(result).toEqual([{ avg_age: null }])
     })
 
-    it('should skip non-numeric values in SUM/AVG/MIN/MAX', () => {
+    it('should skip non-numeric values in SUM/AVG/MIN/MAX', async () => {
       const data = [
         { id: 1, value: 10 },
         { id: 2, value: null },
         { id: 3, value: 'abc' },
         { id: 4, value: 20 },
       ]
-      const result = executeSql({ tables: { data }, query: 'SELECT SUM(value) AS total, AVG(value) AS avg FROM data' })
+      const result = await collect(executeSql({ tables: { data }, query: 'SELECT SUM(value) AS total, AVG(value) AS avg FROM data' }))
       expect(result).toEqual([{ total: 30, avg: 15 }])
     })
 
-    it('should throw error for SUM/AVG/MIN/MAX with star', () => {
-      expect(() => executeSql({ tables: { users }, query: 'SELECT SUM(*) FROM users' }))
-        .toThrow('SUM(*) is not supported')
+    it('should throw error for SUM/AVG/MIN/MAX with star', async () => {
+      await expect(async () => {
+        await collect(executeSql({ tables: { users }, query: 'SELECT SUM(*) FROM users' }))
+      }).rejects.toThrow('SUM(*) is not supported')
     })
 
-    it('should handle aggregate without GROUP BY (single group)', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users' })
+    it('should handle aggregate without GROUP BY (single group)', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users' }))
       expect(result).toEqual([{ count_all: 5 }])
     })
 
-    it('should handle mixing columns with aggregates without GROUP BY (takes first row)', () => {
-      const result = executeSql({ tables: { users }, query: 'SELECT name, COUNT(*) FROM users' })
+    it('should handle mixing columns with aggregates without GROUP BY (takes first row)', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT name, COUNT(*) FROM users' }))
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice') // First row
       expect(result[0].count_all).toBe(5)
     })
 
-    it('should handle nested cast in aggregate', () => {
+    it('should handle nested cast in aggregate', async () => {
       const data = [
         { size: 10 },
         { size: 20 },
         { size: 30 },
       ]
-      const result = executeSql({ tables: { data }, query: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM data' })
+      const result = await collect(executeSql({ tables: { data }, query: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM data' }))
       expect(result).toEqual([{ total_size: 60 }])
     })
   })
 
   describe('null handling in aggregates', () => {
-    it('should handle null in aggregate functions correctly', () => {
+    it('should handle null in aggregate functions correctly', async () => {
       const data = [
         { id: 1, value: 10 },
         { id: 2, value: null },
         { id: 3, value: null },
       ]
-      const result = executeSql({ tables: { data }, query: 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM data' })
+      const result = await collect(executeSql({ tables: { data }, query: 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM data' }))
       expect(result[0]).toEqual({ total: 3, non_null: 1 })
     })
 
-    it('should handle null in GROUP BY', () => {
+    it('should handle null in GROUP BY', async () => {
       const data = [
         { id: 1, category: 'A', value: 10 },
         { id: 2, category: null, value: 20 },
         { id: 3, category: null, value: 30 },
         { id: 4, category: 'A', value: 40 },
       ]
-      const result = executeSql({ tables: { data }, query: `
+      const result = await collect(executeSql({ tables: { data }, query: `
         SELECT category, SUM(value) AS total
         FROM data
         GROUP BY category
-      ` })
+      ` }))
       expect(result).toHaveLength(2)
       const nullGroup = result.find(r => r.category === null)
       expect(nullGroup?.total).toBe(50)

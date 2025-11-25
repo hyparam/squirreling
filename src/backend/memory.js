@@ -1,5 +1,5 @@
 /**
- * @import { DataSource, RowSource } from '../types.js'
+ * @import { AsyncDataSource, RowSource } from '../types.js'
  */
 
 /**
@@ -20,18 +20,17 @@ export function createRowAccessor(obj) {
 }
 
 /**
- * Creates a memory-backed data source from an array of plain objects
+ * Creates an async memory-backed data source from an array of plain objects
  *
  * @param {Record<string, any>[]} data - array of plain objects
- * @returns {DataSource} a data source interface
+ * @returns {AsyncDataSource} an async data source interface
  */
-export function createMemorySource(data) {
+export function createAsyncMemorySource(data) {
   return {
-    getNumRows() {
-      return data.length
-    },
-    getRow(index) {
-      return createRowAccessor(data[index])
+    async *getRows() {
+      for (const item of data) {
+        yield createRowAccessor(item)
+      }
     },
   }
 }

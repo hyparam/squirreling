@@ -1,5 +1,5 @@
 /**
- * @import { AggregateFunc, DataSource, ExprNode, RowSource, SqlPrimitive } from '../types.js'
+ * @import { AggregateFunc, AsyncDataSource, ExprNode, RowSource, SqlPrimitive } from '../types.js'
  */
 
 import { isAggregateFunc } from '../validation.js'
@@ -43,10 +43,10 @@ function createHavingContext(resultRow, group) {
  * @param {ExprNode} expr - the HAVING expression
  * @param {Record<string, any>} row - the aggregated result row
  * @param {RowSource[]} group - the group of rows for re-evaluating aggregates
- * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
- * @returns {boolean} whether the HAVING condition is satisfied
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {Promise<boolean>} whether the HAVING condition is satisfied
  */
-export function evaluateHavingExpr(expr, row, group, tables) {
+export async function evaluateHavingExpr(expr, row, group, tables) {
   const context = createHavingContext(row, group)
 
   // For HAVING, we need special handling of aggregate functions
@@ -55,13 +55,13 @@ export function evaluateHavingExpr(expr, row, group, tables) {
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
       // Evaluate aggregate function on the group
-      return Boolean(evaluateAggregateFunction(funcName, expr.args, group, tables))
+      return Boolean(await evaluateAggregateFunction(funcName, expr.args, group, tables))
     }
   }
 
   if (expr.type === 'binary') {
-    const left = evaluateHavingValue(expr.left, context, group, tables)
-    const right = evaluateHavingValue(expr.right, context, group, tables)
+    const left = await evaluateHavingValue(expr.left, context, group, tables)
+    const right = await evaluateHavingValue(expr.right, context, group, tables)
 
     if (expr.op === 'AND') {
       return Boolean(left && right)
@@ -97,20 +97,20 @@ export function evaluateHavingExpr(expr, row, group, tables) {
 
   if (expr.type === 'unary') {
     if (expr.op === 'NOT') {
-      return !evaluateHavingExpr(expr.argument, context, group, tables)
+      return !await evaluateHavingExpr(expr.argument, context, group, tables)
     }
     if (expr.op === 'IS NULL') {
-      return evaluateHavingValue(expr.argument, context, group, tables) == null
+      return await evaluateHavingValue(expr.argument, context, group, tables) == null
     }
     if (expr.op === 'IS NOT NULL') {
-      return evaluateHavingValue(expr.argument, context, group, tables) != null
+      return await evaluateHavingValue(expr.argument, context, group, tables) != null
     }
   }
 
   if (expr.type === 'between' || expr.type === 'not between') {
-    const exprVal = evaluateHavingValue(expr.expr, context, group, tables)
-    const lower = evaluateHavingValue(expr.lower, context, group, tables)
-    const upper = evaluateHavingValue(expr.upper, context, group, tables)
+    const exprVal = await evaluateHavingValue(expr.expr, context, group, tables)
+    const lower = await evaluateHavingValue(expr.lower, context, group, tables)
+    const upper = await evaluateHavingValue(expr.upper, context, group, tables)
 
     // If any value is NULL, return false (SQL behavior)
     if (exprVal == null || lower == null || upper == null) {
@@ -122,7 +122,7 @@ export function evaluateHavingExpr(expr, row, group, tables) {
   }
 
   // For other expression types, use the context row
-  return Boolean(evaluateExpr({ node: expr, row: context, tables }))
+  return Boolean(await evaluateExpr({ node: expr, row: context, tables }))
 }
 
 /**
@@ -131,8 +131,8 @@ export function evaluateHavingExpr(expr, row, group, tables) {
  * @param {ExprNode} expr
  * @param {RowSource} context - the context row
  * @param {RowSource[]} group - the group of rows
- * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
- * @returns {SqlPrimitive} the evaluated value
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {Promise<SqlPrimitive>} the evaluated value
  */
 function evaluateHavingValue(expr, context, group, tables) {
   if (expr.type === 'function') {
@@ -156,10 +156,10 @@ function evaluateHavingValue(expr, context, group, tables) {
  * @param {AggregateFunc} funcName - aggregate function name
  * @param {ExprNode[]} args - function arguments
  * @param {RowSource[]} group - the group of rows
- * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
- * @returns {SqlPrimitive} the aggregate result
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {Promise<SqlPrimitive>} the aggregate result
  */
-function evaluateAggregateFunction(funcName, args, group, tables) {
+async function evaluateAggregateFunction(funcName, args, group, tables) {
   if (funcName === 'COUNT') {
     if (args.length === 1 && args[0].type === 'identifier' && args[0].name === '*') {
       return group.length
@@ -167,7 +167,7 @@ function evaluateAggregateFunction(funcName, args, group, tables) {
     // COUNT(column) - count non-null values
     let count = 0
     for (const row of group) {
-      const val = evaluateExpr({ node: args[0], row, tables })
+      const val = await evaluateExpr({ node: args[0], row, tables })
       if (val != null) count++
     }
     return count
@@ -176,7 +176,7 @@ function evaluateAggregateFunction(funcName, args, group, tables) {
   if (funcName === 'SUM') {
     let sum = 0
     for (const row of group) {
-      const val = evaluateExpr({ node: args[0], row, tables })
+      const val = await evaluateExpr({ node: args[0], row, tables })
       if (val != null) sum += Number(val)
     }
     return sum
@@ -186,7 +186,7 @@ function evaluateAggregateFunction(funcName, args, group, tables) {
     let sum = 0
     let count = 0
     for (const row of group) {
-      const val = evaluateExpr({ node: args[0], row, tables })
+      const val = await evaluateExpr({ node: args[0], row, tables })
       if (val != null) {
         sum += Number(val)
         count++
@@ -198,7 +198,7 @@ function evaluateAggregateFunction(funcName, args, group, tables) {
   if (funcName === 'MIN') {
     let min = null
     for (const row of group) {
-      const val = evaluateExpr({ node: args[0], row, tables })
+      const val = await evaluateExpr({ node: args[0], row, tables })
       if (val != null && (min == null || val < min)) {
         min = val
       }
@@ -209,7 +209,7 @@ function evaluateAggregateFunction(funcName, args, group, tables) {
   if (funcName === 'MAX') {
     let max = null
     for (const row of group) {
-      const val = evaluateExpr({ node: args[0], row, tables })
+      const val = await evaluateExpr({ node: args[0], row, tables })
       if (val != null && (max == null || val > max)) {
         max = val
       }
