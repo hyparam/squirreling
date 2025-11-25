@@ -147,6 +147,52 @@ function applyDistinct(rows, distinct) {
 }
 
 /**
+ * Applies ORDER BY sorting to RowSource array (before projection)
+ *
+ * @param {RowSource[]} rows - the input row sources
+ * @param {OrderByItem[]} orderBy - the sort specifications
+ * @param {Record<string, Record<string, any>[] | DataSource>} [tables] - Available data sources for subqueries
+ * @returns {RowSource[]} the sorted row sources
+ */
+function sortRowSources(rows, orderBy, tables) {
+  if (!orderBy?.length) return rows
+
+  const sorted = rows.slice()
+  sorted.sort((a, b) => {
+    for (const term of orderBy) {
+      const dir = term.direction
+      const av = evaluateExpr({ node: term.expr, row: a, tables })
+      const bv = evaluateExpr({ node: term.expr, row: b, tables })
+
+      // Handle NULLS FIRST / NULLS LAST
+      const aIsNull = av == null
+      const bIsNull = bv == null
+
+      if (aIsNull || bIsNull) {
+        if (aIsNull && bIsNull) continue // both null, try next sort term
+
+        // Determine null ordering
+        const nullsFirst = term.nulls === 'LAST' ? false : true // default is NULLS FIRST
+
+        if (aIsNull) {
+          return nullsFirst ? -1 : 1
+        } else {
+          return nullsFirst ? 1 : -1
+        }
+      }
+
+      const cmp = compareValues(av, bv)
+      if (cmp !== 0) {
+        return dir === 'DESC' ? -cmp : cmp
+      }
+    }
+    return 0
+  })
+
+  return sorted
+}
+
+/**
  * Applies ORDER BY sorting to rows
  *
  * @param {Record<string, any>[]} rows - the input rows
@@ -296,7 +342,9 @@ function evaluateSelectAst(select, dataSource, tables) {
     }
   } else {
     // No grouping, simple projection
-    for (const row of working) {
+    // Sort before projection so ORDER BY can access columns not in SELECT
+    const sorted = sortRowSources(working, select.orderBy, tables)
+    for (const row of sorted) {
       /** @type {Record<string, any>} */
       const outRow = {}
       for (const col of select.columns) {

@@ -63,6 +63,39 @@ describe('ORDER BY', () => {
     expect(result[4].path).toBe('/file2.txt') // size 50
   })
 
+  it('should sort by column not included in SELECT', () => {
+    const result = executeSql({ tables: { users }, query: 'SELECT name FROM users ORDER BY age' })
+    // Expected order by age: Bob (25), Diana (28), Alice (30), Eve (30), Charlie (35)
+    expect(result.map(r => r.name)).toEqual(['Bob', 'Diana', 'Alice', 'Eve', 'Charlie'])
+  })
+
+  describe('ORDER BY with GROUP BY', () => {
+    it('should sort by GROUP BY column', () => {
+      const result = executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY city' })
+      expect(result[0].city).toBe('LA')
+      expect(result[1].city).toBe('NYC')
+    })
+
+    it('should sort by GROUP BY column DESC', () => {
+      const result = executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY city DESC' })
+      expect(result[0].city).toBe('NYC')
+      expect(result[1].city).toBe('LA')
+    })
+
+    it('should sort by aggregate alias', () => {
+      const result = executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY cnt DESC' })
+      // NYC has 3 users, LA has 2
+      expect(result[0].city).toBe('NYC')
+      expect(result[0].cnt).toBe(3)
+    })
+
+    // it('should sort by aggregate expression', () => {
+    //   const result = executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY COUNT(*) DESC' })
+    //   expect(result[0].city).toBe('NYC')
+    //   expect(result[0].cnt).toBe(3)
+    // })
+  })
+
   describe('NULLS FIRST and NULLS LAST', () => {
     it('should handle NULLS FIRST with ASC', () => {
       const data = [
