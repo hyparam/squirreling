@@ -123,12 +123,6 @@ export interface StarColumn {
   alias?: string
 }
 
-export interface SimpleColumn {
-  kind: 'column'
-  column: string
-  alias?: string
-}
-
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX'
 
 export type StringFunc = 'UPPER' | 'LOWER' | 'CONCAT' | 'LENGTH' | 'SUBSTRING' | 'TRIM'
@@ -157,7 +151,7 @@ export interface DerivedColumn {
   alias?: string
 }
 
-export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | DerivedColumn
+export type SelectColumn = StarColumn | AggregateColumn | DerivedColumn
 
 export interface OrderByItem {
   expr: ExprNode

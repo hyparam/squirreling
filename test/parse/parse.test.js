@@ -38,16 +38,16 @@ describe('parseSql', () => {
     it('should parse SELECT with single column', () => {
       const select = parseSql('SELECT name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'name', alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: undefined },
       ])
     })
 
     it('should parse SELECT with multiple columns', () => {
       const select = parseSql('SELECT name, age, email FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'name', alias: undefined },
-        { kind: 'column', column: 'age', alias: undefined },
-        { kind: 'column', column: 'email', alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'age' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email' }, alias: undefined },
       ])
     })
 
@@ -81,14 +81,14 @@ describe('parseSql', () => {
     it('should parse column alias with AS', () => {
       const select = parseSql('SELECT name AS full_name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'name', alias: 'full_name' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: 'full_name' },
       ])
     })
 
     it('should parse column alias without AS', () => {
       const select = parseSql('SELECT name full_name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'name', alias: 'full_name' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: 'full_name' },
       ])
     })
 
@@ -103,8 +103,8 @@ describe('parseSql', () => {
     it('should parse column names with spaces using double quotes', () => {
       const select = parseSql('SELECT "first name", "last name" FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'first name', alias: undefined },
-        { kind: 'column', column: 'last name', alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'first name' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'last name' }, alias: undefined },
       ])
     })
 
@@ -116,16 +116,16 @@ describe('parseSql', () => {
     it('should parse quoted column with alias', () => {
       const select = parseSql('SELECT "first name" AS fname FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'first name', alias: 'fname' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'first name' }, alias: 'fname' },
       ])
     })
 
     it('should parse mixed quoted and unquoted identifiers', () => {
       const select = parseSql('SELECT id, "full name", email FROM users')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'id', alias: undefined },
-        { kind: 'column', column: 'full name', alias: undefined },
-        { kind: 'column', column: 'email', alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'id' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'full name' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email' }, alias: undefined },
       ])
     })
   })
@@ -319,7 +319,7 @@ describe('parseSql', () => {
       expect(select).toEqual({
         distinct: true,
         columns: [
-          { kind: 'column', column: 'city', alias: undefined },
+          { kind: 'derived', expr: { type: 'identifier', name: 'city' }, alias: undefined },
           { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' },
         ],
         from: 'users',
@@ -388,7 +388,7 @@ describe('parseSql', () => {
     it('should parse subquery in FROM clause', () => {
       const select = parseSql('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
       expect(select.columns).toEqual([
-        { kind: 'column', column: 'name', alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: undefined },
       ])
       expect(select.from).toMatchObject({
         kind: 'subquery',

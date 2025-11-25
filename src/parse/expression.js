@@ -1,5 +1,7 @@
+import { isAggregateFunc, isStringFunc } from '../validation.js'
+
 /**
- * @import { ExprCursor, ExprNode, BinaryOp, SelectStatement } from '../types.js'
+ * @import { ExprCursor, ExprNode, BinaryOp } from '../types.js'
  */
 
 /**
@@ -11,13 +13,10 @@ export function parseExpression(c) {
 }
 
 /**
- * Exposed so SELECT list parsing can reuse the same notion of "primary"
- * for function arguments, etc.
- *
  * @param {ExprCursor} c
  * @returns {ExprNode}
  */
-export function parsePrimary(c) {
+function parsePrimary(c) {
   const tok = c.current()
 
   if (tok.type === 'paren' && tok.value === '(') {
@@ -48,7 +47,12 @@ export function parsePrimary(c) {
     // function call
     if (next.type === 'paren' && next.value === '(') {
       const funcName = tok.value
-      // TODO: validate function name
+
+      // validate function names
+      if (!isStringFunc(funcName) && !isAggregateFunc(funcName)) {
+        throw new Error(`Unknown function "${funcName}" at position ${tok.position}`)
+      }
+
       c.consume() // function name
       c.consume() // '('
 

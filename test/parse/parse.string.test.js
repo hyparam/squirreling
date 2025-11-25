@@ -119,9 +119,9 @@ describe('parseSql - string functions', () => {
   it('should parse mix of string functions and regular columns', () => {
     const select = parseSql('SELECT id, UPPER(name), email FROM users')
     expect(select.columns).toEqual([
-      { kind: 'column', column: 'id', alias: undefined },
+      { kind: 'derived', expr: { type: 'identifier', name: 'id' }, alias: undefined },
       { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'name' }] }, alias: undefined },
-      { kind: 'column', column: 'email', alias: undefined },
+      { kind: 'derived', expr: { type: 'identifier', name: 'email' }, alias: undefined },
     ])
   })
 

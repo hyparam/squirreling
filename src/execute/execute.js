@@ -1,12 +1,12 @@
-/**
- * @import { DataSource, ExecuteSqlOptions, ExprNode, FunctionNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
- */
-
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
 import { parseSql } from '../parse/parse.js'
 import { createMemorySource, createRowAccessor } from '../backend/memory.js'
+
+/**
+ * @import { DataSource, ExecuteSqlOptions, ExprNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
+ */
 
 /**
  * Executes a SQL SELECT query against a data source
@@ -27,6 +27,9 @@ export function executeSql({ source, query }) {
  * @returns {string} the generated alias
  */
 function defaultDerivedAlias(expr) {
+  if (expr.type === 'identifier') {
+    return expr.name
+  }
   if (expr.type === 'function') {
     const base = expr.name.toLowerCase()
     // Try to extract column names from identifier arguments
@@ -239,14 +242,6 @@ function evaluateSelectAst(select, dataSource) {
           continue
         }
 
-        if (col.kind === 'column') {
-          const name = col.column
-          const alias = col.alias ?? name
-          // Evaluate on first row of group (all rows have same value for GROUP BY columns)
-          resultRow[alias] = group[0]?.getCell(name)
-          continue
-        }
-
         if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
           const value = group.length > 0 ? evaluateExpr(col.expr, group[0]) : undefined
@@ -284,10 +279,6 @@ function evaluateSelectAst(select, dataSource) {
           for (const key of keys) {
             outRow[key] = row.getCell(key)
           }
-        } else if (col.kind === 'column') {
-          const name = col.column
-          const alias = col.alias ?? name
-          outRow[alias] = row.getCell(name)
         } else if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
           const value = evaluateExpr(col.expr, row)

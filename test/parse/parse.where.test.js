@@ -263,7 +263,7 @@ describe('parseSql - WHERE clause', () => {
       expr: { type: 'identifier', name: 'user_id' },
       subquery: {
         distinct: false,
-        columns: [{ kind: 'column', column: 'id', alias: undefined }],
+        columns: [{ kind: 'derived', expr: { type: 'identifier', name: 'id' }, alias: undefined }],
         from: 'users',
         joins: [],
         where: {

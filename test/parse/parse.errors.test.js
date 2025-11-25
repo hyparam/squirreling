@@ -90,6 +90,10 @@ describe('parseSql error handling', () => {
     it('should throw error on missing closing paren in string function', () => {
       expect(() => parseSql('SELECT UPPER(name FROM users')).toThrow('Expected ) after "name" but found "FROM" at position 18')
     })
+
+    it('should throw error on invalid string function name', () => {
+      expect(() => parseSql('SELECT FOOBAR(name) FROM users')).toThrow('Unknown function "FOOBAR" at position 7')
+    })
   })
 
   describe('WHERE clause errors', () => {

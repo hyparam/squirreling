@@ -1,10 +1,10 @@
-/**
- * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, FromSubquery, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, StringFunc, Token, TokenType } from '../types.js'
- */
-
 import { tokenize } from './tokenize.js'
 import { parseExpression } from './expression.js'
-import { isAggregateFunc, isStringFunc } from '../validation.js'
+import { isAggregateFunc } from '../validation.js'
+
+/**
+ * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, FromSubquery, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, Token, TokenType } from '../types.js'
+ */
 
 // Keywords that cannot be used as implicit aliases after a column
 const RESERVED_AFTER_COLUMN = new Set([
@@ -112,6 +112,7 @@ function expectIdentifier(state) {
 
 /**
  * Creates an ExprCursor adapter for the ParserState.
+ *
  * @param {ParserState} state
  * @returns {ExprCursor}
  */
@@ -180,62 +181,20 @@ function parseSelectItem(state) {
     throw parseError(state, 'column name or expression')
   }
 
-  if (tok.type === 'identifier' && tok.value === 'CAST') {
-    expectIdentifier(state) // consume CAST
-    expect(state, 'paren', '(')
-    const cursor = createExprCursor(state)
-    const expr = parseExpression(cursor)
-    expect(state, 'keyword', 'AS')
-    const typeTok = expectIdentifier(state)
-    expect(state, 'paren', ')')
-    const alias = parseAs(state)
-    return {
-      kind: 'derived',
-      expr: { type: 'cast', expr, toType: typeTok.value },
-      alias,
-    }
-  }
-
-  if (tok.type === 'operator') {
-    // Handle SELECT expression AS alias
-    const cursor = createExprCursor(state)
-    const expr = parseExpression(cursor)
-    const alias = parseAs(state)
-    return { kind: 'derived', expr, alias }
-  }
-
   const next = peekToken(state, 1)
-  const upper = tok.value.toUpperCase()
-
   if (next.type === 'paren' && next.value === '(') {
+    const upper = tok.value.toUpperCase()
     if (isAggregateFunc(upper)) {
       expectIdentifier(state) // consume function name
       return parseAggregateItem(state, upper)
     }
-    if (isStringFunc(upper)) {
-      // Don't consume - let expression parser handle the whole function call
-      const cursor = createExprCursor(state)
-      const expr = parseExpression(cursor)
-      const alias = parseAs(state)
-      return { kind: 'derived', expr, alias }
-    }
-    // Unknown function
-    expectIdentifier(state)
   }
 
-  // Simple column
-  consume(state)
-  let column = tok.value
-
-  // Handle dot notation (table.column)
-  if (current(state).type === 'dot') {
-    consume(state) // consume the dot
-    const columnTok = expectIdentifier(state)
-    column += '.' + columnTok.value
-  }
+  // Delegate to expression parser
+  const cursor = createExprCursor(state)
+  const expr = parseExpression(cursor)
   const alias = parseAs(state)
-
-  return { kind: 'column', column, alias }
+  return { kind: 'derived', expr, alias }
 }
 
 /**
