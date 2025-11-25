@@ -281,6 +281,99 @@ describe('string functions', () => {
     })
   })
 
+  describe('REPLACE', () => {
+    it('should replace all occurrences of a substring', () => {
+      const data = [
+        { id: 1, text: 'Hello World' },
+        { id: 2, text: 'foo bar foo' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'o\', \'0\') AS replaced FROM users' })
+      expect(result).toEqual([
+        { replaced: 'Hell0 W0rld' },
+        { replaced: 'f00 bar f00' },
+      ])
+    })
+
+    it('should replace multiple character substrings', () => {
+      const data = [{ id: 1, text: 'Hello World Hello' }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'Hello\', \'Hi\') AS replaced FROM users' })
+      expect(result[0].replaced).toBe('Hi World Hi')
+    })
+
+    it('should work without alias', () => {
+      const data = [{ id: 1, text: 'test' }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'t\', \'T\') FROM users' })
+      expect(result[0]).toHaveProperty('replace_text')
+      expect(result[0].replace_text).toBe('TesT')
+    })
+
+    it('should handle empty replacement string', () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \' \', \'\') AS replaced FROM users' })
+      expect(result[0].replaced).toBe('HelloWorld')
+    })
+
+    it('should handle search string not found', () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'xyz\', \'abc\') AS replaced FROM users' })
+      expect(result[0].replaced).toBe('Hello World')
+    })
+
+    it('should work with column values', () => {
+      const data = [
+        { id: 1, email: 'alice@example.com', old_domain: 'example.com', new_domain: 'test.org' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(email, old_domain, new_domain) AS new_email FROM users' })
+      expect(result[0].new_email).toBe('alice@test.org')
+    })
+
+    it('should work with WHERE clause', () => {
+      const data = [
+        { id: 1, text: 'apple banana' },
+        { id: 2, text: 'grape orange' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'a\', \'@\') AS replaced FROM users WHERE text LIKE \'%apple%\'' })
+      expect(result).toHaveLength(1)
+      expect(result[0].replaced).toBe('@pple b@n@n@')
+    })
+
+    it('should work with ORDER BY', () => {
+      const data = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Carol' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(name, \'o\', \'0\') AS replaced FROM users ORDER BY name' })
+      expect(result[0].replaced).toBe('Alice')
+      expect(result[1].replaced).toBe('B0b')
+      expect(result[2].replaced).toBe('Car0l')
+    })
+
+    it('should be case-sensitive', () => {
+      const data = [{ id: 1, text: 'Hello hello HELLO' }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'hello\', \'hi\') AS replaced FROM users' })
+      expect(result[0].replaced).toBe('Hello hi HELLO')
+    })
+
+    it('should handle null values in first argument', () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'a\', \'b\') AS replaced FROM users' })
+      expect(result[0].replaced).toBeNull()
+    })
+
+    it('should handle null values in second argument', () => {
+      const data = [{ id: 1, text: 'hello', search: NULL }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, search, \'x\') AS replaced FROM users' })
+      expect(result[0].replaced).toBeNull()
+    })
+
+    it('should handle null values in third argument', () => {
+      const data = [{ id: 1, text: 'hello', replacement: NULL }]
+      const result = executeSql({ source: data, query: 'SELECT REPLACE(text, \'l\', replacement) AS replaced FROM users' })
+      expect(result[0].replaced).toBeNull()
+    })
+  })
+
   describe('combined string functions', () => {
     it('should use multiple different string functions in one query', () => {
       const result = executeSql({ source, query: 'SELECT UPPER(name) AS upper_name, LOWER(city) AS lower_city, LENGTH(email) AS email_len FROM users WHERE id = 1' })

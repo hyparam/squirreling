@@ -161,6 +161,16 @@ export function evaluateExpr(node, row) {
       return String(val).trim()
     }
 
+    if (funcName === 'REPLACE') {
+      if (args.length !== 3) throw new Error('REPLACE requires exactly 3 arguments')
+      const str = args[0]
+      const searchStr = args[1]
+      const replaceStr = args[2]
+      // SQL REPLACE returns NULL if any argument is NULL
+      if (str == null || searchStr == null || replaceStr == null) return null
+      return String(str).replaceAll(String(searchStr), String(replaceStr))
+    }
+
     throw new Error('Unsupported function ' + funcName)
   }
 
