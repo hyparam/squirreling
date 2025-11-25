@@ -1,20 +1,21 @@
 import { evaluateExpr } from './expression.js'
 import { parseSql } from '../parse/parse.js'
-import { createMemorySource, createRowAccessor } from '../backend/memory.js'
+import { createAsyncMemorySource, createRowAccessor } from '../backend/memory.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateHavingExpr } from './having.js'
+import { collect } from './utils.js'
 
 /**
- * @import { DataSource, ExecuteSqlOptions, ExprNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 /**
  * Executes a SQL SELECT query against named data sources
  *
  * @param {ExecuteSqlOptions} options - the execution options
- * @returns {Record<string, any>[]} the result rows matching the query
+ * @returns {AsyncGenerator<Record<string, any>>} async generator yielding result rows
  */
-export function executeSql({ tables, query }) {
+export async function* executeSql({ tables, query }) {
   const select = parseSql(query)
 
   // Check for unsupported operations
@@ -25,18 +26,29 @@ export function executeSql({ tables, query }) {
     throw new Error('FROM clause is required')
   }
 
-  return executeSelect(select, tables)
+  // Normalize tables: convert arrays to AsyncDataSource
+  /** @type {Record<string, AsyncDataSource>} */
+  const normalizedTables = {}
+  for (const [name, source] of Object.entries(tables)) {
+    if (Array.isArray(source)) {
+      normalizedTables[name] = createAsyncMemorySource(source)
+    } else {
+      normalizedTables[name] = source
+    }
+  }
+
+  yield* executeSelect(select, normalizedTables)
 }
 
 /**
  * Executes a SELECT query against the provided tables
  *
  * @param {SelectStatement} select
- * @param {Record<string, any[] | DataSource>} tables
- * @returns {Record<string, any>[]} the subquery results
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {AsyncGenerator<Record<string, any>>} async generator yielding result rows
  */
-export function executeSelect(select, tables) {
-  /** @type {DataSource} */
+export async function* executeSelect(select, tables) {
+  /** @type {AsyncDataSource} */
   let dataSource
 
   if (typeof select.from === 'string') {
@@ -44,14 +56,15 @@ export function executeSelect(select, tables) {
     if (table === undefined) {
       throw new Error(`Table "${select.from}" not found`)
     }
-    dataSource = Array.isArray(table) ? createMemorySource(table) : table
+
+    dataSource = table
   } else {
     // Nested subquery - recursively resolve
-    const derivedData = executeSelect(select.from.query, tables)
-    dataSource = createMemorySource(derivedData)
+    const derivedData = await collect(executeSelect(select.from.query, tables))
+    dataSource = createAsyncMemorySource(derivedData)
   }
 
-  return evaluateSelectAst(select, dataSource, tables)
+  yield* evaluateSelectAst(select, dataSource, tables)
 }
 
 /**
@@ -151,28 +164,42 @@ function applyDistinct(rows, distinct) {
  *
  * @param {RowSource[]} rows - the input row sources
  * @param {OrderByItem[]} orderBy - the sort specifications
- * @param {Record<string, Record<string, any>[] | DataSource>} [tables] - Available data sources for subqueries
- * @returns {RowSource[]} the sorted row sources
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {Promise<RowSource[]>} the sorted row sources
  */
-function sortRowSources(rows, orderBy, tables) {
+async function sortRowSources(rows, orderBy, tables) {
   if (!orderBy?.length) return rows
 
-  const sorted = rows.slice()
-  sorted.sort((a, b) => {
+  // Pre-evaluate ORDER BY expressions for all rows
+  /** @type {SqlPrimitive[][]} */
+  const evaluatedValues = []
+  for (const row of rows) {
+    /** @type {SqlPrimitive[]} */
+    const rowValues = []
     for (const term of orderBy) {
+      const value = await evaluateExpr({ node: term.expr, row, tables })
+      rowValues.push(value)
+    }
+    evaluatedValues.push(rowValues)
+  }
+
+  // Create index array and sort it
+  const indices = rows.map((_, i) => i)
+  indices.sort((aIdx, bIdx) => {
+    for (let termIdx = 0; termIdx < orderBy.length; termIdx++) {
+      const term = orderBy[termIdx]
       const dir = term.direction
-      const av = evaluateExpr({ node: term.expr, row: a, tables })
-      const bv = evaluateExpr({ node: term.expr, row: b, tables })
+      const av = evaluatedValues[aIdx][termIdx]
+      const bv = evaluatedValues[bIdx][termIdx]
 
       // Handle NULLS FIRST / NULLS LAST
       const aIsNull = av == null
       const bIsNull = bv == null
 
       if (aIsNull || bIsNull) {
-        if (aIsNull && bIsNull) continue // both null, try next sort term
+        if (aIsNull && bIsNull) continue
 
-        // Determine null ordering
-        const nullsFirst = term.nulls === 'LAST' ? false : true // default is NULLS FIRST
+        const nullsFirst = term.nulls === 'LAST' ? false : true
 
         if (aIsNull) {
           return nullsFirst ? -1 : 1
@@ -189,7 +216,8 @@ function sortRowSources(rows, orderBy, tables) {
     return 0
   })
 
-  return sorted
+  // Return sorted rows
+  return indices.map(i => rows[i])
 }
 
 /**
@@ -197,28 +225,42 @@ function sortRowSources(rows, orderBy, tables) {
  *
  * @param {Record<string, any>[]} rows - the input rows
  * @param {OrderByItem[]} orderBy - the sort specifications
- * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
- * @returns {Record<string, any>[]} the sorted rows
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {Promise<Record<string, any>[]>} the sorted rows
  */
-function applyOrderBy(rows, orderBy, tables) {
+async function applyOrderBy(rows, orderBy, tables) {
   if (!orderBy?.length) return rows
 
-  const sorted = rows.slice()
-  sorted.sort((a, b) => {
+  // Pre-evaluate ORDER BY expressions for all rows
+  /** @type {SqlPrimitive[][]} */
+  const evaluatedValues = []
+  for (const row of rows) {
+    /** @type {SqlPrimitive[]} */
+    const rowValues = []
     for (const term of orderBy) {
+      const value = await evaluateExpr({ node: term.expr, row: createRowAccessor(row), tables })
+      rowValues.push(value)
+    }
+    evaluatedValues.push(rowValues)
+  }
+
+  // Create index array and sort it
+  const indices = rows.map((_, i) => i)
+  indices.sort((aIdx, bIdx) => {
+    for (let termIdx = 0; termIdx < orderBy.length; termIdx++) {
+      const term = orderBy[termIdx]
       const dir = term.direction
-      const av = evaluateExpr({ node: term.expr, row: createRowAccessor(a), tables })
-      const bv = evaluateExpr({ node: term.expr, row: createRowAccessor(b), tables })
+      const av = evaluatedValues[aIdx][termIdx]
+      const bv = evaluatedValues[bIdx][termIdx]
 
       // Handle NULLS FIRST / NULLS LAST
       const aIsNull = av == null
       const bIsNull = bv == null
 
       if (aIsNull || bIsNull) {
-        if (aIsNull && bIsNull) continue // both null, try next sort term
+        if (aIsNull && bIsNull) continue
 
-        // Determine null ordering
-        const nullsFirst = term.nulls === 'LAST' ? false : true // default is NULLS FIRST
+        const nullsFirst = term.nulls === 'LAST' ? false : true
 
         if (aIsNull) {
           return nullsFirst ? -1 : 1
@@ -235,36 +277,134 @@ function applyOrderBy(rows, orderBy, tables) {
     return 0
   })
 
-  return sorted
+  // Return sorted rows
+  return indices.map(i => rows[i])
 }
 
 /**
  * Evaluates a select with a resolved FROM data source
  *
  * @param {SelectStatement} select - the parsed SQL AST
- * @param {DataSource} dataSource - the data source
- * @param {Record<string, any[] | DataSource>} tables - available data sources
- * @returns {Record<string, any>[]} the filtered, projected, and sorted result rows
+ * @param {AsyncDataSource} dataSource - the async data source
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {AsyncGenerator<Record<string, any>>} async generator yielding result rows
  */
-function evaluateSelectAst(select, dataSource, tables) {
+async function* evaluateSelectAst(select, dataSource, tables) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
-
-  // WHERE clause filtering
-  /** @type {RowSource[]} */
-  const working = []
-  const length = dataSource.getNumRows()
-  for (let i = 0; i < length; i++) {
-    const row = dataSource.getRow(i)
-    if (!select.where || evaluateExpr({ node: select.where, row, tables })) {
-      working.push(row)
-    }
-  }
 
   const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
   const useGrouping = hasAggregate || select.groupBy?.length > 0
 
+  // Determine if we need to buffer (collect all rows first)
+  const needsBuffering =
+    select.orderBy.length > 0 ||
+    select.distinct ||
+    useGrouping
+
+  if (needsBuffering) {
+    // BUFFERING PATH: Collect all rows, process, then yield
+    yield* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping)
+  } else {
+    // STREAMING PATH: Yield rows one by one
+    yield* evaluateStreaming(select, dataSource, tables)
+  }
+}
+
+/**
+ * Streaming evaluation for simple queries (no ORDER BY, DISTINCT, or GROUP BY)
+ *
+ * @param {SelectStatement} select
+ * @param {AsyncDataSource} dataSource
+ * @param {Record<string, AsyncDataSource>} tables
+ * @returns {AsyncGenerator<Record<string, any>>}
+ */
+async function* evaluateStreaming(select, dataSource, tables) {
+  let rowsYielded = 0
+  let rowsSkipped = 0
+  const offset = select.offset ?? 0
+  const limit = select.limit ?? Infinity
+
+  for await (const row of dataSource.getRows()) {
+    // WHERE filter
+    if (select.where) {
+      const passes = await evaluateExpr({ node: select.where, row, tables })
+
+      if (!passes) {
+        continue
+      }
+    }
+
+    // OFFSET handling
+    if (rowsSkipped < offset) {
+      rowsSkipped++
+      continue
+    }
+
+    // LIMIT handling
+    if (rowsYielded >= limit) {
+      break
+    }
+
+    // SELECT projection
+    /** @type {Record<string, any>} */
+    const outRow = {}
+    for (const col of select.columns) {
+      if (col.kind === 'star') {
+        const keys = row.getKeys()
+        for (const key of keys) {
+          outRow[key] = row.getCell(key)
+        }
+      } else if (col.kind === 'derived') {
+        const alias = col.alias ?? defaultDerivedAlias(col.expr)
+        outRow[alias] = await evaluateExpr({ node: col.expr, row, tables })
+      } else if (col.kind === 'aggregate') {
+        throw new Error(
+          'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'
+        )
+      }
+    }
+
+    yield outRow
+    rowsYielded++
+  }
+}
+
+/**
+ * Buffered evaluation for complex queries (with ORDER BY, DISTINCT, or GROUP BY)
+ *
+ * @param {SelectStatement} select
+ * @param {AsyncDataSource} dataSource
+ * @param {Record<string, AsyncDataSource>} tables
+ * @param {boolean} hasAggregate
+ * @param {boolean} useGrouping
+ * @returns {AsyncGenerator<Record<string, any>>}
+ */
+async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping) {
+  // Step 1: Collect all rows from data source
+  /** @type {RowSource[]} */
+  const working = []
+  for await (const row of dataSource.getRows()) {
+    working.push(row)
+  }
+
+  // Step 2: WHERE clause filtering
+  /** @type {RowSource[]} */
+  const filtered = []
+
+  for (const row of working) {
+    if (select.where) {
+      const passes = await evaluateExpr({ node: select.where, row, tables })
+
+      if (!passes) {
+        continue
+      }
+    }
+    filtered.push(row)
+  }
+
+  // Step 3: Projection (grouping vs non-grouping)
   /** @type {Record<string, any>[]} */
-  const projected = []
+  let projected = []
 
   if (useGrouping) {
     // Grouping due to GROUP BY or aggregate functions
@@ -274,11 +414,11 @@ function evaluateSelectAst(select, dataSource, tables) {
     if (select.groupBy?.length) {
       /** @type {Map<string, RowSource[]>} */
       const map = new Map()
-      for (const row of working) {
+      for (const row of filtered) {
         /** @type {string[]} */
         const keyParts = []
         for (const expr of select.groupBy) {
-          const v = evaluateExpr({ node: expr, row, tables })
+          const v = await evaluateExpr({ node: expr, row, tables })
           keyParts.push(JSON.stringify(v))
         }
         const key = keyParts.join('|')
@@ -291,7 +431,7 @@ function evaluateSelectAst(select, dataSource, tables) {
         group.push(row)
       }
     } else {
-      groups.push(working)
+      groups.push(filtered)
     }
 
     const hasStar = select.columns.some(col => col.kind === 'star')
@@ -316,14 +456,18 @@ function evaluateSelectAst(select, dataSource, tables) {
 
         if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          const value = group.length > 0 ? evaluateExpr({ node: col.expr, row: group[0], tables }) : undefined
-          resultRow[alias] = value
+          if (group.length > 0) {
+            const value = await evaluateExpr({ node: col.expr, row: group[0], tables })
+            resultRow[alias] = value
+          } else {
+            resultRow[alias] = undefined
+          }
           continue
         }
 
         if (col.kind === 'aggregate') {
           const alias = col.alias ?? defaultAggregateAlias(col)
-          const value = evaluateAggregate(col, group)
+          const value = await evaluateAggregate(col, group)
           resultRow[alias] = value
           continue
         }
@@ -331,9 +475,7 @@ function evaluateSelectAst(select, dataSource, tables) {
 
       // Apply HAVING filter before adding to projected results
       if (select.having) {
-        // For HAVING, we need to evaluate aggregates in the context of the group
-        // Create a special row context that includes both the group data and aggregate values
-        if (!evaluateHavingExpr(select.having, resultRow, group, tables)) {
+        if (!await evaluateHavingExpr(select.having, resultRow, group, tables)) {
           continue
         }
       }
@@ -343,7 +485,8 @@ function evaluateSelectAst(select, dataSource, tables) {
   } else {
     // No grouping, simple projection
     // Sort before projection so ORDER BY can access columns not in SELECT
-    const sorted = sortRowSources(working, select.orderBy, tables)
+    const sorted = await sortRowSources(filtered, select.orderBy, tables)
+
     for (const row of sorted) {
       /** @type {Record<string, any>} */
       const outRow = {}
@@ -355,29 +498,26 @@ function evaluateSelectAst(select, dataSource, tables) {
           }
         } else if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          const value = evaluateExpr({ node: col.expr, row, tables })
+          const value = await evaluateExpr({ node: col.expr, row, tables })
           outRow[alias] = value
-        } else if (col.kind === 'aggregate') {
-          throw new Error(
-            'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'
-          )
         }
       }
       projected.push(outRow)
     }
   }
 
-  let result = projected
+  // Step 4: DISTINCT
+  projected = applyDistinct(projected, select.distinct)
 
-  result = applyDistinct(result, select.distinct)
-  result = applyOrderBy(result, select.orderBy, tables)
+  // Step 5: ORDER BY (final sort for grouped queries)
+  projected = await applyOrderBy(projected, select.orderBy, tables)
 
-  if (typeof select.offset === 'number' && select.offset > 0) {
-    result = result.slice(select.offset)
+  // Step 6: OFFSET and LIMIT
+  const start = select.offset ?? 0
+  const end = select.limit ? start + select.limit : projected.length
+
+  // Step 7: Yield results
+  for (let i = start; i < end && i < projected.length; i++) {
+    yield projected[i]
   }
-  if (typeof select.limit === 'number') {
-    result = result.slice(0, select.limit)
-  }
-
-  return result
 }

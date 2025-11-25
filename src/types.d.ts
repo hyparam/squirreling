@@ -1,27 +1,24 @@
+
+/**
+ * Async data source for streaming SQL execution.
+ * Provides an async iterator over rows.
+ */
+export interface AsyncDataSource {
+  getRows(): AsyncIterable<RowSource>
+}
 export interface RowSource {
   getCell(name: string): any
   getKeys(): string[]
 }
 
-export interface DataSource {
-  getNumRows(): number
-  getRow(index: number): RowSource
-}
-
 export type RawData = Record<string, any>[]
 
 export interface ExecuteSqlOptions {
-  tables: Record<string, RawData | DataSource>
+  tables: Record<string, RawData | AsyncDataSource>
   query: string
 }
 
 export type SqlPrimitive = string | number | bigint | boolean | null
-
-export interface FromSubquery {
-  kind: 'subquery'
-  query: SelectStatement
-  alias: string
-}
 
 export interface SelectStatement {
   distinct: boolean
@@ -34,6 +31,12 @@ export interface SelectStatement {
   orderBy: OrderByItem[]
   limit?: number
   offset?: number
+}
+
+export interface FromSubquery {
+  kind: 'subquery'
+  query: SelectStatement
+  alias: string
 }
 
 export type BinaryOp =

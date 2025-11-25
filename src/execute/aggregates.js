@@ -6,16 +6,16 @@ import { evaluateExpr } from './expression.js'
  * @import { AggregateColumn, ExprNode, RowSource } from '../types.js'
  * @param {AggregateColumn} col - aggregate column definition
  * @param {RowSource[]} rows - rows to aggregate
- * @returns {number | null} aggregated result
+ * @returns {Promise<number | null>} aggregated result
  */
-export function evaluateAggregate(col, rows) {
+export async function evaluateAggregate(col, rows) {
   const { arg, func } = col
 
   if (func === 'COUNT') {
     if (arg.kind === 'star') return rows.length
     let count = 0
     for (let i = 0; i < rows.length; i += 1) {
-      const v = evaluateExpr({ node: arg.expr, row: rows[i] })
+      const v = await evaluateExpr({ node: arg.expr, row: rows[i] })
       if (v !== null && v !== undefined) {
         count += 1
       }
@@ -35,7 +35,7 @@ export function evaluateAggregate(col, rows) {
     let max = null
 
     for (let i = 0; i < rows.length; i += 1) {
-      const raw = evaluateExpr({ node: arg.expr, row: rows[i] })
+      const raw = await evaluateExpr({ node: arg.expr, row: rows[i] })
       if (raw == null) continue
       const num = Number(raw)
       if (!Number.isFinite(num)) continue
