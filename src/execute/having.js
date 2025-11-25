@@ -1,5 +1,5 @@
 /**
- * @import { AggregateFunc, ExprNode, RowSource, SqlPrimitive } from '../types.js'
+ * @import { AggregateFunc, DataSource, ExprNode, RowSource, SqlPrimitive } from '../types.js'
  */
 
 import { isAggregateFunc } from '../validation.js'
@@ -43,9 +43,10 @@ function createHavingContext(resultRow, group) {
  * @param {ExprNode} expr - the HAVING expression
  * @param {Record<string, any>} row - the aggregated result row
  * @param {RowSource[]} group - the group of rows for re-evaluating aggregates
+ * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
  * @returns {boolean} whether the HAVING condition is satisfied
  */
-export function evaluateHavingExpr(expr, row, group) {
+export function evaluateHavingExpr(expr, row, group, tables) {
   const context = createHavingContext(row, group)
 
   // For HAVING, we need special handling of aggregate functions
@@ -54,13 +55,13 @@ export function evaluateHavingExpr(expr, row, group) {
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
       // Evaluate aggregate function on the group
-      return Boolean(evaluateAggregateFunction(funcName, expr.args, group))
+      return Boolean(evaluateAggregateFunction(funcName, expr.args, group, tables))
     }
   }
 
   if (expr.type === 'binary') {
-    const left = evaluateHavingValue(expr.left, context, group)
-    const right = evaluateHavingValue(expr.right, context, group)
+    const left = evaluateHavingValue(expr.left, context, group, tables)
+    const right = evaluateHavingValue(expr.right, context, group, tables)
 
     if (expr.op === 'AND') {
       return Boolean(left && right)
@@ -96,20 +97,20 @@ export function evaluateHavingExpr(expr, row, group) {
 
   if (expr.type === 'unary') {
     if (expr.op === 'NOT') {
-      return !evaluateHavingExpr(expr.argument, context, group)
+      return !evaluateHavingExpr(expr.argument, context, group, tables)
     }
     if (expr.op === 'IS NULL') {
-      return evaluateHavingValue(expr.argument, context, group) == null
+      return evaluateHavingValue(expr.argument, context, group, tables) == null
     }
     if (expr.op === 'IS NOT NULL') {
-      return evaluateHavingValue(expr.argument, context, group) != null
+      return evaluateHavingValue(expr.argument, context, group, tables) != null
     }
   }
 
   if (expr.type === 'between' || expr.type === 'not between') {
-    const exprVal = evaluateHavingValue(expr.expr, context, group)
-    const lower = evaluateHavingValue(expr.lower, context, group)
-    const upper = evaluateHavingValue(expr.upper, context, group)
+    const exprVal = evaluateHavingValue(expr.expr, context, group, tables)
+    const lower = evaluateHavingValue(expr.lower, context, group, tables)
+    const upper = evaluateHavingValue(expr.upper, context, group, tables)
 
     // If any value is NULL, return false (SQL behavior)
     if (exprVal == null || lower == null || upper == null) {
@@ -121,7 +122,7 @@ export function evaluateHavingExpr(expr, row, group) {
   }
 
   // For other expression types, use the context row
-  return Boolean(evaluateExpr(expr, context))
+  return Boolean(evaluateExpr({ node: expr, row: context, tables }))
 }
 
 /**
@@ -130,22 +131,23 @@ export function evaluateHavingExpr(expr, row, group) {
  * @param {ExprNode} expr
  * @param {RowSource} context - the context row
  * @param {RowSource[]} group - the group of rows
+ * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
  * @returns {SqlPrimitive} the evaluated value
  */
-function evaluateHavingValue(expr, context, group) {
+function evaluateHavingValue(expr, context, group, tables) {
   if (expr.type === 'function') {
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
-      return evaluateAggregateFunction(funcName, expr.args, group)
+      return evaluateAggregateFunction(funcName, expr.args, group, tables)
     }
   }
 
   // For binary expressions, we need to use evaluateHavingExpr to properly handle aggregates
   if (expr.type === 'binary' || expr.type === 'unary' || expr.type === 'between' || expr.type === 'not between') {
-    return evaluateHavingExpr(expr, context, group)
+    return evaluateHavingExpr(expr, context, group, tables)
   }
 
-  return evaluateExpr(expr, context)
+  return evaluateExpr({ node: expr, row: context, tables })
 }
 
 /**
@@ -154,9 +156,10 @@ function evaluateHavingValue(expr, context, group) {
  * @param {AggregateFunc} funcName - aggregate function name
  * @param {ExprNode[]} args - function arguments
  * @param {RowSource[]} group - the group of rows
+ * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
  * @returns {SqlPrimitive} the aggregate result
  */
-function evaluateAggregateFunction(funcName, args, group) {
+function evaluateAggregateFunction(funcName, args, group, tables) {
   if (funcName === 'COUNT') {
     if (args.length === 1 && args[0].type === 'identifier' && args[0].name === '*') {
       return group.length
@@ -164,7 +167,7 @@ function evaluateAggregateFunction(funcName, args, group) {
     // COUNT(column) - count non-null values
     let count = 0
     for (const row of group) {
-      const val = evaluateExpr(args[0], row)
+      const val = evaluateExpr({ node: args[0], row, tables })
       if (val != null) count++
     }
     return count
@@ -173,7 +176,7 @@ function evaluateAggregateFunction(funcName, args, group) {
   if (funcName === 'SUM') {
     let sum = 0
     for (const row of group) {
-      const val = evaluateExpr(args[0], row)
+      const val = evaluateExpr({ node: args[0], row, tables })
       if (val != null) sum += Number(val)
     }
     return sum
@@ -183,7 +186,7 @@ function evaluateAggregateFunction(funcName, args, group) {
     let sum = 0
     let count = 0
     for (const row of group) {
-      const val = evaluateExpr(args[0], row)
+      const val = evaluateExpr({ node: args[0], row, tables })
       if (val != null) {
         sum += Number(val)
         count++
@@ -195,7 +198,7 @@ function evaluateAggregateFunction(funcName, args, group) {
   if (funcName === 'MIN') {
     let min = null
     for (const row of group) {
-      const val = evaluateExpr(args[0], row)
+      const val = evaluateExpr({ node: args[0], row, tables })
       if (val != null && (min == null || val < min)) {
         min = val
       }
@@ -206,7 +209,7 @@ function evaluateAggregateFunction(funcName, args, group) {
   if (funcName === 'MAX') {
     let max = null
     for (const row of group) {
-      const val = evaluateExpr(args[0], row)
+      const val = evaluateExpr({ node: args[0], row, tables })
       if (val != null && (max == null || val > max)) {
         max = val
       }

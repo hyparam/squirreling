@@ -1,8 +1,8 @@
-import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
-import { evaluateHavingExpr } from './having.js'
 import { parseSql } from '../parse/parse.js'
 import { createMemorySource, createRowAccessor } from '../backend/memory.js'
+import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
+import { evaluateHavingExpr } from './having.js'
 
 /**
  * @import { DataSource, ExecuteSqlOptions, ExprNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
@@ -17,27 +17,41 @@ import { createMemorySource, createRowAccessor } from '../backend/memory.js'
 export function executeSql({ tables, query }) {
   const select = parseSql(query)
 
-  // Check for unsupported JOIN operations
+  // Check for unsupported operations
   if (select.joins.length) {
     throw new Error('JOIN is not supported')
-  }
-
-  // Get the table name from the FROM clause
-  if (typeof select.from !== 'string') {
-    throw new Error('Subquery in FROM clause is not supported')
   }
   if (!select.from) {
     throw new Error('FROM clause is required')
   }
 
-  const table = tables[select.from]
-  if (table === undefined) {
-    throw new Error(`Table "${select.from}" not found`)
+  return executeSelect(select, tables)
+}
+
+/**
+ * Executes a SELECT query against the provided tables
+ *
+ * @param {SelectStatement} select
+ * @param {Record<string, any[] | DataSource>} tables
+ * @returns {Record<string, any>[]} the subquery results
+ */
+export function executeSelect(select, tables) {
+  /** @type {DataSource} */
+  let dataSource
+
+  if (typeof select.from === 'string') {
+    const table = tables[select.from]
+    if (table === undefined) {
+      throw new Error(`Table "${select.from}" not found`)
+    }
+    dataSource = Array.isArray(table) ? createMemorySource(table) : table
+  } else {
+    // Nested subquery - recursively resolve
+    const derivedData = executeSelect(select.from.query, tables)
+    dataSource = createMemorySource(derivedData)
   }
 
-  // Convert raw data to DataSource if needed
-  const dataSource = Array.isArray(table) ? createMemorySource(table) : table
-  return evaluateSelectAst(select, dataSource)
+  return evaluateSelectAst(select, dataSource, tables)
 }
 
 /**
@@ -137,17 +151,18 @@ function applyDistinct(rows, distinct) {
  *
  * @param {Record<string, any>[]} rows - the input rows
  * @param {OrderByItem[]} orderBy - the sort specifications
+ * @param {Record<string, any[] | DataSource>} [tables] - Available data sources for subqueries
  * @returns {Record<string, any>[]} the sorted rows
  */
-function applyOrderBy(rows, orderBy) {
+function applyOrderBy(rows, orderBy, tables) {
   if (!orderBy?.length) return rows
 
   const sorted = rows.slice()
   sorted.sort((a, b) => {
     for (const term of orderBy) {
       const dir = term.direction
-      const av = evaluateExpr(term.expr, createRowAccessor(a))
-      const bv = evaluateExpr(term.expr, createRowAccessor(b))
+      const av = evaluateExpr({ node: term.expr, row: createRowAccessor(a), tables })
+      const bv = evaluateExpr({ node: term.expr, row: createRowAccessor(b), tables })
 
       // Handle NULLS FIRST / NULLS LAST
       const aIsNull = av == null
@@ -178,13 +193,14 @@ function applyOrderBy(rows, orderBy) {
 }
 
 /**
- * Evaluates a parsed SELECT AST against data rows
+ * Evaluates a select with a resolved FROM data source
  *
  * @param {SelectStatement} select - the parsed SQL AST
  * @param {DataSource} dataSource - the data source
+ * @param {Record<string, any[] | DataSource>} tables - available data sources
  * @returns {Record<string, any>[]} the filtered, projected, and sorted result rows
  */
-function evaluateSelectAst(select, dataSource) {
+function evaluateSelectAst(select, dataSource, tables) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
   // WHERE clause filtering
@@ -193,7 +209,7 @@ function evaluateSelectAst(select, dataSource) {
   const length = dataSource.getNumRows()
   for (let i = 0; i < length; i++) {
     const row = dataSource.getRow(i)
-    if (!select.where || evaluateExpr(select.where, row)) {
+    if (!select.where || evaluateExpr({ node: select.where, row, tables })) {
       working.push(row)
     }
   }
@@ -216,7 +232,7 @@ function evaluateSelectAst(select, dataSource) {
         /** @type {string[]} */
         const keyParts = []
         for (const expr of select.groupBy) {
-          const v = evaluateExpr(expr, row)
+          const v = evaluateExpr({ node: expr, row, tables })
           keyParts.push(JSON.stringify(v))
         }
         const key = keyParts.join('|')
@@ -254,7 +270,7 @@ function evaluateSelectAst(select, dataSource) {
 
         if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          const value = group.length > 0 ? evaluateExpr(col.expr, group[0]) : undefined
+          const value = group.length > 0 ? evaluateExpr({ node: col.expr, row: group[0], tables }) : undefined
           resultRow[alias] = value
           continue
         }
@@ -271,7 +287,7 @@ function evaluateSelectAst(select, dataSource) {
       if (select.having) {
         // For HAVING, we need to evaluate aggregates in the context of the group
         // Create a special row context that includes both the group data and aggregate values
-        if (!evaluateHavingExpr(select.having, resultRow, group)) {
+        if (!evaluateHavingExpr(select.having, resultRow, group, tables)) {
           continue
         }
       }
@@ -291,7 +307,7 @@ function evaluateSelectAst(select, dataSource) {
           }
         } else if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          const value = evaluateExpr(col.expr, row)
+          const value = evaluateExpr({ node: col.expr, row, tables })
           outRow[alias] = value
         } else if (col.kind === 'aggregate') {
           throw new Error(
@@ -306,7 +322,7 @@ function evaluateSelectAst(select, dataSource) {
   let result = projected
 
   result = applyDistinct(result, select.distinct)
-  result = applyOrderBy(result, select.orderBy)
+  result = applyOrderBy(result, select.orderBy, tables)
 
   if (typeof select.offset === 'number' && select.offset > 0) {
     result = result.slice(select.offset)

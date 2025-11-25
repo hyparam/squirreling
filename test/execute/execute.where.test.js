@@ -220,12 +220,12 @@ describe('executeSql', () => {
         { id: 3, user_id: 3, amount: 150 },
         { id: 4, user_id: 1, amount: 50 },
       ]
-      // TODO: Need to support multiple tables/sources for this to work
-      // For now, this test verifies we throw a clear error message
-      expect(() => executeSql({
-        tables: { orders },
+      const result = executeSql({
+        tables: { orders, users },
         query: 'SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = TRUE)',
-      })).toThrow('WHERE IN with subqueries is not yet supported.')
+      })
+      // Users 1 and 2 are active, so orders 1, 2, 4 match
+      expect(result).toHaveLength(3)
     })
 
     it('should filter with NOT IN subquery', () => {
@@ -235,42 +235,42 @@ describe('executeSql', () => {
         { id: 3, user_id: 3, amount: 150 },
         { id: 4, user_id: 1, amount: 50 },
       ]
-      // TODO: Need to support multiple tables/sources for this to work
-      // For now, this test verifies we throw a clear error message
-      expect(() => executeSql({
-        tables: { orders },
+      const result = executeSql({
+        tables: { orders, users },
         query: 'SELECT * FROM orders WHERE user_id NOT IN (SELECT id FROM users WHERE active = FALSE)',
-      })).toThrow('WHERE NOT IN with subqueries is not yet supported.')
+      })
+      // Users 3, 4, 5 are inactive, so orders with user_id 1, 2 remain (orders 1, 2, 4)
+      expect(result).toHaveLength(3)
     })
 
-    it('should filter with EXISTS subquery', () => {
+    it('should filter with EXISTS subquery (non-correlated)', () => {
       const orders = [
         { id: 1, user_id: 1, amount: 100 },
         { id: 2, user_id: 2, amount: 200 },
         { id: 3, user_id: 999, amount: 150 },
         { id: 4, user_id: 1, amount: 50 },
       ]
-      // TODO: Need to support multiple tables/sources and correlated subqueries
-      // For now, this test verifies we throw a clear error message
-      expect(() => executeSql({
-        tables: { orders },
-        query: 'SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)',
-      })).toThrow('WHERE EXISTS with subqueries is not yet supported.')
+      // Non-correlated EXISTS - returns all rows if subquery has results
+      const result = executeSql({
+        tables: { orders, users },
+        query: 'SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE active = TRUE)',
+      })
+      expect(result).toHaveLength(4) // all orders since there are active users
     })
 
-    it('should filter with NOT EXISTS subquery', () => {
+    it('should filter with NOT EXISTS subquery (non-correlated)', () => {
       const orders = [
         { id: 1, user_id: 1, amount: 100 },
         { id: 2, user_id: 2, amount: 200 },
         { id: 3, user_id: 999, amount: 150 },
         { id: 4, user_id: 1, amount: 50 },
       ]
-      // TODO: Need to support multiple tables/sources and correlated subqueries
-      // For now, this test verifies we throw a clear error message
-      expect(() => executeSql({
-        tables: { orders },
-        query: 'SELECT * FROM orders WHERE NOT EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)',
-      })).toThrow('WHERE NOT EXISTS with subqueries is not yet supported.')
+      // Non-correlated NOT EXISTS - returns no rows if subquery has results
+      const result = executeSql({
+        tables: { orders, users },
+        query: 'SELECT * FROM orders WHERE NOT EXISTS (SELECT * FROM users WHERE active = TRUE)',
+      })
+      expect(result).toHaveLength(0) // no orders since there are active users
     })
   })
 })

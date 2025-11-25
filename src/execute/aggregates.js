@@ -15,7 +15,7 @@ export function evaluateAggregate(col, rows) {
     if (arg.kind === 'star') return rows.length
     let count = 0
     for (let i = 0; i < rows.length; i += 1) {
-      const v = evaluateExpr(arg.expr, rows[i])
+      const v = evaluateExpr({ node: arg.expr, row: rows[i] })
       if (v !== null && v !== undefined) {
         count += 1
       }
@@ -35,7 +35,7 @@ export function evaluateAggregate(col, rows) {
     let max = null
 
     for (let i = 0; i < rows.length; i += 1) {
-      const raw = evaluateExpr(arg.expr, rows[i])
+      const raw = evaluateExpr({ node: arg.expr, row: rows[i] })
       if (raw == null) continue
       const num = Number(raw)
       if (!Number.isFinite(num)) continue

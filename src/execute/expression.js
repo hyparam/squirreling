@@ -1,13 +1,19 @@
+import { executeSelect } from './execute.js'
+
+/**
+ * @import { ExprNode, RowSource, SqlPrimitive, DataSource } from '../types.js'
+ */
 
 /**
  * Evaluates an expression node against a row of data
  *
- * @import { ExprNode, RowSource, SqlPrimitive } from '../types.js'
- * @param {ExprNode} node - The expression node to evaluate
- * @param {RowSource} row - The data row to evaluate against
+ * @param {Object} params
+ * @param {ExprNode} params.node - The expression node to evaluate
+ * @param {RowSource} params.row - The data row to evaluate against
+ * @param {Record<string, any[] | DataSource>} [params.tables] - Available data sources for subqueries
  * @returns {SqlPrimitive} The result of the evaluation
  */
-export function evaluateExpr(node, row) {
+export function evaluateExpr({ node, row, tables }) {
   if (node.type === 'literal') {
     return node.value
   }
@@ -19,16 +25,16 @@ export function evaluateExpr(node, row) {
   // Unary operators
   if (node.type === 'unary') {
     if (node.op === 'NOT') {
-      return !evaluateExpr(node.argument, row)
+      return !evaluateExpr({ node: node.argument, row, tables })
     }
     if (node.op === 'IS NULL') {
-      return evaluateExpr(node.argument, row) == null
+      return evaluateExpr({ node: node.argument, row, tables }) == null
     }
     if (node.op === 'IS NOT NULL') {
-      return evaluateExpr(node.argument, row) != null
+      return evaluateExpr({ node: node.argument, row, tables }) != null
     }
     if (node.op === '-') {
-      const val = evaluateExpr(node.argument, row)
+      const val = evaluateExpr({ node: node.argument, row, tables })
       if (val == null) return null
       return -Number(val)
     }
@@ -37,19 +43,19 @@ export function evaluateExpr(node, row) {
   // Binary operators
   if (node.type === 'binary') {
     if (node.op === 'AND') {
-      const leftVal = evaluateExpr(node.left, row)
+      const leftVal = evaluateExpr({ node: node.left, row, tables })
       if (!leftVal) return false
-      return Boolean(evaluateExpr(node.right, row))
+      return Boolean(evaluateExpr({ node: node.right, row, tables }))
     }
 
     if (node.op === 'OR') {
-      const leftVal = evaluateExpr(node.left, row)
+      const leftVal = evaluateExpr({ node: node.left, row, tables })
       if (leftVal) return true
-      return Boolean(evaluateExpr(node.right, row))
+      return Boolean(evaluateExpr({ node: node.right, row, tables }))
     }
 
-    const left = evaluateExpr(node.left, row)
-    const right = evaluateExpr(node.right, row)
+    const left = evaluateExpr({ node: node.left, row, tables })
+    const right = evaluateExpr({ node: node.right, row, tables })
 
     // In SQL, NULL comparisons with =, !=, <> always return false (unknown)
     // You must use IS NULL or IS NOT NULL to check for NULL
@@ -83,9 +89,9 @@ export function evaluateExpr(node, row) {
 
   // BETWEEN and NOT BETWEEN
   if (node.type === 'between' || node.type === 'not between') {
-    const expr = evaluateExpr(node.expr, row)
-    const lower = evaluateExpr(node.lower, row)
-    const upper = evaluateExpr(node.upper, row)
+    const expr = evaluateExpr({ node: node.expr, row, tables })
+    const lower = evaluateExpr({ node: node.lower, row, tables })
+    const upper = evaluateExpr({ node: node.upper, row, tables })
 
     // If any value is NULL, return false (SQL behavior)
     if (expr == null || lower == null || upper == null) {
@@ -99,7 +105,7 @@ export function evaluateExpr(node, row) {
   // Function calls
   if (node.type === 'function') {
     const funcName = node.name.toUpperCase()
-    const args = node.args.map(arg => evaluateExpr(arg, row))
+    const args = node.args.map(arg => evaluateExpr({ node: arg, row, tables }))
 
     if (funcName === 'UPPER') {
       if (args.length !== 1) throw new Error('UPPER requires exactly 1 argument')
@@ -175,7 +181,7 @@ export function evaluateExpr(node, row) {
   }
 
   if (node.type === 'cast') {
-    const val = evaluateExpr(node.expr, row)
+    const val = evaluateExpr({ node: node.expr, row, tables })
     if (val == null) return null
     const toType = node.toType.toUpperCase()
     if (toType === 'INTEGER' || toType === 'INT') {
@@ -202,17 +208,17 @@ export function evaluateExpr(node, row) {
 
   // IN and NOT IN with value lists
   if (node.type === 'in valuelist') {
-    const exprVal = evaluateExpr(node.expr, row)
+    const exprVal = evaluateExpr({ node: node.expr, row, tables })
     for (const valueNode of node.values) {
-      const val = evaluateExpr(valueNode, row)
+      const val = evaluateExpr({ node: valueNode, row, tables })
       if (exprVal === val) return true
     }
     return false
   }
   if (node.type === 'not in valuelist') {
-    const exprVal = evaluateExpr(node.expr, row)
+    const exprVal = evaluateExpr({ node: node.expr, row, tables })
     for (const valueNode of node.values) {
-      const val = evaluateExpr(valueNode, row)
+      const val = evaluateExpr({ node: valueNode, row, tables })
       if (exprVal === val) return false
     }
     return true
@@ -220,45 +226,57 @@ export function evaluateExpr(node, row) {
 
   // IN and NOT IN with subqueries
   if (node.type === 'in') {
-    throw new Error('WHERE IN with subqueries is not yet supported.')
+    const exprVal = evaluateExpr({ node: node.expr, row, tables })
+    const results = executeSelect(node.subquery, tables)
+    if (results.length === 0) return false
+    const firstKey = Object.keys(results[0])[0]
+    const values = results.map(r => r[firstKey])
+    return values.includes(exprVal)
   }
   if (node.type === 'not in') {
-    throw new Error('WHERE NOT IN with subqueries is not yet supported.')
+    const exprVal = evaluateExpr({ node: node.expr, row, tables })
+    const results = executeSelect(node.subquery, tables)
+    if (results.length === 0) return true
+    const firstKey = Object.keys(results[0])[0]
+    const values = results.map(r => r[firstKey])
+    return !values.includes(exprVal)
   }
 
   // EXISTS and NOT EXISTS with subqueries
   if (node.type === 'exists') {
-    throw new Error('WHERE EXISTS with subqueries is not yet supported.')
+    const results = executeSelect(node.subquery, tables)
+    return results.length > 0
   }
   if (node.type === 'not exists') {
-    throw new Error('WHERE NOT EXISTS with subqueries is not yet supported.')
+    const results = executeSelect(node.subquery, tables)
+    return results.length === 0
   }
 
   // CASE expressions
   if (node.type === 'case') {
     // For simple CASE: evaluate the case expression once
-    const caseValue = node.caseExpr ? evaluateExpr(node.caseExpr, row) : undefined
+    const caseValue = node.caseExpr ? evaluateExpr({ node: node.caseExpr, row, tables }) : undefined
 
     // Iterate through WHEN clauses
     for (const whenClause of node.whenClauses) {
       let conditionResult
       if (caseValue !== undefined) {
         // Simple CASE: compare caseValue with condition
-        const whenValue = evaluateExpr(whenClause.condition, row)
+        const whenValue = evaluateExpr({ node: whenClause.condition, row, tables })
         conditionResult = caseValue === whenValue
       } else {
         // Searched CASE: evaluate condition as boolean
-        conditionResult = evaluateExpr(whenClause.condition, row)
+        conditionResult = evaluateExpr({ node: whenClause.condition, row, tables })
       }
 
       if (conditionResult) {
-        return evaluateExpr(whenClause.result, row)
+        return evaluateExpr({ node: whenClause.result, row, tables })
       }
     }
 
     // No WHEN clause matched, return ELSE result or NULL
     if (node.elseResult) {
-      return evaluateExpr(node.elseResult, row)
+      return evaluateExpr({ node: node.elseResult, row, tables })
     }
     return null
   }

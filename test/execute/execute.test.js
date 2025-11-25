@@ -360,9 +360,10 @@ describe('executeSql', () => {
   })
 
   describe('subqueries', () => {
-    it('should throw error for subquery in FROM clause', () => {
-      expect(() => executeSql({ tables: { users }, query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u' }))
-        .toThrow('Subquery in FROM clause is not supported')
+    it('should support subquery in FROM clause', () => {
+      const result = executeSql({ tables: { users }, query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u' })
+      expect(result).toHaveLength(4)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie', 'Diana', 'Eve'])
     })
   })
 })
