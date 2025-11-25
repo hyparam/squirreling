@@ -151,20 +151,13 @@ export interface AggregateColumn {
   alias?: string
 }
 
-export interface FunctionColumn {
-  kind: 'function'
-  func: StringFunc
-  args: ExprNode[]
-  alias?: string
-}
-
-export interface OperationColumn {
-  kind: 'operation'
+export interface DerivedColumn {
+  kind: 'derived'
   expr: ExprNode
   alias?: string
 }
 
-export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | FunctionColumn | OperationColumn
+export type SelectColumn = StarColumn | SimpleColumn | AggregateColumn | DerivedColumn
 
 export interface OrderByItem {
   expr: ExprNode

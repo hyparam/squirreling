@@ -1,5 +1,5 @@
 /**
- * @import { DataSource, ExecuteSqlOptions, FunctionColumn, FunctionNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { DataSource, ExecuteSqlOptions, ExprNode, FunctionNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
@@ -21,21 +21,28 @@ export function executeSql({ source, query }) {
 }
 
 /**
- * Generates a default alias name for a string function
+ * Generates a default alias for a derived column expression
  *
- * @param {FunctionColumn} col - the function column definition
- * @returns {string} the generated alias (e.g., "upper_name", "concat_a_b")
+ * @param {ExprNode} expr - the expression node
+ * @returns {string} the generated alias
  */
-function defaultFunctionAlias(col) {
-  const base = col.func.toLowerCase()
-  // Try to extract column names from identifier arguments
-  const columnNames = col.args
-    .filter(arg => arg.type === 'identifier')
-    .map(arg => arg.name)
-  if (columnNames.length > 0) {
-    return base + '_' + columnNames.join('_')
+function defaultDerivedAlias(expr) {
+  if (expr.type === 'function') {
+    const base = expr.name.toLowerCase()
+    // Try to extract column names from identifier arguments
+    const columnNames = expr.args
+      .filter(arg => arg.type === 'identifier')
+      .map(arg => arg.name)
+    if (columnNames.length > 0) {
+      return base + '_' + columnNames.join('_')
+    }
+    return base
   }
-  return base
+  if (expr.type === 'cast') return 'cast_expr'
+  if (expr.type === 'unary' && expr.argument.type === 'identifier') {
+    return expr.op === '-' ? 'neg_' + expr.argument.name : 'expr'
+  }
+  return 'expr'
 }
 
 /**
@@ -240,12 +247,9 @@ function evaluateSelectAst(select, dataSource) {
           continue
         }
 
-        if (col.kind === 'function') {
-          // Evaluate function on the first row of the group
-          /** @type {FunctionNode} */
-          const funcNode = { type: 'function', name: col.func, args: col.args }
-          const alias = col.alias ?? defaultFunctionAlias(col)
-          const value = group.length > 0 ? evaluateExpr(funcNode, group[0]) : undefined
+        if (col.kind === 'derived') {
+          const alias = col.alias ?? defaultDerivedAlias(col.expr)
+          const value = group.length > 0 ? evaluateExpr(col.expr, group[0]) : undefined
           resultRow[alias] = value
           continue
         }
@@ -253,13 +257,6 @@ function evaluateSelectAst(select, dataSource) {
         if (col.kind === 'aggregate') {
           const alias = col.alias ?? defaultAggregateAlias(col)
           const value = evaluateAggregate(col, group)
-          resultRow[alias] = value
-          continue
-        }
-
-        if (col.kind === 'operation') {
-          const alias = col.alias ?? 'expr'
-          const value = group.length > 0 ? evaluateExpr(col.expr, group[0]) : undefined
           resultRow[alias] = value
           continue
         }
@@ -291,14 +288,8 @@ function evaluateSelectAst(select, dataSource) {
           const name = col.column
           const alias = col.alias ?? name
           outRow[alias] = row.getCell(name)
-        } else if (col.kind === 'function') {
-          /** @type {FunctionNode} */
-          const funcNode = { type: 'function', name: col.func, args: col.args }
-          const value = evaluateExpr(funcNode, row)
-          const alias = col.alias ?? defaultFunctionAlias(col)
-          outRow[alias] = value
-        } else if (col.kind === 'operation') {
-          const alias = col.alias ?? 'expr'
+        } else if (col.kind === 'derived') {
+          const alias = col.alias ?? defaultDerivedAlias(col.expr)
           const value = evaluateExpr(col.expr, row)
           outRow[alias] = value
         } else if (col.kind === 'aggregate') {

@@ -65,7 +65,7 @@ describe('parseSql', () => {
       const select = parseSql('SELECT -age as neg_age FROM users')
       expect(select.columns).toEqual([
         {
-          kind: 'operation',
+          kind: 'derived',
           expr: {
             type: 'unary',
             op: '-',
@@ -355,7 +355,7 @@ describe('parseSql', () => {
       const select = parseSql('SELECT CAST(age AS STRING) AS age_str FROM users')
       expect(select.columns).toEqual([
         {
-          kind: 'operation',
+          kind: 'derived',
           expr: {
             type: 'cast',
             expr: { type: 'identifier', name: 'age' },

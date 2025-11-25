@@ -3,7 +3,7 @@
  */
 
 import { tokenize } from './tokenize.js'
-import { parseExpression, parsePrimary } from './expression.js'
+import { parseExpression } from './expression.js'
 import { isAggregateFunc, isStringFunc } from '../validation.js'
 
 // Keywords that cannot be used as implicit aliases after a column
@@ -190,7 +190,7 @@ function parseSelectItem(state) {
     expect(state, 'paren', ')')
     const alias = parseAs(state)
     return {
-      kind: 'operation',
+      kind: 'derived',
       expr: { type: 'cast', expr, toType: typeTok.value },
       alias,
     }
@@ -201,22 +201,29 @@ function parseSelectItem(state) {
     const cursor = createExprCursor(state)
     const expr = parseExpression(cursor)
     const alias = parseAs(state)
-    return { kind: 'operation', expr, alias }
+    return { kind: 'derived', expr, alias }
   }
 
   const next = peekToken(state, 1)
   const upper = tok.value.toUpperCase()
 
   if (next.type === 'paren' && next.value === '(') {
-    expectIdentifier(state) // consume function name
     if (isAggregateFunc(upper)) {
+      expectIdentifier(state) // consume function name
       return parseAggregateItem(state, upper)
     }
     if (isStringFunc(upper)) {
-      return parseStringFunctionItem(state, upper)
+      // Don't consume - let expression parser handle the whole function call
+      const cursor = createExprCursor(state)
+      const expr = parseExpression(cursor)
+      const alias = parseAs(state)
+      return { kind: 'derived', expr, alias }
     }
+    // Unknown function
+    expectIdentifier(state)
   }
 
+  // Simple column
   consume(state)
   let column = tok.value
 
@@ -226,7 +233,6 @@ function parseSelectItem(state) {
     const columnTok = expectIdentifier(state)
     column += '.' + columnTok.value
   }
-
   const alias = parseAs(state)
 
   return { kind: 'column', column, alias }
@@ -273,34 +279,6 @@ function parseAggregateItem(state, func) {
   const alias = parseAs(state)
 
   return { kind: 'aggregate', func, arg, alias }
-}
-
-/**
- * @param {ParserState} state
- * @param {StringFunc} func
- * @returns {SelectColumn}
- */
-function parseStringFunctionItem(state, func) {
-  expect(state, 'paren', '(')
-
-  /** @type {ExprNode[]} */
-  const args = []
-
-  // Parse comma-separated arguments
-  if (current(state).type !== 'paren' || current(state).value !== ')') {
-    const cursor = createExprCursor(state)
-    while (true) {
-      const arg = parsePrimary(cursor)
-      args.push(arg)
-      if (!match(state, 'comma')) break
-    }
-  }
-
-  expect(state, 'paren', ')')
-
-  const alias = parseAs(state)
-
-  return { kind: 'function', func, args, alias }
 }
 
 /**
