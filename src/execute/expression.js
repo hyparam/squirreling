@@ -131,23 +131,23 @@ export function evaluateExpr(node, row) {
       return String(val).length
     }
 
-    if (funcName === 'SUBSTRING') {
+    if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
       if (args.length < 2 || args.length > 3) {
-        throw new Error('SUBSTRING requires 2 or 3 arguments')
+        throw new Error(`${funcName} requires 2 or 3 arguments`)
       }
       const str = args[0]
       if (str == null) return null
       const strVal = String(str)
       const start = Number(args[1])
       if (!Number.isInteger(start) || start < 1) {
-        throw new Error('SUBSTRING start position must be a positive integer')
+        throw new Error(`${funcName} start position must be a positive integer`)
       }
       // SQL uses 1-based indexing
       const startIdx = start - 1
       if (args.length === 3) {
         const len = Number(args[2])
         if (!Number.isInteger(len) || len < 0) {
-          throw new Error('SUBSTRING length must be a non-negative integer')
+          throw new Error(`${funcName} length must be a non-negative integer`)
         }
         return strVal.substring(startIdx, startIdx + len)
       }

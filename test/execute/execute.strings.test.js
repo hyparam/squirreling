@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { executeSql } from '../../src/execute/execute.js'
 
+/** @type {null} */
+const NULL = null
+
 describe('string functions', () => {
   const source = [
     { id: 1, name: 'Alice', email: 'alice@example.com', city: 'NYC' },
@@ -194,6 +197,45 @@ describe('string functions', () => {
     })
   })
 
+  describe('SUBSTR', () => {
+    it('should work as an alias for SUBSTRING', () => {
+      const data = [
+        { id: 1, text: 'Hello World' },
+        { id: 2, text: 'JavaScript' },
+      ]
+      const result = executeSql({ source: data, query: 'SELECT SUBSTR(text, 1, 5) AS sub FROM users' })
+      expect(result).toEqual([
+        { sub: 'Hello' },
+        { sub: 'JavaS' },
+      ])
+    })
+
+    it('should extract substring from middle', () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = executeSql({ source: data, query: 'SELECT SUBSTR(text, 7, 5) AS sub FROM users' })
+      expect(result[0].sub).toBe('World')
+    })
+
+    it('should work without length parameter', () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = executeSql({ source: data, query: 'SELECT SUBSTR(text, 7) AS sub FROM users' })
+      expect(result[0].sub).toBe('World')
+    })
+
+    it('should work without alias', () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      const result = executeSql({ source: data, query: 'SELECT SUBSTR(text, 1, 3) FROM users' })
+      expect(result[0]).toHaveProperty('substr_text')
+      expect(result[0].substr_text).toBe('Hel')
+    })
+
+    it('should handle null values', () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = executeSql({ source: data, query: 'SELECT SUBSTR(text, 1, 5) AS sub FROM users' })
+      expect(result[0].sub).toBeNull()
+    })
+  })
+
   describe('TRIM', () => {
     it('should remove leading and trailing whitespace', () => {
       const data = [
@@ -286,9 +328,6 @@ describe('string functions', () => {
   })
 
   describe('null handling', () => {
-    /** @type {null} */
-    const NULL = null
-
     it('should handle null values in UPPER', () => {
       const data = [
         { id: 1, name: 'Alice' },
