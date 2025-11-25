@@ -16,6 +16,11 @@ describe('executeSql', () => {
       expect(result).toEqual(source)
     })
 
+    it('should select all columns with qualified asterisk', () => {
+      const result = executeSql({ source, query: 'SELECT users.* FROM users' })
+      expect(result).toEqual(source)
+    })
+
     it('should select specific columns', () => {
       const result = executeSql({ source, query: 'SELECT name, age FROM users' })
       expect(result).toEqual([

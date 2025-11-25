@@ -19,6 +19,22 @@ describe('parseSql', () => {
       })
     })
 
+    it('should parse SELECT with qualified asterisk', () => {
+      const select = parseSql('SELECT users.* FROM users')
+      expect(select).toEqual({
+        distinct: false,
+        columns: [{ kind: 'star', table: 'users', alias: undefined }],
+        from: 'users',
+        joins: [],
+        where: undefined,
+        groupBy: [],
+        having: undefined,
+        orderBy: [],
+        limit: undefined,
+        offset: undefined,
+      })
+    })
+
     it('should parse SELECT with single column', () => {
       const select = parseSql('SELECT name FROM users')
       expect(select.columns).toEqual([

@@ -34,26 +34,6 @@ export interface SelectStatement {
   offset?: number
 }
 
-export type TokenType =
-  | 'keyword'
-  | 'identifier'
-  | 'number'
-  | 'string'
-  | 'operator'
-  | 'comma'
-  | 'dot'
-  | 'paren'
-  | 'semicolon'
-  | 'eof'
-
-export interface Token {
-  type: TokenType
-  value: string
-  position: number
-  numericValue?: number
-  originalValue?: string
-}
-
 export type BinaryOp =
   | 'AND'
   | 'OR'
@@ -139,6 +119,7 @@ export type ExprNode =
 
 export interface StarColumn {
   kind: 'star'
+  table?: string
   alias?: string
 }
 
@@ -212,4 +193,25 @@ export interface ExprCursor {
   expect(type: TokenType, value: string): Token
   expectIdentifier(): Token
   parseSubquery?: () => SelectStatement
+}
+
+// Tokenizer types
+export type TokenType =
+  | 'keyword'
+  | 'identifier'
+  | 'number'
+  | 'string'
+  | 'operator'
+  | 'comma'
+  | 'dot'
+  | 'paren'
+  | 'semicolon'
+  | 'eof'
+
+export interface Token {
+  type: TokenType
+  value: string
+  position: number
+  numericValue?: number
+  originalValue?: string
 }
