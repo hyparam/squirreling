@@ -224,5 +224,34 @@ export function evaluateExpr(node, row) {
     throw new Error('WHERE NOT EXISTS with subqueries is not yet supported.')
   }
 
+  // CASE expressions
+  if (node.type === 'case') {
+    // For simple CASE: evaluate the case expression once
+    const caseValue = node.caseExpr ? evaluateExpr(node.caseExpr, row) : undefined
+
+    // Iterate through WHEN clauses
+    for (const whenClause of node.whenClauses) {
+      let conditionResult
+      if (caseValue !== undefined) {
+        // Simple CASE: compare caseValue with condition
+        const whenValue = evaluateExpr(whenClause.condition, row)
+        conditionResult = caseValue === whenValue
+      } else {
+        // Searched CASE: evaluate condition as boolean
+        conditionResult = evaluateExpr(whenClause.condition, row)
+      }
+
+      if (conditionResult) {
+        return evaluateExpr(whenClause.result, row)
+      }
+    }
+
+    // No WHEN clause matched, return ELSE result or NULL
+    if (node.elseResult) {
+      return evaluateExpr(node.elseResult, row)
+    }
+    return null
+  }
+
   throw new Error('Unknown expression node type ' + node.type)
 }

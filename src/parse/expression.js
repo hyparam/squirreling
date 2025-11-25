@@ -141,6 +141,48 @@ function parsePrimary(c) {
         subquery,
       }
     }
+    if (tok.value === 'CASE') {
+      c.consume() // CASE
+
+      // Check if it's simple CASE (CASE expr WHEN ...) or searched CASE (CASE WHEN ...)
+      /** @type {import('../types.js').ExprNode | undefined} */
+      let caseExpr
+      const nextTok = c.current()
+      if (nextTok.type !== 'keyword' || nextTok.value !== 'WHEN') {
+        // Simple CASE: parse the case expression
+        caseExpr = parseExpression(c)
+      }
+
+      // Parse WHEN clauses
+      /** @type {import('../types.js').WhenClause[]} */
+      const whenClauses = []
+      while (c.match('keyword', 'WHEN')) {
+        const condition = parseExpression(c)
+        c.expect('keyword', 'THEN')
+        const result = parseExpression(c)
+        whenClauses.push({ condition, result })
+      }
+
+      if (whenClauses.length === 0) {
+        throw new Error('CASE expression must have at least one WHEN clause')
+      }
+
+      // Parse optional ELSE clause
+      /** @type {import('../types.js').ExprNode | undefined} */
+      let elseResult
+      if (c.match('keyword', 'ELSE')) {
+        elseResult = parseExpression(c)
+      }
+
+      c.expect('keyword', 'END')
+
+      return {
+        type: 'case',
+        caseExpr,
+        whenClauses,
+        elseResult,
+      }
+    }
   }
 
   if (tok.type === 'operator' && tok.value === '-') {

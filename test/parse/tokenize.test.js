@@ -283,4 +283,42 @@ describe('tokenize', () => {
       { type: 'eof' },
     ])
   })
+
+  it('should tokenize CASE expressions', () => {
+    const tokens = tokenize('SELECT CASE WHEN age > 18 THEN \'adult\' ELSE \'minor\' END FROM users')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'keyword', value: 'CASE' },
+      { type: 'keyword', value: 'WHEN' },
+      { type: 'identifier', value: 'age' },
+      { type: 'operator', value: '>' },
+      { type: 'number', value: '18', numericValue: 18 },
+      { type: 'keyword', value: 'THEN' },
+      { type: 'string', value: 'adult' },
+      { type: 'keyword', value: 'ELSE' },
+      { type: 'string', value: 'minor' },
+      { type: 'keyword', value: 'END' },
+      { type: 'keyword', value: 'FROM' },
+      { type: 'identifier', value: 'users' },
+      { type: 'eof' },
+    ])
+  })
+
+  it('should tokenize simple CASE expression', () => {
+    const tokens = tokenize('CASE status WHEN 1 THEN \'active\' WHEN 0 THEN \'inactive\' END')
+    expect(tokens).toMatchObject([
+      { type: 'keyword', value: 'CASE' },
+      { type: 'identifier', value: 'status' },
+      { type: 'keyword', value: 'WHEN' },
+      { type: 'number', value: '1', numericValue: 1 },
+      { type: 'keyword', value: 'THEN' },
+      { type: 'string', value: 'active' },
+      { type: 'keyword', value: 'WHEN' },
+      { type: 'number', value: '0', numericValue: 0 },
+      { type: 'keyword', value: 'THEN' },
+      { type: 'string', value: 'inactive' },
+      { type: 'keyword', value: 'END' },
+      { type: 'eof' },
+    ])
+  })
 })

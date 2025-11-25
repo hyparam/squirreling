@@ -3,6 +3,13 @@ import { parseSql } from '../../src/parse/parse.js'
 
 describe('parseSql', () => {
   describe('basic SELECT queries', () => {
+    it('should parse literal SELECT', () => {
+      const select = parseSql('SELECT 1 from users')
+      expect(select.columns).toEqual([
+        { kind: 'derived', expr: { type: 'literal', value: 1 }, alias: undefined },
+      ])
+    })
+
     it('should parse SELECT *', () => {
       const select = parseSql('SELECT * FROM users')
       expect(select).toEqual({
@@ -404,6 +411,65 @@ describe('parseSql', () => {
         },
         alias: 'u',
       })
+    })
+  })
+
+  describe('CASE expressions', () => {
+    it('should parse searched CASE expression', () => {
+      const select = parseSql('SELECT CASE WHEN age > 18 THEN \'adult\' ELSE \'minor\' END FROM users')
+      expect(select.columns).toEqual([
+        {
+          kind: 'derived',
+          expr: {
+            type: 'case',
+            caseExpr: undefined,
+            whenClauses: [
+              {
+                condition: {
+                  type: 'binary',
+                  op: '>',
+                  left: { type: 'identifier', name: 'age' },
+                  right: { type: 'literal', value: 18 },
+                },
+                result: { type: 'literal', value: 'adult' },
+              },
+            ],
+            elseResult: { type: 'literal', value: 'minor' },
+          },
+          alias: undefined,
+        },
+      ])
+    })
+
+    it('should parse simple CASE expression', () => {
+      const select = parseSql('SELECT CASE status WHEN 1 THEN \'active\' WHEN 0 THEN \'inactive\' END FROM users')
+      expect(select.columns).toEqual([
+        {
+          kind: 'derived',
+          expr: {
+            type: 'case',
+            caseExpr: { type: 'identifier', name: 'status' },
+            whenClauses: [
+              {
+                condition: { type: 'literal', value: 1 },
+                result: { type: 'literal', value: 'active' },
+              },
+              {
+                condition: { type: 'literal', value: 0 },
+                result: { type: 'literal', value: 'inactive' },
+              },
+            ],
+            elseResult: undefined,
+          },
+          alias: undefined,
+        },
+      ])
+    })
+
+    it('should parse CASE expression with alias', () => {
+      const select = parseSql('SELECT CASE WHEN age >= 18 THEN \'adult\' ELSE \'minor\' END AS age_group FROM users')
+      expect(select.columns[0].alias).toBe('age_group')
+      expect(select.columns[0].kind).toBe('derived')
     })
   })
 

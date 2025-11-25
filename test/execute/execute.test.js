@@ -337,6 +337,23 @@ describe('executeSql', () => {
     })
   })
 
+  describe('CASE expressions', () => {
+    it('should handle searched CASE expression', () => {
+      const result = executeSql({ source, query: 'SELECT name, CASE WHEN age >= 30 THEN \'senior\' ELSE \'junior\' END AS category FROM users' })
+      expect(result).toHaveLength(5)
+      expect(result[0]).toEqual({ name: 'Alice', category: 'senior' })
+      expect(result[1]).toEqual({ name: 'Bob', category: 'junior' })
+      expect(result[2]).toEqual({ name: 'Charlie', category: 'senior' })
+    })
+
+    it('should handle simple CASE expression', () => {
+      const result = executeSql({ source, query: 'SELECT name, CASE city WHEN \'NYC\' THEN \'New York\' WHEN \'LA\' THEN \'Los Angeles\' END AS city_full FROM users' })
+      expect(result).toHaveLength(5)
+      expect(result[0]).toEqual({ name: 'Alice', city_full: 'New York' })
+      expect(result[1]).toEqual({ name: 'Bob', city_full: 'Los Angeles' })
+    })
+  })
+
   describe('subqueries', () => {
     it('should throw error for subquery in FROM clause', () => {
       expect(() => executeSql({ source, query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u' }))

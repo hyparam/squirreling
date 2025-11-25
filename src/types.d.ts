@@ -105,6 +105,18 @@ export interface ExistsNode {
   subquery: SelectStatement
 }
 
+export interface WhenClause {
+  condition: ExprNode
+  result: ExprNode
+}
+
+export interface CaseNode {
+  type: 'case'
+  caseExpr?: ExprNode
+  whenClauses: WhenClause[]
+  elseResult?: ExprNode
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -116,6 +128,7 @@ export type ExprNode =
   | InSubqueryNode
   | InValuesNode
   | ExistsNode
+  | CaseNode
 
 export interface StarColumn {
   kind: 'star'

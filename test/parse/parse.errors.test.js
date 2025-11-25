@@ -27,6 +27,16 @@ describe('parseSql error handling', () => {
       expect(() => parseSql('SELECT * FROM 3')).toThrow('Expected identifier after "FROM" but found "3" at position 14')
     })
 
+    it('should throw error on dangling comma', () => {
+      expect(() => parseSql('SELECT name,')).toThrow('Expected column name or expression after "," but found end of query at position 12')
+      expect(() => parseSql('SELECT name, FROM users')).toThrow('Expected column name or expression after "," but found "FROM" at position 13')
+    })
+
+    it('should throw error on illegal keywords after SELECT', () => {
+      expect(() => parseSql('SELECT WHERE * FROM users')).toThrow('Expected column name or expression after "SELECT" but found "WHERE" at position 7')
+      expect(() => parseSql('SELECT JOIN * FROM users')).toThrow('Expected column name or expression after "SELECT" but found "JOIN" at position 7')
+    })
+
     it('should throw error on empty query', () => {
       expect(() => parseSql('')).toThrow('Expected SELECT but found end of query at position 0')
     })

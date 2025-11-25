@@ -177,7 +177,7 @@ function parseSelectList(state) {
 function parseSelectItem(state) {
   const tok = current(state)
 
-  if (tok.type !== 'identifier' && tok.type !== 'operator') {
+  if (tok.type === 'keyword' && tok.value !== 'CASE' || tok.type === 'eof') {
     throw parseError(state, 'column name or expression')
   }
 
