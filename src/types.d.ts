@@ -8,8 +8,10 @@ export interface DataSource {
   getRow(index: number): RowSource
 }
 
+export type RawData = Record<string, any>[]
+
 export interface ExecuteSqlOptions {
-  source: Record<string, any>[] | DataSource
+  tables: Record<string, RawData | DataSource>
   query: string
 }
 

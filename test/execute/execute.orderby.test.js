@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { executeSql } from '../../src/execute/execute.js'
 
 describe('ORDER BY', () => {
-  const source = [
+  const users = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
     { id: 2, name: 'Bob', age: 25, city: 'LA', active: true },
     { id: 3, name: 'Charlie', age: 35, city: 'NYC', active: false },
@@ -11,19 +11,19 @@ describe('ORDER BY', () => {
   ]
 
   it('should sort ascending by default', () => {
-    const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY age' })
+    const result = executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY age' })
     expect(result[0].age).toBe(25)
     expect(result[result.length - 1].age).toBe(35)
   })
 
   it('should sort descending', () => {
-    const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY age DESC' })
+    const result = executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY age DESC' })
     expect(result[0].age).toBe(35)
     expect(result[result.length - 1].age).toBe(25)
   })
 
   it('should sort by multiple columns', () => {
-    const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY age ASC, name DESC' })
+    const result = executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY age ASC, name DESC' })
     expect(result[0].name).toBe('Bob') // age 25
     const age30s = result.filter(r => r.age === 30)
     expect(age30s[0].name).toBe('Eve') // DESC order
@@ -35,13 +35,13 @@ describe('ORDER BY', () => {
       { id: 2, value: null },
       { id: 3, value: 5 },
     ]
-    const result = executeSql({ source: data, query: 'SELECT * FROM users ORDER BY value' })
+    const result = executeSql({ tables: { data }, query: 'SELECT * FROM data ORDER BY value' })
     expect(result[0].value).toBe(null) // null comes first
     expect(result[1].value).toBe(5)
   })
 
   it('should handle string sorting', () => {
-    const result = executeSql({ source, query: 'SELECT * FROM users ORDER BY name' })
+    const result = executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY name' })
     expect(result[0].name).toBe('Alice')
     expect(result[result.length - 1].name).toBe('Eve')
   })
@@ -54,7 +54,7 @@ describe('ORDER BY', () => {
       { path: '/file4.txt', size: '75' },
       { path: '/file5.txt', size: '150' },
     ]
-    const result = executeSql({ source: data, query: 'SELECT path, size FROM table ORDER BY CAST(size AS INTEGER) DESC LIMIT 5' })
+    const result = executeSql({ tables: { table: data }, query: 'SELECT path, size FROM table ORDER BY CAST(size AS INTEGER) DESC LIMIT 5' })
     expect(result).toHaveLength(5)
     expect(result[0].path).toBe('/file3.txt') // size 200
     expect(result[1].path).toBe('/file5.txt') // size 150
@@ -72,7 +72,7 @@ describe('ORDER BY', () => {
         { id: 4, value: null },
         { id: 5, value: 20 },
       ]
-      const result = executeSql({ source: data, query: 'SELECT * FROM users ORDER BY value ASC NULLS FIRST' })
+      const result = executeSql({ tables: { data }, query: 'SELECT * FROM data ORDER BY value ASC NULLS FIRST' })
       expect(result[0].value).toBe(null)
       expect(result[1].value).toBe(null)
       expect(result[2].value).toBe(5)
@@ -88,7 +88,7 @@ describe('ORDER BY', () => {
         { id: 4, value: null },
         { id: 5, value: 20 },
       ]
-      const result = executeSql({ source: data, query: 'SELECT * FROM users ORDER BY value ASC NULLS LAST' })
+      const result = executeSql({ tables: { data }, query: 'SELECT * FROM data ORDER BY value ASC NULLS LAST' })
       expect(result[0].value).toBe(5)
       expect(result[1].value).toBe(10)
       expect(result[2].value).toBe(20)
@@ -104,7 +104,7 @@ describe('ORDER BY', () => {
         { id: 4, value: null },
         { id: 5, value: 20 },
       ]
-      const result = executeSql({ source: data, query: 'SELECT * FROM users ORDER BY value DESC NULLS FIRST' })
+      const result = executeSql({ tables: { data }, query: 'SELECT * FROM data ORDER BY value DESC NULLS FIRST' })
       expect(result[0].value).toBe(null)
       expect(result[1].value).toBe(null)
       expect(result[2].value).toBe(20)
@@ -120,7 +120,7 @@ describe('ORDER BY', () => {
         { id: 4, value: null },
         { id: 5, value: 20 },
       ]
-      const result = executeSql({ source: data, query: 'SELECT * FROM users ORDER BY value DESC NULLS LAST' })
+      const result = executeSql({ tables: { data }, query: 'SELECT * FROM data ORDER BY value DESC NULLS LAST' })
       expect(result[0].value).toBe(20)
       expect(result[1].value).toBe(10)
       expect(result[2].value).toBe(5)

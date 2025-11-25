@@ -4,8 +4,8 @@ import type { ExecuteSqlOptions, SelectStatement } from './types.js'
  * Executes a SQL SELECT query against an array of data rows
  *
  * @param options
- * @param options.source - source data as a list of objects or a DataSource
- * @param options.sql - SQL query string
+ * @param options.tables - source data as a list of objects or a DataSource
+ * @param options.query - SQL query string
  * @returns rows matching the query
  */
 export function executeSql(options: ExecuteSqlOptions): Record<string, any>[]

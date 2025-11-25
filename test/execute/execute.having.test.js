@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { executeSql } from '../../src/execute/execute.js'
 
 describe('executeSql - HAVING clause', () => {
-  const source = [
+  const users = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
     { id: 2, name: 'Bob', age: 25, city: 'LA', active: true },
     { id: 3, name: 'Charlie', age: 35, city: 'NYC', active: false },
@@ -13,7 +13,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should filter groups with HAVING COUNT(*)', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) > 2',
     })
     expect(result).toHaveLength(1)
@@ -22,7 +22,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should filter groups with HAVING on aggregate comparison', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city HAVING AVG(age) > 28',
     })
     expect(result.length).toBeGreaterThan(0)
@@ -33,7 +33,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should filter groups with HAVING using column reference', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING city = \'NYC\'',
     })
     expect(result).toHaveLength(1)
@@ -42,7 +42,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should handle HAVING with multiple conditions using AND', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt, AVG(age) AS avg_age FROM users GROUP BY city HAVING COUNT(*) >= 2 AND AVG(age) > 25',
     })
     expect(result.length).toBeGreaterThan(0)
@@ -54,7 +54,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should handle HAVING with OR condition', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) > 2 OR city = \'Chicago\'',
     })
     expect(result.length).toBeGreaterThan(0)
@@ -65,7 +65,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should combine WHERE, GROUP BY, and HAVING', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users WHERE age > 25 GROUP BY city HAVING COUNT(*) >= 2',
     })
     expect(result.length).toBeGreaterThan(0)
@@ -82,8 +82,8 @@ describe('executeSql - HAVING clause', () => {
       { region: 'North', product: 'B', amount: 80 },
     ]
     const result = executeSql({
-      source: sales,
-      query: 'SELECT region, SUM(amount) AS total FROM users GROUP BY region HAVING SUM(amount) > 200',
+      tables: { sales },
+      query: 'SELECT region, SUM(amount) AS total FROM sales GROUP BY region HAVING SUM(amount) > 200',
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toEqual({ region: 'North', total: 330 })
@@ -91,7 +91,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should handle HAVING with MIN and MAX', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, MIN(age) AS min_age, MAX(age) AS max_age FROM users GROUP BY city HAVING MAX(age) > 30',
     })
     expect(result.length).toBeGreaterThan(0)
@@ -102,7 +102,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should handle complex query with WHERE, GROUP BY, HAVING, ORDER BY, and LIMIT', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: `SELECT city, COUNT(*) AS cnt, AVG(age) AS avg_age
        FROM users
        WHERE active = TRUE
@@ -120,7 +120,7 @@ describe('executeSql - HAVING clause', () => {
 
   it('should return empty result when no groups satisfy HAVING', () => {
     const result = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) > 10',
     })
     expect(result).toEqual([])
@@ -128,13 +128,13 @@ describe('executeSql - HAVING clause', () => {
 
   it('should handle HAVING with inequality operators', () => {
     const result1 = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) <= 2',
     })
     expect(result1.length).toBeGreaterThan(0)
 
     const result2 = executeSql({
-      source,
+      tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) != 3',
     })
     expect(result2.length).toBeGreaterThan(0)
@@ -148,8 +148,8 @@ describe('executeSql - HAVING clause', () => {
       { city: 'LA', name: 'Charlie' },
     ]
     const result = executeSql({
-      source: data,
-      query: 'SELECT city, COUNT(name) AS cnt FROM users GROUP BY city HAVING COUNT(name) >= 2',
+      tables: { data },
+      query: 'SELECT city, COUNT(name) AS cnt FROM data GROUP BY city HAVING COUNT(name) >= 2',
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toEqual({ city: 'NYC', cnt: 2 })

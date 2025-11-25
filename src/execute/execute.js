@@ -9,14 +9,34 @@ import { createMemorySource, createRowAccessor } from '../backend/memory.js'
  */
 
 /**
- * Executes a SQL SELECT query against a data source
+ * Executes a SQL SELECT query against named data sources
  *
  * @param {ExecuteSqlOptions} options - the execution options
  * @returns {Record<string, any>[]} the result rows matching the query
  */
-export function executeSql({ source, query }) {
+export function executeSql({ tables, query }) {
   const select = parseSql(query)
-  const dataSource = Array.isArray(source) ? createMemorySource(source) : source
+
+  // Check for unsupported JOIN operations
+  if (select.joins.length) {
+    throw new Error('JOIN is not supported')
+  }
+
+  // Get the table name from the FROM clause
+  if (typeof select.from !== 'string') {
+    throw new Error('Subquery in FROM clause is not supported')
+  }
+  if (!select.from) {
+    throw new Error('FROM clause is required')
+  }
+
+  const table = tables[select.from]
+  if (table === undefined) {
+    throw new Error(`Table "${select.from}" not found`)
+  }
+
+  // Convert raw data to DataSource if needed
+  const dataSource = Array.isArray(table) ? createMemorySource(table) : table
   return evaluateSelectAst(select, dataSource)
 }
 
@@ -165,16 +185,6 @@ function applyOrderBy(rows, orderBy) {
  * @returns {Record<string, any>[]} the filtered, projected, and sorted result rows
  */
 function evaluateSelectAst(select, dataSource) {
-  // Check for unsupported JOIN operations
-  if (select.joins.length) {
-    throw new Error('JOIN is not supported')
-  }
-
-  // Check for unsupported subquery in FROM clause
-  if (typeof select.from !== 'string') {
-    throw new Error('Subquery in FROM clause is not supported')
-  }
-
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
   // WHERE clause filtering
