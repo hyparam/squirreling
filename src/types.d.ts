@@ -67,10 +67,9 @@ export interface FromSubquery {
   alias: string
 }
 
+export type BinaryOp = ArithmeticOp | BooleanOp | ComparisonOp
 export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'
-
-export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp | ArithmeticOp
-
+export type BooleanOp = 'AND' | 'OR' | 'LIKE'
 export type ComparisonOp = '=' | '!=' | '<>' | '<' | '>' | '<=' | '>='
 
 export interface ExprNodeBase {
