@@ -1,17 +1,18 @@
-import { asyncBufferFromFile } from 'hyparquet'
+import { asyncBufferFromFile, parquetMetadataAsync } from 'hyparquet'
 import { describe, expect, it } from 'vitest'
-import { createParquetSource } from '../../src/backend/parquet.js'
-import { executeSql } from '../../src/execute/execute.js'
-import { collect } from '../../src/index.js'
-import { countingBuffer } from '../helpers.js'
+import { createParquetSource } from '../src/backend/parquet.js'
+import { executeSql } from '../src/execute/execute.js'
+import { collect } from '../src/index.js'
+import { countingBuffer } from './helpers.js'
 
 describe('parquet backend', async () => {
   const file = await asyncBufferFromFile('test/files/users.parquet')
-  const users = createParquetSource({ file })
+  const metadata = await parquetMetadataAsync(file)
+  const users = createParquetSource({ file, metadata })
 
   it('should read all columns from parquet file', async () => {
     const counting = countingBuffer(file)
-    const users = createParquetSource({ file: counting })
+    const users = createParquetSource({ file: counting, metadata })
     const result = await collect(executeSql({
       tables: { users },
       query: 'SELECT * FROM users',
@@ -23,15 +24,14 @@ describe('parquet backend', async () => {
       { id: 4, name: 'Diana', age: 28, city: 'Chicago' },
       { id: 5, name: 'Eve', age: 42, city: 'Boston' },
     ])
-    expect(counting.fetches).toBe(2)
-    expect(counting.bytes).toBe(782)
+    expect(counting.fetches).toBe(1)
+    expect(counting.bytes).toBe(250)
   })
 
   it('should support column projection - single column', async () => {
-    const users = createParquetSource({ file, columns: ['name'] })
     const result = await collect(executeSql({
       tables: { users },
-      query: 'SELECT * FROM users',
+      query: 'SELECT name FROM users',
     }))
     expect(result).toEqual([
       { name: 'Alice' },
@@ -43,10 +43,9 @@ describe('parquet backend', async () => {
   })
 
   it('should support column projection - multiple columns', async () => {
-    const users = createParquetSource({ file, columns: ['id', 'name'] })
     const result = await collect(executeSql({
       tables: { users },
-      query: 'SELECT * FROM users',
+      query: 'SELECT id, name FROM users',
     }))
     expect(result).toEqual([
       { id: 1, name: 'Alice' },
@@ -113,21 +112,6 @@ describe('parquet backend', async () => {
     expect(result[0]).toEqual({ city: expect.any(String), count: 1 })
   })
 
-  it('should support column selection in SQL with projected parquet', async () => {
-    const users = createParquetSource({ file, columns: ['name', 'age'] })
-    const result = await collect(executeSql({
-      tables: { users },
-      query: 'SELECT name FROM users',
-    }))
-    expect(result).toEqual([
-      { name: 'Alice' },
-      { name: 'Bob' },
-      { name: 'Charlie' },
-      { name: 'Diana' },
-      { name: 'Eve' },
-    ])
-  })
-
   it('should support string functions with parquet', async () => {
     const result = await collect(executeSql({
       tables: { users },
@@ -137,5 +121,23 @@ describe('parquet backend', async () => {
       { upper_name: 'ALICE' },
       { upper_name: 'BOB' },
     ])
+  })
+
+  it('should prune row groups with WHERE equality filter', async () => {
+    // alpha.parquet has multiple row groups with alphabetically sorted data (aa, ab, ... zz)
+    const alphaFile = await asyncBufferFromFile('test/files/alpha.parquet')
+    const alphaMetadata = await parquetMetadataAsync(alphaFile)
+    const counting = countingBuffer(alphaFile)
+    const alpha = createParquetSource({ file: counting, metadata: alphaMetadata })
+
+    const result = await collect(executeSql({
+      tables: { alpha },
+      query: 'SELECT id FROM alpha WHERE id = \'kk\'',
+    }))
+
+    expect(result).toEqual([{ id: 'kk' }])
+    // With row group pruning, should only read 1 row group
+    expect(counting.fetches).toBe(1)
+    expect(counting.bytes).toBe(437)
   })
 })

@@ -37,7 +37,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "hyparquet": "1.21.0",
+    "hyparquet": "1.23.2",
     "hyparquet-compressors": "1.1.1"
   },
   "devDependencies": {

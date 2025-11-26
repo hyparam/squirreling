@@ -25,7 +25,7 @@ export function generatorSource(gen) {
  * @param {Record<string, SqlPrimitive>} obj - the plain object
  * @returns {AsyncRow} a row accessor interface
  */
-function asyncRow(obj) {
+export function asyncRow(obj) {
   /** @type {AsyncCells} */
   const cells = {}
   for (const [key, value] of Object.entries(obj)) {
