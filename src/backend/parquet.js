@@ -1,10 +1,11 @@
 import { parquetMetadataAsync, parquetReadObjects } from 'hyparquet'
 import { compressors } from 'hyparquet-compressors'
 import { createRowAccessor } from './memory.js'
+import { whereToParquetFilter } from './parquetFilter.js'
 
 /**
- * @import { AsyncBuffer, FileMetaData } from 'hyparquet'
- * @import { AsyncDataSource } from '../types.js'
+ * @import { AsyncBuffer, FileMetaData, ParquetQueryFilter } from 'hyparquet'
+ * @import { AsyncDataSource, QueryHints } from '../types.js'
  */
 
 /**
@@ -13,13 +14,19 @@ import { createRowAccessor } from './memory.js'
  * @param {Object} options
  * @param {AsyncBuffer} options.file - path to parquet file
  * @param {FileMetaData} [options.metadata] - optional parquet metadata object
- * @param {string[]} [options.columns] - optional column names to read (for projection)
  * @returns {AsyncDataSource} a data source interface
  */
-export function createParquetSource({ file, metadata, columns }) {
+export function createParquetSource({ file, metadata }) {
   return {
-    async *getRows() {
+    /**
+     * @param {QueryHints} [hints]
+     */
+    async *getRows(hints) {
       metadata ??= await parquetMetadataAsync(file)
+
+      // Convert WHERE AST to hyparquet filter format
+      /** @type {ParquetQueryFilter | undefined} */
+      const filter = hints?.where ? whereToParquetFilter(hints.where) : undefined
 
       // Emit rows by row group
       let groupStart = 0
@@ -32,14 +39,14 @@ export function createParquetSource({ file, metadata, columns }) {
           metadata,
           rowStart: groupStart,
           rowEnd: groupStart + rowCount,
-          columns,
-          // filters, // TODO: filters for predicate pushdown
+          columns: hints?.columns,
+          filter,
           compressors,
         })
 
         // Yield each row
-        for (let j = 0; j < rowCount; j++) {
-          yield createRowAccessor(data[j])
+        for (const row of data) {
+          yield createRowAccessor(row)
         }
 
         groupStart += rowCount

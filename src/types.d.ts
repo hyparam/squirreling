@@ -1,10 +1,21 @@
 
 /**
+ * Hints passed to data sources for query optimization.
+ * All hints are optional and "best effort" - sources may ignore them.
+ */
+export interface QueryHints {
+  columns?: string[] // columns needed
+  where?: ExprNode // where clause
+  limit?: number
+  offset?: number
+}
+
+/**
  * Async data source for streaming SQL execution.
  * Provides an async iterator over rows.
  */
 export interface AsyncDataSource {
-  getRows(): AsyncIterable<RowSource>
+  getRows(hints?: QueryHints): AsyncIterable<RowSource>
 }
 export interface RowSource {
   getCell(name: string): any

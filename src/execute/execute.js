@@ -4,9 +4,10 @@ import { createAsyncMemorySource, createRowAccessor } from '../backend/memory.js
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateHavingExpr } from './having.js'
 import { collect } from './utils.js'
+import { extractColumns } from './columns.js'
 
 /**
- * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, QueryHints, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -325,7 +326,16 @@ async function* evaluateStreaming(select, dataSource, tables) {
   /** @type {Set<string> | undefined} */
   const seen = select.distinct ? new Set() : undefined
 
-  for await (const row of dataSource.getRows()) {
+  // hints for data source optimization
+  /** @type {QueryHints} */
+  const hints = {
+    columns: extractColumns(select),
+    where: select.where,
+    limit: select.limit,
+    offset: select.offset,
+  }
+
+  for await (const row of dataSource.getRows(hints)) {
     // WHERE filter
     if (select.where) {
       const pass = await evaluateExpr({ node: select.where, row, tables })
@@ -388,10 +398,18 @@ async function* evaluateStreaming(select, dataSource, tables) {
  * @returns {AsyncGenerator<Record<string, any>>}
  */
 async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping) {
+  // Build hints for data source optimization
+  // Note: limit/offset not passed here since buffering needs all rows for sorting/grouping
+  /** @type {QueryHints} */
+  const hints = {
+    where: select.where,
+    columns: extractColumns(select),
+  }
+
   // Step 1: Collect all rows from data source
   /** @type {RowSource[]} */
   const working = []
-  for await (const row of dataSource.getRows()) {
+  for await (const row of dataSource.getRows(hints)) {
     working.push(row)
   }
 
