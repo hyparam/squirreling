@@ -168,7 +168,7 @@ function applyDistinct(rows, distinct) {
  * @returns {Promise<RowSource[]>} the sorted row sources
  */
 async function sortRowSources(rows, orderBy, tables) {
-  if (!orderBy?.length) return rows
+  if (!orderBy.length) return rows
 
   // Pre-evaluate ORDER BY expressions for all rows
   /** @type {SqlPrimitive[][]} */
@@ -229,7 +229,7 @@ async function sortRowSources(rows, orderBy, tables) {
  * @returns {Promise<Record<string, any>[]>} the sorted rows
  */
 async function applyOrderBy(rows, orderBy, tables) {
-  if (!orderBy?.length) return rows
+  if (!orderBy.length) return rows
 
   // Pre-evaluate ORDER BY expressions for all rows
   /** @type {SqlPrimitive[][]} */
@@ -293,13 +293,8 @@ async function* evaluateSelectAst(select, dataSource, tables) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
   const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
-  const useGrouping = hasAggregate || select.groupBy?.length > 0
-
-  // Determine if we need to buffer (collect all rows first)
-  const needsBuffering =
-    select.orderBy.length > 0 ||
-    select.distinct ||
-    useGrouping
+  const useGrouping = hasAggregate || select.groupBy.length > 0
+  const needsBuffering = useGrouping || select.orderBy.length > 0
 
   if (needsBuffering) {
     // BUFFERING PATH: Collect all rows, process, then yield
@@ -311,7 +306,8 @@ async function* evaluateSelectAst(select, dataSource, tables) {
 }
 
 /**
- * Streaming evaluation for simple queries (no ORDER BY, DISTINCT, or GROUP BY)
+ * Streaming evaluation for simple queries (no ORDER BY or GROUP BY)
+ * Supports DISTINCT by tracking seen row keys without buffering full rows
  *
  * @param {SelectStatement} select
  * @param {AsyncDataSource} dataSource
@@ -323,26 +319,23 @@ async function* evaluateStreaming(select, dataSource, tables) {
   let rowsSkipped = 0
   const offset = select.offset ?? 0
   const limit = select.limit ?? Infinity
+  if (limit <= 0) return
+
+  // For DISTINCT, track seen row keys
+  /** @type {Set<string> | undefined} */
+  const seen = select.distinct ? new Set() : undefined
 
   for await (const row of dataSource.getRows()) {
     // WHERE filter
     if (select.where) {
-      const passes = await evaluateExpr({ node: select.where, row, tables })
-
-      if (!passes) {
-        continue
-      }
+      const pass = await evaluateExpr({ node: select.where, row, tables })
+      if (!pass) continue
     }
 
-    // OFFSET handling
-    if (rowsSkipped < offset) {
+    // For non-DISTINCT queries, we can skip rows before projection (optimization)
+    if (!seen && rowsSkipped < offset) {
       rowsSkipped++
       continue
-    }
-
-    // LIMIT handling
-    if (rowsYielded >= limit) {
-      break
     }
 
     // SELECT projection
@@ -364,13 +357,28 @@ async function* evaluateStreaming(select, dataSource, tables) {
       }
     }
 
+    // DISTINCT: skip duplicate rows
+    if (seen) {
+      const key = stableRowKey(outRow)
+      if (seen.has(key)) continue
+      seen.add(key)
+      // OFFSET applies to distinct rows
+      if (rowsSkipped < offset) {
+        rowsSkipped++
+        continue
+      }
+    }
+
     yield outRow
     rowsYielded++
+    if (rowsYielded >= limit) {
+      break
+    }
   }
 }
 
 /**
- * Buffered evaluation for complex queries (with ORDER BY, DISTINCT, or GROUP BY)
+ * Buffered evaluation for complex queries (with ORDER BY or GROUP BY)
  *
  * @param {SelectStatement} select
  * @param {AsyncDataSource} dataSource
@@ -411,7 +419,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
     /** @type {RowSource[][]} */
     const groups = []
 
-    if (select.groupBy?.length) {
+    if (select.groupBy.length) {
       /** @type {Map<string, RowSource[]>} */
       const map = new Map()
       for (const row of filtered) {
