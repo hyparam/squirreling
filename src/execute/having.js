@@ -1,5 +1,5 @@
 /**
- * @import { AggregateFunc, AsyncDataSource, ExprNode, RowSource, SqlPrimitive } from '../types.js'
+ * @import { AggregateFunc, AsyncDataSource, ExprNode, AsyncRow, SqlPrimitive } from '../types.js'
  */
 
 import { isAggregateFunc } from '../validation.js'
@@ -9,8 +9,8 @@ import { evaluateExpr } from './expression.js'
  * Creates a context for evaluating HAVING expressions
  *
  * @param {Record<string, any>} resultRow - the aggregated result row
- * @param {RowSource[]} group - the group of rows
- * @returns {RowSource} a context row for HAVING evaluation
+ * @param {AsyncRow[]} group - the group of rows
+ * @returns {AsyncRow} a context row for HAVING evaluation
  */
 function createHavingContext(resultRow, group) {
   // Include the first row of the group (for GROUP BY columns)
@@ -42,7 +42,7 @@ function createHavingContext(resultRow, group) {
  *
  * @param {ExprNode} expr - the HAVING expression
  * @param {Record<string, any>} row - the aggregated result row
- * @param {RowSource[]} group - the group of rows for re-evaluating aggregates
+ * @param {AsyncRow[]} group - the group of rows for re-evaluating aggregates
  * @param {Record<string, AsyncDataSource>} tables
  * @returns {Promise<boolean>} whether the HAVING condition is satisfied
  */
@@ -129,8 +129,8 @@ export async function evaluateHavingExpr(expr, row, group, tables) {
  * Evaluates a value in a HAVING expression
  *
  * @param {ExprNode} expr
- * @param {RowSource} context - the context row
- * @param {RowSource[]} group - the group of rows
+ * @param {AsyncRow} context - the context row
+ * @param {AsyncRow[]} group - the group of rows
  * @param {Record<string, AsyncDataSource>} tables
  * @returns {Promise<SqlPrimitive>} the evaluated value
  */
@@ -155,7 +155,7 @@ function evaluateHavingValue(expr, context, group, tables) {
  *
  * @param {AggregateFunc} funcName - aggregate function name
  * @param {ExprNode[]} args - function arguments
- * @param {RowSource[]} group - the group of rows
+ * @param {AsyncRow[]} group - the group of rows
  * @param {Record<string, AsyncDataSource>} tables
  * @returns {Promise<SqlPrimitive>} the aggregate result
  */

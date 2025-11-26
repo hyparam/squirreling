@@ -2,7 +2,7 @@ import { executeSelect } from './execute.js'
 import { collect } from './utils.js'
 
 /**
- * @import { ExprNode, RowSource, SqlPrimitive, AsyncDataSource } from '../types.js'
+ * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource } from '../types.js'
  */
 
 /**
@@ -10,7 +10,7 @@ import { collect } from './utils.js'
  *
  * @param {Object} params
  * @param {ExprNode} params.node - The expression node to evaluate
- * @param {RowSource} params.row - The data row to evaluate against
+ * @param {AsyncRow} params.row - The data row to evaluate against
  * @param {Record<string, AsyncDataSource>} [params.tables]
  * @returns {Promise<SqlPrimitive>} The result of the evaluation
  */

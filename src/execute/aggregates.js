@@ -3,9 +3,9 @@ import { evaluateExpr } from './expression.js'
 /**
  * Evaluates an aggregate function over a set of rows
  *
- * @import { AggregateColumn, ExprNode, RowSource } from '../types.js'
+ * @import { AggregateColumn, ExprNode, AsyncRow } from '../types.js'
  * @param {AggregateColumn} col - aggregate column definition
- * @param {RowSource[]} rows - rows to aggregate
+ * @param {AsyncRow[]} rows - rows to aggregate
  * @returns {Promise<number | null>} aggregated result
  */
 export async function evaluateAggregate(col, rows) {

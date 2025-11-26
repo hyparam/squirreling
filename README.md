@@ -10,7 +10,7 @@
 ![coverage](https://img.shields.io/badge/Coverage-90-darkred)
 [![dependencies](https://img.shields.io/badge/Dependencies-0-blueviolet)](https://www.npmjs.com/package/squirreling?activeTab=dependencies)
 
-Squirreling is a streaming async SQL engine for JavaScript. It is designed to provide efficient streaming of results from pluggable backend for highly efficient retrieval of data for browser applications.
+Squirreling is a streaming async SQL engine for JavaScript. It is designed to provide efficient streaming of results from pluggable backends for highly efficient retrieval of data for browser applications.
 
 ## Features
 
@@ -22,6 +22,8 @@ Squirreling is a streaming async SQL engine for JavaScript. It is designed to pr
 - Constant memory usage for simple queries with LIMIT
 - Robust error handling and validation designed for LLM tool use
 - In-memory data option for simple use cases
+- Select only
+- No joins (yet)
 
 ## Usage
 
@@ -39,18 +41,19 @@ const users = [
 ]
 
 // Process rows as they arrive (streaming)
-for await (const user of executeSql({
+for await (const { cnt } of executeSql({
   tables: { users },
-  query: 'SELECT * FROM users WHERE active = TRUE LIMIT 100',
+  query: 'SELECT count(*) as cnt FROM users WHERE active = TRUE LIMIT 10',
 })) {
-  console.log(user.name)
+  console.log('Count', cnt)
 }
 ```
 
 There is an exported helper function `collect` to gather all rows into an array if needed:
 
 ```javascript
-import { collect } from 'squirreling'
+import { collect, executeSql } from 'squirreling'
+
 const allUsers = await collect(executeSql({
   tables: { users },
   query: 'SELECT * FROM users',

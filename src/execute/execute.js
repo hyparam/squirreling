@@ -6,7 +6,7 @@ import { evaluateHavingExpr } from './having.js'
 import { collect } from './utils.js'
 
 /**
- * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, RowSource, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, AsyncRow, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -162,10 +162,10 @@ function applyDistinct(rows, distinct) {
 /**
  * Applies ORDER BY sorting to RowSource array (before projection)
  *
- * @param {RowSource[]} rows - the input row sources
+ * @param {AsyncRow[]} rows - the input row sources
  * @param {OrderByItem[]} orderBy - the sort specifications
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {Promise<RowSource[]>} the sorted row sources
+ * @returns {Promise<AsyncRow[]>} the sorted row sources
  */
 async function sortRowSources(rows, orderBy, tables) {
   if (!orderBy.length) return rows
@@ -389,14 +389,14 @@ async function* evaluateStreaming(select, dataSource, tables) {
  */
 async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping) {
   // Step 1: Collect all rows from data source
-  /** @type {RowSource[]} */
+  /** @type {AsyncRow[]} */
   const working = []
   for await (const row of dataSource.getRows()) {
     working.push(row)
   }
 
   // Step 2: WHERE clause filtering
-  /** @type {RowSource[]} */
+  /** @type {AsyncRow[]} */
   const filtered = []
 
   for (const row of working) {
@@ -416,11 +416,11 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
 
   if (useGrouping) {
     // Grouping due to GROUP BY or aggregate functions
-    /** @type {RowSource[][]} */
+    /** @type {AsyncRow[][]} */
     const groups = []
 
     if (select.groupBy.length) {
-      /** @type {Map<string, RowSource[]>} */
+      /** @type {Map<string, AsyncRow[]>} */
       const map = new Map()
       for (const row of filtered) {
         /** @type {string[]} */
@@ -495,7 +495,16 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
     // Sort before projection so ORDER BY can access columns not in SELECT
     const sorted = await sortRowSources(filtered, select.orderBy, tables)
 
-    for (const row of sorted) {
+    // OPTIMIZATION: For non-DISTINCT queries, apply OFFSET/LIMIT before projection
+    // to avoid reading expensive cells for rows that won't be in the final result
+    let rowsToProject = sorted
+    if (!select.distinct) {
+      const start = select.offset ?? 0
+      const end = select.limit ? start + select.limit : sorted.length
+      rowsToProject = sorted.slice(start, end)
+    }
+
+    for (const row of rowsToProject) {
       /** @type {Record<string, any>} */
       const outRow = {}
       for (const col of select.columns) {
@@ -521,11 +530,19 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   projected = await applyOrderBy(projected, select.orderBy, tables)
 
   // Step 6: OFFSET and LIMIT
-  const start = select.offset ?? 0
-  const end = select.limit ? start + select.limit : projected.length
+  // For non-DISTINCT, non-grouping queries, OFFSET/LIMIT was already applied before projection
+  if (select.distinct || useGrouping) {
+    const start = select.offset ?? 0
+    const end = select.limit ? start + select.limit : projected.length
 
-  // Step 7: Yield results
-  for (let i = start; i < end && i < projected.length; i++) {
-    yield projected[i]
+    // Step 7: Yield results
+    for (let i = start; i < end && i < projected.length; i++) {
+      yield projected[i]
+    }
+  } else {
+    // Already limited, yield all projected rows
+    for (const row of projected) {
+      yield row
+    }
   }
 }

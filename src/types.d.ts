@@ -4,9 +4,9 @@
  * Provides an async iterator over rows.
  */
 export interface AsyncDataSource {
-  getRows(): AsyncIterable<RowSource>
+  getRows(): AsyncIterable<AsyncRow>
 }
-export interface RowSource {
+export interface AsyncRow {
   getCell(name: string): any
   getKeys(): string[]
 }

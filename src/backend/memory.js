@@ -1,12 +1,12 @@
 /**
- * @import { AsyncDataSource, RowSource } from '../types.js'
+ * @import { AsyncDataSource, AsyncRow } from '../types.js'
  */
 
 /**
  * Creates a row accessor that wraps a plain JavaScript object
  *
  * @param {Record<string, any>} obj - the plain object
- * @returns {RowSource} a row accessor interface
+ * @returns {AsyncRow} a row accessor interface
  */
 export function createRowAccessor(obj) {
   return {
