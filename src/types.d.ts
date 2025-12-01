@@ -6,15 +6,13 @@
 export interface AsyncDataSource {
   getRows(): AsyncIterable<AsyncRow>
 }
-export interface AsyncRow {
-  getCell(name: string): any
-  getKeys(): string[]
-}
+export type AsyncRow = Record<string, AsyncCell>
+export type AsyncCell = () => Promise<SqlPrimitive>
 
-export type RawData = Record<string, any>[]
+export type Row = Record<string, any>[]
 
 export interface ExecuteSqlOptions {
-  tables: Record<string, RawData | AsyncDataSource>
+  tables: Record<string, Row | AsyncDataSource>
   query: string
 }
 
@@ -23,7 +21,7 @@ export type SqlPrimitive = string | number | bigint | boolean | null
 export interface SelectStatement {
   distinct: boolean
   columns: SelectColumn[]
-  from?: string | FromSubquery
+  from: string | FromSubquery
   joins: JoinClause[]
   where?: ExprNode
   groupBy: ExprNode[]

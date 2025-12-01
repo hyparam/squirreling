@@ -3,19 +3,21 @@ import { evaluateExpr } from './expression.js'
 /**
  * Evaluates an aggregate function over a set of rows
  *
- * @import { AggregateColumn, ExprNode, AsyncRow } from '../types.js'
- * @param {AggregateColumn} col - aggregate column definition
- * @param {AsyncRow[]} rows - rows to aggregate
+ * @import { AggregateColumn, AsyncDataSource, ExprNode, AsyncRow } from '../types.js'
+ * @param {Object} options
+ * @param {AggregateColumn} options.col - aggregate column definition
+ * @param {AsyncRow[]} options.rows - rows to aggregate
+ * @param {Record<string, AsyncDataSource>} options.tables
  * @returns {Promise<number | null>} aggregated result
  */
-export async function evaluateAggregate(col, rows) {
+export async function evaluateAggregate({ col, rows, tables }) {
   const { arg, func } = col
 
   if (func === 'COUNT') {
     if (arg.kind === 'star') return rows.length
     let count = 0
-    for (let i = 0; i < rows.length; i += 1) {
-      const v = await evaluateExpr({ node: arg.expr, row: rows[i] })
+    for (const row of rows) {
+      const v = await evaluateExpr({ node: arg.expr, row, tables })
       if (v !== null && v !== undefined) {
         count += 1
       }
@@ -34,8 +36,8 @@ export async function evaluateAggregate(col, rows) {
     /** @type {number | null} */
     let max = null
 
-    for (let i = 0; i < rows.length; i += 1) {
-      const raw = await evaluateExpr({ node: arg.expr, row: rows[i] })
+    for (const row of rows) {
+      const raw = await evaluateExpr({ node: arg.expr, row, tables })
       if (raw == null) continue
       const num = Number(raw)
       if (!Number.isFinite(num)) continue
@@ -80,20 +82,17 @@ export function defaultAggregateAlias(col) {
 export function defaultAggregateAliasExpr(expr) {
   if (expr.type === 'identifier') {
     return expr.name
-  }
-  if (expr.type === 'literal') {
+  } else if (expr.type === 'literal') {
     return String(expr.value)
-  }
-  if (expr.type === 'cast') {
+  } else if (expr.type === 'cast') {
     return defaultAggregateAliasExpr(expr.expr) + '_as_' + expr.toType
-  }
-  if (expr.type === 'unary') {
+  } else if (expr.type === 'unary') {
     return expr.op + '_' + defaultAggregateAliasExpr(expr.argument)
-  }
-  if (expr.type === 'binary') {
+  } else if (expr.type === 'binary') {
     return defaultAggregateAliasExpr(expr.left) + '_' + expr.op + '_' + defaultAggregateAliasExpr(expr.right)
-  }
-  if (expr.type === 'function') {
+  } else if (expr.type === 'function') {
     return expr.name.toLowerCase() + '_' + expr.args.map(defaultAggregateAliasExpr).join('_')
+  } else {
+    return 'expr'
   }
 }

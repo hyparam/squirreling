@@ -60,6 +60,7 @@ describe('executeSql - BETWEEN', () => {
     it('should filter with BETWEEN and AND', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE age BETWEEN 25 AND 30 AND city = \'NYC\'' }))
       expect(result).toHaveLength(2)
+      // @ts-expect-error null equality
       expect(result.every(r => r.city === 'NYC' && r.age >= 25 && r.age <= 30)).toBe(true)
     })
 

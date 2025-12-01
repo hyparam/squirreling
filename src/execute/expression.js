@@ -11,7 +11,7 @@ import { collect } from './utils.js'
  * @param {Object} params
  * @param {ExprNode} params.node - The expression node to evaluate
  * @param {AsyncRow} params.row - The data row to evaluate against
- * @param {Record<string, AsyncDataSource>} [params.tables]
+ * @param {Record<string, AsyncDataSource>} params.tables
  * @returns {Promise<SqlPrimitive>} The result of the evaluation
  */
 export async function evaluateExpr({ node, row, tables }) {
@@ -20,7 +20,7 @@ export async function evaluateExpr({ node, row, tables }) {
   }
 
   if (node.type === 'identifier') {
-    return row.getCell(node.name)
+    return row[node.name]?.()
   }
 
   // Scalar subquery - returns a single value

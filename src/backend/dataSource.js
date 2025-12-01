@@ -6,7 +6,7 @@
 /**
  * Wraps an async generator of plain objects into an AsyncDataSource
  *
- * @param {AsyncGenerator<Record<string, any>>} gen
+ * @param {AsyncGenerator<Record<string, SqlPrimitive>>} gen
  * @returns {AsyncDataSource}
  */
 export function generatorSource(gen) {
@@ -22,24 +22,22 @@ export function generatorSource(gen) {
 /**
  * Creates an async row accessor that wraps a plain JavaScript object
  *
- * @param {Record<string, any>} obj - the plain object
+ * @param {Record<string, SqlPrimitive>} obj - the plain object
  * @returns {AsyncRow} a row accessor interface
  */
 export function asyncRow(obj) {
-  return {
-    getCell(name) {
-      return obj[name]
-    },
-    getKeys() {
-      return Object.keys(obj)
-    },
+  /** @type {AsyncRow} */
+  const row = {}
+  for (const [key, value] of Object.entries(obj)) {
+    row[key] = () => Promise.resolve(value)
   }
+  return row
 }
 
 /**
  * Creates an async memory-backed data source from an array of plain objects
  *
- * @param {Record<string, any>[]} data - array of plain objects
+ * @param {Record<string, SqlPrimitive>[]} data - array of plain objects
  * @returns {AsyncDataSource} an async data source interface
  */
 export function memorySource(data) {
@@ -58,7 +56,7 @@ export function memorySource(data) {
  * @returns {AsyncDataSource}
  */
 export function cachedDataSource(source) {
-  /** @type {Map<string, SqlPrimitive>} */
+  /** @type {Map<string, Promise<SqlPrimitive>>} */
   const cache = new Map()
   return {
     /**
@@ -68,23 +66,22 @@ export function cachedDataSource(source) {
       let index = 0
       for await (const row of source.getRows()) {
         const rowIndex = index
-        index++
-        yield {
-          /**
-           * @param {string} name
-           * @returns {SqlPrimitive}
-           */
-          getCell(name) {
-            const cacheKey = `${rowIndex}:${name}`
-            if (!cache.has(cacheKey)) {
-              cache.set(cacheKey, row.getCell(name))
+        /** @type {AsyncRow} */
+        const out = {}
+        for (const [key, cell] of Object.entries(row)) {
+          // Wrap the cell to cache accesses
+          out[key] = () => {
+            const cacheKey = `${rowIndex}:${key}`
+            let value = cache.get(cacheKey)
+            if (!value) {
+              value = cell()
+              cache.set(cacheKey, value)
             }
-            return cache.get(cacheKey)
-          },
-          getKeys() {
-            return row.getKeys()
-          },
+            return value
+          }
         }
+        yield out
+        index++
       }
     },
   }

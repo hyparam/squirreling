@@ -57,7 +57,7 @@ describe('executeSql - GROUP BY', () => {
       ORDER BY city, active DESC
     ` }))
     expect(result.length).toBeGreaterThan(0)
-    expect(result.every(r => r.count > 0)).toBe(true)
+    expect(result.every(r => r.count)).toBe(true)
   })
 
   it('should aggregate with multiple group columns', async () => {

@@ -1,4 +1,4 @@
-import type { ExecuteSqlOptions, SelectStatement } from './types.js'
+import type { ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows
@@ -8,7 +8,7 @@ import type { ExecuteSqlOptions, SelectStatement } from './types.js'
  * @param options.query - SQL query string
  * @returns async generator yielding rows matching the query
  */
-export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<Record<string, any>>
+export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<Record<string, SqlPrimitive>>
 
 /**
  * Parses a SQL query string into an abstract syntax tree

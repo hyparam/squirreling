@@ -100,7 +100,7 @@ describe('expensive cell access', () => {
 
   it('should minimize expensive calls in a subquery', async () => {
     // would be 5 if we materialized the subquery eagerly
-    // would be 2 without lazy materialization
+    // would be 2 without late materialization
     await expect(countExpensiveCalls('SELECT name FROM (SELECT * FROM data) AS t LIMIT 2'))
       .resolves.toBe(2)
   })
@@ -140,21 +140,20 @@ function countingDataSource(data, expensiveColumns) {
      */
     async *getRows() {
       for await (const row of source.getRows()) {
-        yield {
-          /**
-           * @param {string} name
-           * @returns {any}
-           */
-          getCell(name) {
-            if (expensiveColumns.includes(name)) {
+        /** @type {AsyncRow} */
+        const out = {}
+        for (const [key, cell] of Object.entries(row)) {
+          if (expensiveColumns.includes(key)) {
+            // Wrap the cell to count accesses
+            out[key] = () => {
               expensiveCallCount++
+              return cell()
             }
-            return row.getCell(name)
-          },
-          getKeys() {
-            return row.getKeys()
-          },
+          } else {
+            out[key] = cell
+          }
         }
+        yield out
       }
     },
     getExpensiveCallCount() {
