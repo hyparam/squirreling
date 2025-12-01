@@ -102,7 +102,7 @@ describe('expensive cell access', () => {
     // would be 5 if we materialized the subquery eagerly
     // would be 2 without late materialization
     await expect(countExpensiveCalls('SELECT name FROM (SELECT * FROM data) AS t LIMIT 2'))
-      .resolves.toBe(2)
+      .resolves.toBe(0)
   })
 })
 
@@ -126,7 +126,7 @@ async function countExpensiveCalls(query) {
 /**
  * Creates a data source that wraps a memory source and counts
  * how many times getCell is called on "expensive" columns.
- * @param {Record<string, any>[]} data
+ * @param {Record<string, SqlPrimitive>[]} data
  * @param {string[]} expensiveColumns
  * @returns {AsyncDataSource & { getExpensiveCallCount: () => number }}
  */

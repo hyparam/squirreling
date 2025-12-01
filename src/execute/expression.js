@@ -1,5 +1,4 @@
 import { executeSelect } from './execute.js'
-import { collect } from './utils.js'
 
 /**
  * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource } from '../types.js'
@@ -25,12 +24,14 @@ export async function evaluateExpr({ node, row, tables }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const results = await collect(executeSelect(node.subquery, tables))
-    if (results.length === 0) return null
-    // Return the first column of the first row
-    const firstRow = results[0]
+    const gen = executeSelect(node.subquery, tables)
+    const first = await gen.next() // Start the generator
+    gen.return() // Stop further execution
+    if (first.done) return null
+    /** @type {AsyncRow} */
+    const firstRow = first.value
     const firstKey = Object.keys(firstRow)[0]
-    return firstRow[firstKey]
+    return firstRow[firstKey]()
   }
 
   // Unary operators
@@ -238,29 +239,37 @@ export async function evaluateExpr({ node, row, tables }) {
   // IN and NOT IN with subqueries
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, tables })
-    const results = await collect(executeSelect(node.subquery, tables))
-    if (results.length === 0) return false
-    const firstKey = Object.keys(results[0])[0]
-    const values = results.map(r => r[firstKey])
+    const results = executeSelect(node.subquery, tables)
+    /** @type {SqlPrimitive[]} */
+    const values = []
+    for await (const resRow of results) {
+      const firstKey = Object.keys(resRow)[0]
+      const val = await resRow[firstKey]()
+      values.push(val)
+    }
     return values.includes(exprVal)
   }
   if (node.type === 'not in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, tables })
-    const results = await collect(executeSelect(node.subquery, tables))
-    if (results.length === 0) return true
-    const firstKey = Object.keys(results[0])[0]
-    const values = results.map(r => r[firstKey])
+    const results = executeSelect(node.subquery, tables)
+    /** @type {SqlPrimitive[]} */
+    const values = []
+    for await (const resRow of results) {
+      const firstKey = Object.keys(resRow)[0]
+      const val = await resRow[firstKey]()
+      values.push(val)
+    }
     return !values.includes(exprVal)
   }
 
   // EXISTS and NOT EXISTS with subqueries
   if (node.type === 'exists') {
-    const results = await collect(executeSelect(node.subquery, tables))
-    return results.length > 0
+    const results = await executeSelect(node.subquery, tables).next()
+    return results.done === false
   }
   if (node.type === 'not exists') {
-    const results = await collect(executeSelect(node.subquery, tables))
-    return results.length === 0
+    const results = await executeSelect(node.subquery, tables).next()
+    return results.done === true
   }
 
   // CASE expressions

@@ -75,6 +75,15 @@ describe('subqueries', () => {
       expect(result[0].name).toBe('Charlie')
       expect(result[2].name).toBe('Bob')
     })
+
+    it('should support subquery in FROM clause', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
   })
 
   describe('IN subquery', () => {

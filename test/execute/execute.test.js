@@ -406,15 +406,4 @@ describe('executeSql', () => {
       expect(result[1]).toEqual({ name: 'Bob', city_full: 'Los Angeles' })
     })
   })
-
-  describe('subqueries', () => {
-    it('should support subquery in FROM clause', async () => {
-      const result = await collect(executeSql({
-        tables: { users },
-        query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u',
-      }))
-      expect(result).toHaveLength(4)
-      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie', 'Diana', 'Eve'])
-    })
-  })
 })

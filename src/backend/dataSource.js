@@ -6,15 +6,13 @@
 /**
  * Wraps an async generator of plain objects into an AsyncDataSource
  *
- * @param {AsyncGenerator<Record<string, SqlPrimitive>>} gen
+ * @param {AsyncGenerator<AsyncRow>} gen
  * @returns {AsyncDataSource}
  */
 export function generatorSource(gen) {
   return {
     async *getRows() {
-      for await (const row of gen) {
-        yield asyncRow(row)
-      }
+      yield* gen
     },
   }
 }
@@ -25,7 +23,7 @@ export function generatorSource(gen) {
  * @param {Record<string, SqlPrimitive>} obj - the plain object
  * @returns {AsyncRow} a row accessor interface
  */
-export function asyncRow(obj) {
+function asyncRow(obj) {
   /** @type {AsyncRow} */
   const row = {}
   for (const [key, value] of Object.entries(obj)) {

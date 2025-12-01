@@ -1,4 +1,4 @@
-import type { ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
+import type { AsyncRow, ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows
@@ -8,7 +8,7 @@ import type { ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.j
  * @param options.query - SQL query string
  * @returns async generator yielding rows matching the query
  */
-export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<Record<string, SqlPrimitive>>
+export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
 
 /**
  * Parses a SQL query string into an abstract syntax tree
@@ -24,4 +24,4 @@ export function parseSql(query: string): SelectStatement
  * @param asyncGen - the async generator
  * @returns array of all yielded values
  */
-export function collect<T>(asyncGen: AsyncGenerator<T>): Promise<T[]>
+export function collect<T>(asyncGen: AsyncGenerator<AsyncRow>): Promise<Record<string, SqlPrimitive>[]>

@@ -1,6 +1,6 @@
 import { evaluateExpr } from './expression.js'
 import { parseSql } from '../parse/parse.js'
-import { asyncRow, generatorSource, memorySource } from '../backend/dataSource.js'
+import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateHavingExpr } from './having.js'
 
@@ -12,7 +12,7 @@ import { evaluateHavingExpr } from './having.js'
  * Executes a SQL SELECT query against named data sources
  *
  * @param {ExecuteSqlOptions} options - the execution options
- * @returns {AsyncGenerator<Record<string, SqlPrimitive>>} async generator yielding result rows
+ * @returns {AsyncGenerator<AsyncRow>} async generator yielding result rows
  */
 export async function* executeSql({ tables, query }) {
   const select = parseSql(query)
@@ -44,7 +44,7 @@ export async function* executeSql({ tables, query }) {
  *
  * @param {SelectStatement} select
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {AsyncGenerator<Record<string, SqlPrimitive>>} async generator yielding result rows
+ * @returns {AsyncGenerator<AsyncRow>}
  */
 export async function* executeSelect(select, tables) {
   /** @type {AsyncDataSource} */
@@ -96,15 +96,15 @@ function defaultDerivedAlias(expr) {
 /**
  * Creates a stable string key for a row to enable deduplication
  *
- * @param {Record<string, SqlPrimitive>} row
- * @returns {string} a stable string representation of the row
+ * @param {AsyncRow} row
+ * @returns {Promise<string>} a stable string representation of the row
  */
-function stableRowKey(row) {
+async function stableRowKey(row) {
   const keys = Object.keys(row).sort()
   /** @type {string[]} */
   const parts = []
   for (const k of keys) {
-    const v = row[k]
+    const v = await row[k]()
     parts.push(k + ':' + JSON.stringify(v))
   }
   return parts.join('|')
@@ -138,18 +138,18 @@ function compareValues(a, b) {
 /**
  * Applies DISTINCT filtering to remove duplicate rows
  *
- * @param {Record<string, SqlPrimitive>[]} rows - The input rows
- * @param {boolean} distinct - Whether to apply deduplication
- * @returns {Record<string, SqlPrimitive>[]} The deduplicated rows
+ * @param {AsyncRow[]} rows - the input rows
+ * @param {boolean} distinct - whether to apply deduplication
+ * @returns {Promise<AsyncRow[]>} the deduplicated rows
  */
-function applyDistinct(rows, distinct) {
+async function applyDistinct(rows, distinct) {
   if (!distinct) return rows
   /** @type {Set<string>} */
   const seen = new Set()
-  /** @type {Record<string, SqlPrimitive>[]} */
+  /** @type {AsyncRow[]} */
   const result = []
   for (const row of rows) {
-    const key = stableRowKey(row)
+    const key = await stableRowKey(row)
     if (seen.has(key)) continue
     seen.add(key)
     result.push(row)
@@ -221,10 +221,10 @@ async function sortRowSources(rows, orderBy, tables) {
 /**
  * Applies ORDER BY sorting to rows
  *
- * @param {Record<string, SqlPrimitive>[]} rows - the input rows
+ * @param {AsyncRow[]} rows - the input rows
  * @param {OrderByItem[]} orderBy - the sort specifications
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {Promise<Record<string, SqlPrimitive>[]>} the sorted rows
+ * @returns {Promise<AsyncRow[]>} the sorted rows
  */
 async function applyOrderBy(rows, orderBy, tables) {
   if (!orderBy.length) return rows
@@ -236,7 +236,7 @@ async function applyOrderBy(rows, orderBy, tables) {
     /** @type {SqlPrimitive[]} */
     const rowValues = []
     for (const term of orderBy) {
-      const value = await evaluateExpr({ node: term.expr, row: asyncRow(row), tables })
+      const value = await evaluateExpr({ node: term.expr, row, tables })
       rowValues.push(value)
     }
     evaluatedValues.push(rowValues)
@@ -285,7 +285,7 @@ async function applyOrderBy(rows, orderBy, tables) {
  * @param {SelectStatement} select
  * @param {AsyncDataSource} dataSource
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {AsyncGenerator<Record<string, SqlPrimitive>>}
+ * @returns {AsyncGenerator<AsyncRow>}
  */
 async function* evaluateSelectAst(select, dataSource, tables) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
@@ -310,7 +310,7 @@ async function* evaluateSelectAst(select, dataSource, tables) {
  * @param {SelectStatement} select
  * @param {AsyncDataSource} dataSource
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {AsyncGenerator<Record<string, SqlPrimitive>>}
+ * @returns {AsyncGenerator<AsyncRow>}
  */
 async function* evaluateStreaming(select, dataSource, tables) {
   let rowsYielded = 0
@@ -337,16 +337,16 @@ async function* evaluateStreaming(select, dataSource, tables) {
     }
 
     // SELECT projection
-    /** @type {Record<string, SqlPrimitive>} */
+    /** @type {AsyncRow} */
     const outRow = {}
     for (const col of select.columns) {
       if (col.kind === 'star') {
         for (const [key, cell] of Object.entries(row)) {
-          outRow[key] = await cell()
+          outRow[key] = cell
         }
       } else if (col.kind === 'derived') {
         const alias = col.alias ?? defaultDerivedAlias(col.expr)
-        outRow[alias] = await evaluateExpr({ node: col.expr, row, tables })
+        outRow[alias] = () => evaluateExpr({ node: col.expr, row, tables })
       } else if (col.kind === 'aggregate') {
         throw new Error(
           'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'
@@ -356,7 +356,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
 
     // DISTINCT: skip duplicate rows
     if (seen) {
-      const key = stableRowKey(outRow)
+      const key = await stableRowKey(outRow)
       if (seen.has(key)) continue
       seen.add(key)
       // OFFSET applies to distinct rows
@@ -382,7 +382,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
  * @param {Record<string, AsyncDataSource>} tables
  * @param {boolean} hasAggregate
  * @param {boolean} useGrouping
- * @returns {AsyncGenerator<Record<string, SqlPrimitive>>}
+ * @returns {AsyncGenerator<AsyncRow>}
  */
 async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping) {
   // Step 1: Collect all rows from data source
@@ -408,7 +408,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   }
 
   // Step 3: Projection (grouping vs non-grouping)
-  /** @type {Record<string, SqlPrimitive>[]} */
+  /** @type {AsyncRow[]} */
   let projected = []
 
   if (useGrouping) {
@@ -445,14 +445,14 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
     }
 
     for (const group of groups) {
-      /** @type {Record<string, SqlPrimitive>} */
+      /** @type {AsyncRow} */
       const resultRow = {}
       for (const col of select.columns) {
         if (col.kind === 'star') {
           const firstRow = group[0]
           if (firstRow) {
             for (const [key, cell] of Object.entries(firstRow)) {
-              resultRow[key] = await cell()
+              resultRow[key] = cell
             }
           }
           continue
@@ -461,8 +461,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
         if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
           if (group.length > 0) {
-            const value = await evaluateExpr({ node: col.expr, row: group[0], tables })
-            resultRow[alias] = value
+            resultRow[alias] = () => evaluateExpr({ node: col.expr, row: group[0], tables })
           } else {
             delete resultRow[alias]
           }
@@ -471,8 +470,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
 
         if (col.kind === 'aggregate') {
           const alias = col.alias ?? defaultAggregateAlias(col)
-          const value = await evaluateAggregate({ col, rows: group, tables })
-          resultRow[alias] = value
+          resultRow[alias] = () => evaluateAggregate({ col, rows: group, tables })
           continue
         }
       }
@@ -501,17 +499,16 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
     }
 
     for (const row of rowsToProject) {
-      /** @type {Record<string, SqlPrimitive>} */
+      /** @type {AsyncRow} */
       const outRow = {}
       for (const col of select.columns) {
         if (col.kind === 'star') {
           for (const [key, cell] of Object.entries(row)) {
-            outRow[key] = await cell()
+            outRow[key] = cell
           }
         } else if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          const value = await evaluateExpr({ node: col.expr, row, tables })
-          outRow[alias] = value
+          outRow[alias] = () => evaluateExpr({ node: col.expr, row, tables })
         }
       }
       projected.push(outRow)
@@ -519,7 +516,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   }
 
   // Step 4: DISTINCT
-  projected = applyDistinct(projected, select.distinct)
+  projected = await applyDistinct(projected, select.distinct)
 
   // Step 5: ORDER BY (final sort for grouped queries)
   projected = await applyOrderBy(projected, select.orderBy, tables)

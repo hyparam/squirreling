@@ -8,33 +8,25 @@ import { evaluateExpr } from './expression.js'
 /**
  * Creates a context for evaluating HAVING expressions
  *
- * @param {Record<string, SqlPrimitive> | AsyncRow} resultRow - the aggregated result row
+ * @param {AsyncRow} resultRow - the aggregated result row
  * @param {AsyncRow[]} group - the group of rows
  * @returns {AsyncRow} a context row for HAVING evaluation
  */
 function createHavingContext(resultRow, group) {
   // Include the first row of the group (for GROUP BY columns)
   const firstRow = group[0]
-  /** @type {AsyncRow} */
-  const context = {}
   if (firstRow) {
-    for (const [key, cell] of Object.entries(firstRow)) {
-      context[key] = cell
-    }
+    return { ...firstRow, ...resultRow }
+  } else {
+    return resultRow
   }
-  // Merge with result row (which has aggregates computed)
-  for (const [key, value] of Object.entries(resultRow)) {
-    context[key] = typeof value === 'function' ? value : () => Promise.resolve(value)
-  }
-
-  return context
 }
 
 /**
  * Evaluates a HAVING expression with support for aggregate functions
  *
  * @param {ExprNode} expr - the HAVING expression
- * @param {Record<string, any>} row - the aggregated result row
+ * @param {AsyncRow} row - the aggregated result row
  * @param {AsyncRow[]} group - the group of rows for re-evaluating aggregates
  * @param {Record<string, AsyncDataSource>} tables
  * @returns {Promise<boolean>} whether the HAVING condition is satisfied

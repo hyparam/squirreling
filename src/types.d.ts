@@ -9,7 +9,7 @@ export interface AsyncDataSource {
 export type AsyncRow = Record<string, AsyncCell>
 export type AsyncCell = () => Promise<SqlPrimitive>
 
-export type Row = Record<string, any>[]
+export type Row = Record<string, SqlPrimitive>[]
 
 export interface ExecuteSqlOptions {
   tables: Record<string, Row | AsyncDataSource>
