@@ -65,7 +65,7 @@ export async function* executeSelect(select, tables) {
   }
 
   // Execute JOINs if present
-  if (select.joins.length > 0) {
+  if (select.joins.length) {
     dataSource = await executeJoins(dataSource, select.joins, fromTableName, tables)
   }
 

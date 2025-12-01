@@ -14,17 +14,51 @@ import { evaluateExpr } from './expression.js'
  * @returns {Promise<AsyncDataSource>} data source yielding joined rows
  */
 export async function executeJoins(leftSource, joins, leftTableName, tables) {
-  // Collect left rows (JOINs require buffering)
+  let currentLeftTable = leftTableName
+
+  // Single join optimization: stream left rows without buffering
+  if (joins.length === 1) {
+    const join = joins[0]
+    const rightSource = tables[join.table]
+    if (rightSource === undefined) {
+      throw new Error(`Table "${join.table}" not found`)
+    }
+
+    // Buffer right rows for hash index (required for hash join)
+    /** @type {AsyncRow[]} */
+    const rightRows = []
+    for await (const row of rightSource.getRows()) {
+      rightRows.push(row)
+    }
+
+    // Use alias for column prefixing if present
+    const rightTableName = join.alias ?? join.table
+
+    // Return streaming data source - left rows stream through without buffering
+    return {
+      async *getRows() {
+        yield* hashJoin({
+          leftRows: leftSource.getRows(), // Stream directly, not buffered
+          rightRows,
+          join,
+          leftTable: currentLeftTable,
+          rightTable: rightTableName,
+          tables,
+        })
+      },
+    }
+  }
+
+  // Multiple joins: buffer intermediate results, stream final join
   /** @type {AsyncRow[]} */
   let leftRows = []
   for await (const row of leftSource.getRows()) {
     leftRows.push(row)
   }
 
-  let currentLeftTable = leftTableName
-
-  // Process each JOIN sequentially
-  for (const join of joins) {
+  // Process all but the last join, buffering intermediate results
+  for (let i = 0; i < joins.length - 1; i++) {
+    const join = joins[i]
     const rightSource = tables[join.table]
     if (rightSource === undefined) {
       throw new Error(`Table "${join.table}" not found`)
@@ -39,7 +73,10 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     // Use alias for column prefixing if present
     const rightTableName = join.alias ?? join.table
 
-    leftRows = await hashJoin({
+    // Collect intermediate results into array for next join
+    /** @type {AsyncRow[]} */
+    const newLeftRows = []
+    const joined = hashJoin({
       leftRows,
       rightRows,
       join,
@@ -47,17 +84,41 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
       rightTable: rightTableName,
       tables,
     })
+    for await (const row of joined) {
+      newLeftRows.push(row)
+    }
+    leftRows = newLeftRows
 
     // After join, the "left" table for the next join includes all joined tables
     currentLeftTable = `${currentLeftTable}_${rightTableName}`
   }
 
-  // Convert back to AsyncDataSource
+  // Final join: stream the results
+  const lastJoin = joins[joins.length - 1]
+  const rightSource = tables[lastJoin.table]
+  if (rightSource === undefined) {
+    throw new Error(`Table "${lastJoin.table}" not found`)
+  }
+
+  /** @type {AsyncRow[]} */
+  const rightRows = []
+  for await (const row of rightSource.getRows()) {
+    rightRows.push(row)
+  }
+
+  // Use alias for column prefixing if present
+  const lastRightTableName = lastJoin.alias ?? lastJoin.table
+
   return {
     async *getRows() {
-      for (const row of leftRows) {
-        yield row
-      }
+      yield* hashJoin({
+        leftRows,
+        rightRows,
+        join: lastJoin,
+        leftTable: currentLeftTable,
+        rightTable: lastRightTableName,
+        tables,
+      })
     },
   }
 }
@@ -134,41 +195,36 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
 }
 
 /**
- * Performs a hash join between left and right row sets
+ * Performs a hash join between left and right row sets (streaming).
+ * Yields rows as they are found instead of buffering all results.
  *
  * @param {Object} params
- * @param {AsyncRow[]} params.leftRows - rows from left table
- * @param {AsyncRow[]} params.rightRows - rows from right table
+ * @param {AsyncIterable<AsyncRow>|AsyncRow[]} params.leftRows - rows from left table (can stream)
+ * @param {AsyncRow[]} params.rightRows - rows from right table (must be buffered for hash index)
  * @param {JoinClause} params.join - join specification
  * @param {string} params.leftTable - name of left table (for column prefixing)
  * @param {string} params.rightTable - name of right table (for column prefixing, may be alias)
  * @param {Record<string, AsyncDataSource>} params.tables - all tables for expression evaluation
- * @returns {Promise<AsyncRow[]>} joined rows
+ * @yields {AsyncRow} joined rows
  */
-async function hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tables }) {
+async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tables }) {
   const { joinType, on: onCondition } = join
 
   if (!onCondition) {
     throw new Error('JOIN requires ON condition')
   }
 
-  // Extract join keys from ON condition
   const keys = extractJoinKeys(onCondition)
 
-  /** @type {AsyncRow[]} */
-  const result = []
-
-  // Get column names for NULL row generation
-  const leftCols = leftRows.length ? Object.keys(leftRows[0]) : []
+  // Get column names for NULL row generation (right side is always buffered)
   const rightCols = rightRows.length ? Object.keys(rightRows[0]) : []
-
-  // Generate prefixed column names for NULL rows
-  const leftPrefixedCols = leftCols.flatMap(col =>
-    col.includes('.') ? [col] : [`${leftTable}.${col}`, col]
-  )
   const rightPrefixedCols = rightCols.flatMap(col =>
     col.includes('.') ? [col] : [`${rightTable}.${col}`, col]
   )
+
+  // Track left column info - captured from first row during iteration
+  /** @type {string[]|null} */
+  let leftPrefixedCols = null
 
   if (keys) {
     // Hash join: build hash map on right table
@@ -190,77 +246,90 @@ async function hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tabl
       bucket.push(rightRow)
     }
 
-    // Track which right rows matched (for FULL join)
-    /** @type {Set<AsyncRow>} */
-    const matchedRightRows = new Set()
+    // Track which right rows matched (only needed for RIGHT/FULL joins)
+    /** @type {Set<AsyncRow>|null} */
+    const matchedRightRows = joinType === 'RIGHT' || joinType === 'FULL' ? new Set() : null
 
-    // PROBE PHASE: Look up each left row
-    for (const leftRow of leftRows) {
+    // PROBE PHASE: Stream through left rows, yield matches immediately
+    for await (const leftRow of leftRows) {
+      // Capture left column info from first row (for NULL row generation)
+      if (!leftPrefixedCols) {
+        const leftCols = Object.keys(leftRow)
+        leftPrefixedCols = leftCols.flatMap(col =>
+          col.includes('.') ? [col] : [`${leftTable}.${col}`, col]
+        )
+      }
+
       const keyValue = await evaluateExpr({ node: keys.leftKey, row: leftRow, tables })
       const keyStr = JSON.stringify(keyValue)
 
       const matchingRightRows = hashMap.get(keyStr)
 
       if (matchingRightRows && matchingRightRows.length > 0) {
-        // Found matches - emit merged row for each
         for (const rightRow of matchingRightRows) {
-          matchedRightRows.add(rightRow)
-          result.push(mergeRows(leftRow, rightRow, leftTable, rightTable))
+          if (matchedRightRows) matchedRightRows.add(rightRow)
+          yield mergeRows(leftRow, rightRow, leftTable, rightTable)
         }
       } else if (joinType === 'LEFT' || joinType === 'FULL') {
-        // No match but LEFT/FULL join - emit left row with NULL right columns
         const nullRight = createNullRow(rightPrefixedCols)
-        result.push(mergeRows(leftRow, nullRight, leftTable, rightTable))
+        yield mergeRows(leftRow, nullRight, leftTable, rightTable)
       }
-      // INNER join with no match: don't emit anything
+      // INNER join with no match: don't yield anything
     }
 
     // UNMATCHED PHASE: Handle unmatched right rows for RIGHT/FULL joins
-    if (joinType === 'RIGHT' || joinType === 'FULL') {
+    if (matchedRightRows) {
       for (const rightRow of rightRows) {
         if (!matchedRightRows.has(rightRow)) {
-          const nullLeft = createNullRow(leftPrefixedCols)
-          result.push(mergeRows(nullLeft, rightRow, leftTable, rightTable))
+          // Use empty array if left table was empty (no rows to derive columns from)
+          const nullLeft = createNullRow(leftPrefixedCols || [])
+          yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
         }
       }
     }
   } else {
     // Fallback to nested loop for complex ON conditions
-    // Track which right rows matched (for FULL join)
-    /** @type {Set<AsyncRow>} */
-    const matchedRightRows = new Set()
+    // Left rows stream through, right rows are iterated for each left row
+    /** @type {Set<AsyncRow>|null} */
+    const matchedRightRows = joinType === 'RIGHT' || joinType === 'FULL' ? new Set() : null
 
-    for (const leftRow of leftRows) {
+    for await (const leftRow of leftRows) {
+      // Capture left column info from first row (for NULL row generation)
+      if (!leftPrefixedCols) {
+        const leftCols = Object.keys(leftRow)
+        leftPrefixedCols = leftCols.flatMap(col =>
+          col.includes('.') ? [col] : [`${leftTable}.${col}`, col]
+        )
+      }
+
       let hasMatch = false
 
       for (const rightRow of rightRows) {
-        // Create temporary merged row to evaluate ON condition
         const tempMerged = mergeRows(leftRow, rightRow, leftTable, rightTable)
         const matches = await evaluateExpr({ node: onCondition, row: tempMerged, tables })
 
         if (matches) {
           hasMatch = true
-          matchedRightRows.add(rightRow)
-          result.push(tempMerged)
+          if (matchedRightRows) matchedRightRows.add(rightRow)
+          yield tempMerged
         }
       }
 
       if (!hasMatch && (joinType === 'LEFT' || joinType === 'FULL')) {
         const nullRight = createNullRow(rightPrefixedCols)
-        result.push(mergeRows(leftRow, nullRight, leftTable, rightTable))
+        yield mergeRows(leftRow, nullRight, leftTable, rightTable)
       }
     }
 
     // Handle unmatched right rows for RIGHT/FULL joins
-    if (joinType === 'RIGHT' || joinType === 'FULL') {
+    if (matchedRightRows) {
       for (const rightRow of rightRows) {
         if (!matchedRightRows.has(rightRow)) {
-          const nullLeft = createNullRow(leftPrefixedCols)
-          result.push(mergeRows(nullLeft, rightRow, leftTable, rightTable))
+          // Use empty array if left table was empty (no rows to derive columns from)
+          const nullLeft = createNullRow(leftPrefixedCols || [])
+          yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
         }
       }
     }
   }
-
-  return result
 }

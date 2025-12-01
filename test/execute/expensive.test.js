@@ -115,7 +115,7 @@ describe('expensive cell access', () => {
     // would be 5 if we buffered all join results before applying LIMIT
     // with streaming joins, only 1 expensive call should be made
     await expect(countExpensiveCalls('SELECT * FROM data JOIN other ON data.llm = other.value LIMIT 1'))
-      .resolves.toBe(5)
+      .resolves.toBe(1)
   })
 })
 
