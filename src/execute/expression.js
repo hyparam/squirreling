@@ -23,6 +23,16 @@ export async function evaluateExpr({ node, row, tables }) {
     return row.getCell(node.name)
   }
 
+  // Scalar subquery - returns a single value
+  if (node.type === 'subquery') {
+    const results = await collect(executeSelect(node.subquery, tables))
+    if (results.length === 0) return null
+    // Return the first column of the first row
+    const firstRow = results[0]
+    const firstKey = Object.keys(firstRow)[0]
+    return firstRow[firstKey]
+  }
+
   // Unary operators
   if (node.type === 'unary') {
     if (node.op === 'NOT') {

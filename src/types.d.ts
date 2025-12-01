@@ -122,6 +122,11 @@ export interface CaseNode {
   elseResult?: ExprNode
 }
 
+export interface SubqueryNode {
+  type: 'subquery'
+  subquery: SelectStatement
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -134,6 +139,7 @@ export type ExprNode =
   | InValuesNode
   | ExistsNode
   | CaseNode
+  | SubqueryNode
 
 export interface StarColumn {
   kind: 'star'
@@ -197,7 +203,7 @@ export interface ExprCursor {
   match(type: TokenType, value?: string): boolean
   expect(type: TokenType, value: string): Token
   expectIdentifier(): Token
-  parseSubquery?: () => SelectStatement
+  parseSubquery: () => SelectStatement
 }
 
 // Tokenizer types

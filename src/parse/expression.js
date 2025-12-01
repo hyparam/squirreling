@@ -20,6 +20,17 @@ function parsePrimary(c) {
   const tok = c.current()
 
   if (tok.type === 'paren' && tok.value === '(') {
+    // Peek ahead to see if this is a scalar subquery
+    const nextTok = c.peek(1)
+    if (nextTok.type === 'keyword' && nextTok.value === 'SELECT') {
+      // It's a scalar subquery
+      const subquery = c.parseSubquery()
+      return {
+        type: 'subquery',
+        subquery,
+      }
+    }
+    // Regular grouped expression
     c.consume()
     const expr = parseExpression(c)
     c.expect('paren', ')')
@@ -132,9 +143,6 @@ function parsePrimary(c) {
     }
     if (tok.value === 'EXISTS') {
       c.consume() // EXISTS
-      if (!c.parseSubquery) {
-        throw new Error('Subquery parsing not available in this context')
-      }
       const subquery = c.parseSubquery()
       return {
         type: 'exists',

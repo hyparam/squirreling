@@ -279,4 +279,45 @@ describe('subqueries', () => {
       expect(result).toHaveLength(2)
     })
   })
+
+  // scalar subqueries
+  describe('scalar subqueries', () => {
+    it('should handle simple scalar subquery in SELECT', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT
+            name,
+            (SELECT MAX(age) FROM users) AS max_age
+          FROM users
+        `,
+      }))
+      expect(result).toHaveLength(3)
+      const alice = result.find(r => r.name === 'Alice')
+      const bob = result.find(r => r.name === 'Bob')
+      const charlie = result.find(r => r.name === 'Charlie')
+      expect(alice.max_age).toBe(35)
+      expect(bob.max_age).toBe(35)
+      expect(charlie.max_age).toBe(35)
+    })
+
+    // it('should handle correlated scalar subquery', async () => {
+    //   const result = await collect(executeSql({
+    //     tables: { users, orders },
+    //     query: `
+    //       SELECT
+    //         name,
+    //         (SELECT SUM(amount) FROM orders WHERE user_id = users.id) AS total_orders
+    //       FROM users
+    //     `,
+    //   }))
+    //   expect(result).toHaveLength(3)
+    //   const alice = result.find(r => r.name === 'Alice')
+    //   const bob = result.find(r => r.name === 'Bob')
+    //   const charlie = result.find(r => r.name === 'Charlie')
+    //   expect(alice.total_orders).toBe(250)
+    //   expect(bob.total_orders).toBe(200)
+    //   expect(charlie.total_orders).toBeNull()
+    // })
+  })
 })
