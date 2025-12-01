@@ -13,7 +13,7 @@ export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
 /**
  * Parses a SQL query string into an abstract syntax tree
  *
- * @param sql - SQL query string to parse
+ * @param query - SQL query string to parse
  * @returns parsed SQL select statement
  */
 export function parseSql(query: string): SelectStatement
