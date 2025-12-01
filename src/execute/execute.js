@@ -1,9 +1,8 @@
 import { evaluateExpr } from './expression.js'
 import { parseSql } from '../parse/parse.js'
-import { createAsyncMemorySource, createRowAccessor } from '../backend/memory.js'
+import { asyncRow, generatorSource, memorySource } from '../backend/dataSource.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateHavingExpr } from './having.js'
-import { collect } from './utils.js'
 
 /**
  * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, AsyncRow, SelectStatement, SqlPrimitive } from '../types.js'
@@ -31,7 +30,7 @@ export async function* executeSql({ tables, query }) {
   const normalizedTables = {}
   for (const [name, source] of Object.entries(tables)) {
     if (Array.isArray(source)) {
-      normalizedTables[name] = createAsyncMemorySource(source)
+      normalizedTables[name] = memorySource(source)
     } else {
       normalizedTables[name] = source
     }
@@ -60,8 +59,7 @@ export async function* executeSelect(select, tables) {
     dataSource = table
   } else {
     // Nested subquery - recursively resolve
-    const derivedData = await collect(executeSelect(select.from.query, tables))
-    dataSource = createAsyncMemorySource(derivedData)
+    dataSource = generatorSource(executeSelect(select.from.query, tables))
   }
 
   yield* evaluateSelectAst(select, dataSource, tables)
@@ -238,7 +236,7 @@ async function applyOrderBy(rows, orderBy, tables) {
     /** @type {SqlPrimitive[]} */
     const rowValues = []
     for (const term of orderBy) {
-      const value = await evaluateExpr({ node: term.expr, row: createRowAccessor(row), tables })
+      const value = await evaluateExpr({ node: term.expr, row: asyncRow(row), tables })
       rowValues.push(value)
     }
     evaluatedValues.push(rowValues)

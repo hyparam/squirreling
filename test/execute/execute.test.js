@@ -290,7 +290,10 @@ describe('executeSql', () => {
         { id: 2, value: 'hello' },
         { id: 3, value: null },
       ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT * FROM data WHERE value = \'\'' }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT * FROM data WHERE value = \'\'',
+      }))
       expect(result).toHaveLength(1)
       expect(result[0].id).toBe(1)
     })
@@ -300,7 +303,10 @@ describe('executeSql', () => {
         { id: 1, name: 'O\'Brien' },
         { id: 2, name: 'Smith' },
       ]
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name = \'O\'\'Brien\'' }))
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM users WHERE name = \'O\'\'Brien\'',
+      }))
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('O\'Brien')
     })
@@ -312,14 +318,20 @@ describe('executeSql', () => {
         { id: 3, value: 20 },
         { id: 4, value: '15' },
       ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT * FROM data ORDER BY value' }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT * FROM data ORDER BY value',
+      }))
       // Should sort lexicographically for mixed types
       expect(result[0].value).toBe(10)
     })
 
     it('should handle very long column names', async () => {
       const data = [{ id: 1, very_long_column_name_that_exceeds_normal_limits: 'value' }]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT very_long_column_name_that_exceeds_normal_limits FROM data' }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT very_long_column_name_that_exceeds_normal_limits FROM data',
+      }))
       expect(result[0].very_long_column_name_that_exceeds_normal_limits).toBe('value')
     })
 
@@ -329,7 +341,10 @@ describe('executeSql', () => {
         { id: 2, 'first name': 'Bob', 'last name': 'Jones', age: 25 },
         { id: 3, 'first name': 'Charlie', 'last name': 'Brown', age: 35 },
       ]
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT "first name", "last name", age FROM users WHERE age > 25' }))
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT "first name", "last name", age FROM users WHERE age > 25',
+      }))
       expect(result).toHaveLength(2)
       expect(result[0]).toEqual({ 'first name': 'Alice', 'last name': 'Smith', age: 30 })
       expect(result[1]).toEqual({ 'first name': 'Charlie', 'last name': 'Brown', age: 35 })
@@ -341,7 +356,10 @@ describe('executeSql', () => {
         { id: 2, 'full name': 'Alice', score: 95 },
         { id: 3, 'full name': 'Bob', score: 90 },
       ]
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT "full name", score FROM users ORDER BY "full name"' }))
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT "full name", score FROM users ORDER BY "full name"',
+      }))
       expect(result).toHaveLength(3)
       expect(result[0]['full name']).toBe('Alice')
       expect(result[1]['full name']).toBe('Bob')
@@ -354,7 +372,10 @@ describe('executeSql', () => {
         { id: 2, 'product name': 'Gadget', 'total sales': 200 },
         { id: 3, 'product name': 'Widget', 'total sales': 150 },
       ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT "product name", SUM("total sales") AS total FROM data GROUP BY "product name"' }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT "product name", SUM("total sales") AS total FROM data GROUP BY "product name"',
+      }))
       expect(result).toHaveLength(2)
       const widget = result.find(r => r['product name'] === 'Widget')
       expect(widget?.total).toBe(250)
@@ -365,7 +386,10 @@ describe('executeSql', () => {
 
   describe('CASE expressions', () => {
     it('should handle searched CASE expression', async () => {
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT name, CASE WHEN age >= 30 THEN \'senior\' ELSE \'junior\' END AS category FROM users' }))
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT name, CASE WHEN age >= 30 THEN \'senior\' ELSE \'junior\' END AS category FROM users',
+      }))
       expect(result).toHaveLength(5)
       expect(result[0]).toEqual({ name: 'Alice', category: 'senior' })
       expect(result[1]).toEqual({ name: 'Bob', category: 'junior' })
@@ -373,7 +397,10 @@ describe('executeSql', () => {
     })
 
     it('should handle simple CASE expression', async () => {
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT name, CASE city WHEN \'NYC\' THEN \'New York\' WHEN \'LA\' THEN \'Los Angeles\' END AS city_full FROM users' }))
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT name, CASE city WHEN \'NYC\' THEN \'New York\' WHEN \'LA\' THEN \'Los Angeles\' END AS city_full FROM users',
+      }))
       expect(result).toHaveLength(5)
       expect(result[0]).toEqual({ name: 'Alice', city_full: 'New York' })
       expect(result[1]).toEqual({ name: 'Bob', city_full: 'Los Angeles' })
@@ -382,7 +409,10 @@ describe('executeSql', () => {
 
   describe('subqueries', () => {
     it('should support subquery in FROM clause', async () => {
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u' }))
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT name FROM (SELECT * FROM users WHERE age > 25) AS u',
+      }))
       expect(result).toHaveLength(4)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie', 'Diana', 'Eve'])
     })

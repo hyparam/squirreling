@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
-import { createAsyncMemorySource } from '../../src/backend/memory.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 
 /**
  * @import { AsyncRow, AsyncDataSource } from '../../src/types.js'
@@ -98,6 +98,12 @@ describe('expensive cell access', () => {
     await expect(countExpensiveCalls('SELECT DISTINCT llm FROM data')).resolves.toBe(5)
     await expect(countExpensiveCalls('SELECT DISTINCT * FROM data')).resolves.toBe(5)
   })
+
+  it('should minimize expensive calls in a subquery', async () => {
+    // would be 5 if we materialized the subquery eagerly
+    // TODO: should be 0 (with lazy materialization)
+    await expect(countExpensiveCalls('SELECT name FROM (SELECT * FROM data) AS t LIMIT 2')).resolves.toBe(2)
+  })
 })
 
 /**
@@ -124,7 +130,7 @@ async function countExpensiveCalls(query) {
  * @returns {AsyncDataSource & { getExpensiveCallCount: () => number }}
  */
 function createCountingDataSource(data, expensiveColumns) {
-  const memorySource = createAsyncMemorySource(data)
+  const source = memorySource(data)
   let expensiveCallCount = 0
 
   return {
@@ -132,7 +138,7 @@ function createCountingDataSource(data, expensiveColumns) {
      * @returns {AsyncGenerator<AsyncRow>}
      */
     async *getRows() {
-      for await (const row of memorySource.getRows()) {
+      for await (const row of source.getRows()) {
         yield {
           /**
            * @param {string} name
