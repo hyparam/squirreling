@@ -154,4 +154,196 @@ describe('executeSql - HAVING clause', () => {
     expect(result).toHaveLength(1)
     expect(result[0]).toEqual({ city: 'NYC', cnt: 2 })
   })
+
+  it('should handle HAVING with >= operator', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city HAVING AVG(age) >= 30',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(row.avg_age).toBeGreaterThanOrEqual(30)
+    }
+  })
+
+  it('should handle HAVING with LIKE operator', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING city LIKE \'N%\'',
+    }))
+    expect(result).toHaveLength(1)
+    expect(result[0].city).toBe('NYC')
+  })
+
+  it('should handle HAVING with LIKE pattern matching', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING city LIKE \'%A\'',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    expect(result.some(r => r.city === 'LA')).toBe(true)
+  })
+
+  it('should handle HAVING with BETWEEN operator', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city HAVING AVG(age) BETWEEN 25 AND 30',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(row.avg_age).toBeGreaterThanOrEqual(25)
+      expect(row.avg_age).toBeLessThanOrEqual(30)
+    }
+  })
+
+  it('should handle HAVING with NOT BETWEEN operator', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) NOT BETWEEN 2 AND 2',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(row.cnt).not.toBe(2)
+    }
+  })
+
+  it('should handle HAVING with BETWEEN and NULL values', async () => {
+    const data = [
+      { category: 'A', value: 10 },
+      { category: 'A', value: null },
+      { category: 'B', value: 5 },
+      { category: 'B', value: 15 },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) BETWEEN 5 AND 10',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('should handle HAVING with MIN aggregate function', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, MIN(age) AS min_age FROM users GROUP BY city HAVING MIN(age) > 23',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(row.min_age).toBeGreaterThan(23)
+    }
+  })
+
+  it('should handle HAVING with IS NULL', async () => {
+    const data = [
+      { category: 'A', value: 10 },
+      { category: 'A', value: null },
+      { category: 'B', value: null },
+      { category: 'B', value: null },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) IS NULL',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    expect(result.some(r => r.min_val === null)).toBe(true)
+  })
+
+  it('should handle HAVING with IS NOT NULL', async () => {
+    const data = [
+      { category: 'A', value: 10 },
+      { category: 'A', value: 20 },
+      { category: 'B', value: null },
+      { category: 'B', value: null },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) IS NOT NULL',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(row.min_val).not.toBeNull()
+    }
+  })
+
+  it('should handle HAVING with NOT operator', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING NOT (COUNT(*) > 2)',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(row.cnt).toBeLessThanOrEqual(2)
+    }
+  })
+
+  it('should handle NULL comparisons in HAVING with comparison operators', async () => {
+    const data = [
+      { category: 'A', value: 10 },
+      { category: 'A', value: null },
+      { category: 'B', value: null },
+      { category: 'B', value: null },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) < 20',
+    }))
+    // NULL values should be excluded from < comparison
+    expect(result.some(r => r.min_val !== null)).toBe(true)
+  })
+
+  it('should handle NULL equality comparisons in HAVING', async () => {
+    const data = [
+      { category: 'A', value: 10 },
+      { category: 'A', value: null },
+      { category: 'B', value: null },
+      { category: 'B', value: null },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) = 10',
+    }))
+    // Only category A with min value 10 should match
+    expect(result).toHaveLength(1)
+    expect(result[0].category).toBe('A')
+  })
+
+  it('should handle BETWEEN with NULL bounds', async () => {
+    const data = [
+      { category: 'A', value: 10 },
+      { category: 'A', value: 20 },
+      { category: 'B', value: 5 },
+      { category: 'C', value: null },
+    ]
+    // This tests the NULL handling in BETWEEN (line 116-117)
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, MAX(value) AS max_val FROM data GROUP BY category HAVING MAX(value) BETWEEN 10 AND 25',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    // Category C with NULL should be excluded
+    expect(result.every(r => r.max_val !== null)).toBe(true)
+  })
+
+  it('should handle aggregate function as direct boolean in HAVING', async () => {
+    const data = [
+      { category: 'A', value: 0 },
+      { category: 'B', value: 5 },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT category, COUNT(*) AS cnt FROM data GROUP BY category HAVING COUNT(*)',
+    }))
+    // All groups with non-zero count should pass
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('should handle IN operator in HAVING', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING city IN (\'NYC\', \'LA\')',
+    }))
+    expect(result.length).toBeGreaterThan(0)
+    for (const row of result) {
+      expect(['NYC', 'LA']).toContain(row.city)
+    }
+  })
 })
