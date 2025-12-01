@@ -1,5 +1,5 @@
 /**
- * @import { AsyncDataSource, AsyncRow } from '../types.js'
+ * @import { AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
  */
 
 
@@ -47,6 +47,44 @@ export function memorySource(data) {
     async *getRows() {
       for (const item of data) {
         yield asyncRow(item)
+      }
+    },
+  }
+}
+
+/**
+ * Wraps a data source that caches all accessed rows in memory
+ * @param {AsyncDataSource} source
+ * @returns {AsyncDataSource}
+ */
+export function cachedDataSource(source) {
+  /** @type {Map<string, SqlPrimitive>} */
+  const cache = new Map()
+  return {
+    /**
+     * @returns {AsyncGenerator<AsyncRow>}
+     */
+    async *getRows() {
+      let index = 0
+      for await (const row of source.getRows()) {
+        const rowIndex = index
+        index++
+        yield {
+          /**
+           * @param {string} name
+           * @returns {SqlPrimitive}
+           */
+          getCell(name) {
+            const cacheKey = `${rowIndex}:${name}`
+            if (!cache.has(cacheKey)) {
+              cache.set(cacheKey, row.getCell(name))
+            }
+            return cache.get(cacheKey)
+          },
+          getKeys() {
+            return row.getKeys()
+          },
+        }
       }
     },
   }

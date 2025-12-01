@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
-import { memorySource } from '../../src/backend/dataSource.js'
+import { cachedDataSource, memorySource } from '../../src/backend/dataSource.js'
 
 /**
- * @import { AsyncRow, AsyncDataSource } from '../../src/types.js'
+ * @import { AsyncRow, AsyncDataSource, SqlPrimitive } from '../../src/types.js'
  */
 
 const data = [
@@ -37,15 +37,16 @@ describe('expensive cell access', () => {
     await expect(countExpensiveCalls('SELECT id, llm FROM data')).resolves.toBe(5)
     await expect(countExpensiveCalls('SELECT MIN(llm) FROM data')).resolves.toBe(5)
     await expect(countExpensiveCalls('SELECT MAX(llm) FROM data')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT AVG(llm) FROM data')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT COUNT(llm) FROM data')).resolves.toBe(5)
   })
 
   it('should make expensive calls when filtering on expensive columns', async () => {
-    // TODO: should all be 5 (would require short-circuiting + caching)
-    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm = \'4.5\'')).resolves.toBe(7)
-    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm > \'4.0\'')).resolves.toBe(7)
-    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm > \'4.0\' OR llm < \'4.0\'')).resolves.toBe(12)
-    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm BETWEEN \'3.0\' AND \'4.0\'')).resolves.toBe(7)
-    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm IN (\'4.5\', \'3.5\')')).resolves.toBe(8)
+    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm = \'4.5\'')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm > \'4.0\'')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm > \'4.0\' OR llm < \'4.0\'')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm BETWEEN \'3.0\' AND \'4.0\'')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT * FROM data WHERE llm IN (\'4.5\', \'3.5\')')).resolves.toBe(5)
   })
 
   it('should minimize expensive calls when filtering on non-expensive columns', async () => {
@@ -82,15 +83,13 @@ describe('expensive cell access', () => {
   })
 
   it('should minimize expensive calls when filtering by cheap + expensive columns', async () => {
-    // TODO: should be 1 (would require knowing that name is cheaper than llm)
     await expect(countExpensiveCalls('SELECT * FROM data WHERE name = \'Eve\' AND llm = \'4.0\''))
-      .resolves.toBe(2)
+      .resolves.toBe(1)
   })
 
   it('should make expensive calls when double selecting expensive column', async () => {
-    // TODO: should all be 5 (would require caching)
-    await expect(countExpensiveCalls('SELECT llm, llm FROM data')).resolves.toBe(10)
-    await expect(countExpensiveCalls('SELECT llm as llm1, llm as llm2 FROM data')).resolves.toBe(10)
+    await expect(countExpensiveCalls('SELECT llm, llm FROM data')).resolves.toBe(5)
+    await expect(countExpensiveCalls('SELECT llm as llm1, llm as llm2 FROM data')).resolves.toBe(5)
   })
 
   it('should minimize expensive calls when using DISTINCT', async () => {
@@ -101,8 +100,9 @@ describe('expensive cell access', () => {
 
   it('should minimize expensive calls in a subquery', async () => {
     // would be 5 if we materialized the subquery eagerly
-    // TODO: should be 0 (with lazy materialization)
-    await expect(countExpensiveCalls('SELECT name FROM (SELECT * FROM data) AS t LIMIT 2')).resolves.toBe(2)
+    // would be 2 without lazy materialization
+    await expect(countExpensiveCalls('SELECT name FROM (SELECT * FROM data) AS t LIMIT 2'))
+      .resolves.toBe(2)
   })
 })
 
@@ -114,9 +114,10 @@ describe('expensive cell access', () => {
  * @returns {Promise<number>}
  */
 async function countExpensiveCalls(query) {
-  const countingSource = createCountingDataSource(data, ['llm'])
+  const countingSource = countingDataSource(data, ['llm'])
+  const cachedSource = cachedDataSource(countingSource)
   await collect(executeSql({
-    tables: { data: countingSource },
+    tables: { data: cachedSource },
     query,
   }))
   return countingSource.getExpensiveCallCount()
@@ -129,7 +130,7 @@ async function countExpensiveCalls(query) {
  * @param {string[]} expensiveColumns
  * @returns {AsyncDataSource & { getExpensiveCallCount: () => number }}
  */
-function createCountingDataSource(data, expensiveColumns) {
+function countingDataSource(data, expensiveColumns) {
   const source = memorySource(data)
   let expensiveCallCount = 0
 
