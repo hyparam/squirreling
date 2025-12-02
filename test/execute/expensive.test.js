@@ -14,6 +14,12 @@ const data = [
   { id: 5, name: 'Eve', llm: '4.0' },
 ]
 
+const other = [
+  { id: 1, value: '4.5' },
+  { id: 2, value: '3.5' },
+  { id: 3, value: '4.0' },
+]
+
 describe('expensive cell access', () => {
   it('should make no expensive calls when not accessing expensive columns', async () => {
     await expect(countExpensiveCalls('SELECT id, name FROM data')).resolves.toBe(0)
@@ -104,6 +110,13 @@ describe('expensive cell access', () => {
     await expect(countExpensiveCalls('SELECT name FROM (SELECT * FROM data) AS t LIMIT 2'))
       .resolves.toBe(0)
   })
+
+  it('should minimize expensive calls in a join with LIMIT', async () => {
+    // would be 5 if we buffered all join results before applying LIMIT
+    // with streaming joins, only 1 expensive call should be made
+    await expect(countExpensiveCalls('SELECT * FROM data JOIN other ON data.llm = other.value LIMIT 1'))
+      .resolves.toBe(1)
+  })
 })
 
 /**
@@ -117,7 +130,7 @@ async function countExpensiveCalls(query) {
   const countingSource = countingDataSource(data, ['llm'])
   const cachedSource = cachedDataSource(countingSource)
   await collect(executeSql({
-    tables: { data: cachedSource },
+    tables: { data: cachedSource, other },
     query,
   }))
   return countingSource.getExpensiveCallCount()

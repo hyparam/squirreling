@@ -177,14 +177,6 @@ describe('executeSql', () => {
     })
   })
 
-  describe('JOIN queries', () => {
-    it('should throw error for JOIN queries', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' }))
-      }).rejects.toThrow('JOIN is not supported')
-    })
-  })
-
   describe('CAST calls', () => {
     it('should handle CAST to INTEGER in SELECT', async () => {
       const data = [

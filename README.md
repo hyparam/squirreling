@@ -7,7 +7,7 @@
 [![minzipped](https://img.shields.io/bundlephobia/minzip/squirreling)](https://www.npmjs.com/package/squirreling)
 [![workflow status](https://github.com/hyparam/squirreling/actions/workflows/ci.yml/badge.svg)](https://github.com/hyparam/squirreling/actions)
 [![mit license](https://img.shields.io/badge/License-MIT-orange.svg)](https://opensource.org/licenses/MIT)
-![coverage](https://img.shields.io/badge/Coverage-93-darkred)
+![coverage](https://img.shields.io/badge/Coverage-94-darkred)
 [![dependencies](https://img.shields.io/badge/Dependencies-0-blueviolet)](https://www.npmjs.com/package/squirreling?activeTab=dependencies)
 
 Squirreling is a streaming async SQL engine for JavaScript. It is designed to provide efficient streaming of results from pluggable backends for highly efficient retrieval of data for browser applications.
@@ -23,7 +23,6 @@ Squirreling is a streaming async SQL engine for JavaScript. It is designed to pr
 - Robust error handling and validation designed for LLM tool use
 - In-memory data option for simple use cases
 - Select only
-- No joins (yet)
 
 ## Usage
 

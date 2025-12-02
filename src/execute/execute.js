@@ -3,6 +3,7 @@ import { parseSql } from '../parse/parse.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
+import { executeJoins } from './join.js'
 import { defaultDerivedAlias } from './utils.js'
 
 /**
@@ -19,9 +20,6 @@ export async function* executeSql({ tables, query }) {
   const select = parseSql(query)
 
   // Check for unsupported operations
-  if (select.joins.length) {
-    throw new Error('JOIN is not supported')
-  }
   if (!select.from) {
     throw new Error('FROM clause is required')
   }
@@ -50,16 +48,25 @@ export async function* executeSql({ tables, query }) {
 export async function* executeSelect(select, tables) {
   /** @type {AsyncDataSource} */
   let dataSource
+  /** @type {string} */
+  let fromTableName
 
   if (select.from.kind === 'table') {
-    // From table name
+    // Use alias for column prefixing, but look up the actual table name
+    fromTableName = select.from.alias ?? select.from.table
     dataSource = tables[select.from.table]
     if (dataSource === undefined) {
       throw new Error(`Table "${select.from.table}" not found`)
     }
   } else {
     // Nested subquery - recursively resolve
+    fromTableName = select.from.alias
     dataSource = generatorSource(executeSelect(select.from.query, tables))
+  }
+
+  // Execute JOINs if present
+  if (select.joins.length) {
+    dataSource = await executeJoins(dataSource, select.joins, fromTableName, tables)
   }
 
   yield* evaluateSelectAst(select, dataSource, tables)
