@@ -38,7 +38,7 @@ export async function evaluateExpr({ node, row, tables }) {
     const gen = executeSelect(node.subquery, tables)
     const first = await gen.next() // Start the generator
     gen.return(undefined) // Stop further execution
-    if (first.done) return null
+    if (!first.value) return null
     /** @type {AsyncRow} */
     const firstRow = first.value
     const firstKey = Object.keys(firstRow)[0]

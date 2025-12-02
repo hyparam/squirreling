@@ -14,7 +14,7 @@ import { defaultDerivedAlias } from './utils.js'
  * Executes a SQL SELECT query against named data sources
  *
  * @param {ExecuteSqlOptions} options - the execution options
- * @returns {AsyncGenerator<AsyncRow>} async generator yielding result rows
+ * @yields {AsyncRow} async generator yielding result rows
  */
 export async function* executeSql({ tables, query }) {
   const select = parseSql(query)
@@ -43,7 +43,7 @@ export async function* executeSql({ tables, query }) {
  *
  * @param {SelectStatement} select
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {AsyncGenerator<AsyncRow>}
+ * @yields {AsyncRow}
  */
 export async function* executeSelect(select, tables) {
   /** @type {AsyncDataSource} */
@@ -264,7 +264,7 @@ async function applyOrderBy(rows, orderBy, tables) {
  * @param {SelectStatement} select
  * @param {AsyncDataSource} dataSource
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {AsyncGenerator<AsyncRow>}
+ * @yields {AsyncRow}
  */
 async function* evaluateSelectAst(select, dataSource, tables) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
@@ -289,7 +289,7 @@ async function* evaluateSelectAst(select, dataSource, tables) {
  * @param {SelectStatement} select
  * @param {AsyncDataSource} dataSource
  * @param {Record<string, AsyncDataSource>} tables
- * @returns {AsyncGenerator<AsyncRow>}
+ * @yields {AsyncRow}
  */
 async function* evaluateStreaming(select, dataSource, tables) {
   let rowsYielded = 0
@@ -361,7 +361,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
  * @param {Record<string, AsyncDataSource>} tables
  * @param {boolean} hasAggregate
  * @param {boolean} useGrouping
- * @returns {AsyncGenerator<AsyncRow>}
+ * @yields {AsyncRow}
  */
 async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping) {
   // Step 1: Collect all rows from data source

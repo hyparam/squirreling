@@ -149,7 +149,7 @@ function countingDataSource(data, expensiveColumns) {
 
   return {
     /**
-     * @returns {AsyncGenerator<AsyncRow>}
+     * @yields {AsyncRow}
      */
     async *getRows() {
       for await (const row of source.getRows()) {

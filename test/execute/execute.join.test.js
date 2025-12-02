@@ -851,4 +851,42 @@ describe('JOIN queries', () => {
       expect(clothing.discount).toBe(0.2)
     })
   })
+
+  describe('JOIN key position in ON clause', () => {
+    // Bug: extractJoinKeys assumes ON condition is written as `left_table.col = right_table.col`
+    // but SQL allows either order. The code takes onCondition.left as leftKey and
+    // onCondition.right as rightKey, then evaluates leftKey on leftRows and rightKey on rightRows.
+    // This breaks when the ON clause is written as `right_table.col = left_table.col`.
+
+    const users = [
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' },
+    ]
+
+    const orders = [
+      { id: 1, user_id: 1, product: 'Laptop' },
+      { id: 2, user_id: 2, product: 'Mouse' },
+    ]
+
+    it('should work with ON left_table.col = right_table.col (standard order)', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.user_id',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob'])
+    })
+
+    it('should work with ON right_table.col = left_table.col (swapped order)', async () => {
+      // This test demonstrates the bug: swapping the operand order in the ON clause
+      // causes the join to fail because extractJoinKeys doesn't detect which
+      // expression belongs to which table
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT users.name, orders.product FROM users JOIN orders ON orders.user_id = users.id',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob'])
+    })
+  })
 })

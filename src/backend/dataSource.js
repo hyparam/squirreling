@@ -58,7 +58,7 @@ export function cachedDataSource(source) {
   const cache = new Map()
   return {
     /**
-     * @returns {AsyncGenerator<AsyncRow>}
+     * @yields {AsyncRow}
      */
     async *getRows() {
       let index = 0

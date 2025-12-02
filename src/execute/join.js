@@ -124,20 +124,42 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 }
 
 /**
+ * Checks if an expression references a specific table.
+ * Returns true if the expression is an identifier prefixed with the table name.
+ *
+ * @param {ExprNode} expr
+ * @param {string} tableName
+ * @returns {boolean}
+ */
+function exprReferencesTable(expr, tableName) {
+  return expr.type === 'identifier' && expr.name.startsWith(`${tableName}.`)
+}
+
+/**
  * Extracts the join key expressions from an ON condition.
- * Assumes the ON condition is an equality comparison (a = b).
+ * Handles both `left.col = right.col` and `right.col = left.col` orderings.
  *
  * @param {ExprNode} onCondition
- * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | null}
+ * @param {string} leftTable
+ * @param {string} rightTable
+ * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | undefined}
  */
-function extractJoinKeys(onCondition) {
+function extractJoinKeys(onCondition, leftTable, rightTable) {
   if (onCondition.type === 'binary' && onCondition.op === '=') {
-    return {
-      leftKey: onCondition.left,
-      rightKey: onCondition.right,
+    const { left, right } = onCondition
+
+    // Check if keys are swapped (right table referenced in left position)
+    const leftRefsRight = exprReferencesTable(left, rightTable)
+    const rightRefsLeft = exprReferencesTable(right, leftTable)
+
+    if (leftRefsRight && rightRefsLeft) {
+      // Keys are swapped, return them in correct order
+      return { leftKey: right, rightKey: left }
     }
+
+    // Default: assume left operand is for left table
+    return { leftKey: left, rightKey: right }
   }
-  return null
 }
 
 /**
@@ -214,7 +236,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
     throw new Error('JOIN requires ON condition')
   }
 
-  const keys = extractJoinKeys(onCondition)
+  const keys = extractJoinKeys(onCondition, leftTable, rightTable)
 
   // Get column names for NULL row generation (right side is always buffered)
   const rightCols = rightRows.length ? Object.keys(rightRows[0]) : []
