@@ -1,7 +1,7 @@
 import { isAggregateFunc, isStringFunc } from '../validation.js'
 
 /**
- * @import { ExprCursor, ExprNode, BinaryOp } from '../types.js'
+ * @import { BinaryOp, ExprCursor, ExprNode, WhenClause } from '../types.js'
  */
 
 /**
@@ -153,7 +153,7 @@ function parsePrimary(c) {
       c.consume() // CASE
 
       // Check if it's simple CASE (CASE expr WHEN ...) or searched CASE (CASE WHEN ...)
-      /** @type {import('../types.js').ExprNode | undefined} */
+      /** @type {ExprNode | undefined} */
       let caseExpr
       const nextTok = c.current()
       if (nextTok.type !== 'keyword' || nextTok.value !== 'WHEN') {
@@ -162,7 +162,7 @@ function parsePrimary(c) {
       }
 
       // Parse WHEN clauses
-      /** @type {import('../types.js').WhenClause[]} */
+      /** @type {WhenClause[]} */
       const whenClauses = []
       while (c.match('keyword', 'WHEN')) {
         const condition = parseExpression(c)
@@ -176,7 +176,7 @@ function parsePrimary(c) {
       }
 
       // Parse optional ELSE clause
-      /** @type {import('../types.js').ExprNode | undefined} */
+      /** @type {ExprNode | undefined} */
       let elseResult
       if (c.match('keyword', 'ELSE')) {
         elseResult = parseExpression(c)

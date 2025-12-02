@@ -263,8 +263,8 @@ describe('parseSql - WHERE clause', () => {
       expr: { type: 'identifier', name: 'user_id' },
       subquery: {
         distinct: false,
-        columns: [{ kind: 'derived', expr: { type: 'identifier', name: 'id' }, alias: undefined }],
-        from: 'users',
+        columns: [{ kind: 'derived', expr: { type: 'identifier', name: 'id' } }],
+        from: { kind: 'table', table: 'users' },
         joins: [],
         where: {
           type: 'binary',
@@ -273,10 +273,7 @@ describe('parseSql - WHERE clause', () => {
           right: { type: 'literal', value: 1 },
         },
         groupBy: [],
-        having: undefined,
         orderBy: [],
-        limit: undefined,
-        offset: undefined,
       },
     })
   })
@@ -301,7 +298,7 @@ describe('parseSql - WHERE clause', () => {
       subquery: {
         distinct: false,
         columns: [{ kind: 'star' }],
-        from: 'users',
+        from: { kind: 'table', table: 'users' },
         joins: [],
         where: {
           type: 'binary',
@@ -310,10 +307,7 @@ describe('parseSql - WHERE clause', () => {
           right: { type: 'identifier', name: 'orders.user_id' },
         },
         groupBy: [],
-        having: undefined,
         orderBy: [],
-        limit: undefined,
-        offset: undefined,
       },
     })
   })
@@ -325,7 +319,7 @@ describe('parseSql - WHERE clause', () => {
       subquery: {
         distinct: false,
         columns: [{ kind: 'star' }],
-        from: 'users',
+        from: { kind: 'table', table: 'users' },
         joins: [],
         where: {
           type: 'binary',
@@ -334,10 +328,7 @@ describe('parseSql - WHERE clause', () => {
           right: { type: 'identifier', name: 'orders.user_id' },
         },
         groupBy: [],
-        having: undefined,
         orderBy: [],
-        limit: undefined,
-        offset: undefined,
       },
     })
   })

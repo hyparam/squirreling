@@ -3,7 +3,7 @@ import { parseExpression } from './expression.js'
 import { isAggregateFunc } from '../validation.js'
 
 /**
- * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, FromSubquery, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, Token, TokenType } from '../types.js'
+ * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprCursor, ExprNode, FromSubquery, FromTable, JoinClause, JoinType, OrderByItem, ParserState, SelectStatement, SelectColumn, Token, TokenType } from '../types.js'
  */
 
 // Keywords that cannot be used as implicit aliases after a column
@@ -15,6 +15,23 @@ const RESERVED_AFTER_COLUMN = new Set([
   'ORDER',
   'LIMIT',
   'OFFSET',
+])
+
+// Keywords that cannot be used as table aliases
+const RESERVED_AFTER_TABLE = new Set([
+  'WHERE',
+  'GROUP',
+  'HAVING',
+  'ORDER',
+  'LIMIT',
+  'OFFSET',
+  'JOIN',
+  'INNER',
+  'LEFT',
+  'RIGHT',
+  'FULL',
+  'CROSS',
+  'ON',
 ])
 
 /**
@@ -219,17 +236,24 @@ function parseAggregateItem(state, func) {
     const cursor = createExprCursor(state)
     const expr = parseExpression(cursor)
     expect(state, 'keyword', 'AS')
-    const typeTok = expectIdentifier(state)
+    const toType = expectIdentifier(state).value
     expect(state, 'paren', ')')
     arg = {
       kind: 'expression',
-      expr: { type: 'cast', expr, toType: typeTok.value },
+      expr: { type: 'cast', expr, toType },
     }
   } else {
-    const colTok = expectIdentifier(state)
+    // column name
+    let name = expectIdentifier(state).value
+    // Handle qualified column names like orders.amount
+    if (current(state).type === 'dot') {
+      consume(state) // consume dot
+      const qualifiedPart = expectIdentifier(state)
+      name = `${name}.${qualifiedPart.value}`
+    }
     arg = {
       kind: 'expression',
-      expr: { type: 'identifier', name: colTok.value },
+      expr: { type: 'identifier', name },
     }
   }
 
@@ -238,6 +262,25 @@ function parseAggregateItem(state, func) {
   const alias = parseAs(state)
 
   return { kind: 'aggregate', func, arg, alias }
+}
+
+/**
+ * Parses an optional table alias (e.g., "FROM users u" or "FROM users AS u")
+ * @param {ParserState} state
+ * @returns {string | undefined}
+ */
+function parseTableAlias(state) {
+  // Check for explicit AS keyword
+  if (match(state, 'keyword', 'AS')) {
+    const aliasTok = expectIdentifier(state)
+    return aliasTok.value
+  }
+  // Check for implicit alias (identifier not in reserved list)
+  const maybeAlias = current(state)
+  if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_TABLE.has(maybeAlias.value.toUpperCase())) {
+    consume(state)
+    return maybeAlias.value
+  }
 }
 
 /**
@@ -322,9 +365,9 @@ function parseJoins(state) {
       break
     }
 
-    // Parse table name
-    const tableTok = expectIdentifier(state)
-    const tableName = tableTok.value
+    // Parse table name and optional alias
+    const tableName = expectIdentifier(state).value
+    const tableAlias = parseTableAlias(state)
 
     // Parse ON condition
     expect(state, 'keyword', 'ON')
@@ -332,8 +375,9 @@ function parseJoins(state) {
     const condition = parseExpression(cursor)
 
     joins.push({
-      type: joinType,
+      joinType,
       table: tableName,
+      alias: tableAlias,
       on: condition,
     })
   }
@@ -351,12 +395,8 @@ function parseSubquery(state) {
   const query = parseSelectInternal(state)
   expect(state, 'paren', ')')
   expect(state, 'keyword', 'AS')
-  const aliasTok = expectIdentifier(state)
-  return {
-    kind: 'subquery',
-    query,
-    alias: aliasTok.value,
-  }
+  const alias = expectIdentifier(state).value
+  return { kind: 'subquery', query, alias }
 }
 
 /**
@@ -376,6 +416,7 @@ function parseSelectInternal(state) {
   expect(state, 'keyword', 'FROM')
 
   // Check if it's a subquery or table name
+  /** @type {FromTable | FromSubquery} */
   let from
   const tok = current(state)
   if (tok.type === 'paren' && tok.value === '(') {
@@ -383,7 +424,9 @@ function parseSelectInternal(state) {
     from = parseSubquery(state)
   } else {
     // Simple table name: SELECT * FROM users
-    from = expectIdentifier(state).value
+    const table = expectIdentifier(state).value
+    const alias = parseTableAlias(state)
+    from = { kind: 'table', table, alias }
   }
 
   // Parse JOIN clauses

@@ -5,28 +5,28 @@ describe('parseSql - string functions', () => {
   it('should parse UPPER function', () => {
     const select = parseSql('SELECT UPPER(name) FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'name' }] }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'name' }] } },
     ])
   })
 
   it('should parse LOWER function', () => {
     const select = parseSql('SELECT LOWER(email) FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'LOWER', args: [{ type: 'identifier', name: 'email' }] }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'LOWER', args: [{ type: 'identifier', name: 'email' }] } },
     ])
   })
 
   it('should parse LENGTH function', () => {
     const select = parseSql('SELECT LENGTH(name) FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'name' }] }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'name' }] } },
     ])
   })
 
   it('should parse TRIM function', () => {
     const select = parseSql('SELECT TRIM(name) FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'TRIM', args: [{ type: 'identifier', name: 'name' }] }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'TRIM', args: [{ type: 'identifier', name: 'name' }] } },
     ])
   })
 
@@ -43,7 +43,6 @@ describe('parseSql - string functions', () => {
             { type: 'identifier', name: 'last_name' },
           ],
         },
-        alias: undefined,
       },
     ])
   })
@@ -62,7 +61,6 @@ describe('parseSql - string functions', () => {
             { type: 'identifier', name: 'last_name' },
           ],
         },
-        alias: undefined,
       },
     ])
   })
@@ -81,7 +79,6 @@ describe('parseSql - string functions', () => {
             { type: 'literal', value: 3 },
           ],
         },
-        alias: undefined,
       },
     ])
   })
@@ -103,33 +100,33 @@ describe('parseSql - string functions', () => {
   it('should parse multiple string functions', () => {
     const select = parseSql('SELECT UPPER(first_name), LOWER(last_name), LENGTH(email) FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'first_name' }] }, alias: undefined },
-      { kind: 'derived', expr: { type: 'function', name: 'LOWER', args: [{ type: 'identifier', name: 'last_name' }] }, alias: undefined },
-      { kind: 'derived', expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'email' }] }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'first_name' }] } },
+      { kind: 'derived', expr: { type: 'function', name: 'LOWER', args: [{ type: 'identifier', name: 'last_name' }] } },
+      { kind: 'derived', expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'email' }] } },
     ])
   })
 
   it('should parse string function with qualified column name', () => {
     const select = parseSql('SELECT UPPER(users.name) FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'users.name' }] }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'users.name' }] } },
     ])
   })
 
   it('should parse mix of string functions and regular columns', () => {
     const select = parseSql('SELECT id, UPPER(name), email FROM users')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'identifier', name: 'id' }, alias: undefined },
-      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'name' }] }, alias: undefined },
-      { kind: 'derived', expr: { type: 'identifier', name: 'email' }, alias: undefined },
+      { kind: 'derived', expr: { type: 'identifier', name: 'id' } },
+      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'name' }] } },
+      { kind: 'derived', expr: { type: 'identifier', name: 'email' } },
     ])
   })
 
   it('should parse string functions with aggregate functions', () => {
     const select = parseSql('SELECT UPPER(city), COUNT(*) FROM users GROUP BY city')
     expect(select.columns).toEqual([
-      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'city' }] }, alias: undefined },
-      { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: undefined },
+      { kind: 'derived', expr: { type: 'function', name: 'UPPER', args: [{ type: 'identifier', name: 'city' }] } },
+      { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' } },
     ])
   })
 })

@@ -1,26 +1,9 @@
-/**
- * @import { AggregateFunc, AsyncDataSource, ExprNode, AsyncRow, SqlPrimitive } from '../types.js'
- */
-
 import { isAggregateFunc } from '../validation.js'
 import { evaluateExpr } from './expression.js'
 
 /**
- * Creates a context for evaluating HAVING expressions
- *
- * @param {AsyncRow} resultRow - the aggregated result row
- * @param {AsyncRow[]} group - the group of rows
- * @returns {AsyncRow} a context row for HAVING evaluation
+ * @import { AggregateFunc, AsyncDataSource, ExprNode, AsyncRow, SqlPrimitive } from '../types.js'
  */
-function createHavingContext(resultRow, group) {
-  // Include the first row of the group (for GROUP BY columns)
-  const firstRow = group[0]
-  if (firstRow) {
-    return { ...firstRow, ...resultRow }
-  } else {
-    return resultRow
-  }
-}
 
 /**
  * Evaluates a HAVING expression with support for aggregate functions
@@ -32,7 +15,8 @@ function createHavingContext(resultRow, group) {
  * @returns {Promise<boolean>} whether the HAVING condition is satisfied
  */
 export async function evaluateHavingExpr(expr, row, group, tables) {
-  const context = createHavingContext(row, group)
+  // Having context
+  const context = { ...group[0] ?? {}, ...row }
 
   // For HAVING, we need special handling of aggregate functions
   // They need to be re-evaluated against the group

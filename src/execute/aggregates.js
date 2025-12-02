@@ -1,4 +1,5 @@
 import { evaluateExpr } from './expression.js'
+import { defaultDerivedAlias } from './utils.js'
 
 /**
  * Evaluates an aggregate function over a set of rows
@@ -72,27 +73,5 @@ export async function evaluateAggregate({ col, rows, tables }) {
 export function defaultAggregateAlias(col) {
   const base = col.func.toLowerCase()
   if (col.arg.kind === 'star') return base + '_all'
-  return base + '_' + defaultAggregateAliasExpr(col.arg.expr)
-}
-
-/**
- * @param {ExprNode} expr
- * @returns {string}
- */
-export function defaultAggregateAliasExpr(expr) {
-  if (expr.type === 'identifier') {
-    return expr.name
-  } else if (expr.type === 'literal') {
-    return String(expr.value)
-  } else if (expr.type === 'cast') {
-    return defaultAggregateAliasExpr(expr.expr) + '_as_' + expr.toType
-  } else if (expr.type === 'unary') {
-    return expr.op + '_' + defaultAggregateAliasExpr(expr.argument)
-  } else if (expr.type === 'binary') {
-    return defaultAggregateAliasExpr(expr.left) + '_' + expr.op + '_' + defaultAggregateAliasExpr(expr.right)
-  } else if (expr.type === 'function') {
-    return expr.name.toLowerCase() + '_' + expr.args.map(defaultAggregateAliasExpr).join('_')
-  } else {
-    return 'expr'
-  }
+  return base + '_' + defaultDerivedAlias(col.arg.expr)
 }

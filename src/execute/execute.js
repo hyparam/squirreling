@@ -1,8 +1,9 @@
-import { evaluateExpr } from './expression.js'
-import { parseSql } from '../parse/parse.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
+import { parseSql } from '../parse/parse.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
+import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
+import { defaultDerivedAlias } from './utils.js'
 
 /**
  * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, AsyncRow, SelectStatement, SqlPrimitive } from '../types.js'
@@ -50,47 +51,18 @@ export async function* executeSelect(select, tables) {
   /** @type {AsyncDataSource} */
   let dataSource
 
-  if (typeof select.from === 'string') {
-    const table = tables[select.from]
-    if (table === undefined) {
-      throw new Error(`Table "${select.from}" not found`)
+  if (select.from.kind === 'table') {
+    // From table name
+    dataSource = tables[select.from.table]
+    if (dataSource === undefined) {
+      throw new Error(`Table "${select.from.table}" not found`)
     }
-
-    dataSource = table
   } else {
     // Nested subquery - recursively resolve
     dataSource = generatorSource(executeSelect(select.from.query, tables))
   }
 
   yield* evaluateSelectAst(select, dataSource, tables)
-}
-
-/**
- * Generates a default alias for a derived column expression
- *
- * @param {ExprNode} expr - the expression node
- * @returns {string} the generated alias
- */
-function defaultDerivedAlias(expr) {
-  if (expr.type === 'identifier') {
-    return expr.name
-  }
-  if (expr.type === 'function') {
-    const base = expr.name.toLowerCase()
-    // Try to extract column names from identifier arguments
-    const columnNames = expr.args
-      .filter(arg => arg.type === 'identifier')
-      .map(arg => arg.name)
-    if (columnNames.length > 0) {
-      return base + '_' + columnNames.join('_')
-    }
-    return base
-  }
-  if (expr.type === 'cast') return 'cast_expr'
-  if (expr.type === 'unary' && expr.argument.type === 'identifier') {
-    return expr.op === '-' ? 'neg_' + expr.argument.name : 'expr'
-  }
-  return 'expr'
 }
 
 /**
@@ -128,10 +100,10 @@ function compareValues(a, b) {
     return 0
   }
 
-  const as = String(a)
-  const bs = String(b)
-  if (as < bs) return -1
-  if (as > bs) return 1
+  const aa = String(a)
+  const bb = String(b)
+  if (aa < bb) return -1
+  if (aa > bb) return 1
   return 0
 }
 

@@ -19,14 +19,25 @@ export async function evaluateExpr({ node, row, tables }) {
   }
 
   if (node.type === 'identifier') {
-    return row[node.name]?.()
+    // Try exact match first (handles both qualified and unqualified names)
+    if (row[node.name]) {
+      return row[node.name]()
+    }
+    // For qualified names like 'users.id', also try just the column part
+    if (node.name.includes('.')) {
+      const colName = node.name.split('.').pop()
+      if (colName && row[colName]) {
+        return row[colName]()
+      }
+    }
+    return undefined
   }
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
     const gen = executeSelect(node.subquery, tables)
     const first = await gen.next() // Start the generator
-    gen.return() // Stop further execution
+    gen.return(undefined) // Stop further execution
     if (first.done) return null
     /** @type {AsyncRow} */
     const firstRow = first.value
@@ -275,7 +286,7 @@ export async function evaluateExpr({ node, row, tables }) {
   // CASE expressions
   if (node.type === 'case') {
     // For simple CASE: evaluate the case expression once
-    const caseValue = node.caseExpr ? await evaluateExpr({ node: node.caseExpr, row, tables }) : undefined
+    const caseValue = node.caseExpr && await evaluateExpr({ node: node.caseExpr, row, tables })
 
     // Iterate through WHEN clauses
     for (const whenClause of node.whenClauses) {

@@ -181,8 +181,8 @@ describe('string functions', () => {
     it('should work without alias', async () => {
       const data = [{ id: 1, text: 'Hello' }]
       const result = await collect(executeSql({ tables: { data }, query: 'SELECT SUBSTRING(text, 1, 3) FROM data' }))
-      expect(result[0]).toHaveProperty('substring_text')
-      expect(result[0].substring_text).toBe('Hel')
+      expect(result[0]).toHaveProperty('substring_text_1_3')
+      expect(result[0].substring_text_1_3).toBe('Hel')
     })
 
     it('should handle substring beyond string length', async () => {
@@ -225,8 +225,8 @@ describe('string functions', () => {
     it('should work without alias', async () => {
       const data = [{ id: 1, text: 'Hello' }]
       const result = await collect(executeSql({ tables: { data }, query: 'SELECT SUBSTR(text, 1, 3) FROM data' }))
-      expect(result[0]).toHaveProperty('substr_text')
-      expect(result[0].substr_text).toBe('Hel')
+      expect(result[0]).toHaveProperty('substr_text_1_3')
+      expect(result[0].substr_text_1_3).toBe('Hel')
     })
 
     it('should handle null values', async () => {
@@ -303,8 +303,8 @@ describe('string functions', () => {
     it('should work without alias', async () => {
       const data = [{ id: 1, text: 'test' }]
       const result = await collect(executeSql({ tables: { data }, query: 'SELECT REPLACE(text, \'t\', \'T\') FROM data' }))
-      expect(result[0]).toHaveProperty('replace_text')
-      expect(result[0].replace_text).toBe('TesT')
+      expect(result[0]).toHaveProperty('replace_text_t_T')
+      expect(result[0].replace_text_t_T).toBe('TesT')
     })
 
     it('should handle empty replacement string', async () => {

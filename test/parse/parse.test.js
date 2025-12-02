@@ -6,7 +6,7 @@ describe('parseSql', () => {
     it('should parse literal SELECT', () => {
       const select = parseSql('SELECT 1 from users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'literal', value: 1 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'literal', value: 1 } },
       ])
     })
 
@@ -14,15 +14,11 @@ describe('parseSql', () => {
       const select = parseSql('SELECT * FROM users')
       expect(select).toEqual({
         distinct: false,
-        columns: [{ kind: 'star', alias: undefined }],
-        from: 'users',
+        columns: [{ kind: 'star' }],
+        from: { kind: 'table', table: 'users' },
         joins: [],
-        where: undefined,
         groupBy: [],
-        having: undefined,
         orderBy: [],
-        limit: undefined,
-        offset: undefined,
       })
     })
 
@@ -30,31 +26,27 @@ describe('parseSql', () => {
       const select = parseSql('SELECT users.* FROM users')
       expect(select).toEqual({
         distinct: false,
-        columns: [{ kind: 'star', table: 'users', alias: undefined }],
-        from: 'users',
+        columns: [{ kind: 'star', table: 'users' }],
+        from: { kind: 'table', table: 'users' },
         joins: [],
-        where: undefined,
         groupBy: [],
-        having: undefined,
         orderBy: [],
-        limit: undefined,
-        offset: undefined,
       })
     })
 
     it('should parse SELECT with single column', () => {
       const select = parseSql('SELECT name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' } },
       ])
     })
 
     it('should parse SELECT with multiple columns', () => {
       const select = parseSql('SELECT name, age, email FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'age' }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'email' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'age' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email' } },
       ])
     })
 
@@ -65,7 +57,7 @@ describe('parseSql', () => {
 
     it('should handle trailing semicolon', () => {
       const select = parseSql('SELECT * FROM users;')
-      expect(select.from).toBe('users')
+      expect(select.from).toEqual({ kind: 'table', table: 'users' })
     })
 
     it('should parse SELECT with negative number', () => {
@@ -102,7 +94,7 @@ describe('parseSql', () => {
     it('should not treat FROM as implicit alias', () => {
       const select = parseSql('SELECT name FROM users')
       expect(select.columns[0].alias).toBeUndefined()
-      expect(select.from).toBe('users')
+      expect(select.from).toEqual({ kind: 'table', table: 'users' })
     })
   })
 
@@ -110,14 +102,24 @@ describe('parseSql', () => {
     it('should parse column names with spaces using double quotes', () => {
       const select = parseSql('SELECT "first name", "last name" FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'first name' }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'last name' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'first name' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'last name' } },
       ])
     })
 
     it('should parse quoted table names with spaces', () => {
       const select = parseSql('SELECT * FROM "user data"')
-      expect(select.from).toBe('user data')
+      expect(select.from).toEqual({ kind: 'table', table: 'user data' })
+    })
+
+    it('should parse table alias', () => {
+      const select = parseSql('SELECT u.name FROM users u WHERE u.active = 1')
+      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
+    })
+
+    it('should parse table alias with AS', () => {
+      const select = parseSql('SELECT u.name FROM users AS u')
+      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
     })
 
     it('should parse quoted column with alias', () => {
@@ -130,9 +132,9 @@ describe('parseSql', () => {
     it('should parse mixed quoted and unquoted identifiers', () => {
       const select = parseSql('SELECT id, "full name", email FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'id' }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'full name' }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'email' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'id' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'full name' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email' } },
       ])
     })
   })
@@ -141,7 +143,7 @@ describe('parseSql', () => {
     it('should parse COUNT(*)', () => {
       const select = parseSql('SELECT COUNT(*) FROM users')
       expect(select.columns).toEqual([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: undefined },
+        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' } },
       ])
     })
 
@@ -155,7 +157,6 @@ describe('parseSql', () => {
             kind: 'expression',
             expr: { type: 'identifier', name: 'id' },
           },
-          alias: undefined,
         },
       ])
     })
@@ -167,7 +168,6 @@ describe('parseSql', () => {
           kind: 'aggregate',
           func: 'SUM',
           arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount' } },
-          alias: undefined,
         },
       ])
     })
@@ -179,7 +179,6 @@ describe('parseSql', () => {
           kind: 'aggregate',
           func: 'AVG',
           arg: { kind: 'expression', expr: { type: 'identifier', name: 'score' } },
-          alias: undefined,
         },
       ])
     })
@@ -191,13 +190,11 @@ describe('parseSql', () => {
           kind: 'aggregate',
           func: 'MIN',
           arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' } },
-          alias: undefined,
         },
         {
           kind: 'aggregate',
           func: 'MAX',
           arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' } },
-          alias: undefined,
         },
       ])
     })
@@ -259,10 +256,10 @@ describe('parseSql', () => {
       expect(select).toEqual({
         distinct: true,
         columns: [
-          { kind: 'derived', expr: { type: 'identifier', name: 'city' }, alias: undefined },
+          { kind: 'derived', expr: { type: 'identifier', name: 'city' } },
           { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' },
         ],
-        from: 'users',
+        from: { kind: 'table', table: 'users' },
         joins: [],
         where: {
           type: 'binary',
@@ -271,7 +268,6 @@ describe('parseSql', () => {
           right: { type: 'literal', value: 18 },
         },
         groupBy: [{ type: 'identifier', name: 'city' }],
-        having: undefined,
         orderBy: [
           { expr: { type: 'identifier', name: 'total' }, direction: 'DESC' },
         ],
@@ -328,13 +324,13 @@ describe('parseSql', () => {
     it('should parse subquery in FROM clause', () => {
       const select = parseSql('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name' } },
       ])
       expect(select.from).toMatchObject({
         kind: 'subquery',
         query: {
           columns: [{ kind: 'star' }],
-          from: 'users',
+          from: { kind: 'table', table: 'users' },
           where: {
             type: 'binary',
             op: '=',
@@ -355,7 +351,6 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'case',
-            caseExpr: undefined,
             whenClauses: [
               {
                 condition: {
@@ -369,7 +364,6 @@ describe('parseSql', () => {
             ],
             elseResult: { type: 'literal', value: 'minor' },
           },
-          alias: undefined,
         },
       ])
     })
@@ -392,9 +386,7 @@ describe('parseSql', () => {
                 result: { type: 'literal', value: 'inactive' },
               },
             ],
-            elseResult: undefined,
           },
-          alias: undefined,
         },
       ])
     })

@@ -4,10 +4,10 @@ import { parseSql } from '../../src/parse/parse.js'
 describe('parseSql - JOIN queries', () => {
   it('should parse simple INNER JOIN', () => {
     const select = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id')
-    expect(select.from).toBe('users')
+    expect(select.from).toEqual({ kind: 'table', table: 'users' })
     expect(select.joins).toEqual([
       {
-        type: 'INNER',
+        joinType: 'INNER',
         table: 'orders',
         on: {
           type: 'binary',
@@ -21,14 +21,14 @@ describe('parseSql - JOIN queries', () => {
 
   it('should parse explicit INNER JOIN', () => {
     const select = parseSql('SELECT * FROM users INNER JOIN orders ON users.id = orders.user_id')
-    expect(select.joins[0].type).toBe('INNER')
+    expect(select.joins[0].joinType).toBe('INNER')
   })
 
   it('should parse LEFT JOIN', () => {
     const select = parseSql('SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id')
     expect(select.joins).toEqual([
       {
-        type: 'LEFT',
+        joinType: 'LEFT',
         table: 'orders',
         on: {
           type: 'binary',
@@ -42,17 +42,17 @@ describe('parseSql - JOIN queries', () => {
 
   it('should parse LEFT OUTER JOIN', () => {
     const select = parseSql('SELECT * FROM users LEFT OUTER JOIN orders ON users.id = orders.user_id')
-    expect(select.joins[0].type).toBe('LEFT')
+    expect(select.joins[0].joinType).toBe('LEFT')
   })
 
   it('should parse RIGHT JOIN', () => {
     const select = parseSql('SELECT * FROM users RIGHT JOIN orders ON users.id = orders.user_id')
-    expect(select.joins[0].type).toBe('RIGHT')
+    expect(select.joins[0].joinType).toBe('RIGHT')
   })
 
   it('should parse FULL JOIN', () => {
     const select = parseSql('SELECT * FROM users FULL JOIN orders ON users.id = orders.user_id')
-    expect(select.joins[0].type).toBe('FULL')
+    expect(select.joins[0].joinType).toBe('FULL')
   })
 
   it('should parse multiple JOINs', () => {

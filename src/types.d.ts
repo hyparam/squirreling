@@ -21,7 +21,7 @@ export type SqlPrimitive = string | number | bigint | boolean | null
 export interface SelectStatement {
   distinct: boolean
   columns: SelectColumn[]
-  from: string | FromSubquery
+  from: FromTable | FromSubquery
   joins: JoinClause[]
   where?: ExprNode
   groupBy: ExprNode[]
@@ -29,6 +29,12 @@ export interface SelectStatement {
   orderBy: OrderByItem[]
   limit?: number
   offset?: number
+}
+
+export interface FromTable {
+  kind: 'table'
+  table: string
+  alias?: string
 }
 
 export interface FromSubquery {
@@ -184,8 +190,9 @@ export interface OrderByItem {
 export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'
 
 export interface JoinClause {
-  type: JoinType
+  joinType: JoinType
   table: string
+  alias?: string
   on?: ExprNode
 }
 
