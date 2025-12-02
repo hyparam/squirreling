@@ -84,6 +84,19 @@ describe('expensive cell access', () => {
       .resolves.toBe(1)
   })
 
+  it('should minimize expensive calls when sorting by multiple columns', async () => {
+    // ORDER BY cheap column, then expensive column
+    // Should only evaluate expensive column for rows that tie on cheap column
+    // With 5 unique names, no ties occur, so llm only evaluated for LIMIT rows
+    await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name, llm LIMIT 1'))
+      .resolves.toBe(1)
+    await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name, llm LIMIT 2'))
+      .resolves.toBe(2)
+    // Without LIMIT, all rows need llm for final materialization
+    await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name, llm'))
+      .resolves.toBe(5)
+  })
+
   it('should minimize expensive calls when filtering by non-expensive columns with limit', async () => {
     await expect(countExpensiveCalls('SELECT * FROM data WHERE name > \'B\' LIMIT 2')).resolves.toBe(2)
   })

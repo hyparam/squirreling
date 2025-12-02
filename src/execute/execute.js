@@ -4,7 +4,7 @@ import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
 import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
 import { executeJoins } from './join.js'
-import { defaultDerivedAlias } from './utils.js'
+import { compareForTerm, defaultDerivedAlias } from './utils.js'
 
 /**
  * @import { AsyncDataSource, ExecuteSqlOptions, ExprNode, OrderByItem, AsyncRow, SelectStatement, SqlPrimitive } from '../types.js'
@@ -90,31 +90,6 @@ async function stableRowKey(row) {
 }
 
 /**
- * Compares two SQL values for sorting
- *
- * @param {SqlPrimitive} a
- * @param {SqlPrimitive} b
- * @returns {number} negative if a < b, positive if a > b, 0 if equal
- */
-function compareValues(a, b) {
-  if (a === b) return 0
-  if (a == null) return -1
-  if (b == null) return 1
-
-  if (typeof a === 'number' && typeof b === 'number') {
-    if (a < b) return -1
-    if (a > b) return 1
-    return 0
-  }
-
-  const aa = String(a)
-  const bb = String(b)
-  if (aa < bb) return -1
-  if (aa > bb) return 1
-  return 0
-}
-
-/**
  * Applies DISTINCT filtering to remove duplicate rows
  *
  * @param {AsyncRow[]} rows - the input rows
@@ -135,127 +110,89 @@ async function applyDistinct(rows, distinct) {
   }
   return result
 }
-
 /**
- * Applies ORDER BY sorting to RowSource array (before projection)
- *
- * @param {AsyncRow[]} rows - the input row sources
- * @param {OrderByItem[]} orderBy - the sort specifications
- * @param {Record<string, AsyncDataSource>} tables
- * @returns {Promise<AsyncRow[]>} the sorted row sources
- */
-async function sortRowSources(rows, orderBy, tables) {
-  if (!orderBy.length) return rows
-
-  // Pre-evaluate ORDER BY expressions for all rows
-  /** @type {SqlPrimitive[][]} */
-  const evaluatedValues = []
-  for (const row of rows) {
-    /** @type {SqlPrimitive[]} */
-    const rowValues = []
-    for (const term of orderBy) {
-      const value = await evaluateExpr({ node: term.expr, row, tables })
-      rowValues.push(value)
-    }
-    evaluatedValues.push(rowValues)
-  }
-
-  // Create index array and sort it
-  const indices = rows.map((_, i) => i)
-  indices.sort((aIdx, bIdx) => {
-    for (let termIdx = 0; termIdx < orderBy.length; termIdx++) {
-      const term = orderBy[termIdx]
-      const dir = term.direction
-      const av = evaluatedValues[aIdx][termIdx]
-      const bv = evaluatedValues[bIdx][termIdx]
-
-      // Handle NULLS FIRST / NULLS LAST
-      const aIsNull = av == null
-      const bIsNull = bv == null
-
-      if (aIsNull || bIsNull) {
-        if (aIsNull && bIsNull) continue
-
-        const nullsFirst = term.nulls === 'LAST' ? false : true
-
-        if (aIsNull) {
-          return nullsFirst ? -1 : 1
-        } else {
-          return nullsFirst ? 1 : -1
-        }
-      }
-
-      const cmp = compareValues(av, bv)
-      if (cmp !== 0) {
-        return dir === 'DESC' ? -cmp : cmp
-      }
-    }
-    return 0
-  })
-
-  // Return sorted rows
-  return indices.map(i => rows[i])
-}
-
-/**
- * Applies ORDER BY sorting to rows
+ * Applies ORDER BY sorting to rows using multi-pass lazy evaluation.
+ * Secondary ORDER BY columns are only evaluated for rows that tie on
+ * previous columns, reducing expensive cell evaluations.
  *
  * @param {AsyncRow[]} rows - the input rows
  * @param {OrderByItem[]} orderBy - the sort specifications
  * @param {Record<string, AsyncDataSource>} tables
  * @returns {Promise<AsyncRow[]>} the sorted rows
  */
-async function applyOrderBy(rows, orderBy, tables) {
+async function sortRows(rows, orderBy, tables) {
   if (!orderBy.length) return rows
 
-  // Pre-evaluate ORDER BY expressions for all rows
-  /** @type {SqlPrimitive[][]} */
-  const evaluatedValues = []
-  for (const row of rows) {
-    /** @type {SqlPrimitive[]} */
-    const rowValues = []
-    for (const term of orderBy) {
-      const value = await evaluateExpr({ node: term.expr, row, tables })
-      rowValues.push(value)
-    }
-    evaluatedValues.push(rowValues)
-  }
+  // Cache for evaluated values: evaluatedValues[rowIdx][colIdx]
+  /** @type {(SqlPrimitive | undefined)[][]} */
+  const evaluatedValues = rows.map(() => Array(orderBy.length))
 
-  // Create index array and sort it
-  const indices = rows.map((_, i) => i)
-  indices.sort((aIdx, bIdx) => {
-    for (let termIdx = 0; termIdx < orderBy.length; termIdx++) {
-      const term = orderBy[termIdx]
-      const dir = term.direction
-      const av = evaluatedValues[aIdx][termIdx]
-      const bv = evaluatedValues[bIdx][termIdx]
+  // Start with all indices in one group
+  /** @type {number[][]} */
+  let groups = [rows.map((_, i) => i)]
 
-      // Handle NULLS FIRST / NULLS LAST
-      const aIsNull = av == null
-      const bIsNull = bv == null
+  // Process each ORDER BY column incrementally
+  for (let orderByIdx = 0; orderByIdx < orderBy.length; orderByIdx++) {
+    const term = orderBy[orderByIdx]
+    /** @type {number[][]} */
+    const nextGroups = []
 
-      if (aIsNull || bIsNull) {
-        if (aIsNull && bIsNull) continue
+    for (const group of groups) {
+      // Single-element groups don't need sorting or evaluation
+      if (group.length <= 1) {
+        nextGroups.push(group)
+        continue
+      }
 
-        const nullsFirst = term.nulls === 'LAST' ? false : true
-
-        if (aIsNull) {
-          return nullsFirst ? -1 : 1
-        } else {
-          return nullsFirst ? 1 : -1
+      // Evaluate this column for all rows in the group
+      for (const idx of group) {
+        if (evaluatedValues[idx][orderByIdx] === undefined) {
+          evaluatedValues[idx][orderByIdx] = await evaluateExpr({
+            node: term.expr,
+            row: rows[idx],
+            tables,
+          })
         }
       }
 
-      const cmp = compareValues(av, bv)
-      if (cmp !== 0) {
-        return dir === 'DESC' ? -cmp : cmp
+      // Sort the group by this column
+      group.sort((aIdx, bIdx) => {
+        const av = evaluatedValues[aIdx][orderByIdx]
+        const bv = evaluatedValues[bIdx][orderByIdx]
+        return compareForTerm(av, bv, term)
+      })
+
+      // Split into sub-groups based on ties (for next column)
+      if (orderByIdx < orderBy.length - 1) {
+        /** @type {number[]} */
+        let currentSubGroup = [group[0]]
+        for (let i = 1; i < group.length; i++) {
+          const prevIdx = group[i - 1]
+          const currIdx = group[i]
+          const prevVal = evaluatedValues[prevIdx][orderByIdx]
+          const currVal = evaluatedValues[currIdx][orderByIdx]
+
+          if (compareForTerm(prevVal, currVal, term) === 0) {
+            // Same value, extend current sub-group
+            currentSubGroup.push(currIdx)
+          } else {
+            // Different value, start new sub-group
+            nextGroups.push(currentSubGroup)
+            currentSubGroup = [currIdx]
+          }
+        }
+        nextGroups.push(currentSubGroup)
+      } else {
+        // Last column, no need to split
+        nextGroups.push(group)
       }
     }
-    return 0
-  })
 
-  // Return sorted rows
-  return indices.map(i => rows[i])
+    groups = nextGroups
+  }
+
+  // Flatten groups to get final sorted indices
+  return groups.flat().map(i => rows[i])
 }
 
 /**
@@ -466,7 +403,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   } else {
     // No grouping, simple projection
     // Sort before projection so ORDER BY can access columns not in SELECT
-    const sorted = await sortRowSources(filtered, select.orderBy, tables)
+    const sorted = await sortRows(filtered, select.orderBy, tables)
 
     // OPTIMIZATION: For non-DISTINCT queries, apply OFFSET/LIMIT before projection
     // to avoid reading expensive cells for rows that won't be in the final result
@@ -498,7 +435,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   projected = await applyDistinct(projected, select.distinct)
 
   // Step 5: ORDER BY (final sort for grouped queries)
-  projected = await applyOrderBy(projected, select.orderBy, tables)
+  projected = await sortRows(projected, select.orderBy, tables)
 
   // Step 6: OFFSET and LIMIT
   // For non-DISTINCT, non-grouping queries, OFFSET/LIMIT was already applied before projection

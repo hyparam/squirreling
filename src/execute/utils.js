@@ -1,7 +1,44 @@
 /**
+ * @import {AsyncRow, ExprNode, OrderByItem, SqlPrimitive} from '../types.js'
+ */
+
+/**
+ * Compares two values for a single ORDER BY term, handling nulls and direction
+ *
+ * @param {SqlPrimitive} a
+ * @param {SqlPrimitive} b
+ * @param {OrderByItem} term
+ * @returns {number} comparison result
+ */
+export function compareForTerm(a, b, term) {
+  const aIsNull = a == null
+  const bIsNull = b == null
+
+  if (aIsNull || bIsNull) {
+    if (aIsNull && bIsNull) return 0
+    const nullsFirst = term.nulls !== 'LAST'
+    if (aIsNull) return nullsFirst ? -1 : 1
+    return nullsFirst ? 1 : -1
+  }
+
+  // Compare non-null values
+  if (a === b) return 0
+
+  let cmp
+  if (typeof a === 'number' && typeof b === 'number') {
+    cmp = a < b ? -1 : a > b ? 1 : 0
+  } else {
+    const aa = String(a)
+    const bb = String(b)
+    cmp = aa < bb ? -1 : aa > bb ? 1 : 0
+  }
+
+  return term.direction === 'DESC' ? -cmp : cmp
+}
+
+/**
  * Collects and materialize all results from an async row generator into an array
  *
- * @import {AsyncRow, ExprNode, SqlPrimitive} from '../types.js'
  * @param {AsyncGenerator<AsyncRow>} asyncRows
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
