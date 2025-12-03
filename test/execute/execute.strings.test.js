@@ -423,6 +423,20 @@ describe('string functions', () => {
     })
   })
 
+  describe('error handling', () => {
+    it('should throw for SUBSTRING with start position 0', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      await expect(collect(executeSql({ tables: { data }, query: 'SELECT SUBSTRING(text, 0, 3) FROM data' })))
+        .rejects.toThrow('start position must be a positive integer')
+    })
+
+    it('should throw for SUBSTRING with negative length', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      await expect(collect(executeSql({ tables: { data }, query: 'SELECT SUBSTRING(text, 1, -1) FROM data' })))
+        .rejects.toThrow('length must be a non-negative integer')
+    })
+  })
+
   describe('null handling', () => {
     it('should handle null values in UPPER', async () => {
       const data = [

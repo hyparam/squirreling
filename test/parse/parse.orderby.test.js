@@ -66,4 +66,24 @@ describe('ORDER BY clause', () => {
       },
     ])
   })
+
+  it('should parse ORDER BY RANDOM()', () => {
+    const select = parseSql('SELECT * FROM users ORDER BY RANDOM()')
+    expect(select.orderBy).toEqual([
+      {
+        expr: { type: 'function', name: 'RANDOM', args: [] },
+        direction: 'ASC',
+      },
+    ])
+  })
+
+  it('should parse ORDER BY RAND()', () => {
+    const select = parseSql('SELECT * FROM users ORDER BY RAND()')
+    expect(select.orderBy).toEqual([
+      {
+        expr: { type: 'function', name: 'RAND', args: [] },
+        direction: 'ASC',
+      },
+    ])
+  })
 })

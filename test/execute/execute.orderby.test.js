@@ -46,6 +46,18 @@ describe('ORDER BY', () => {
     expect(result[result.length - 1].name).toBe('Eve')
   })
 
+  it('should handle ORDER BY RANDOM()', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY RANDOM()' }))
+    expect(result).toHaveLength(5)
+    expect(result.map(r => r.id).sort()).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('should handle ORDER BY RAND()', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY RAND()' }))
+    expect(result).toHaveLength(5)
+    expect(result.map(r => r.id).sort()).toEqual([1, 2, 3, 4, 5])
+  })
+
   it('should handle CAST in ORDER BY clause', async () => {
     const data = [
       { path: '/file1.txt', size: '100' },

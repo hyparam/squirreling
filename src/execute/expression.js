@@ -200,6 +200,11 @@ export async function evaluateExpr({ node, row, tables }) {
       return String(str).replaceAll(String(searchStr), String(replaceStr))
     }
 
+    if (funcName === 'RANDOM' || funcName === 'RAND') {
+      if (args.length !== 0) throw new Error(`${funcName} takes no arguments`)
+      return Math.random()
+    }
+
     throw new Error('Unsupported function ' + funcName)
   }
 
