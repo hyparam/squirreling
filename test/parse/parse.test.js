@@ -156,6 +156,7 @@ describe('parseSql', () => {
           arg: {
             kind: 'expression',
             expr: { type: 'identifier', name: 'id' },
+            quantifier: 'all',
           },
         },
       ])
@@ -167,7 +168,7 @@ describe('parseSql', () => {
         {
           kind: 'aggregate',
           func: 'SUM',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount' } },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount' }, quantifier: 'all' },
         },
       ])
     })
@@ -178,7 +179,7 @@ describe('parseSql', () => {
         {
           kind: 'aggregate',
           func: 'AVG',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'score' } },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'score' }, quantifier: 'all' },
         },
       ])
     })
@@ -189,12 +190,12 @@ describe('parseSql', () => {
         {
           kind: 'aggregate',
           func: 'MIN',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' } },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' }, quantifier: 'all' },
         },
         {
           kind: 'aggregate',
           func: 'MAX',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' } },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' }, quantifier: 'all' },
         },
       ])
     })
@@ -230,8 +231,39 @@ describe('parseSql', () => {
           arg: {
             kind: 'expression',
             expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'problem' }] },
+            quantifier: 'all',
           },
           alias: 'max_problem_len',
+        },
+      ])
+    })
+
+    it('should parse COUNT(DISTINCT ...)', () => {
+      const select = parseSql('SELECT COUNT(DISTINCT problem_id) AS n_unique_problems FROM table')
+      expect(select.columns).toEqual([
+        {
+          kind: 'aggregate',
+          func: 'COUNT',
+          arg: {
+            kind: 'expression',
+            expr: { type: 'identifier', name: 'problem_id' },
+            quantifier: 'distinct',
+          },
+          alias: 'n_unique_problems',
+        },
+      ])
+    })
+    it('should parse COUNT(ALL ...)', () => {
+      const select = parseSql('SELECT COUNT(ALL problem_id) FROM table')
+      expect(select.columns).toEqual([
+        {
+          kind: 'aggregate',
+          func: 'COUNT',
+          arg: {
+            kind: 'expression',
+            expr: { type: 'identifier', name: 'problem_id' },
+            quantifier: 'all',
+          },
         },
       ])
     })
@@ -330,6 +362,7 @@ describe('parseSql', () => {
               expr: { type: 'identifier', name: 'size' },
               toType: 'BIGINT',
             },
+            quantifier: 'all',
           },
           alias: 'total_size',
         },

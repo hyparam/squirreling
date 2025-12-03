@@ -20,6 +20,7 @@ const KEYWORDS = new Set([
   'LIMIT',
   'OFFSET',
   'AS',
+  'ALL',
   'DISTINCT',
   'TRUE',
   'FALSE',

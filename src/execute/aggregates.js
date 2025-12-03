@@ -16,6 +16,16 @@ export async function evaluateAggregate({ col, rows, tables }) {
 
   if (func === 'COUNT') {
     if (arg.kind === 'star') return rows.length
+    if (arg.quantifier === 'distinct') {
+      const seen = new Set()
+      for (const row of rows) {
+        const v = await evaluateExpr({ node: arg.expr, row, tables })
+        if (v !== null && v !== undefined) {
+          seen.add(v)
+        }
+      }
+      return seen.size
+    }
     let count = 0
     for (const row of rows) {
       const v = await evaluateExpr({ node: arg.expr, row, tables })

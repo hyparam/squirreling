@@ -154,6 +154,7 @@ export interface AggregateArgStar {
 export interface AggregateArgExpression {
   kind: 'expression'
   expr: ExprNode
+  quantifier: 'all' | 'distinct'
 }
 
 export type AggregateArg = AggregateArgStar | AggregateArgExpression

@@ -26,6 +26,11 @@ describe('executeSql', () => {
       expect(result).toEqual([{ count_name: 2 }])
     })
 
+    it('should count distinct values with COUNT(DISTINCT column)', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(DISTINCT city) AS unique_cities FROM users' }))
+      expect(result).toEqual([{ unique_cities: 2 }])
+    })
+
     it('should calculate SUM', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT SUM(age) FROM users' }))
       expect(result).toEqual([{ sum_age: 148 }])
