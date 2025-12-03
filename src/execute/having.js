@@ -76,20 +76,6 @@ export async function evaluateHavingExpr(expr, row, group, tables) {
     }
   }
 
-  if (expr.type === 'between' || expr.type === 'not between') {
-    const exprVal = await evaluateHavingValue(expr.expr, context, group, tables)
-    const lower = await evaluateHavingValue(expr.lower, context, group, tables)
-    const upper = await evaluateHavingValue(expr.upper, context, group, tables)
-
-    // If any value is NULL, return false (SQL behavior)
-    if (exprVal == null || lower == null || upper == null) {
-      return false
-    }
-
-    const isBetween = exprVal >= lower && exprVal <= upper
-    return expr.type === 'between' ? isBetween : !isBetween
-  }
-
   // For other expression types, use the context row
   return Boolean(await evaluateExpr({ node: expr, row: context, tables }))
 }
@@ -112,7 +98,7 @@ function evaluateHavingValue(expr, context, group, tables) {
   }
 
   // For binary expressions, we need to use evaluateHavingExpr to properly handle aggregates
-  if (expr.type === 'binary' || expr.type === 'unary' || expr.type === 'between' || expr.type === 'not between') {
+  if (expr.type === 'binary' || expr.type === 'unary') {
     return evaluateHavingExpr(expr, context, group, tables)
   }
 

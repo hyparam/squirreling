@@ -199,30 +199,60 @@ describe('parseSql - WHERE clause', () => {
   it('should parse WHERE with BETWEEN', () => {
     const select = parseSql('SELECT * FROM users WHERE age BETWEEN 18 AND 65')
     expect(select.where).toEqual({
-      type: 'between',
-      expr: { type: 'identifier', name: 'age' },
-      lower: { type: 'literal', value: 18 },
-      upper: { type: 'literal', value: 65 },
+      type: 'binary',
+      op: 'AND',
+      left: {
+        type: 'binary',
+        op: '>=',
+        left: { type: 'identifier', name: 'age' },
+        right: { type: 'literal', value: 18 },
+      },
+      right: {
+        type: 'binary',
+        op: '<=',
+        left: { type: 'identifier', name: 'age' },
+        right: { type: 'literal', value: 65 },
+      },
     })
   })
 
   it('should parse WHERE with NOT BETWEEN', () => {
     const select = parseSql('SELECT * FROM users WHERE age NOT BETWEEN 18 AND 65')
     expect(select.where).toEqual({
-      type: 'not between',
-      expr: { type: 'identifier', name: 'age' },
-      lower: { type: 'literal', value: 18 },
-      upper: { type: 'literal', value: 65 },
+      type: 'binary',
+      op: 'OR',
+      left: {
+        type: 'binary',
+        op: '<',
+        left: { type: 'identifier', name: 'age' },
+        right: { type: 'literal', value: 18 },
+      },
+      right: {
+        type: 'binary',
+        op: '>',
+        left: { type: 'identifier', name: 'age' },
+        right: { type: 'literal', value: 65 },
+      },
     })
   })
 
   it('should parse WHERE with BETWEEN and strings', () => {
     const select = parseSql('SELECT * FROM users WHERE name BETWEEN \'A\' AND \'M\'')
     expect(select.where).toEqual({
-      type: 'between',
-      expr: { type: 'identifier', name: 'name' },
-      lower: { type: 'literal', value: 'A' },
-      upper: { type: 'literal', value: 'M' },
+      type: 'binary',
+      op: 'AND',
+      left: {
+        type: 'binary',
+        op: '>=',
+        left: { type: 'identifier', name: 'name' },
+        right: { type: 'literal', value: 'A' },
+      },
+      right: {
+        type: 'binary',
+        op: '<=',
+        left: { type: 'identifier', name: 'name' },
+        right: { type: 'literal', value: 'M' },
+      },
     })
   })
 
@@ -232,10 +262,20 @@ describe('parseSql - WHERE clause', () => {
       type: 'binary',
       op: 'AND',
       left: {
-        type: 'between',
-        expr: { type: 'identifier', name: 'age' },
-        lower: { type: 'literal', value: 18 },
-        upper: { type: 'literal', value: 65 },
+        type: 'binary',
+        op: 'AND',
+        left: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'identifier', name: 'age' },
+          right: { type: 'literal', value: 18 },
+        },
+        right: {
+          type: 'binary',
+          op: '<=',
+          left: { type: 'identifier', name: 'age' },
+          right: { type: 'literal', value: 65 },
+        },
       },
       right: {
         type: 'binary',
@@ -249,10 +289,20 @@ describe('parseSql - WHERE clause', () => {
   it('should parse WHERE with BETWEEN and qualified column names', () => {
     const select = parseSql('SELECT * FROM users WHERE users.age BETWEEN 18 AND 65')
     expect(select.where).toEqual({
-      type: 'between',
-      expr: { type: 'identifier', name: 'users.age' },
-      lower: { type: 'literal', value: 18 },
-      upper: { type: 'literal', value: 65 },
+      type: 'binary',
+      op: 'AND',
+      left: {
+        type: 'binary',
+        op: '>=',
+        left: { type: 'identifier', name: 'users.age' },
+        right: { type: 'literal', value: 18 },
+      },
+      right: {
+        type: 'binary',
+        op: '<=',
+        left: { type: 'identifier', name: 'users.age' },
+        right: { type: 'literal', value: 65 },
+      },
     })
   })
 

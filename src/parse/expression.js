@@ -301,7 +301,26 @@ function parseComparison(c) {
     }
   }
 
-  // LIKE
+  // [NOT] LIKE
+  if (tok.type === 'keyword' && tok.value === 'NOT') {
+    const nextTok = c.peek(1)
+    if (nextTok.type === 'keyword' && nextTok.value === 'LIKE') {
+      c.consume() // NOT
+      c.consume() // LIKE
+      const right = parsePrimary(c)
+      return {
+        type: 'unary',
+        op: 'NOT',
+        argument: {
+          type: 'binary',
+          op: 'LIKE',
+          left,
+          right,
+        },
+      }
+    }
+  }
+
   if (tok.type === 'keyword' && tok.value === 'LIKE') {
     c.consume()
     const right = parsePrimary(c)
@@ -313,7 +332,7 @@ function parseComparison(c) {
     }
   }
 
-  // [NOT] BETWEEN
+  // [NOT] BETWEEN - convert to range comparison
   if (tok.type === 'keyword' && tok.value === 'NOT') {
     const nextTok = c.peek(1)
     if (nextTok.type === 'keyword' && nextTok.value === 'BETWEEN') {
@@ -322,11 +341,12 @@ function parseComparison(c) {
       const lower = parsePrimary(c)
       c.expect('keyword', 'AND')
       const upper = parsePrimary(c)
+      // NOT BETWEEN -> expr < lower OR expr > upper
       return {
-        type: 'not between',
-        expr: left,
-        lower,
-        upper,
+        type: 'binary',
+        op: 'OR',
+        left: { type: 'binary', op: '<', left, right: lower },
+        right: { type: 'binary', op: '>', left, right: upper },
       }
     }
   }
@@ -336,11 +356,12 @@ function parseComparison(c) {
     const lower = parsePrimary(c)
     c.expect('keyword', 'AND')
     const upper = parsePrimary(c)
+    // BETWEEN -> expr >= lower AND expr <= upper
     return {
-      type: 'between',
-      expr: left,
-      lower,
-      upper,
+      type: 'binary',
+      op: 'AND',
+      left: { type: 'binary', op: '>=', left, right: lower },
+      right: { type: 'binary', op: '<=', left, right: upper },
     }
   }
 
@@ -365,9 +386,13 @@ function parseComparison(c) {
         }
         const subquery = c.parseSubquery()
         return {
-          type: 'not in',
-          expr: left,
-          subquery,
+          type: 'unary',
+          op: 'NOT',
+          argument: {
+            type: 'in',
+            expr: left,
+            subquery,
+          },
         }
       } else {
         // Parse list of values - we handle the parens
@@ -380,9 +405,13 @@ function parseComparison(c) {
         }
         c.expect('paren', ')')
         return {
-          type: 'not in valuelist',
-          expr: left,
-          values,
+          type: 'unary',
+          op: 'NOT',
+          argument: {
+            type: 'in valuelist',
+            expr: left,
+            values,
+          },
         }
       }
     }

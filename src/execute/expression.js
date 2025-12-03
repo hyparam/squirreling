@@ -110,21 +110,6 @@ export async function evaluateExpr({ node, row, tables }) {
     }
   }
 
-  // BETWEEN and NOT BETWEEN
-  if (node.type === 'between' || node.type === 'not between') {
-    const expr = await evaluateExpr({ node: node.expr, row, tables })
-    const lower = await evaluateExpr({ node: node.lower, row, tables })
-    const upper = await evaluateExpr({ node: node.upper, row, tables })
-
-    // If any value is NULL, return false (SQL behavior)
-    if (expr == null || lower == null || upper == null) {
-      return false
-    }
-
-    const isBetween = expr >= lower && expr <= upper
-    return node.type === 'between' ? isBetween : !isBetween
-  }
-
   // Function calls
   if (node.type === 'function') {
     const funcName = node.name.toUpperCase()
@@ -243,16 +228,7 @@ export async function evaluateExpr({ node, row, tables }) {
     }
     return false
   }
-  if (node.type === 'not in valuelist') {
-    const exprVal = await evaluateExpr({ node: node.expr, row, tables })
-    for (const valueNode of node.values) {
-      const val = await evaluateExpr({ node: valueNode, row, tables })
-      if (exprVal === val) return false
-    }
-    return true
-  }
-
-  // IN and NOT IN with subqueries
+  // IN with subqueries
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, tables })
     const results = executeSelect(node.subquery, tables)
@@ -264,18 +240,6 @@ export async function evaluateExpr({ node, row, tables }) {
       values.push(val)
     }
     return values.includes(exprVal)
-  }
-  if (node.type === 'not in') {
-    const exprVal = await evaluateExpr({ node: node.expr, row, tables })
-    const results = executeSelect(node.subquery, tables)
-    /** @type {SqlPrimitive[]} */
-    const values = []
-    for await (const resRow of results) {
-      const firstKey = Object.keys(resRow)[0]
-      const val = await resRow[firstKey]()
-      values.push(val)
-    }
-    return !values.includes(exprVal)
   }
 
   // EXISTS and NOT EXISTS with subqueries

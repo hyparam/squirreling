@@ -190,6 +190,12 @@ describe('executeSql', () => {
       expect(result.map(r => r.email).sort()).toEqual(['alice@example.com', 'diana@example.com'])
     })
 
+    it('should filter with NOT LIKE', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name NOT LIKE \'%li%\'' }))
+      expect(result).toHaveLength(3)
+      expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Diana', 'Eve'])
+    })
+
     it('should filter with IN value list', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name IN (\'Alice\', \'Charlie\', \'Eve\')' }))
       expect(result).toHaveLength(3)

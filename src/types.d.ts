@@ -90,21 +90,14 @@ export interface CastNode {
   toType: string
 }
 
-export interface BetweenNode {
-  type: 'between' | 'not between'
-  expr: ExprNode
-  lower: ExprNode
-  upper: ExprNode
-}
-
 export interface InSubqueryNode {
-  type: 'in' | 'not in'
+  type: 'in'
   expr: ExprNode
   subquery: SelectStatement
 }
 
 export interface InValuesNode {
-  type: 'in valuelist' | 'not in valuelist'
+  type: 'in valuelist'
   expr: ExprNode
   values: ExprNode[]
 }
@@ -138,7 +131,6 @@ export type ExprNode =
   | BinaryNode
   | FunctionNode
   | CastNode
-  | BetweenNode
   | InSubqueryNode
   | InValuesNode
   | ExistsNode
