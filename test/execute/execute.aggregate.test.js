@@ -86,8 +86,24 @@ describe('executeSql', () => {
         { size: 20 },
         { size: 30 },
       ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM data' }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM data',
+      }))
       expect(result).toEqual([{ total_size: 60 }])
+    })
+
+    it('should handle string functions in aggregate', async () => {
+      const data = [
+        { problem: 'short' },
+        { problem: 'a bit longer' },
+        { problem: 'the longest problem string' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MAX(LENGTH(problem)) AS max_problem_len FROM data',
+      }))
+      expect(result).toEqual([{ max_problem_len: 26 }])
     })
   })
 
@@ -98,7 +114,10 @@ describe('executeSql', () => {
         { id: 2, value: null },
         { id: 3, value: null },
       ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM data' }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COUNT(*) AS total, COUNT(value) AS non_null FROM data',
+      }))
       expect(result[0]).toEqual({ total: 3, non_null: 1 })
     })
 

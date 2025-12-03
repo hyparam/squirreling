@@ -220,6 +220,21 @@ describe('parseSql', () => {
         { type: 'identifier', name: 'state' },
       ])
     })
+
+    it('should parse nested function in aggregate', () => {
+      const select = parseSql('SELECT MAX(LENGTH(problem)) AS max_problem_len FROM table')
+      expect(select.columns).toEqual([
+        {
+          kind: 'aggregate',
+          func: 'MAX',
+          arg: {
+            kind: 'expression',
+            expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'problem' }] },
+          },
+          alias: 'max_problem_len',
+        },
+      ])
+    })
   })
 
   describe('LIMIT and OFFSET', () => {

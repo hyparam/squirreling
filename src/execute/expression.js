@@ -210,7 +210,7 @@ export async function evaluateExpr({ node, row, tables }) {
       if (isNaN(num)) return null
       return num
     }
-    if (toType === 'TEXT' || toType === 'STRING') {
+    if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
       return String(val)
     }
     if (toType === 'BOOLEAN' || toType === 'BOOL') {

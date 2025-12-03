@@ -243,17 +243,12 @@ function parseAggregateItem(state, func) {
       expr: { type: 'cast', expr, toType },
     }
   } else {
-    // column name
-    let name = expectIdentifier(state).value
-    // Handle qualified column names like orders.amount
-    if (current(state).type === 'dot') {
-      consume(state) // consume dot
-      const qualifiedPart = expectIdentifier(state)
-      name = `${name}.${qualifiedPart.value}`
-    }
+    // general expression (including identifiers and nested function calls)
+    const cursor = createExprCursor(state)
+    const expr = parseExpression(cursor)
     arg = {
       kind: 'expression',
-      expr: { type: 'identifier', name },
+      expr,
     }
   }
 

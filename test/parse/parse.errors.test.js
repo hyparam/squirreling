@@ -54,41 +54,50 @@ describe('parseSql error handling', () => {
 
   describe('SELECT list errors', () => {
     it('should throw error on invalid column name', () => {
-      expect(() => parseSql('SELECT FROM users')).toThrow('Expected column name or expression after "SELECT" but found "FROM" at position 7')
+      expect(() => parseSql('SELECT FROM users'))
+        .toThrow('Expected column name or expression after "SELECT" but found "FROM" at position 7')
     })
 
     it('should throw error on missing column after comma', () => {
-      expect(() => parseSql('SELECT name, FROM users')).toThrow('Expected column name or expression after "," but found "FROM" at position 13')
+      expect(() => parseSql('SELECT name, FROM users'))
+        .toThrow('Expected column name or expression after "," but found "FROM" at position 13')
     })
 
     it('should throw error on missing alias after AS', () => {
-      expect(() => parseSql('SELECT name AS FROM users')).toThrow('Expected alias after "AS" but found "FROM" at position 15')
+      expect(() => parseSql('SELECT name AS FROM users'))
+        .toThrow('Expected alias after "AS" but found "FROM" at position 15')
     })
 
     it('should throw error on missing alias after lowercase as', () => {
-      expect(() => parseSql('SELECT name as FROM users')).toThrow('Expected alias after "as" but found "FROM" at position 15')
+      expect(() => parseSql('SELECT name as FROM users'))
+        .toThrow('Expected alias after "as" but found "FROM" at position 15')
     })
   })
 
   describe('aggregate function errors', () => {
     it('should throw error on missing opening paren in aggregate', () => {
-      expect(() => parseSql('SELECT COUNT name myalias FROM users')).toThrow('Expected FROM after "name" but found "myalias" at position 18')
+      expect(() => parseSql('SELECT COUNT name myalias FROM users'))
+        .toThrow('Expected FROM after "name" but found "myalias" at position 18')
     })
 
     it('should throw error on missing closing paren in aggregate', () => {
-      expect(() => parseSql('SELECT COUNT(name FROM users')).toThrow('Expected ) after "name" but found "FROM" at position 18')
+      expect(() => parseSql('SELECT COUNT(name FROM users'))
+        .toThrow('Expected ) after "name" but found "FROM" at position 18')
     })
 
     it('should throw error on empty aggregate function', () => {
-      expect(() => parseSql('SELECT COUNT() FROM users')).toThrow('Expected identifier after "(" but found ")" at position 13')
+      expect(() => parseSql('SELECT COUNT() FROM users'))
+        .toThrow('Expected expression but found ")" at position 13')
     })
 
     it('should throw error on missing aggregate argument', () => {
-      expect(() => parseSql('SELECT SUM() FROM users')).toThrow('Expected identifier after "(" but found ")" at position 11')
+      expect(() => parseSql('SELECT SUM() FROM users'))
+        .toThrow('Expected expression but found ")" at position 11')
     })
 
     it('should throw error when expecting closing paren in aggregate', () => {
-      expect(() => parseSql('SELECT COUNT(name( FROM users')).toThrow('Expected ) after "name" but found "(" at position 17')
+      expect(() => parseSql('SELECT COUNT(name( FROM users'))
+        .toThrow('Unknown function "name" at position 13')
     })
   })
 
