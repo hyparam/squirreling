@@ -29,7 +29,7 @@ Squirreling is a streaming async SQL engine for JavaScript. It is designed to pr
 
 Squirreling returns an async generator, allowing you to process rows one at a time without loading everything into memory.
 
-```javascript
+```typescript
 import { executeSql } from 'squirreling'
 
 // In-memory table
@@ -40,12 +40,18 @@ const users = [
   // ...more rows
 ]
 
-// Process rows as they arrive (streaming)
-for await (const { cnt } of executeSql({
+type AsyncRow = Record<string, AsyncCell>
+type AsyncCell = () => Promise<SqlPrimitive>
+
+// Returns an async iterable of rows with async cells
+const asyncRows: AsyncIterable<AsyncRow> = executeSql({
   tables: { users },
   query: 'SELECT count(*) as cnt FROM users WHERE active = TRUE LIMIT 10',
-})) {
-  console.log('Count', cnt)
+})
+
+// Process rows as they arrive (streaming)
+for await (const { cnt } of asyncRows) {
+  console.log('Count', await cnt())
 }
 ```
 
@@ -54,7 +60,8 @@ There is an exported helper function `collect` to gather all rows into an array 
 ```javascript
 import { collect, executeSql } from 'squirreling'
 
-const allUsers = await collect(executeSql({
+// Collect all rows and cells into a materialized array
+const allUsers: Record<string, SqlPrimitive>[] = await collect(executeSql({
   tables: { users },
   query: 'SELECT * FROM users',
 }))

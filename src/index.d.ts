@@ -1,4 +1,4 @@
-import type { AsyncRow, ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
 export type { AsyncDataSource, AsyncRow, SqlPrimitive } from './types.js'
 
 /**
@@ -26,3 +26,5 @@ export function parseSql(query: string): SelectStatement
  * @returns array of all yielded values
  */
 export function collect<T>(asyncGen: AsyncGenerator<AsyncRow>): Promise<Record<string, SqlPrimitive>[]>
+
+export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
