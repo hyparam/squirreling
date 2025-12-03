@@ -130,6 +130,20 @@ describe('expensive cell access', () => {
     await expect(countExpensiveCalls('SELECT * FROM data JOIN other ON data.llm = other.value LIMIT 1'))
       .resolves.toBe(1)
   })
+
+  it('should sort only once for ORDER BY without GROUP BY', async () => {
+    // This test detects the double-sorting bug where ORDER BY without GROUP BY
+    // would sort twice: once before projection and once after.
+    const countingSource = countingDataSource(data, ['name']) // no cache
+    await collect(executeSql({
+      tables: { data: countingSource, other },
+      query: 'SELECT * FROM data ORDER BY name',
+    }))
+
+    // With double-sorting bug: 15 accesses (2 sorts, 1 materialization)
+    // Without bug: 10 accesses (1 sort, 1 materialization)
+    expect(countingSource.getExpensiveCallCount()).toBe(10)
+  })
 })
 
 /**

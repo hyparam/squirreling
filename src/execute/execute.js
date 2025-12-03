@@ -435,7 +435,9 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   projected = await applyDistinct(projected, select.distinct)
 
   // Step 5: ORDER BY (final sort for grouped queries)
-  projected = await sortRows(projected, select.orderBy, tables)
+  if (useGrouping) {
+    projected = await sortRows(projected, select.orderBy, tables)
+  }
 
   // Step 6: OFFSET and LIMIT
   // For non-DISTINCT, non-grouping queries, OFFSET/LIMIT was already applied before projection
