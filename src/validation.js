@@ -23,3 +23,14 @@ export function isStringFunc(name) {
 export function isBinaryOp(op) {
   return ['=', '!=', '<>', '<', '>', '<=', '>='].includes(op)
 }
+
+// Keywords that cannot be used as implicit aliases after a column
+export const RESERVED_AFTER_COLUMN = new Set([
+  'FROM', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
+])
+
+// Keywords that cannot be used as table aliases
+export const RESERVED_AFTER_TABLE = new Set([
+  'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'JOIN', 'INNER',
+  'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON',
+])

@@ -197,16 +197,6 @@ export interface ParserState {
   pos: number
 }
 
-export interface ExprCursor {
-  current(): Token
-  peek(offset: number): Token
-  consume(): Token
-  match(type: TokenType, value?: string): boolean
-  expect(type: TokenType, value: string): Token
-  expectIdentifier(): Token
-  parseSubquery: () => SelectStatement
-}
-
 // Tokenizer types
 export type TokenType =
   | 'keyword'

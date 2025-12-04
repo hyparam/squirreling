@@ -1,54 +1,56 @@
 import { isAggregateFunc, isStringFunc } from '../validation.js'
 import { parseComparison } from './comparison.js'
+import { parseSelectInternal } from './parse.js'
+import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
 
 /**
- * @import { ExprCursor, ExprNode, WhenClause } from '../types.js'
+ * @import { ExprNode, ParserState, SelectStatement, WhenClause } from '../types.js'
  */
 
 /**
- * @param {ExprCursor} c
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
-export function parseExpression(c) {
-  return parseOr(c)
+export function parseExpression(state) {
+  return parseOr(state)
 }
 
 /**
- * @param {ExprCursor} c
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
-export function parsePrimary(c) {
-  const tok = c.current()
+export function parsePrimary(state) {
+  const tok = current(state)
 
   if (tok.type === 'paren' && tok.value === '(') {
     // Peek ahead to see if this is a scalar subquery
-    const nextTok = c.peek(1)
+    const nextTok = peekToken(state, 1)
     if (nextTok.type === 'keyword' && nextTok.value === 'SELECT') {
       // It's a scalar subquery
-      const subquery = c.parseSubquery()
+      const subquery = parseSubquery(state)
       return {
         type: 'subquery',
         subquery,
       }
     }
     // Regular grouped expression
-    c.consume()
-    const expr = parseExpression(c)
-    c.expect('paren', ')')
+    consume(state)
+    const expr = parseExpression(state)
+    expect(state, 'paren', ')')
     return expr
   }
 
   if (tok.type === 'identifier') {
-    const next = c.peek(1)
+    const next = peekToken(state, 1)
 
     // CAST expression
     if (tok.value === 'CAST' && next.type === 'paren' && next.value === '(') {
-      c.consume() // CAST
-      c.consume() // '('
-      const expr = parseExpression(c)
-      c.expect('keyword', 'AS')
-      const typeTok = c.expectIdentifier()
-      c.expect('paren', ')')
+      consume(state) // CAST
+      consume(state) // '('
+      const expr = parseExpression(state)
+      expect(state, 'keyword', 'AS')
+      const typeTok = expectIdentifier(state)
+      expect(state, 'paren', ')')
       return {
         type: 'cast',
         expr,
@@ -65,30 +67,30 @@ export function parsePrimary(c) {
         throw new Error(`Unknown function "${funcName}" at position ${tok.position}`)
       }
 
-      c.consume() // function name
-      c.consume() // '('
+      consume(state) // function name
+      consume(state) // '('
 
       /** @type {ExprNode[]} */
       const args = []
 
-      if (c.current().type !== 'paren' || c.current().value !== ')') {
+      if (current(state).type !== 'paren' || current(state).value !== ')') {
         while (true) {
           // Handle COUNT(*) - treat * as a special identifier
-          if (c.current().type === 'operator' && c.current().value === '*') {
-            c.consume()
+          if (current(state).type === 'operator' && current(state).value === '*') {
+            consume(state)
             args.push({
               type: 'identifier',
               name: '*',
             })
           } else {
-            const arg = parseExpression(c)
+            const arg = parseExpression(state)
             args.push(arg)
           }
-          if (!c.match('comma')) break
+          if (!match(state, 'comma')) break
         }
       }
 
-      c.expect('paren', ')')
+      expect(state, 'paren', ')')
 
       return {
         type: 'function',
@@ -97,13 +99,13 @@ export function parsePrimary(c) {
       }
     }
 
-    c.consume()
+    consume(state)
     let name = tok.value
 
     // table.column
-    if (c.current().type === 'dot') {
-      c.consume()
-      const columnTok = c.expectIdentifier()
+    if (current(state).type === 'dot') {
+      consume(state)
+      const columnTok = expectIdentifier(state)
       name = name + '.' + columnTok.value
     }
 
@@ -114,7 +116,7 @@ export function parsePrimary(c) {
   }
 
   if (tok.type === 'number') {
-    c.consume()
+    consume(state)
     return {
       type: 'literal',
       value: tok.numericValue ?? null,
@@ -122,7 +124,7 @@ export function parsePrimary(c) {
   }
 
   if (tok.type === 'string') {
-    c.consume()
+    consume(state)
     return {
       type: 'literal',
       value: tok.value,
@@ -131,44 +133,44 @@ export function parsePrimary(c) {
 
   if (tok.type === 'keyword') {
     if (tok.value === 'TRUE') {
-      c.consume()
+      consume(state)
       return { type: 'literal', value: true }
     }
     if (tok.value === 'FALSE') {
-      c.consume()
+      consume(state)
       return { type: 'literal', value: false }
     }
     if (tok.value === 'NULL') {
-      c.consume()
+      consume(state)
       return { type: 'literal', value: null }
     }
     if (tok.value === 'EXISTS') {
-      c.consume() // EXISTS
-      const subquery = c.parseSubquery()
+      consume(state) // EXISTS
+      const subquery = parseSubquery(state)
       return {
         type: 'exists',
         subquery,
       }
     }
     if (tok.value === 'CASE') {
-      c.consume() // CASE
+      consume(state) // CASE
 
       // Check if it's simple CASE (CASE expr WHEN ...) or searched CASE (CASE WHEN ...)
       /** @type {ExprNode | undefined} */
       let caseExpr
-      const nextTok = c.current()
+      const nextTok = current(state)
       if (nextTok.type !== 'keyword' || nextTok.value !== 'WHEN') {
         // Simple CASE: parse the case expression
-        caseExpr = parseExpression(c)
+        caseExpr = parseExpression(state)
       }
 
       // Parse WHEN clauses
       /** @type {WhenClause[]} */
       const whenClauses = []
-      while (c.match('keyword', 'WHEN')) {
-        const condition = parseExpression(c)
-        c.expect('keyword', 'THEN')
-        const result = parseExpression(c)
+      while (match(state, 'keyword', 'WHEN')) {
+        const condition = parseExpression(state)
+        expect(state, 'keyword', 'THEN')
+        const result = parseExpression(state)
         whenClauses.push({ condition, result })
       }
 
@@ -179,11 +181,11 @@ export function parsePrimary(c) {
       // Parse optional ELSE clause
       /** @type {ExprNode | undefined} */
       let elseResult
-      if (c.match('keyword', 'ELSE')) {
-        elseResult = parseExpression(c)
+      if (match(state, 'keyword', 'ELSE')) {
+        elseResult = parseExpression(state)
       }
 
-      c.expect('keyword', 'END')
+      expect(state, 'keyword', 'END')
 
       return {
         type: 'case',
@@ -195,8 +197,8 @@ export function parsePrimary(c) {
   }
 
   if (tok.type === 'operator' && tok.value === '-') {
-    c.consume()
-    const argument = parsePrimary(c)
+    consume(state)
+    const argument = parsePrimary(state)
     return {
       type: 'unary',
       op: '-',
@@ -209,13 +211,13 @@ export function parsePrimary(c) {
 }
 
 /**
- * @param {ExprCursor} c
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
-function parseOr(c) {
-  let node = parseAnd(c)
-  while (c.match('keyword', 'OR')) {
-    const right = parseAnd(c)
+function parseOr(state) {
+  let node = parseAnd(state)
+  while (match(state, 'keyword', 'OR')) {
+    const right = parseAnd(state)
     node = {
       type: 'binary',
       op: 'OR',
@@ -227,13 +229,13 @@ function parseOr(c) {
 }
 
 /**
- * @param {ExprCursor} c
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
-function parseAnd(c) {
-  let node = parseNot(c)
-  while (c.match('keyword', 'AND')) {
-    const right = parseNot(c)
+function parseAnd(state) {
+  let node = parseNot(state)
+  while (match(state, 'keyword', 'AND')) {
+    const right = parseNot(state)
     node = {
       type: 'binary',
       op: 'AND',
@@ -245,27 +247,40 @@ function parseAnd(c) {
 }
 
 /**
- * @param {ExprCursor} c
+ * @param {ParserState} state
  * @returns {ExprNode}
  */
-function parseNot(c) {
-  if (c.match('keyword', 'NOT')) {
+function parseNot(state) {
+  if (match(state, 'keyword', 'NOT')) {
     // Check for NOT EXISTS
-    const nextTok = c.current()
+    const nextTok = current(state)
     if (nextTok.type === 'keyword' && nextTok.value === 'EXISTS') {
-      c.consume() // EXISTS
-      const subquery = c.parseSubquery()
+      consume(state) // EXISTS
+      const subquery = parseSubquery(state)
       return {
         type: 'not exists',
         subquery,
       }
     }
-    const argument = parseNot(c)
+    const argument = parseNot(state)
     return {
       type: 'unary',
       op: 'NOT',
       argument,
     }
   }
-  return parseComparison(c)
+  return parseComparison(state)
+}
+
+/**
+ * Creates an ExprCursor adapter for the ParserState.
+ *
+ * @param {ParserState} state
+ * @returns {SelectStatement}
+ */
+export function parseSubquery(state) {
+  expect(state, 'paren', '(')
+  const query = parseSelectInternal(state)
+  expect(state, 'paren', ')')
+  return query
 }
