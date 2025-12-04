@@ -1,5 +1,6 @@
 import { isAggregateFunc } from '../validation.js'
 import { evaluateExpr } from './expression.js'
+import { applyBinaryOp } from './utils.js'
 
 /**
  * @import { AggregateFunc, AsyncDataSource, ExprNode, AsyncRow, SqlPrimitive } from '../types.js'
@@ -30,38 +31,17 @@ export async function evaluateHavingExpr(expr, row, group, tables) {
 
   if (expr.type === 'binary') {
     const left = await evaluateHavingValue(expr.left, context, group, tables)
-    const right = await evaluateHavingValue(expr.right, context, group, tables)
 
+    // Short-circuit evaluation for AND and OR
     if (expr.op === 'AND') {
-      return Boolean(left && right)
+      if (!left) return false
     }
     if (expr.op === 'OR') {
-      return Boolean(left || right)
+      if (left) return true
     }
 
-    // Handle NULL comparisons
-    if (left == null || right == null) {
-      if (expr.op === '=' || expr.op === '!=' || expr.op === '<>') {
-        return false
-      }
-    }
-
-    if (expr.op === '=') return left === right
-    if (expr.op === '!=' || expr.op === '<>') return left !== right
-    if (expr.op === '<') return left < right
-    if (expr.op === '>') return left > right
-    if (expr.op === '<=') return left <= right
-    if (expr.op === '>=') return left >= right
-    if (expr.op === 'LIKE') {
-      const str = String(left)
-      const pattern = String(right)
-      const regexPattern = pattern
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        .replace(/%/g, '.*')
-        .replace(/_/g, '.')
-      const regex = new RegExp('^' + regexPattern + '$', 'i')
-      return regex.test(str)
-    }
+    const right = await evaluateHavingValue(expr.right, context, group, tables)
+    return applyBinaryOp(expr.op, left, right)
   }
 
   if (expr.type === 'unary') {

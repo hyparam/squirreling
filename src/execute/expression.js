@@ -1,4 +1,5 @@
 import { executeSelect } from './execute.js'
+import { applyBinaryOp } from './utils.js'
 
 /**
  * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource } from '../types.js'
@@ -59,55 +60,24 @@ export async function evaluateExpr({ node, row, tables }) {
     if (node.op === '-') {
       const val = await evaluateExpr({ node: node.argument, row, tables })
       if (val == null) return null
-      return -Number(val)
+      return -val
     }
   }
 
   // Binary operators
   if (node.type === 'binary') {
-    if (node.op === 'AND') {
-      const leftVal = await evaluateExpr({ node: node.left, row, tables })
-      if (!leftVal) return false
-      return Boolean(await evaluateExpr({ node: node.right, row, tables }))
-    }
-
-    if (node.op === 'OR') {
-      const leftVal = await evaluateExpr({ node: node.left, row, tables })
-      if (leftVal) return true
-      return Boolean(await evaluateExpr({ node: node.right, row, tables }))
-    }
-
     const left = await evaluateExpr({ node: node.left, row, tables })
+
+    // Short-circuit evaluation for AND and OR
+    if (node.op === 'AND') {
+      if (!left) return false
+    }
+    if (node.op === 'OR') {
+      if (left) return true
+    }
+
     const right = await evaluateExpr({ node: node.right, row, tables })
-
-    // In SQL, NULL comparisons with =, !=, <> always return false (unknown)
-    // You must use IS NULL or IS NOT NULL to check for NULL
-    if (left == null || right == null) {
-      if (node.op === '=' || node.op === '!=' || node.op === '<>') {
-        return false
-      }
-    }
-
-    if (node.op === '=') return left === right
-    if (node.op === '!=' || node.op === '<>') return left !== right
-    if (node.op === '<') return left < right
-    if (node.op === '>') return left > right
-    if (node.op === '<=') return left <= right
-    if (node.op === '>=') return left >= right
-
-    if (node.op === 'LIKE') {
-      const str = String(left)
-      const pattern = String(right)
-      // Convert SQL LIKE pattern to regex
-      // % matches zero or more characters
-      // _ matches exactly one character
-      const regexPattern = pattern
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
-        .replace(/%/g, '.*') // Replace % with .*
-        .replace(/_/g, '.') // Replace _ with .
-      const regex = new RegExp('^' + regexPattern + '$', 'i')
-      return regex.test(str)
-    }
+    return applyBinaryOp(node.op, left, right)
   }
 
   // Function calls

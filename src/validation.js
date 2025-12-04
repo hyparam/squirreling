@@ -1,6 +1,6 @@
 
 /**
- * @import {AggregateFunc, BinaryOp, StringFunc} from './types.js'
+ * @import {AggregateFunc, BinaryOp, ComparisonOp, StringFunc} from './types.js'
  * @param {string} name
  * @returns {name is AggregateFunc}
  */
@@ -21,7 +21,7 @@ export function isStringFunc(name) {
  * @returns {op is BinaryOp}
  */
 export function isBinaryOp(op) {
-  return ['=', '!=', '<>', '<', '>', '<=', '>='].includes(op)
+  return ['AND', 'OR', 'LIKE', '=', '!=', '<>', '<', '>', '<=', '>='].includes(op)
 }
 
 // Keywords that cannot be used as implicit aliases after a column

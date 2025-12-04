@@ -1,6 +1,39 @@
 /**
- * @import {AsyncRow, ExprNode, OrderByItem, SqlPrimitive} from '../types.js'
+ * @import {AsyncRow, BinaryOp, ExprNode, OrderByItem, SqlPrimitive} from '../types.js'
  */
+
+/**
+ * Compares two values with the given operator, handling nulls according to SQL semantics
+ *
+ * @param {BinaryOp} op
+ * @param {SqlPrimitive} a
+ * @param {SqlPrimitive} b
+ * @returns {boolean}
+ */
+export function applyBinaryOp(op, a, b) {
+  if (a == null || b == null) {
+    return false
+  }
+  if (op === 'AND') return Boolean(a) && Boolean(b)
+  if (op === 'OR') return Boolean(a) || Boolean(b)
+  if (op === '!=' || op === '<>') return a != b
+  if (op === '=') return a == b
+  if (op === '<') return a < b
+  if (op === '<=') return a <= b
+  if (op === '>') return a > b
+  if (op === '>=') return a >= b
+
+  if (op === 'LIKE') {
+    const str = String(a)
+    const pattern = String(b)
+    const regexPattern = pattern
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/%/g, '.*')
+      .replace(/_/g, '.')
+    const regex = new RegExp(`^${regexPattern}$`, 'i')
+    return regex.test(str)
+  }
+}
 
 /**
  * Compares two values for a single ORDER BY term, handling nulls and direction
@@ -8,7 +41,7 @@
  * @param {SqlPrimitive} a
  * @param {SqlPrimitive} b
  * @param {OrderByItem} term
- * @returns {number} comparison result
+ * @returns {number}
  */
 export function compareForTerm(a, b, term) {
   const aIsNull = a == null
@@ -22,7 +55,7 @@ export function compareForTerm(a, b, term) {
   }
 
   // Compare non-null values
-  if (a === b) return 0
+  if (a == b) return 0
 
   const primitives = ['number', 'bigint', 'boolean', 'string']
   let cmp
