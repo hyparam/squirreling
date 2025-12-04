@@ -81,6 +81,55 @@ describe('ORDER BY', () => {
     expect(result.map(r => r.name)).toEqual(['Bob', 'Diana', 'Alice', 'Eve', 'Charlie'])
   })
 
+  it('should sort column names with spaces', async () => {
+    const users = [
+      { id: 1, 'full name': 'Charlie', score: 85 },
+      { id: 2, 'full name': 'Alice', score: 95 },
+      { id: 3, 'full name': 'Bob', score: 90 },
+    ]
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT "full name", score FROM users ORDER BY "full name"',
+    }))
+    expect(result).toHaveLength(3)
+    expect(result[0]['full name']).toBe('Alice')
+    expect(result[1]['full name']).toBe('Bob')
+    expect(result[2]['full name']).toBe('Charlie')
+  })
+
+  it('should sort mixed types', async () => {
+    const data = [
+      { id: 1, value: 10 },
+      { id: 2, value: '5' },
+      { id: 3, value: 20 },
+      { id: 4, value: 15n },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT * FROM data ORDER BY value',
+    }))
+    // Should coerce types
+    expect(result[0].value).toBe('5')
+    expect(result[1].value).toBe(10)
+    expect(result[2].value).toBe(15n)
+    expect(result[3].value).toBe(20)
+  })
+
+  it('should sort bigint values correctly', async () => {
+    const data = [
+      { id: 1, value: 10n },
+      { id: 2, value: 5n },
+      { id: 3, value: 20n },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT * FROM data ORDER BY value DESC',
+    }))
+    expect(result[0].value).toBe(20n)
+    expect(result[1].value).toBe(10n)
+    expect(result[2].value).toBe(5n)
+  })
+
   describe('ORDER BY with GROUP BY', () => {
     it('should sort by GROUP BY column', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY city' }))

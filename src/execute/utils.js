@@ -24,8 +24,9 @@ export function compareForTerm(a, b, term) {
   // Compare non-null values
   if (a === b) return 0
 
+  const primitives = ['number', 'bigint', 'boolean', 'string']
   let cmp
-  if (typeof a === 'number' && typeof b === 'number') {
+  if (primitives.includes(typeof a) && primitives.includes(typeof b)) {
     cmp = a < b ? -1 : a > b ? 1 : 0
   } else {
     const aa = String(a)

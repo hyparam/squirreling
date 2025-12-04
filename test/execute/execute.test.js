@@ -303,21 +303,6 @@ describe('executeSql', () => {
       expect(result[0].name).toBe('O\'Brien')
     })
 
-    it('should handle mixed types in ORDER BY', async () => {
-      const data = [
-        { id: 1, value: 10 },
-        { id: 2, value: '5' },
-        { id: 3, value: 20 },
-        { id: 4, value: '15' },
-      ]
-      const result = await collect(executeSql({
-        tables: { data },
-        query: 'SELECT * FROM data ORDER BY value',
-      }))
-      // Should sort lexicographically for mixed types
-      expect(result[0].value).toBe(10)
-    })
-
     it('should handle very long column names', async () => {
       const data = [{ id: 1, very_long_column_name_that_exceeds_normal_limits: 'value' }]
       const result = await collect(executeSql({
@@ -340,22 +325,6 @@ describe('executeSql', () => {
       expect(result).toHaveLength(2)
       expect(result[0]).toEqual({ 'first name': 'Alice', 'last name': 'Smith', age: 30 })
       expect(result[1]).toEqual({ 'first name': 'Charlie', 'last name': 'Brown', age: 35 })
-    })
-
-    it('should handle column names with spaces in ORDER BY', async () => {
-      const users = [
-        { id: 1, 'full name': 'Charlie', score: 85 },
-        { id: 2, 'full name': 'Alice', score: 95 },
-        { id: 3, 'full name': 'Bob', score: 90 },
-      ]
-      const result = await collect(executeSql({
-        tables: { users },
-        query: 'SELECT "full name", score FROM users ORDER BY "full name"',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0]['full name']).toBe('Alice')
-      expect(result[1]['full name']).toBe('Bob')
-      expect(result[2]['full name']).toBe('Charlie')
     })
 
     it('should handle column names with spaces in aggregates', async () => {
