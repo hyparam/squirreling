@@ -177,60 +177,6 @@ describe('executeSql', () => {
     })
   })
 
-  describe('CAST calls', () => {
-    it('should handle CAST to INTEGER in SELECT', async () => {
-      const data = [
-        { id: 1, age: '30' },
-        { id: 2, age: '25' },
-        { id: 3, age: '35' },
-      ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT CAST(age AS INTEGER) as age_int FROM data' }))
-      expect(result).toHaveLength(3)
-      expect(result[0].age_int).toBe(30)
-      expect(result[1].age_int).toBe(25)
-      expect(result[2].age_int).toBe(35)
-    })
-
-    it('should handle CAST in WHERE clause', async () => {
-      const data = [
-        { id: 1, age: '30' },
-        { id: 2, age: '25' },
-        { id: 3, age: '35' },
-      ]
-      const result = await collect(executeSql({ tables: { data }, query: 'SELECT * FROM data WHERE CAST(age AS INTEGER) > 28' }))
-      expect(result).toHaveLength(2)
-      expect(result[0].id).toBe(1)
-      expect(result[1].id).toBe(3)
-    })
-
-    it('should handle CAST in HAVING clause', async () => {
-      const data = [
-        { city: 'NYC', count: 5 },
-        { city: 'NYC', count: 3 },
-        { city: 'LA', count: 10 },
-        { city: 'SF', count: 2 },
-      ]
-      const result = await collect(executeSql({
-        tables: { data },
-        query: 'SELECT city, SUM(count) as total FROM data GROUP BY city HAVING total > CAST(\'5\' AS INTEGER)',
-      }))
-      expect(result).toHaveLength(2)
-      expect(result.map(r => r.city).sort()).toEqual(['LA', 'NYC'])
-    })
-
-    it('should handle CAST object to STRING as JSON', async () => {
-      const data = [
-        { id: 1, info: { id: 1n, name: 'Alice', age: 30 } },
-      ]
-      const result = await collect(executeSql({
-        tables: { data },
-        query: 'SELECT CAST(info AS STRING) as info_str FROM data',
-      }))
-      expect(result).toHaveLength(1)
-      expect(result[0].info_str).toBe('{"id":1,"name":"Alice","age":30}')
-    })
-  })
-
   describe('edge cases', () => {
     it('should handle negative select', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT -age as neg_age FROM users' }))

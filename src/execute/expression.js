@@ -162,6 +162,50 @@ export async function evaluateExpr({ node, row, tables }) {
       return Math.random()
     }
 
+    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
+      if (args.length !== 2) throw new Error(`${funcName} requires exactly 2 arguments`)
+      let jsonArg = args[0]
+      const pathArg = args[1]
+      if (jsonArg == null || pathArg == null) return null
+
+      // Parse JSON if string, otherwise use directly
+      if (typeof jsonArg === 'string') {
+        try {
+          jsonArg = JSON.parse(jsonArg)
+        } catch {
+          throw new Error(`${funcName}: invalid JSON string`)
+        }
+      }
+      if (typeof jsonArg !== 'object') {
+        throw new Error(`${funcName}: first argument must be JSON string or object`)
+      }
+
+      // Parse path ("$.foo.bar[0].baz" or "foo.bar[0]")
+      const path = String(pathArg)
+      const normalizedPath = path.startsWith('$') ? path.slice(1) : path
+
+      // Navigate the path
+      let current = jsonArg
+      const segments = normalizedPath.match(/\.?([^.[]+)|\[(\d+)\]/g) || []
+      for (const segment of segments) {
+        if (current == null) return null
+        if (segment.startsWith('[')) {
+          // Array index access
+          const index = parseInt(segment.slice(1, -1), 10)
+          if (!Array.isArray(current)) return null
+          current = current[index]
+        } else {
+          // Property access
+          const key = segment.startsWith('.') ? segment.slice(1) : segment
+          if (typeof current !== 'object' || Array.isArray(current)) return null
+          current = current[key]
+        }
+      }
+
+      if (current == null) return null
+      return current
+    }
+
     throw new Error('Unsupported function ' + funcName)
   }
 

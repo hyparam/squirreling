@@ -148,7 +148,7 @@ export interface StarColumn {
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG'
 
-export type StringFunc = 'UPPER' | 'LOWER' | 'CONCAT' | 'LENGTH' | 'SUBSTRING' | 'SUBSTR' | 'TRIM' | 'REPLACE'
+export type StringFunc = 'UPPER' | 'LOWER' | 'CONCAT' | 'LENGTH' | 'SUBSTRING' | 'SUBSTR' | 'TRIM' | 'REPLACE' | 'JSON_VALUE' | 'JSON_QUERY'
 
 export interface AggregateArgStar {
   kind: 'star'
