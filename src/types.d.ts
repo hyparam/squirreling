@@ -27,7 +27,15 @@ export interface ExecuteSqlOptions {
   query: string
 }
 
-export type SqlPrimitive = string | number | bigint | boolean | SqlPrimitive[] | Record<string, any> | null
+export type SqlPrimitive =
+  | string
+  | number
+  | bigint
+  | boolean
+  | Date
+  | null
+  | SqlPrimitive[]
+  | Record<string, any>
 
 export interface SelectStatement {
   distinct: boolean
@@ -129,6 +137,14 @@ export interface SubqueryNode {
   subquery: SelectStatement
 }
 
+export type IntervalUnit = 'DAY' | 'MONTH' | 'YEAR' | 'HOUR' | 'MINUTE' | 'SECOND'
+
+export interface IntervalNode {
+  type: 'interval'
+  value: number
+  unit: IntervalUnit
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -141,6 +157,7 @@ export type ExprNode =
   | ExistsNode
   | CaseNode
   | SubqueryNode
+  | IntervalNode
 
 export interface StarColumn {
   kind: 'star'

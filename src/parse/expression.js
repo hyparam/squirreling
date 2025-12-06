@@ -1,11 +1,53 @@
-import { isAggregateFunc, isStringFunc } from '../validation.js'
+import { isAggregateFunc, isIntervalUnit, isStringFunc } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'
 import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
 
 /**
- * @import { ExprNode, ParserState, SelectStatement, WhenClause } from '../types.js'
+ * @import { ExprNode, IntervalNode, ParserState, SelectStatement, WhenClause } from '../types.js'
  */
+
+/**
+ * @param {ParserState} state
+ * @returns {IntervalNode}
+ */
+function parseInterval(state) {
+  consume(state) // INTERVAL
+
+  // Handle optional negative sign
+  let sign = 1
+  const signTok = current(state)
+  if (signTok.type === 'operator' && signTok.value === '-') {
+    consume(state)
+    sign = -1
+  }
+
+  // Get value (number or quoted string)
+  const valueTok = current(state)
+  let value
+  if (valueTok.type === 'number') {
+    consume(state)
+    value = sign * (valueTok.numericValue ?? 0)
+  } else if (valueTok.type === 'string') {
+    consume(state)
+    const parsed = parseFloat(valueTok.value)
+    if (isNaN(parsed)) {
+      throw new Error(`Invalid interval value "${valueTok.value}" at position ${valueTok.position}`)
+    }
+    value = sign * parsed
+  } else {
+    throw new Error(`Expected interval value but found "${valueTok.value}" at position ${valueTok.position}`)
+  }
+
+  // Get unit keyword
+  const unitTok = current(state)
+  if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
+    throw new Error(`Expected interval unit (DAY, MONTH, YEAR, HOUR, MINUTE, SECOND) but found "${unitTok.value}" at position ${unitTok.position}`)
+  }
+  consume(state)
+
+  return { type: 'interval', value, unit: unitTok.value }
+}
 
 /**
  * @param {ParserState} state
@@ -204,6 +246,9 @@ export function parsePrimary(state) {
         whenClauses,
         elseResult,
       }
+    }
+    if (tok.value === 'INTERVAL') {
+      return parseInterval(state)
     }
   }
 

@@ -76,5 +76,6 @@ console.log(allUsers)
 - `GROUP BY` and `HAVING` clauses
 - Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
 - String functions: `CONCAT`, `SUBSTRING`, `LENGTH`, `UPPER`, `LOWER`
+- Date functions: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
 - Json functions: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
 - Basic expressions and arithmetic operations

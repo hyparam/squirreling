@@ -41,6 +41,13 @@ const KEYWORDS = new Set([
   'FULL',
   'OUTER',
   'ON',
+  'INTERVAL',
+  'DAY',
+  'MONTH',
+  'YEAR',
+  'HOUR',
+  'MINUTE',
+  'SECOND',
 ])
 
 /**

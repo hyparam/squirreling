@@ -63,6 +63,11 @@ function parseSelectList(state) {
   return cols
 }
 
+// Keywords that can start a valid expression in SELECT
+const EXPRESSION_START_KEYWORDS = new Set([
+  'CASE', 'TRUE', 'FALSE', 'NULL', 'EXISTS', 'NOT', 'INTERVAL',
+])
+
 /**
  * @param {ParserState} state
  * @returns {SelectColumn}
@@ -70,7 +75,7 @@ function parseSelectList(state) {
 function parseSelectItem(state) {
   const tok = current(state)
 
-  if (tok.type === 'keyword' && tok.value !== 'CASE' || tok.type === 'eof') {
+  if (tok.type === 'keyword' && !EXPRESSION_START_KEYWORDS.has(tok.value) || tok.type === 'eof') {
     throw parseError(state, 'column name or expression')
   }
 

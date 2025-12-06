@@ -1,11 +1,19 @@
 
 /**
- * @import {AggregateFunc, BinaryOp, ComparisonOp, StringFunc} from './types.js'
+ * @import {AggregateFunc, BinaryOp, ComparisonOp, IntervalUnit, StringFunc} from './types.js'
  * @param {string} name
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
   return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG'].includes(name)
+}
+
+/**
+ * @param {string} name
+ * @returns {name is IntervalUnit}
+ */
+export function isIntervalUnit(name) {
+  return ['DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND'].includes(name)
 }
 
 /**

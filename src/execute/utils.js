@@ -134,6 +134,9 @@ export function defaultDerivedAlias(expr) {
   if (expr.type === 'function') {
     return expr.name.toLowerCase() + '_' + expr.args.map(defaultDerivedAlias).join('_')
   }
+  if (expr.type === 'interval') {
+    return `interval_${expr.value}_${expr.unit.toLowerCase()}`
+  }
   return 'expr'
 }
 

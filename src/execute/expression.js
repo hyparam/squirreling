@@ -1,8 +1,9 @@
+import { applyIntervalToDate } from './date.js'
 import { executeSelect } from './execute.js'
 import { applyBinaryOp, stringify } from './utils.js'
 
 /**
- * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource } from '../types.js'
+ * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource, IntervalUnit } from '../types.js'
  */
 
 /**
@@ -66,6 +67,16 @@ export async function evaluateExpr({ node, row, tables }) {
 
   // Binary operators
   if (node.type === 'binary') {
+    // Handle date +/- interval at AST level
+    if ((node.op === '+' || node.op === '-') && node.right.type === 'interval') {
+      const dateVal = await evaluateExpr({ node: node.left, row, tables })
+      return applyIntervalToDate(dateVal, node.right.value, node.right.unit, node.op)
+    }
+    if (node.op === '+' && node.left.type === 'interval') {
+      const dateVal = await evaluateExpr({ node: node.right, row, tables })
+      return applyIntervalToDate(dateVal, node.left.value, node.left.unit, '+')
+    }
+
     const left = await evaluateExpr({ node: node.left, row, tables })
 
     // Short-circuit evaluation for AND and OR
@@ -208,7 +219,7 @@ export async function evaluateExpr({ node, row, tables }) {
           throw new Error(`${funcName}: invalid JSON string`)
         }
       }
-      if (typeof jsonArg !== 'object') {
+      if (typeof jsonArg !== 'object' || jsonArg instanceof Date) {
         throw new Error(`${funcName}: first argument must be JSON string or object`)
       }
 
@@ -330,6 +341,12 @@ export async function evaluateExpr({ node, row, tables }) {
       return evaluateExpr({ node: node.elseResult, row, tables })
     }
     return null
+  }
+
+  // INTERVAL expressions should only appear as part of binary +/- operations
+  // which are handled above. A standalone interval is an error.
+  if (node.type === 'interval') {
+    throw new Error('INTERVAL can only be used with date arithmetic (+ or -)')
   }
 
   throw new Error('Unknown expression node type ' + node.type)
