@@ -162,6 +162,9 @@ export type StringFunc =
   | 'JSON_VALUE'
   | 'JSON_QUERY'
   | 'JSON_OBJECT'
+  | 'CURRENT_DATE'
+  | 'CURRENT_TIME'
+  | 'CURRENT_TIMESTAMP'
 
 export interface AggregateArgStar {
   kind: 'star'

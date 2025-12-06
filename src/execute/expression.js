@@ -162,6 +162,21 @@ export async function evaluateExpr({ node, row, tables }) {
       return Math.random()
     }
 
+    if (funcName === 'CURRENT_DATE') {
+      if (args.length !== 0) throw new Error('CURRENT_DATE takes no arguments')
+      return new Date().toISOString().split('T')[0]
+    }
+
+    if (funcName === 'CURRENT_TIME') {
+      if (args.length !== 0) throw new Error('CURRENT_TIME takes no arguments')
+      return new Date().toISOString().split('T')[1].replace('Z', '')
+    }
+
+    if (funcName === 'CURRENT_TIMESTAMP') {
+      if (args.length !== 0) throw new Error('CURRENT_TIMESTAMP takes no arguments')
+      return new Date().toISOString()
+    }
+
     if (funcName === 'JSON_OBJECT') {
       if (args.length % 2 !== 0) {
         throw new Error('JSON_OBJECT requires an even number of arguments (key-value pairs)')

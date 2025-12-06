@@ -27,6 +27,9 @@ export function isStringFunc(name) {
     'JSON_VALUE',
     'JSON_QUERY',
     'JSON_OBJECT',
+    'CURRENT_DATE',
+    'CURRENT_TIME',
+    'CURRENT_TIMESTAMP',
   ].includes(name)
 }
 

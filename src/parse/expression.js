@@ -99,6 +99,17 @@ export function parsePrimary(state) {
       }
     }
 
+    // Niladic datetime functions (no parentheses required per ANSI SQL)
+    const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP']
+    if (niladicFuncs.includes(tok.value)) {
+      consume(state)
+      return {
+        type: 'function',
+        name: tok.value,
+        args: [],
+      }
+    }
+
     consume(state)
     let name = tok.value
 
