@@ -1,4 +1,5 @@
 import { evaluateExpr } from './expression.js'
+import { stringify } from './utils.js'
 
 /**
  * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode } from '../types.js'
@@ -258,8 +259,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
     for (const rightRow of rightRows) {
       const keyValue = await evaluateExpr({ node: keys.rightKey, row: rightRow, tables })
       if (keyValue == null) continue // NULL keys never match
-      const keyStr = JSON.stringify(keyValue)
-
+      const keyStr = stringify(keyValue)
       let bucket = hashMap.get(keyStr)
       if (!bucket) {
         bucket = []
@@ -283,7 +283,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
       }
 
       const keyValue = await evaluateExpr({ node: keys.leftKey, row: leftRow, tables })
-      const keyStr = JSON.stringify(keyValue)
+      const keyStr = stringify(keyValue)
 
       const matchingRightRows = hashMap.get(keyStr)
 

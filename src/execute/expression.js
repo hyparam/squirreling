@@ -1,5 +1,5 @@
 import { executeSelect } from './execute.js'
-import { applyBinaryOp } from './utils.js'
+import { applyBinaryOp, stringify } from './utils.js'
 
 /**
  * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource } from '../types.js'
@@ -83,6 +83,7 @@ export async function evaluateExpr({ node, row, tables }) {
   // Function calls
   if (node.type === 'function') {
     const funcName = node.name.toUpperCase()
+    /** @type {SqlPrimitive[]} */
     const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, tables })))
 
     if (funcName === 'UPPER') {
@@ -102,8 +103,9 @@ export async function evaluateExpr({ node, row, tables }) {
     if (funcName === 'CONCAT') {
       if (args.length < 1) throw new Error('CONCAT requires at least 1 argument')
       // SQL CONCAT returns NULL if any argument is NULL
-      for (let i = 0; i < args.length; i += 1) {
-        if (args[i] == null) return null
+      if (args.some(a => a == null)) return null
+      if (args.some(a => typeof a === 'object')) {
+        throw new Error('CONCAT does not support object arguments')
       }
       return args.map(a => String(a)).join('')
     }
@@ -167,6 +169,12 @@ export async function evaluateExpr({ node, row, tables }) {
     const val = await evaluateExpr({ node: node.expr, row, tables })
     if (val == null) return null
     const toType = node.toType.toUpperCase()
+    if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
+      if (typeof val === 'object') return stringify(val)
+      return String(val)
+    }
+    // Can only cast primitives to other primitive types
+    if (typeof val === 'object') throw new Error(`Cannot CAST object to type ${node.toType}`)
     if (toType === 'INTEGER' || toType === 'INT') {
       const num = Number(val)
       if (isNaN(num)) return null
@@ -179,9 +187,6 @@ export async function evaluateExpr({ node, row, tables }) {
       const num = Number(val)
       if (isNaN(num)) return null
       return num
-    }
-    if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
-      return String(val)
     }
     if (toType === 'BOOLEAN' || toType === 'BOOL') {
       return Boolean(val)

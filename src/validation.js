@@ -5,7 +5,7 @@
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)
+  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG'].includes(name)
 }
 
 /**

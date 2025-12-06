@@ -27,7 +27,7 @@ export interface ExecuteSqlOptions {
   query: string
 }
 
-export type SqlPrimitive = string | number | bigint | boolean | null
+export type SqlPrimitive = string | number | bigint | boolean | SqlPrimitive[] | Record<string, any> | null
 
 export interface SelectStatement {
   distinct: boolean
@@ -146,7 +146,7 @@ export interface StarColumn {
   alias?: string
 }
 
-export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX'
+export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG'
 
 export type StringFunc = 'UPPER' | 'LOWER' | 'CONCAT' | 'LENGTH' | 'SUBSTRING' | 'SUBSTR' | 'TRIM' | 'REPLACE'
 

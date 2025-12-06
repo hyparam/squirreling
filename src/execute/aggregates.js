@@ -1,15 +1,15 @@
 import { evaluateExpr } from './expression.js'
-import { defaultDerivedAlias } from './utils.js'
+import { defaultDerivedAlias, stringify } from './utils.js'
 
 /**
  * Evaluates an aggregate function over a set of rows
  *
- * @import { AggregateColumn, AsyncDataSource, ExprNode, AsyncRow } from '../types.js'
+ * @import { AggregateColumn, AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
  * @param {Object} options
  * @param {AggregateColumn} options.col - aggregate column definition
  * @param {AsyncRow[]} options.rows - rows to aggregate
  * @param {Record<string, AsyncDataSource>} options.tables
- * @returns {Promise<number | null>} aggregated result
+ * @returns {Promise<SqlPrimitive>} aggregated result
  */
 export async function evaluateAggregate({ col, rows, tables }) {
   const { arg, func } = col
@@ -68,6 +68,31 @@ export async function evaluateAggregate({ col, rows, tables }) {
     if (func === 'AVG') return count === 0 ? null : sum / count
     if (func === 'MIN') return min
     if (func === 'MAX') return max
+  }
+
+  if (func === 'JSON_ARRAYAGG') {
+    if (arg.kind === 'star') {
+      throw new Error('JSON_ARRAYAGG(*) is not supported, use a column name or expression')
+    }
+    /** @type {SqlPrimitive[]} */
+    const values = []
+    if (arg.quantifier === 'distinct') {
+      const seen = new Set()
+      for (const row of rows) {
+        const v = await evaluateExpr({ node: arg.expr, row, tables })
+        const key = stringify(v)
+        if (!seen.has(key)) {
+          seen.add(key)
+          values.push(v)
+        }
+      }
+    } else {
+      for (const row of rows) {
+        const v = await evaluateExpr({ node: arg.expr, row, tables })
+        values.push(v)
+      }
+    }
+    return values
   }
 
   throw new Error('Unsupported aggregate function ' + func)

@@ -217,6 +217,18 @@ describe('executeSql', () => {
       expect(result).toHaveLength(2)
       expect(result.map(r => r.city).sort()).toEqual(['LA', 'NYC'])
     })
+
+    it('should handle CAST object to STRING as JSON', async () => {
+      const data = [
+        { id: 1, info: { id: 1n, name: 'Alice', age: 30 } },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT CAST(info AS STRING) as info_str FROM data',
+      }))
+      expect(result).toHaveLength(1)
+      expect(result[0].info_str).toBe('{"id":1,"name":"Alice","age":30}')
+    })
   })
 
   describe('edge cases', () => {

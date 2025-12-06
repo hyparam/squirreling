@@ -1,14 +1,14 @@
 import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { parseSql } from '../parse/parse.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
+import { extractColumns } from './columns.js'
 import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
 import { executeJoins } from './join.js'
-import { compareForTerm, defaultDerivedAlias } from './utils.js'
-import { extractColumns } from './columns.js'
+import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
 
 /**
- * @import { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ExprNode, OrderByItem, QueryHints, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { AsyncDataSource, AsyncRow, ExecuteSqlOptions, OrderByItem, QueryHints, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -85,7 +85,7 @@ async function stableRowKey(row) {
   const parts = []
   for (const k of keys) {
     const v = await row[k]()
-    parts.push(k + ':' + JSON.stringify(v))
+    parts.push(k + ':' + stringify(v))
   }
   return parts.join('|')
 }
@@ -358,7 +358,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
         const keyParts = []
         for (const expr of select.groupBy) {
           const v = await evaluateExpr({ node: expr, row, tables })
-          keyParts.push(JSON.stringify(v))
+          keyParts.push(stringify(v))
         }
         const key = keyParts.join('|')
         let group = map.get(key)

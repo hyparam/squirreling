@@ -121,3 +121,17 @@ export function defaultDerivedAlias(expr) {
   }
   return 'expr'
 }
+
+/**
+ * @param {SqlPrimitive} value
+ * @returns {string}
+ */
+export function stringify(value) {
+  if (value == null) return 'NULL'
+  return JSON.stringify(value, (_, val) => {
+    if (typeof val === 'bigint') {
+      return val <= Number.MAX_SAFE_INTEGER ? Number(val) : val.toString()
+    }
+    return val
+  })
+}
