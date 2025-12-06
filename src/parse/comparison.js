@@ -1,5 +1,5 @@
 import { isBinaryOp } from '../validation.js'
-import { parseExpression, parsePrimary, parseSubquery } from './expression.js'
+import { parseAdditive, parseExpression, parseSubquery } from './expression.js'
 import { consume, current, expect, match, peekToken } from './state.js'
 
 /**
@@ -11,7 +11,7 @@ import { consume, current, expect, match, peekToken } from './state.js'
  * @returns {ExprNode}
  */
 export function parseComparison(state) {
-  const left = parsePrimary(state)
+  const left = parseAdditive(state)
   const tok = current(state)
 
   // IS [NOT] NULL
@@ -41,7 +41,7 @@ export function parseComparison(state) {
     if (nextTok.type === 'keyword' && nextTok.value === 'LIKE') {
       consume(state) // NOT
       consume(state) // LIKE
-      const right = parsePrimary(state)
+      const right = parseAdditive(state)
       return {
         type: 'unary',
         op: 'NOT',
@@ -57,7 +57,7 @@ export function parseComparison(state) {
 
   if (tok.type === 'keyword' && tok.value === 'LIKE') {
     consume(state)
-    const right = parsePrimary(state)
+    const right = parseAdditive(state)
     return {
       type: 'binary',
       op: 'LIKE',
@@ -72,9 +72,9 @@ export function parseComparison(state) {
     if (nextTok.type === 'keyword' && nextTok.value === 'BETWEEN') {
       consume(state) // NOT
       consume(state) // BETWEEN
-      const lower = parsePrimary(state)
+      const lower = parseAdditive(state)
       expect(state, 'keyword', 'AND')
-      const upper = parsePrimary(state)
+      const upper = parseAdditive(state)
       // NOT BETWEEN -> expr < lower OR expr > upper
       return {
         type: 'binary',
@@ -87,9 +87,9 @@ export function parseComparison(state) {
 
   if (tok.type === 'keyword' && tok.value === 'BETWEEN') {
     consume(state)
-    const lower = parsePrimary(state)
+    const lower = parseAdditive(state)
     expect(state, 'keyword', 'AND')
-    const upper = parsePrimary(state)
+    const upper = parseAdditive(state)
     // BETWEEN -> expr >= lower AND expr <= upper
     return {
       type: 'binary',
@@ -186,7 +186,7 @@ export function parseComparison(state) {
 
   if (tok.type === 'operator' && isBinaryOp(tok.value)) {
     consume(state)
-    const right = parsePrimary(state)
+    const right = parseAdditive(state)
     return {
       type: 'binary',
       op: tok.value,

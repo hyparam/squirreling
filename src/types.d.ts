@@ -54,7 +54,9 @@ export interface FromSubquery {
   alias: string
 }
 
-export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp
+export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'
+
+export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp | ArithmeticOp
 
 export type ComparisonOp = '=' | '!=' | '<>' | '<' | '>' | '<=' | '>='
 
@@ -148,7 +150,18 @@ export interface StarColumn {
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG'
 
-export type StringFunc = 'UPPER' | 'LOWER' | 'CONCAT' | 'LENGTH' | 'SUBSTRING' | 'SUBSTR' | 'TRIM' | 'REPLACE' | 'JSON_VALUE' | 'JSON_QUERY'
+export type StringFunc =
+  | 'UPPER'
+  | 'LOWER'
+  | 'CONCAT'
+  | 'LENGTH'
+  | 'SUBSTRING'
+  | 'SUBSTR'
+  | 'TRIM'
+  | 'REPLACE'
+  | 'JSON_VALUE'
+  | 'JSON_QUERY'
+  | 'JSON_OBJECT'
 
 export interface AggregateArgStar {
   kind: 'star'

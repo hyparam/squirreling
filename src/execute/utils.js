@@ -3,14 +3,27 @@
  */
 
 /**
- * Compares two values with the given operator, handling nulls according to SQL semantics
+ * Applies a binary operator to two values, handling nulls according to SQL semantics
  *
  * @param {BinaryOp} op
  * @param {SqlPrimitive} a
  * @param {SqlPrimitive} b
- * @returns {boolean}
+ * @returns {SqlPrimitive}
  */
 export function applyBinaryOp(op, a, b) {
+  // Arithmetic operators return null if either operand is null
+  if (op === '+' || op === '-' || op === '*' || op === '/' || op === '%') {
+    if (a == null || b == null) return null
+    const numA = Number(a)
+    const numB = Number(b)
+    if (op === '+') return numA + numB
+    if (op === '-') return numA - numB
+    if (op === '*') return numA * numB
+    if (op === '/') return numB === 0 ? null : numA / numB
+    if (op === '%') return numB === 0 ? null : numA % numB
+  }
+
+  // Comparison and logical operators
   if (a == null || b == null) {
     return false
   }
@@ -33,6 +46,8 @@ export function applyBinaryOp(op, a, b) {
     const regex = new RegExp(`^${regexPattern}$`, 'i')
     return regex.test(str)
   }
+
+  return null
 }
 
 /**

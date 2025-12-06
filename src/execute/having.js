@@ -41,7 +41,7 @@ export async function evaluateHavingExpr(expr, row, group, tables) {
     }
 
     const right = await evaluateHavingValue(expr.right, context, group, tables)
-    return applyBinaryOp(expr.op, left, right)
+    return Boolean(applyBinaryOp(expr.op, left, right))
   }
 
   if (expr.type === 'unary') {

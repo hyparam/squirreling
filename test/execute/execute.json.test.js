@@ -318,6 +318,15 @@ describe('string functions', () => {
       expect(result[0]).toHaveProperty('json_object_a_1')
     })
 
+    it('should work with expressions as values', async () => {
+      const data = [{ id: 1, price: 100 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_OBJECT(\'doubled\', price * 2) AS obj FROM data',
+      }))
+      expect(result).toEqual([{ obj: { doubled: 200 } }])
+    })
+
     it('should support nested JSON_OBJECT calls', async () => {
       const data = [{ id: 1 }]
       const result = await collect(executeSql({

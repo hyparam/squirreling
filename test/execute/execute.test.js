@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
+/** @type {null} */
+const NULL = null
+
 describe('executeSql', () => {
   const users = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
@@ -323,6 +326,169 @@ describe('executeSql', () => {
       expect(result).toHaveLength(5)
       expect(result[0]).toEqual({ name: 'Alice', city_full: 'New York' })
       expect(result[1]).toEqual({ name: 'Bob', city_full: 'Los Angeles' })
+    })
+  })
+
+  describe('arithmetic expressions', () => {
+    it('should handle addition', async () => {
+      const data = [{ a: 10, b: 3 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a + b AS sum FROM data',
+      }))
+      expect(result).toEqual([{ sum: 13 }])
+    })
+
+    it('should handle subtraction', async () => {
+      const data = [{ a: 10, b: 3 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a - b AS diff FROM data',
+      }))
+      expect(result).toEqual([{ diff: 7 }])
+    })
+
+    it('should handle multiplication', async () => {
+      const data = [{ a: 10, b: 3 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a * b AS product FROM data',
+      }))
+      expect(result).toEqual([{ product: 30 }])
+    })
+
+    it('should handle division', async () => {
+      const data = [{ a: 10, b: 4 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a / b AS quotient FROM data',
+      }))
+      expect(result).toEqual([{ quotient: 2.5 }])
+    })
+
+    it('should handle modulo', async () => {
+      const data = [{ a: 10, b: 3 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a % b AS remainder FROM data',
+      }))
+      expect(result).toEqual([{ remainder: 1 }])
+    })
+
+    it('should respect operator precedence (multiplication before addition)', async () => {
+      const data = [{ a: 2, b: 3, c: 4 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a + b * c AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: 14 }]) // 2 + (3 * 4) = 14, not (2 + 3) * 4 = 20
+    })
+
+    it('should respect parentheses for grouping', async () => {
+      const data = [{ a: 2, b: 3, c: 4 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT (a + b) * c AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: 20 }]) // (2 + 3) * 4 = 20
+    })
+
+    it('should handle chained operations', async () => {
+      const data = [{ x: 100 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT x / 2 / 5 AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: 10 }]) // 100 / 2 / 5 = 10
+    })
+
+    it('should handle arithmetic in WHERE clause', async () => {
+      const data = [
+        { id: 1, price: 100, quantity: 2 },
+        { id: 2, price: 50, quantity: 5 },
+        { id: 3, price: 30, quantity: 3 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE price * quantity > 150',
+      }))
+      expect(result).toEqual([{ id: 1 }, { id: 2 }])
+    })
+
+    it('should handle arithmetic with literals', async () => {
+      const data = [{ value: 10 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT value * 2 + 5 AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: 25 }])
+    })
+
+    it('should return null for division by zero', async () => {
+      const data = [{ a: 10, b: 0 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a / b AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: null }])
+    })
+
+    it('should return null for modulo by zero', async () => {
+      const data = [{ a: 10, b: 0 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a % b AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: null }])
+    })
+
+    it('should propagate null in arithmetic', async () => {
+      const data = [{ a: 10, b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a + b AS sum, a * b AS product FROM data',
+      }))
+      expect(result).toEqual([{ sum: null, product: null }])
+    })
+
+    it('should handle complex nested arithmetic', async () => {
+      const data = [{ a: 10, b: 5, c: 2 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ((a + b) * c - a) / b AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: 4 }]) // ((10 + 5) * 2 - 10) / 5 = (30 - 10) / 5 = 4
+    })
+
+    it('should handle arithmetic comparison in WHERE', async () => {
+      const data = [
+        { id: 1, a: 5, b: 3 },
+        { id: 2, a: 10, b: 2 },
+        { id: 3, a: 8, b: 4 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE a - b > 5',
+      }))
+      expect(result).toEqual([{ id: 2 }])
+    })
+
+    it('should handle arithmetic with negative numbers', async () => {
+      const data = [{ a: -5, b: 3 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a * b AS product, a + b AS sum FROM data',
+      }))
+      expect(result).toEqual([{ product: -15, sum: -2 }])
+    })
+
+    it('should handle arithmetic with floating point', async () => {
+      const data = [{ a: 1.5, b: 2.5 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a + b AS sum, a * b AS product FROM data',
+      }))
+      expect(result).toEqual([{ sum: 4, product: 3.75 }])
     })
   })
 })

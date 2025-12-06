@@ -273,6 +273,54 @@ function parseNot(state) {
 }
 
 /**
+ * @param {ParserState} state
+ * @returns {ExprNode}
+ */
+export function parseAdditive(state) {
+  let node = parseMultiplicative(state)
+  while (true) {
+    const tok = current(state)
+    if (tok.type === 'operator' && (tok.value === '+' || tok.value === '-')) {
+      consume(state)
+      const right = parseMultiplicative(state)
+      node = {
+        type: 'binary',
+        op: tok.value,
+        left: node,
+        right,
+      }
+    } else {
+      break
+    }
+  }
+  return node
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {ExprNode}
+ */
+function parseMultiplicative(state) {
+  let node = parsePrimary(state)
+  while (true) {
+    const tok = current(state)
+    if (tok.type === 'operator' && (tok.value === '*' || tok.value === '/' || tok.value === '%')) {
+      consume(state)
+      const right = parsePrimary(state)
+      node = {
+        type: 'binary',
+        op: tok.value,
+        left: node,
+        right,
+      }
+    } else {
+      break
+    }
+  }
+  return node
+}
+
+/**
  * Creates an ExprCursor adapter for the ParserState.
  *
  * @param {ParserState} state
