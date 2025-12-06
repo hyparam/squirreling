@@ -162,6 +162,23 @@ export async function evaluateExpr({ node, row, tables }) {
       return Math.random()
     }
 
+    if (funcName === 'JSON_OBJECT') {
+      if (args.length % 2 !== 0) {
+        throw new Error('JSON_OBJECT requires an even number of arguments (key-value pairs)')
+      }
+      /** @type {Record<string, SqlPrimitive>} */
+      const result = {}
+      for (let i = 0; i < args.length; i += 2) {
+        const key = args[i]
+        const value = args[i + 1]
+        if (key == null) {
+          throw new Error('JSON_OBJECT: key cannot be null')
+        }
+        result[String(key)] = value
+      }
+      return result
+    }
+
     if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
       if (args.length !== 2) throw new Error(`${funcName} requires exactly 2 arguments`)
       let jsonArg = args[0]

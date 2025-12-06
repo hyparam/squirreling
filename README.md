@@ -67,3 +67,14 @@ const allUsers: Record<string, SqlPrimitive>[] = await collect(executeSql({
 }))
 console.log(allUsers)
 ```
+
+## Supported SQL Features
+
+- `SELECT` statements with `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
+- Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
+- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`
+- `GROUP BY` and `HAVING` clauses
+- Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
+- String functions: `CONCAT`, `SUBSTRING`, `LENGTH`, `UPPER`, `LOWER`
+- Json functions: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
+- Basic expressions and arithmetic operations

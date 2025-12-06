@@ -13,7 +13,21 @@ export function isAggregateFunc(name) {
  * @returns {name is StringFunc}
  */
 export function isStringFunc(name) {
-  return ['UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM', 'REPLACE', 'RANDOM', 'RAND', 'JSON_VALUE', 'JSON_QUERY'].includes(name)
+  return [
+    'UPPER',
+    'LOWER',
+    'CONCAT',
+    'LENGTH',
+    'SUBSTRING',
+    'SUBSTR',
+    'TRIM',
+    'REPLACE',
+    'RANDOM',
+    'RAND',
+    'JSON_VALUE',
+    'JSON_QUERY',
+    'JSON_OBJECT',
+  ].includes(name)
 }
 
 /**
