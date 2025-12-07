@@ -1,3 +1,5 @@
+import { syntaxError } from '../errors.js'
+
 /**
  * @import { ParserState, Token, TokenType } from '../types.js'
  */
@@ -86,7 +88,7 @@ export function expectIdentifier(state) {
 export function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
-  const after = prevToken ? ` after "${prevToken.originalValue ?? prevToken.value}"` : ''
-  const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  return new Error(`Expected ${expected}${after} but found ${found} at position ${tok.position}`)
+  const after = prevToken ? prevToken.originalValue ?? prevToken.value : undefined
+  const received = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
+  return syntaxError({ expected, received, position: tok.position, after })
 }

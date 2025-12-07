@@ -1,3 +1,4 @@
+import { missingClauseError, tableNotFoundError, unsupportedOperationError } from '../errors.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { parseSql } from '../parse/parse.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
@@ -22,7 +23,10 @@ export async function* executeSql({ tables, query }) {
 
   // Check for unsupported operations
   if (!select.from) {
-    throw new Error('FROM clause is required')
+    throw missingClauseError({
+      missing: 'FROM clause',
+      context: 'SELECT statement',
+    })
   }
 
   // Normalize tables: convert arrays to AsyncDataSource
@@ -57,7 +61,7 @@ export async function* executeSelect(select, tables) {
     fromTableName = select.from.alias ?? select.from.table
     dataSource = tables[select.from.table]
     if (dataSource === undefined) {
-      throw new Error(`Table "${select.from.table}" not found`)
+      throw tableNotFoundError(select.from.table)
     }
   } else {
     // Nested subquery - recursively resolve
@@ -375,7 +379,10 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
 
     const hasStar = select.columns.some(col => col.kind === 'star')
     if (hasStar && hasAggregate) {
-      throw new Error('SELECT * with aggregate functions is not supported in this implementation')
+      throw unsupportedOperationError(
+        'SELECT * with aggregate functions is not supported',
+        'Replace * with specific column names when using aggregate functions.'
+      )
     }
 
     for (const group of groups) {

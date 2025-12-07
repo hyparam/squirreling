@@ -1,3 +1,9 @@
+import {
+  invalidLiteralError,
+  missingClauseError,
+  syntaxError,
+  unknownFunctionError,
+} from '../errors.js'
 import { isAggregateFunc, isIntervalUnit, isStringFunc } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'
@@ -32,17 +38,22 @@ function parseInterval(state) {
     consume(state)
     const parsed = parseFloat(valueTok.value)
     if (isNaN(parsed)) {
-      throw new Error(`Invalid interval value "${valueTok.value}" at position ${valueTok.position}`)
+      throw invalidLiteralError({ type: 'interval value', value: valueTok.value, position: valueTok.position })
     }
     value = sign * parsed
   } else {
-    throw new Error(`Expected interval value but found "${valueTok.value}" at position ${valueTok.position}`)
+    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, position: valueTok.position })
   }
 
   // Get unit keyword
   const unitTok = current(state)
   if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
-    throw new Error(`Expected interval unit (DAY, MONTH, YEAR, HOUR, MINUTE, SECOND) but found "${unitTok.value}" at position ${unitTok.position}`)
+    throw invalidLiteralError({
+      type: 'interval unit',
+      value: unitTok.value,
+      position: unitTok.position,
+      validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
+    })
   }
   consume(state)
 
@@ -106,7 +117,7 @@ export function parsePrimary(state) {
 
       // validate function names
       if (!isStringFunc(funcName) && !isAggregateFunc(funcName)) {
-        throw new Error(`Unknown function "${funcName}" at position ${tok.position}`)
+        throw unknownFunctionError(funcName, tok.position)
       }
 
       consume(state) // function name
@@ -228,7 +239,10 @@ export function parsePrimary(state) {
       }
 
       if (whenClauses.length === 0) {
-        throw new Error('CASE expression must have at least one WHEN clause')
+        throw missingClauseError({
+          missing: 'at least one WHEN clause',
+          context: 'CASE expression',
+        })
       }
 
       // Parse optional ELSE clause
@@ -263,7 +277,7 @@ export function parsePrimary(state) {
   }
 
   const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  throw new Error(`Expected expression but found ${found} at position ${tok.position}`)
+  throw syntaxError({ expected: 'expression', received: found, position: tok.position })
 }
 
 /**

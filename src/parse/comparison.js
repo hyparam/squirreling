@@ -1,3 +1,4 @@
+import { syntaxError } from '../errors.js'
 import { isBinaryOp } from '../validation.js'
 import { parseAdditive, parseExpression, parseSubquery } from './expression.js'
 import { consume, current, expect, match, peekToken } from './state.js'
@@ -110,7 +111,7 @@ export function parseComparison(state) {
       // parseSubquery expects to consume the opening paren itself
       const parenTok = current(state)
       if (parenTok.type !== 'paren' || parenTok.value !== '(') {
-        throw new Error('Expected ( after IN')
+        throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, position: parenTok.position, after: 'IN' })
       }
       const peekTok = peekToken(state, 1)
       if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
@@ -155,7 +156,7 @@ export function parseComparison(state) {
     // parseSubquery expects to consume the opening paren itself
     const parenTok = current(state)
     if (parenTok.type !== 'paren' || parenTok.value !== '(') {
-      throw new Error('Expected ( after IN')
+      throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, position: parenTok.position, after: 'IN' })
     }
     const peekTok = peekToken(state, 1)
     if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {

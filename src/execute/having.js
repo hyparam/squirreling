@@ -1,3 +1,4 @@
+import { unknownFunctionError } from '../errors.js'
 import { isAggregateFunc } from '../validation.js'
 import { evaluateExpr } from './expression.js'
 import { applyBinaryOp } from './utils.js'
@@ -152,5 +153,5 @@ async function evaluateAggregateFunction(funcName, args, group, tables) {
     return max
   }
 
-  throw new Error('Unsupported aggregate function: ' + funcName)
+  throw unknownFunctionError(funcName, undefined, 'COUNT, SUM, AVG, MIN, MAX')
 }

@@ -1,3 +1,10 @@
+import {
+  argCountError,
+  argValueError,
+  castError,
+  invalidContextError,
+  unknownFunctionError,
+} from '../errors.js'
 import { applyIntervalToDate } from './date.js'
 import { executeSelect } from './execute.js'
 import { applyBinaryOp, stringify } from './utils.js'
@@ -98,31 +105,35 @@ export async function evaluateExpr({ node, row, tables }) {
     const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, tables })))
 
     if (funcName === 'UPPER') {
-      if (args.length !== 1) throw new Error('UPPER requires exactly 1 argument')
+      if (args.length !== 1) throw argCountError('UPPER', 1, args.length)
       const val = args[0]
       if (val == null) return null
       return String(val).toUpperCase()
     }
 
     if (funcName === 'LOWER') {
-      if (args.length !== 1) throw new Error('LOWER requires exactly 1 argument')
+      if (args.length !== 1) throw argCountError('LOWER', 1, args.length)
       const val = args[0]
       if (val == null) return null
       return String(val).toLowerCase()
     }
 
     if (funcName === 'CONCAT') {
-      if (args.length < 1) throw new Error('CONCAT requires at least 1 argument')
+      if (args.length < 1) throw argCountError('CONCAT', 'at least 1', args.length)
       // SQL CONCAT returns NULL if any argument is NULL
       if (args.some(a => a == null)) return null
       if (args.some(a => typeof a === 'object')) {
-        throw new Error('CONCAT does not support object arguments')
+        throw argValueError({
+          funcName: 'CONCAT',
+          message: 'does not support object arguments',
+          hint: 'Use CAST to convert objects to strings first.',
+        })
       }
       return args.map(a => String(a)).join('')
     }
 
     if (funcName === 'LENGTH') {
-      if (args.length !== 1) throw new Error('LENGTH requires exactly 1 argument')
+      if (args.length !== 1) throw argCountError('LENGTH', 1, args.length)
       const val = args[0]
       if (val == null) return null
       return String(val).length
@@ -130,21 +141,28 @@ export async function evaluateExpr({ node, row, tables }) {
 
     if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
       if (args.length < 2 || args.length > 3) {
-        throw new Error(`${funcName} requires 2 or 3 arguments`)
+        throw argCountError(funcName, '2 or 3', args.length)
       }
       const str = args[0]
       if (str == null) return null
       const strVal = String(str)
       const start = Number(args[1])
       if (!Number.isInteger(start) || start < 1) {
-        throw new Error(`${funcName} start position must be a positive integer`)
+        throw argValueError({
+          funcName,
+          message: `start position must be a positive integer, got ${args[1]}`,
+          hint: 'SQL uses 1-based indexing.',
+        })
       }
       // SQL uses 1-based indexing
       const startIdx = start - 1
       if (args.length === 3) {
         const len = Number(args[2])
         if (!Number.isInteger(len) || len < 0) {
-          throw new Error(`${funcName} length must be a non-negative integer`)
+          throw argValueError({
+            funcName,
+            message: `length must be a non-negative integer, got ${args[2]}`,
+          })
         }
         return strVal.substring(startIdx, startIdx + len)
       }
@@ -152,14 +170,14 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'TRIM') {
-      if (args.length !== 1) throw new Error('TRIM requires exactly 1 argument')
+      if (args.length !== 1) throw argCountError('TRIM', 1, args.length)
       const val = args[0]
       if (val == null) return null
       return String(val).trim()
     }
 
     if (funcName === 'REPLACE') {
-      if (args.length !== 3) throw new Error('REPLACE requires exactly 3 arguments')
+      if (args.length !== 3) throw argCountError('REPLACE', 3, args.length)
       const str = args[0]
       const searchStr = args[1]
       const replaceStr = args[2]
@@ -169,28 +187,28 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'RANDOM' || funcName === 'RAND') {
-      if (args.length !== 0) throw new Error(`${funcName} takes no arguments`)
+      if (args.length !== 0) throw argCountError(funcName, 0, args.length)
       return Math.random()
     }
 
     if (funcName === 'CURRENT_DATE') {
-      if (args.length !== 0) throw new Error('CURRENT_DATE takes no arguments')
+      if (args.length !== 0) throw argCountError('CURRENT_DATE', 0, args.length)
       return new Date().toISOString().split('T')[0]
     }
 
     if (funcName === 'CURRENT_TIME') {
-      if (args.length !== 0) throw new Error('CURRENT_TIME takes no arguments')
+      if (args.length !== 0) throw argCountError('CURRENT_TIME', 0, args.length)
       return new Date().toISOString().split('T')[1].replace('Z', '')
     }
 
     if (funcName === 'CURRENT_TIMESTAMP') {
-      if (args.length !== 0) throw new Error('CURRENT_TIMESTAMP takes no arguments')
+      if (args.length !== 0) throw argCountError('CURRENT_TIMESTAMP', 0, args.length)
       return new Date().toISOString()
     }
 
     if (funcName === 'JSON_OBJECT') {
       if (args.length % 2 !== 0) {
-        throw new Error('JSON_OBJECT requires an even number of arguments (key-value pairs)')
+        throw argCountError('JSON_OBJECT', 'even number', args.length)
       }
       /** @type {Record<string, SqlPrimitive>} */
       const result = {}
@@ -198,7 +216,11 @@ export async function evaluateExpr({ node, row, tables }) {
         const key = args[i]
         const value = args[i + 1]
         if (key == null) {
-          throw new Error('JSON_OBJECT: key cannot be null')
+          throw argValueError({
+            funcName: 'JSON_OBJECT',
+            message: 'key cannot be null',
+            hint: 'All keys must be non-null values.',
+          })
         }
         result[String(key)] = value
       }
@@ -206,7 +228,7 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
-      if (args.length !== 2) throw new Error(`${funcName} requires exactly 2 arguments`)
+      if (args.length !== 2) throw argCountError(funcName, 2, args.length)
       let jsonArg = args[0]
       const pathArg = args[1]
       if (jsonArg == null || pathArg == null) return null
@@ -216,11 +238,18 @@ export async function evaluateExpr({ node, row, tables }) {
         try {
           jsonArg = JSON.parse(jsonArg)
         } catch {
-          throw new Error(`${funcName}: invalid JSON string`)
+          throw argValueError({
+            funcName,
+            message: 'invalid JSON string',
+            hint: 'First argument must be valid JSON.',
+          })
         }
       }
       if (typeof jsonArg !== 'object' || jsonArg instanceof Date) {
-        throw new Error(`${funcName}: first argument must be JSON string or object`)
+        throw argValueError({
+          funcName,
+          message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
+        })
       }
 
       // Parse path ("$.foo.bar[0].baz" or "foo.bar[0]")
@@ -249,7 +278,7 @@ export async function evaluateExpr({ node, row, tables }) {
       return current
     }
 
-    throw new Error('Unsupported function ' + funcName)
+    throw unknownFunctionError(funcName)
   }
 
   if (node.type === 'cast') {
@@ -261,7 +290,7 @@ export async function evaluateExpr({ node, row, tables }) {
       return String(val)
     }
     // Can only cast primitives to other primitive types
-    if (typeof val === 'object') throw new Error(`Cannot CAST object to type ${node.toType}`)
+    if (typeof val === 'object') throw castError(node.toType, 'object')
     if (toType === 'INTEGER' || toType === 'INT') {
       const num = Number(val)
       if (isNaN(num)) return null
@@ -278,7 +307,7 @@ export async function evaluateExpr({ node, row, tables }) {
     if (toType === 'BOOLEAN' || toType === 'BOOL') {
       return Boolean(val)
     }
-    throw new Error('Unsupported CAST to type ' + node.toType)
+    throw castError(node.toType)
   }
 
   // IN and NOT IN with value lists
@@ -346,8 +375,11 @@ export async function evaluateExpr({ node, row, tables }) {
   // INTERVAL expressions should only appear as part of binary +/- operations
   // which are handled above. A standalone interval is an error.
   if (node.type === 'interval') {
-    throw new Error('INTERVAL can only be used with date arithmetic (+ or -)')
+    throw invalidContextError({
+      item: 'INTERVAL',
+      validContext: 'date arithmetic (+ or -)',
+    })
   }
 
-  throw new Error('Unknown expression node type ' + node.type)
+  throw new Error(`Unknown expression node type: ${node.type}. This is an internal error - the query may contain unsupported syntax.`)
 }

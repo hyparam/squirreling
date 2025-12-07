@@ -137,7 +137,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT JSON_VALUE(json, \'$.name\') AS name FROM data' })))
-        .rejects.toThrow('JSON_VALUE: invalid JSON string')
+        .rejects.toThrow('JSON_VALUE(expression, path): invalid JSON string')
     })
 
     it('should throw when first argument is neither string nor object', async () => {
@@ -145,7 +145,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT JSON_VALUE(num, \'$.name\') AS name FROM data' })))
-        .rejects.toThrow('JSON_VALUE: first argument must be JSON string or object')
+        .rejects.toThrow('JSON_VALUE(expression, path): first argument must be JSON string or object')
     })
 
     it('should return null when array index is out of bounds', async () => {
@@ -247,7 +247,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT JSON_OBJECT(key, \'value\') AS obj FROM data',
-      }))).rejects.toThrow('JSON_OBJECT: key cannot be null')
+      }))).rejects.toThrow('JSON_OBJECT(key1, value1[, ...]): key cannot be null')
     })
 
     it('should throw for odd number of arguments', async () => {
@@ -255,7 +255,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT JSON_OBJECT(\'name\', \'Alice\', \'age\') AS obj FROM data',
-      }))).rejects.toThrow('JSON_OBJECT requires an even number of arguments (key-value pairs)')
+      }))).rejects.toThrow('JSON_OBJECT(key1, value1[, ...]) function requires even number arguments, got 3')
     })
 
     it('should convert numeric keys to strings', async () => {

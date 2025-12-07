@@ -203,7 +203,7 @@ describe('tokenize', () => {
   })
 
   it('should throw error on invalid number', () => {
-    expect(() => tokenize('12.34n')).toThrow('Invalid number at position 0: 12.34n')
+    expect(() => tokenize('12.34n')).toThrow('Invalid number 12.34n at position 0')
   })
 
   it('should throw error on unexpected character', () => {

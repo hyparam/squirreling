@@ -1,3 +1,9 @@
+import {
+  invalidLiteralError,
+  unexpectedCharError,
+  unterminatedError,
+} from '../errors.js'
+
 /**
  * @import { Token } from '../types.d.ts'
  */
@@ -132,11 +138,11 @@ export function tokenize(sql) {
         }
       }
       if (isAlpha(peek())) {
-        throw new Error(`Invalid number at position ${pos}: ${text}${peek()}`)
+        throw invalidLiteralError({ type: 'number', value: text + peek(), position: pos })
       }
       const num = parseFloat(text)
       if (isNaN(num)) {
-        throw new Error(`Invalid number at position ${pos}: ${text}`)
+        throw invalidLiteralError({ type: 'number', value: text, position: pos })
       }
       tokens.push({
         type: 'number',
@@ -177,7 +183,7 @@ export function tokenize(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw new Error(`Unterminated string literal starting at position ${pos}`)
+          throw unterminatedError('string', pos)
         }
         const c = nextChar()
         if (c === quote) {
@@ -205,7 +211,7 @@ export function tokenize(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw new Error(`Unterminated identifier starting at position ${pos}`)
+          throw unterminatedError('identifier', pos)
         }
         const c = nextChar()
         if (c === quote) {
@@ -295,9 +301,9 @@ export function tokenize(sql) {
     }
 
     if (tokens.length === 0) {
-      throw new Error(`Expected SELECT but found "${ch}" at position ${pos}`)
+      throw unexpectedCharError(ch, pos, true)
     }
-    throw new Error(`Unexpected character "${ch}" at position ${pos}`)
+    throw unexpectedCharError(ch, pos)
   }
 
   tokens.push({

@@ -1,3 +1,4 @@
+import { missingClauseError, tableNotFoundError } from '../errors.js'
 import { evaluateExpr } from './expression.js'
 import { stringify } from './utils.js'
 
@@ -22,7 +23,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     const join = joins[0]
     const rightSource = tables[join.table]
     if (rightSource === undefined) {
-      throw new Error(`Table "${join.table}" not found`)
+      throw tableNotFoundError(join.table)
     }
 
     // Buffer right rows for hash index (required for hash join)
@@ -62,7 +63,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     const join = joins[i]
     const rightSource = tables[join.table]
     if (rightSource === undefined) {
-      throw new Error(`Table "${join.table}" not found`)
+      throw tableNotFoundError(join.table)
     }
 
     /** @type {AsyncRow[]} */
@@ -98,7 +99,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   const lastJoin = joins[joins.length - 1]
   const rightSource = tables[lastJoin.table]
   if (rightSource === undefined) {
-    throw new Error(`Table "${lastJoin.table}" not found`)
+    throw tableNotFoundError(lastJoin.table)
   }
 
   /** @type {AsyncRow[]} */
@@ -234,7 +235,10 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
   const { joinType, on: onCondition } = join
 
   if (!onCondition) {
-    throw new Error('JOIN requires ON condition')
+    throw missingClauseError({
+      missing: 'ON condition',
+      context: 'JOIN',
+    })
   }
 
   const keys = extractJoinKeys(onCondition, leftTable, rightTable)

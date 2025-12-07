@@ -579,7 +579,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT SUBSTRING(text, 0, 3) FROM data' })))
-        .rejects.toThrow('start position must be a positive integer')
+        .rejects.toThrow('SUBSTRING(string, start[, length]): start position must be a positive integer')
     })
 
     it('should throw for SUBSTRING with negative length', async () => {
@@ -587,7 +587,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT SUBSTRING(text, 1, -1) FROM data' })))
-        .rejects.toThrow('length must be a non-negative integer')
+        .rejects.toThrow('SUBSTRING(string, start[, length]): length must be a non-negative integer')
     })
   })
 

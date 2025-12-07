@@ -1,3 +1,4 @@
+import { aggregateError, unknownFunctionError } from '../errors.js'
 import { evaluateExpr } from './expression.js'
 import { defaultDerivedAlias, stringify } from './utils.js'
 
@@ -38,7 +39,7 @@ export async function evaluateAggregate({ col, rows, tables }) {
 
   if (func === 'SUM' || func === 'AVG' || func === 'MIN' || func === 'MAX') {
     if (arg.kind === 'star') {
-      throw new Error(func + '(*) is not supported, use a column name')
+      throw aggregateError(func, '(*) is not supported, use a column name')
     }
     let sum = 0
     let count = 0
@@ -72,7 +73,7 @@ export async function evaluateAggregate({ col, rows, tables }) {
 
   if (func === 'JSON_ARRAYAGG') {
     if (arg.kind === 'star') {
-      throw new Error('JSON_ARRAYAGG(*) is not supported, use a column name or expression')
+      throw aggregateError('JSON_ARRAYAGG', '(*) is not supported, use a column name or expression')
     }
     /** @type {SqlPrimitive[]} */
     const values = []
@@ -95,7 +96,7 @@ export async function evaluateAggregate({ col, rows, tables }) {
     return values
   }
 
-  throw new Error('Unsupported aggregate function ' + func)
+  throw unknownFunctionError(func, undefined, 'COUNT, SUM, AVG, MIN, MAX, JSON_ARRAYAGG')
 }
 
 /**
