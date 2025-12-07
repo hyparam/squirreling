@@ -247,6 +247,6 @@ export interface Token {
   type: TokenType
   value: string
   position: number
-  numericValue?: number
+  numericValue?: number | bigint
   originalValue?: string
 }

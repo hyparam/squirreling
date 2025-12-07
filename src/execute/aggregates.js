@@ -21,7 +21,7 @@ export async function evaluateAggregate({ col, rows, tables }) {
       const seen = new Set()
       for (const row of rows) {
         const v = await evaluateExpr({ node: arg.expr, row, tables })
-        if (v !== null && v !== undefined) {
+        if (v != null) {
           seen.add(v)
         }
       }
@@ -30,7 +30,7 @@ export async function evaluateAggregate({ col, rows, tables }) {
     let count = 0
     for (const row of rows) {
       const v = await evaluateExpr({ node: arg.expr, row, tables })
-      if (v !== null && v !== undefined) {
+      if (v != null) {
         count += 1
       }
     }

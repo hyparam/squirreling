@@ -39,7 +39,7 @@ export async function evaluateExpr({ node, row, tables }) {
         return row[colName]()
       }
     }
-    return undefined
+    return null
   }
 
   // Scalar subquery - returns a single value

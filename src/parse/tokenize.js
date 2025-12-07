@@ -84,6 +84,61 @@ export function tokenize(sql) {
     return ch
   }
 
+  /**
+   * @param {number} startPos
+   * @param {string} prefix
+   * @returns {Token}
+   */
+  function parseNumber(startPos, prefix = '') {
+    let text = prefix
+    while (isDigit(peek())) {
+      text += nextChar()
+    }
+    if (peek() === '.') {
+      text += nextChar()
+      while (isDigit(peek())) {
+        text += nextChar()
+      }
+    }
+    // exponent
+    if (peek() === 'e' || peek() === 'E') {
+      text += nextChar()
+      if (peek() === '+' || peek() === '-') {
+        text += nextChar()
+      }
+      while (isDigit(peek())) {
+        text += nextChar()
+      }
+    }
+    // bigint suffix
+    if (peek() === 'n') {
+      text += nextChar()
+      try {
+        return {
+          type: 'number',
+          value: text,
+          position: startPos,
+          numericValue: BigInt(text.slice(0, -1)),
+        }
+      } catch {
+        throw invalidLiteralError({ type: 'bigint', value: text.slice(0, -1), position: startPos })
+      }
+    }
+    if (isAlpha(peek())) {
+      throw invalidLiteralError({ type: 'number', value: text + peek(), position: startPos })
+    }
+    const num = parseFloat(text)
+    if (isNaN(num)) {
+      throw invalidLiteralError({ type: 'number', value: text, position: startPos })
+    }
+    return {
+      type: 'number',
+      value: text,
+      position: startPos,
+      numericValue: num,
+    }
+  }
+
   while (i < length) {
     const ch = peek()
 
@@ -115,41 +170,25 @@ export function tokenize(sql) {
 
     const pos = i
 
+    // negative numbers (when not subtraction)
+    if (ch === '-' && i + 1 < length && isDigit(sql[i + 1])) {
+      const lastToken = tokens[tokens.length - 1]
+      const isValueBefore = lastToken && (
+        lastToken.type === 'identifier' ||
+        lastToken.type === 'number' ||
+        lastToken.type === 'string' ||
+        lastToken.type === 'paren' && lastToken.value === ')'
+      )
+      if (!isValueBefore) {
+        nextChar() // consume '-'
+        tokens.push(parseNumber(pos, '-'))
+        continue
+      }
+    }
+
     // numbers
     if (isDigit(ch)) {
-      let text = ''
-      while (isDigit(peek())) {
-        text += nextChar()
-      }
-      if (peek() === '.') {
-        text += nextChar()
-        while (isDigit(peek())) {
-          text += nextChar()
-        }
-      }
-      // exponent
-      if (peek() === 'e' || peek() === 'E') {
-        text += nextChar()
-        if (peek() === '+' || peek() === '-') {
-          text += nextChar()
-        }
-        while (isDigit(peek())) {
-          text += nextChar()
-        }
-      }
-      if (isAlpha(peek())) {
-        throw invalidLiteralError({ type: 'number', value: text + peek(), position: pos })
-      }
-      const num = parseFloat(text)
-      if (isNaN(num)) {
-        throw invalidLiteralError({ type: 'number', value: text, position: pos })
-      }
-      tokens.push({
-        type: 'number',
-        value: text,
-        position: pos,
-        numericValue: num,
-      })
+      tokens.push(parseNumber(pos))
       continue
     }
 

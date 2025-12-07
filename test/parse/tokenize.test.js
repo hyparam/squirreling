@@ -23,8 +23,7 @@ describe('tokenize', () => {
 
   it('should tokenize negative numbers and expressions', () => {
     expect(tokenize('-42')).toMatchObject([
-      { type: 'operator', value: '-' },
-      { type: 'number', value: '42', numericValue: 42 },
+      { type: 'number', value: '-42', numericValue: -42 },
       { type: 'eof' },
     ])
     expect(tokenize('x - 42')).toMatchObject([
@@ -189,6 +188,20 @@ describe('tokenize', () => {
     ])
   })
 
+  // Special bigint case <3 JavaScript
+  it('should tokenize a bigint', () => {
+    const tokens = tokenize('-1234n 1234n 90000000000000009n 90000000000000009')
+    expect(tokens).toMatchObject([
+      { type: 'number', value: '-1234n', numericValue: -1234n },
+      { type: 'number', value: '1234n', numericValue: 1234n },
+      // Exact bigint:
+      { type: 'number', value: '90000000000000009n', numericValue: 90000000000000009n },
+      // Round number:
+      { type: 'number', value: '90000000000000009', numericValue: 90000000000000020 },
+      { type: 'eof' },
+    ])
+  })
+
   it('should throw error on unterminated string literal', () => {
     expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
   })
@@ -203,7 +216,8 @@ describe('tokenize', () => {
   })
 
   it('should throw error on invalid number', () => {
-    expect(() => tokenize('12.34n')).toThrow('Invalid number 12.34n at position 0')
+    expect(() => tokenize('12.34n')).toThrow('Invalid bigint 12.34 at position 0')
+    expect(() => tokenize('12.34x')).toThrow('Invalid number 12.34x at position 0')
   })
 
   it('should throw error on unexpected character', () => {

@@ -36,7 +36,7 @@ describe('parseSql - WHERE clause', () => {
       type: 'binary',
       op: '>',
       left: { type: 'identifier', name: 'age' },
-      right: { type: 'unary', op: '-', argument: { type: 'literal', value: 18 } },
+      right: { type: 'literal', value: -18 },
     })
   })
 

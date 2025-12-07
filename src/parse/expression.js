@@ -30,10 +30,11 @@ function parseInterval(state) {
 
   // Get value (number or quoted string)
   const valueTok = current(state)
+  /** @type {number} */
   let value
   if (valueTok.type === 'number') {
     consume(state)
-    value = sign * (valueTok.numericValue ?? 0)
+    value = sign * Number(valueTok.numericValue)
   } else if (valueTok.type === 'string') {
     consume(state)
     const parsed = parseFloat(valueTok.value)
