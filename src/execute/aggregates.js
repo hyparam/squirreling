@@ -1,4 +1,5 @@
-import { aggregateError, unknownFunctionError } from '../errors.js'
+import { unknownFunctionError } from '../parseErrors.js'
+import { aggregateError } from '../validationErrors.js'
 import { evaluateExpr } from './expression.js'
 import { defaultDerivedAlias, stringify } from './utils.js'
 

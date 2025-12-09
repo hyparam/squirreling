@@ -1,10 +1,10 @@
+import { unknownFunctionError } from '../parseErrors.js'
+import { invalidContextError } from '../executionErrors.js'
 import {
   argCountError,
   argValueError,
   castError,
-  invalidContextError,
-  unknownFunctionError,
-} from '../errors.js'
+} from '../validationErrors.js'
 import { isMathFunc } from '../validation.js'
 import { applyIntervalToDate } from './date.js'
 import { executeSelect } from './execute.js'

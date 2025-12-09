@@ -2,7 +2,7 @@ import {
   invalidLiteralError,
   unexpectedCharError,
   unterminatedError,
-} from '../errors.js'
+} from '../parseErrors.js'
 
 /**
  * @import { Token } from '../types.d.ts'

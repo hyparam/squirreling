@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseSql } from '../../src/parse/parse.js'
-import { ParseError } from '../../src/errors.js'
+import { ParseError } from '../../src/parseErrors.js'
 
 describe('parseSql error handling', () => {
   describe('basic syntax errors', () => {

@@ -1,5 +1,5 @@
-import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, SelectStatement, SqlPrimitive, ParseError } from './types.js'
-export type { AsyncDataSource, AsyncRow, SqlPrimitive, ParseError } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
+export type { AsyncDataSource, AsyncRow, SqlPrimitive } from './types.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows

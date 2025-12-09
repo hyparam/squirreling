@@ -1,0 +1,124 @@
+import { ExecutionError } from './executionErrors.js'
+
+// ============================================================================
+// VALIDATION ERRORS - Function argument and type validation
+// ============================================================================
+
+/**
+ * Function signatures for helpful error messages.
+ * Maps function name to its parameter signature.
+ * @type {Record<string, string>}
+ */
+const FUNCTION_SIGNATURES = {
+  // String functions
+  UPPER: 'string',
+  LOWER: 'string',
+  LENGTH: 'string',
+  TRIM: 'string',
+  REPLACE: 'string, search, replacement',
+  SUBSTRING: 'string, start[, length]',
+  SUBSTR: 'string, start[, length]',
+  CONCAT: 'value1, value2[, ...]',
+
+  // Date/time functions
+  RANDOM: '',
+  RAND: '',
+  CURRENT_DATE: '',
+  CURRENT_TIME: '',
+  CURRENT_TIMESTAMP: '',
+
+  // Math functions
+  FLOOR: 'number',
+  CEIL: 'number',
+  CEILING: 'number',
+  ABS: 'number',
+  MOD: 'dividend, divisor',
+  EXP: 'number',
+  LN: 'number',
+  LOG10: 'number',
+  POWER: 'base, exponent',
+  SQRT: 'number',
+
+  // JSON functions
+  JSON_VALUE: 'expression, path',
+  JSON_QUERY: 'expression, path',
+  JSON_OBJECT: 'key1, value1[, ...]',
+  JSON_ARRAYAGG: 'expression',
+
+  // Aggregate functions
+  COUNT: 'expression',
+  SUM: 'expression',
+  AVG: 'expression',
+  MIN: 'expression',
+  MAX: 'expression',
+}
+
+/**
+ * Error for wrong number of function arguments.
+ *
+ * @param {Object} options
+ * @param {string} options.funcName - The function name
+ * @param {number | string} options.expected - Expected count (number or range like "2 or 3")
+ * @param {number} options.received - Actual argument count
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @returns {ExecutionError}
+ */
+export function argCountError({ funcName, expected, received, positionStart, positionEnd }) {
+  const signature = FUNCTION_SIGNATURES[funcName] ?? ''
+  let expectedStr = `${expected} arguments`
+  if (expected === 0) expectedStr = 'no arguments'
+  if (expected === 1) expectedStr = '1 argument'
+  if (typeof expected === 'string' && expected.endsWith(' 1')) {
+    expectedStr = `${expected} argument`
+  }
+
+  return new ExecutionError(`${funcName}(${signature}) function requires ${expectedStr}, got ${received}`, positionStart, positionEnd)
+}
+
+/**
+ * Error for invalid argument type or value.
+ *
+ * @param {Object} options
+ * @param {string} options.funcName - The function name
+ * @param {string} options.message - Specific error message
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @param {string} [options.hint] - Recovery hint
+ * @returns {ExecutionError}
+ */
+export function argValueError({ funcName, message, positionStart, positionEnd, hint }) {
+  const signature = FUNCTION_SIGNATURES[funcName] ?? ''
+  const suffix = hint ? `. ${hint}` : ''
+  return new ExecutionError(`${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd)
+}
+
+/**
+ * Error for aggregate function misuse (e.g., SUM(*)).
+ *
+ * @param {Object} options
+ * @param {string} options.funcName - The aggregate function
+ * @param {string} options.issue - What's wrong (e.g., "(*) is not supported")
+ * @returns {Error}
+ */
+export function aggregateError({ funcName, issue }) {
+  return new Error(`${funcName}${issue}. Only COUNT supports *. Use a column name for ${funcName}.`)
+}
+
+/**
+ * Error for unsupported CAST type.
+ *
+ * @param {Object} options
+ * @param {string} options.toType - The unsupported target type
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @param {string} [options.fromType] - The source type (optional)
+ * @returns {ExecutionError}
+ */
+export function castError({ toType, positionStart, positionEnd, fromType }) {
+  const message = fromType
+    ? `Cannot CAST ${fromType} to ${toType}`
+    : `Unsupported CAST to type ${toType}`
+
+  return new ExecutionError(`${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd)
+}

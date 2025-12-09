@@ -1,4 +1,5 @@
-import { missingClauseError, tableNotFoundError } from '../errors.js'
+import { missingClauseError } from '../parseErrors.js'
+import { tableNotFoundError } from '../executionErrors.js'
 import { evaluateExpr } from './expression.js'
 import { stringify } from './utils.js'
 

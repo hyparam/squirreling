@@ -1,4 +1,5 @@
-import { missingClauseError, tableNotFoundError, unsupportedOperationError } from '../errors.js'
+import { missingClauseError } from '../parseErrors.js'
+import { tableNotFoundError, unsupportedOperationError } from '../executionErrors.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { parseSql } from '../parse/parse.js'
 import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'

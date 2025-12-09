@@ -1,7 +1,7 @@
 /**
  * @import { SqlPrimitive } from '../types.js'
  */
-import { argCountError } from '../errors.js'
+import { argCountError } from '../validationErrors.js'
 
 /**
  * Evaluate a math function

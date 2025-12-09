@@ -1,4 +1,4 @@
-import { syntaxError } from '../errors.js'
+import { syntaxError } from '../parseErrors.js'
 import { isBinaryOp } from '../validation.js'
 import { parseAdditive, parseExpression, parseSubquery } from './expression.js'
 import { consume, current, expect, lastPosition, match, peekToken } from './state.js'

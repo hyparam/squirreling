@@ -1,4 +1,4 @@
-import { unknownFunctionError } from '../errors.js'
+import { unknownFunctionError } from '../parseErrors.js'
 import { isAggregateFunc } from '../validation.js'
 import { evaluateExpr } from './expression.js'
 import { applyBinaryOp } from './utils.js'

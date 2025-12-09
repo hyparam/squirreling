@@ -3,7 +3,7 @@ import {
   missingClauseError,
   syntaxError,
   unknownFunctionError,
-} from '../errors.js'
+} from '../parseErrors.js'
 import { isAggregateFunc, isIntervalUnit, isMathFunc, isStringFunc } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'

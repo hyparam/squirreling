@@ -1,4 +1,4 @@
-import { syntaxError } from '../errors.js'
+import { syntaxError } from '../parseErrors.js'
 
 /**
  * @import { ParserState, Token, TokenType } from '../types.js'
@@ -93,7 +93,7 @@ export function expectIdentifier(state) {
  * Helper function to create consistent parser error messages.
  * @param {ParserState} state
  * @param {string} expected - Description of what was expected
- * @returns {import('../errors.js').ParseError}
+ * @returns {import('../parseErrors.js').ParseError}
  */
 export function parseError(state, expected) {
   const tok = current(state)
