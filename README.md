@@ -76,6 +76,7 @@ console.log(allUsers)
 - `GROUP BY` and `HAVING` clauses
 - Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
 - String functions: `CONCAT`, `SUBSTRING`, `LENGTH`, `UPPER`, `LOWER`
+- Math functions: `ABS`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
 - Date functions: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
 - Json functions: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
 - Basic expressions and arithmetic operations

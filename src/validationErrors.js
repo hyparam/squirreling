@@ -38,6 +38,17 @@ const FUNCTION_SIGNATURES = {
   LOG10: 'number',
   POWER: 'base, exponent',
   SQRT: 'number',
+  SIN: 'radians',
+  COS: 'radians',
+  TAN: 'radians',
+  COT: 'radians',
+  ASIN: 'number',
+  ACOS: 'number',
+  ATAN: 'number',
+  ATAN2: 'y, x',
+  DEGREES: 'radians',
+  RADIANS: 'degrees',
+  PI: '',
 
   // JSON functions
   JSON_VALUE: 'expression, path',

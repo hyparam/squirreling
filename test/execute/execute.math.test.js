@@ -460,6 +460,371 @@ describe('math functions', () => {
     })
   })
 
+  describe('SIN', () => {
+    it('should return sine of angle in radians', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: Math.PI / 2 },
+        { id: 3, value: Math.PI },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(value) AS sin_val FROM data',
+      }))
+      expect(result[0].sin_val).toBeCloseTo(0, 10)
+      expect(result[1].sin_val).toBeCloseTo(1, 10)
+      expect(result[2].sin_val).toBeCloseTo(0, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(value) AS sin_val FROM data',
+      }))
+      expect(result[0].sin_val).toBeNull()
+    })
+
+    it('should work with literal values', async () => {
+      const data = [{ id: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(0) AS sin_val FROM data',
+      }))
+      expect(result[0].sin_val).toBe(0)
+    })
+  })
+
+  describe('COS', () => {
+    it('should return cosine of angle in radians', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: Math.PI / 2 },
+        { id: 3, value: Math.PI },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COS(value) AS cos_val FROM data',
+      }))
+      expect(result[0].cos_val).toBeCloseTo(1, 10)
+      expect(result[1].cos_val).toBeCloseTo(0, 10)
+      expect(result[2].cos_val).toBeCloseTo(-1, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COS(value) AS cos_val FROM data',
+      }))
+      expect(result[0].cos_val).toBeNull()
+    })
+  })
+
+  describe('TAN', () => {
+    it('should return tangent of angle in radians', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: Math.PI / 4 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT TAN(value) AS tan_val FROM data',
+      }))
+      expect(result[0].tan_val).toBeCloseTo(0, 10)
+      expect(result[1].tan_val).toBeCloseTo(1, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT TAN(value) AS tan_val FROM data',
+      }))
+      expect(result[0].tan_val).toBeNull()
+    })
+  })
+
+  describe('COT', () => {
+    it('should return cotangent of angle in radians', async () => {
+      const data = [
+        { id: 1, value: Math.PI / 4 },
+        { id: 2, value: Math.PI / 2 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COT(value) AS cot_val FROM data',
+      }))
+      expect(result[0].cot_val).toBeCloseTo(1, 10)
+      expect(result[1].cot_val).toBeCloseTo(0, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COT(value) AS cot_val FROM data',
+      }))
+      expect(result[0].cot_val).toBeNull()
+    })
+  })
+
+  describe('ASIN', () => {
+    it('should return arcsine in radians', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: 1 },
+        { id: 3, value: -1 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ASIN(value) AS asin_val FROM data',
+      }))
+      expect(result[0].asin_val).toBeCloseTo(0, 10)
+      expect(result[1].asin_val).toBeCloseTo(Math.PI / 2, 10)
+      expect(result[2].asin_val).toBeCloseTo(-Math.PI / 2, 10)
+    })
+
+    it('should return NaN for values outside [-1, 1]', async () => {
+      const data = [{ id: 1, value: 2 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ASIN(value) AS asin_val FROM data',
+      }))
+      expect(result[0].asin_val).toBeNaN()
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ASIN(value) AS asin_val FROM data',
+      }))
+      expect(result[0].asin_val).toBeNull()
+    })
+  })
+
+  describe('ACOS', () => {
+    it('should return arccosine in radians', async () => {
+      const data = [
+        { id: 1, value: 1 },
+        { id: 2, value: 0 },
+        { id: 3, value: -1 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ACOS(value) AS acos_val FROM data',
+      }))
+      expect(result[0].acos_val).toBeCloseTo(0, 10)
+      expect(result[1].acos_val).toBeCloseTo(Math.PI / 2, 10)
+      expect(result[2].acos_val).toBeCloseTo(Math.PI, 10)
+    })
+
+    it('should return NaN for values outside [-1, 1]', async () => {
+      const data = [{ id: 1, value: 2 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ACOS(value) AS acos_val FROM data',
+      }))
+      expect(result[0].acos_val).toBeNaN()
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ACOS(value) AS acos_val FROM data',
+      }))
+      expect(result[0].acos_val).toBeNull()
+    })
+  })
+
+  describe('ATAN', () => {
+    it('should return arctangent in radians', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: 1 },
+        { id: 3, value: -1 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN(value) AS atan_val FROM data',
+      }))
+      expect(result[0].atan_val).toBeCloseTo(0, 10)
+      expect(result[1].atan_val).toBeCloseTo(Math.PI / 4, 10)
+      expect(result[2].atan_val).toBeCloseTo(-Math.PI / 4, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN(value) AS atan_val FROM data',
+      }))
+      expect(result[0].atan_val).toBeNull()
+    })
+  })
+
+  describe('ATAN2', () => {
+    it('should return two-argument arctangent in radians', async () => {
+      const data = [
+        { id: 1, y: 0, x: 1 },
+        { id: 2, y: 1, x: 1 },
+        { id: 3, y: 1, x: 0 },
+        { id: 4, y: -1, x: -1 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN2(y, x) AS atan2_val FROM data',
+      }))
+      expect(result[0].atan2_val).toBeCloseTo(0, 10)
+      expect(result[1].atan2_val).toBeCloseTo(Math.PI / 4, 10)
+      expect(result[2].atan2_val).toBeCloseTo(Math.PI / 2, 10)
+      expect(result[3].atan2_val).toBeCloseTo(-3 * Math.PI / 4, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, y: NULL, x: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN2(y, x) AS atan2_val FROM data',
+      }))
+      expect(result[0].atan2_val).toBeNull()
+    })
+
+    it('should work with literal values', async () => {
+      const data = [{ id: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN2(1, 1) AS atan2_val FROM data',
+      }))
+      expect(result[0].atan2_val).toBeCloseTo(Math.PI / 4, 10)
+    })
+  })
+
+  describe('DEGREES', () => {
+    it('should convert radians to degrees', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: Math.PI / 2 },
+        { id: 3, value: Math.PI },
+        { id: 4, value: 2 * Math.PI },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DEGREES(value) AS degrees FROM data',
+      }))
+      expect(result[0].degrees).toBeCloseTo(0, 10)
+      expect(result[1].degrees).toBeCloseTo(90, 10)
+      expect(result[2].degrees).toBeCloseTo(180, 10)
+      expect(result[3].degrees).toBeCloseTo(360, 10)
+    })
+
+    it('should handle negative radians', async () => {
+      const data = [{ id: 1, value: -Math.PI }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DEGREES(value) AS degrees FROM data',
+      }))
+      expect(result[0].degrees).toBeCloseTo(-180, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DEGREES(value) AS degrees FROM data',
+      }))
+      expect(result[0].degrees).toBeNull()
+    })
+  })
+
+  describe('RADIANS', () => {
+    it('should convert degrees to radians', async () => {
+      const data = [
+        { id: 1, value: 0 },
+        { id: 2, value: 90 },
+        { id: 3, value: 180 },
+        { id: 4, value: 360 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RADIANS(value) AS radians FROM data',
+      }))
+      expect(result[0].radians).toBeCloseTo(0, 10)
+      expect(result[1].radians).toBeCloseTo(Math.PI / 2, 10)
+      expect(result[2].radians).toBeCloseTo(Math.PI, 10)
+      expect(result[3].radians).toBeCloseTo(2 * Math.PI, 10)
+    })
+
+    it('should handle negative degrees', async () => {
+      const data = [{ id: 1, value: -180 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RADIANS(value) AS radians FROM data',
+      }))
+      expect(result[0].radians).toBeCloseTo(-Math.PI, 10)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, value: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RADIANS(value) AS radians FROM data',
+      }))
+      expect(result[0].radians).toBeNull()
+    })
+  })
+
+  describe('PI', () => {
+    it('should return the value of PI', async () => {
+      const data = [{ id: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT PI() AS pi_val FROM data',
+      }))
+      expect(result[0].pi_val).toBe(Math.PI)
+    })
+
+    it('should work in expressions', async () => {
+      const data = [{ id: 1, degrees: 180 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT degrees * PI() / 180 AS radians FROM data',
+      }))
+      expect(result[0].radians).toBeCloseTo(Math.PI, 10)
+    })
+  })
+
+  describe('combined trigonometric functions', () => {
+    it('should work with degree/radian conversion', async () => {
+      const data = [{ id: 1, degrees: 45 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(RADIANS(degrees)) AS sin_val FROM data',
+      }))
+      expect(result[0].sin_val).toBeCloseTo(Math.sqrt(2) / 2, 10)
+    })
+
+    it('should verify trigonometric identity', async () => {
+      const data = [{ id: 1, angle: Math.PI / 3 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(angle) * SIN(angle) + COS(angle) * COS(angle) AS identity FROM data',
+      }))
+      expect(result[0].identity).toBeCloseTo(1, 10)
+    })
+
+    it('should work with inverse functions', async () => {
+      const data = [{ id: 1, value: 0.5 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(ASIN(value)) AS original FROM data',
+      }))
+      expect(result[0].original).toBeCloseTo(0.5, 10)
+    })
+  })
+
   describe('error handling', () => {
     it('should throw for FLOOR with wrong argument count', async () => {
       const data = [{ id: 1, value: 5 }]
@@ -483,6 +848,30 @@ describe('math functions', () => {
         tables: { data },
         query: 'SELECT POWER(value) FROM data',
       }))).rejects.toThrow('POWER(base, exponent) function requires 2 arguments, got 1')
+    })
+
+    it('should throw for SIN with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIN(value, 2) FROM data',
+      }))).rejects.toThrow('SIN(radians) function requires 1 argument, got 2')
+    })
+
+    it('should throw for ATAN2 with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN2(value) FROM data',
+      }))).rejects.toThrow('ATAN2(y, x) function requires 2 arguments, got 1')
+    })
+
+    it('should throw for PI with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT PI(value) FROM data',
+      }))).rejects.toThrow('PI() function requires no arguments, got 1')
     })
   })
 })

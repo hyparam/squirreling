@@ -16,6 +16,8 @@ export function isMathFunc(name) {
   return [
     'FLOOR', 'CEIL', 'CEILING', 'ABS', 'MOD',
     'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
+    'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2',
+    'DEGREES', 'RADIANS', 'PI',
   ].includes(name)
 }
 

@@ -188,6 +188,17 @@ export type MathFunc =
   | 'LOG10'
   | 'POWER'
   | 'SQRT'
+  | 'SIN'
+  | 'COS'
+  | 'TAN'
+  | 'COT'
+  | 'ASIN'
+  | 'ACOS'
+  | 'ATAN'
+  | 'ATAN2'
+  | 'DEGREES'
+  | 'RADIANS'
+  | 'PI'
 
 export type StringFunc =
   | 'UPPER'
