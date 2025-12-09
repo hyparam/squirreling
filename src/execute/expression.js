@@ -1,5 +1,5 @@
 import { unknownFunctionError } from '../parseErrors.js'
-import { invalidContextError } from '../executionErrors.js'
+import { columnNotFoundError, invalidContextError } from '../executionErrors.js'
 import { aggregateError, argValueError, castError } from '../validationErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isStringFunc } from '../validation.js'
 import { applyIntervalToDate } from './date.js'
@@ -32,17 +32,23 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
 
   if (node.type === 'identifier') {
     // Try exact match first (handles both qualified and unqualified names)
-    if (row.cells[node.name]) {
+    if (node.name in row.cells) {
       return row.cells[node.name]()
     }
     // For qualified names like 'users.id', also try just the column part
     if (node.name.includes('.')) {
       const colName = node.name.split('.').pop()
-      if (colName && row.cells[colName]) {
+      if (colName && colName in row.cells) {
         return row.cells[colName]()
       }
     }
-    return null
+    throw columnNotFoundError({
+      columnName: node.name,
+      availableColumns: Object.keys(row.cells),
+      positionStart: node.positionStart,
+      positionEnd: node.positionEnd,
+      rowNumber: rowIndex,
+    })
   }
 
   // Scalar subquery - returns a single value

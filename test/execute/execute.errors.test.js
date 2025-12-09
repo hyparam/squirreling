@@ -258,4 +258,34 @@ describe('executeSql error handling', () => {
       }))).rejects.toThrow('JSON_VALUE(expression, path): invalid JSON string. First argument must be valid JSON. (row 3)')
     })
   })
+
+  describe('column not found errors', () => {
+    it('should throw error for non-existent column in SELECT', async () => {
+      await expect(collect(executeSql({
+        tables: { users },
+        query: 'SELECT nonexistent FROM users',
+      }))).rejects.toThrow('Column "nonexistent" not found')
+    })
+
+    it('should throw error for non-existent column in WHERE', async () => {
+      await expect(collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM users WHERE nonexistent = 1',
+      }))).rejects.toThrow('Column "nonexistent" not found')
+    })
+
+    it('should include available columns in error message', async () => {
+      await expect(collect(executeSql({
+        tables: { users },
+        query: 'SELECT bad FROM users',
+      }))).rejects.toThrow(/Available columns:.*id.*name.*age/)
+    })
+
+    it('should include row number in column not found error', async () => {
+      await expect(collect(executeSql({
+        tables: { users },
+        query: 'SELECT missing FROM users',
+      }))).rejects.toThrow('(row 1)')
+    })
+  })
 })

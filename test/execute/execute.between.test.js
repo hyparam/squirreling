@@ -105,11 +105,11 @@ describe('executeSql - BETWEEN', () => {
       expect(result[0].id).toBe(2)
     })
 
-    it('should handle BETWEEN with undefined values', async () => {
+    it('should handle BETWEEN with null values', async () => {
       const data = [
         { id: 1, value: 5 },
         { id: 2, value: 10 },
-        { id: 3 },
+        { id: 3, value: null },
         { id: 4, value: 15 },
       ]
       const result = await collect(executeSql({

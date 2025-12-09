@@ -24,8 +24,6 @@ export class ExecutionError extends Error {
 }
 
 /**
- * Error for missing table.
- *
  * @param {Object} options
  * @param {string} options.tableName - The missing table name
  * @returns {Error}
@@ -50,8 +48,6 @@ export function invalidContextError({ item, validContext, positionStart, positio
 }
 
 /**
- * Error for unsupported operation combinations.
- *
  * @param {Object} options
  * @param {string} options.operation - The unsupported operation
  * @param {string} [options.hint] - How to fix it
@@ -60,4 +56,25 @@ export function invalidContextError({ item, validContext, positionStart, positio
 export function unsupportedOperationError({ operation, hint }) {
   const suffix = hint ? `. ${hint}` : ''
   return new Error(`${operation}${suffix}`)
+}
+
+/**
+ * @param {Object} options
+ * @param {string} options.columnName - The missing column name
+ * @param {string[]} options.availableColumns - List of available column names
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @param {number} [options.rowNumber] - 1-based row number where error occurred
+ * @returns {ExecutionError}
+ */
+export function columnNotFoundError({ columnName, availableColumns, positionStart, positionEnd, rowNumber }) {
+  const available = availableColumns.length > 0
+    ? `. Available columns: ${availableColumns.join(', ')}`
+    : ''
+  return new ExecutionError({
+    message: `Column "${columnName}" not found${available}`,
+    positionStart,
+    positionEnd,
+    rowNumber,
+  })
 }

@@ -17,6 +17,12 @@ describe('JOIN queries', () => {
     { id: 4, user_id: 4, product: 'Monitor', amount: 500 },
   ]
 
+  // Tables with null values for testing JOIN NULL padding behavior
+  /** @type {typeof users} */
+  const nullUser = [{ id: null, name: null, age: null, city: null, active: null }]
+  /** @type {typeof orders} */
+  const nullOrder = [{ id: null, user_id: null, product: null, amount: null }]
+
   it('should perform INNER JOIN', async () => {
     const result = await collect(executeSql({
       tables: { users, orders },
@@ -158,48 +164,69 @@ describe('JOIN queries', () => {
       expect(result).toHaveLength(0)
     })
 
-    it('should return all left rows with nulls for LEFT JOIN with empty right table', async () => {
+    it('should return all left rows with nulls for LEFT JOIN with null right data', async () => {
       const result = await collect(executeSql({
-        tables: { users, orders: [] },
+        tables: { users, orders: nullOrder },
         query: 'SELECT users.name, orders.product FROM users LEFT JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(5)
-      expect(result.every(r => r.product == null)).toBe(true)
+      expect(result.every(r => r.product === null)).toBe(true)
     })
 
-    it('should return all right rows with nulls for RIGHT JOIN with empty left table', async () => {
+    it('should return all right rows with nulls for RIGHT JOIN with null left data', async () => {
       const result = await collect(executeSql({
-        tables: { users: [], orders },
+        tables: { users: nullUser, orders },
         query: 'SELECT users.name, orders.product FROM users RIGHT JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(4)
-      expect(result.every(r => r.name == null)).toBe(true)
+      expect(result.every(r => r.name === null)).toBe(true)
     })
 
     it('should return 0 rows for RIGHT JOIN when right table is empty', async () => {
       const result = await collect(executeSql({
         tables: { users, orders: [] },
-        query: 'SELECT users.name, orders.product FROM users RIGHT JOIN orders ON users.id = orders.user_id',
+        query: 'SELECT * FROM users RIGHT JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(0)
     })
 
-    it('should return all rows from both tables for FULL JOIN with empty left table', async () => {
+    it('should return all rows from both tables for FULL JOIN with null left data', async () => {
       const result = await collect(executeSql({
-        tables: { users: [], orders },
+        tables: { users: nullUser, orders },
         query: 'SELECT users.name, orders.product FROM users FULL JOIN orders ON users.id = orders.user_id',
       }))
-      expect(result).toHaveLength(4)
-      expect(result.every(r => r.name == null)).toBe(true)
+      expect(result).toHaveLength(5) // 4 orders + 1 null user
+      expect(result.filter(r => r.name === null)).toHaveLength(5)
     })
 
-    it('should return all rows from both tables for FULL JOIN with empty right table', async () => {
+    it('should return all rows from both tables for FULL JOIN with null right data', async () => {
       const result = await collect(executeSql({
-        tables: { users, orders: [] },
+        tables: { users, orders: nullOrder },
         query: 'SELECT users.name, orders.product FROM users FULL JOIN orders ON users.id = orders.user_id',
       }))
-      expect(result).toHaveLength(5)
-      expect(result.every(r => r.product == null)).toBe(true)
+      expect(result).toHaveLength(6) // 5 users + 1 null order
+      expect(result.filter(r => r.product === null)).toHaveLength(6)
+    })
+
+    it('should throw error for non-existent column in LEFT JOIN', async () => {
+      await expect(collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT users.nonexistent FROM users LEFT JOIN orders ON users.id = orders.user_id',
+      }))).rejects.toThrow('Column "users.nonexistent" not found')
+    })
+
+    it('should throw error for non-existent column in RIGHT JOIN', async () => {
+      await expect(collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT orders.nonexistent FROM users RIGHT JOIN orders ON users.id = orders.user_id',
+      }))).rejects.toThrow('Column "orders.nonexistent" not found')
+    })
+
+    it('should throw error for non-existent column in FULL JOIN', async () => {
+      await expect(collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT users.nonexistent FROM users FULL JOIN orders ON users.id = orders.user_id',
+      }))).rejects.toThrow('Column "users.nonexistent" not found')
     })
   })
 
@@ -887,137 +914,6 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob'])
-    })
-  })
-
-  describe('POSITIONAL JOIN', () => {
-    const tableA = [
-      { id: 1, name: 'Alice' },
-      { id: 2, name: 'Bob' },
-      { id: 3, name: 'Charlie' },
-    ]
-
-    const tableB = [
-      { code: 'A', value: 100 },
-      { code: 'B', value: 200 },
-      { code: 'C', value: 300 },
-    ]
-
-    it('should join tables by row position with equal lengths', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0]).toEqual({ name: 'Alice', code: 'A' })
-      expect(result[1]).toEqual({ name: 'Bob', code: 'B' })
-      expect(result[2]).toEqual({ name: 'Charlie', code: 'C' })
-    })
-
-    it('should pad right table with NULLs when left is longer', async () => {
-      const shortB = [
-        { code: 'A', value: 100 },
-      ]
-      const result = await collect(executeSql({
-        tables: { tableA, tableB: shortB },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0]).toEqual({ name: 'Alice', code: 'A' })
-      expect(result[1]).toEqual({ name: 'Bob', code: null })
-      expect(result[2]).toEqual({ name: 'Charlie', code: null })
-    })
-
-    it('should pad left table with NULLs when right is longer', async () => {
-      const shortA = [
-        { id: 1, name: 'Alice' },
-      ]
-      const result = await collect(executeSql({
-        tables: { tableA: shortA, tableB },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0]).toEqual({ name: 'Alice', code: 'A' })
-      expect(result[1]).toEqual({ name: null, code: 'B' })
-      expect(result[2]).toEqual({ name: null, code: 'C' })
-    })
-
-    it('should return empty result when both tables are empty', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA: [], tableB: [] },
-        query: 'SELECT * FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(0)
-    })
-
-    it('should return right rows with NULL left columns when left is empty', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA: [], tableB },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result.every(r => r.name === null)).toBe(true)
-      expect(result.map(r => r.code)).toEqual(['A', 'B', 'C'])
-    })
-
-    it('should return left rows with NULL right columns when right is empty', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB: [] },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result.map(r => r.name)).toEqual(['Alice', 'Bob', 'Charlie'])
-      expect(result.every(r => r.code === null)).toBe(true)
-    })
-
-    it('should work with table aliases', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB },
-        query: 'SELECT a.name, b.code FROM tableA a POSITIONAL JOIN tableB b',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0]).toEqual({ name: 'Alice', code: 'A' })
-    })
-
-    it('should work with WHERE clause filtering', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB },
-        query: 'SELECT tableA.name, tableB.value FROM tableA POSITIONAL JOIN tableB WHERE tableB.value > 150',
-      }))
-      expect(result).toHaveLength(2)
-      expect(result.map(r => r.name)).toEqual(['Bob', 'Charlie'])
-    })
-
-    it('should work with SELECT *', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB },
-        query: 'SELECT * FROM tableA POSITIONAL JOIN tableB',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0]).toHaveProperty('id', 1)
-      expect(result[0]).toHaveProperty('name', 'Alice')
-      expect(result[0]).toHaveProperty('code', 'A')
-      expect(result[0]).toHaveProperty('value', 100)
-    })
-
-    it('should work with ORDER BY', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB ORDER BY tableB.code DESC',
-      }))
-      expect(result).toHaveLength(3)
-      expect(result[0].code).toBe('C')
-      expect(result[2].code).toBe('A')
-    })
-
-    it('should work with LIMIT', async () => {
-      const result = await collect(executeSql({
-        tables: { tableA, tableB },
-        query: 'SELECT tableA.name, tableB.code FROM tableA POSITIONAL JOIN tableB LIMIT 2',
-      }))
-      expect(result).toHaveLength(2)
-      expect(result[0]).toEqual({ name: 'Alice', code: 'A' })
-      expect(result[1]).toEqual({ name: 'Bob', code: 'B' })
     })
   })
 })

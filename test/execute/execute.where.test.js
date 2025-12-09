@@ -106,11 +106,11 @@ describe('WHERE clause', () => {
     expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Diana'])
   })
 
-  it('should handle IS NULL with undefined values', async () => {
+  it('should handle IS NULL with explicit null values', async () => {
     const users = [
-      { id: 1, name: 'Alice' },
+      { id: 1, name: 'Alice', email: null },
       { id: 2, name: 'Bob', email: 'bob@example.com' },
-      { id: 3, name: 'Charlie' },
+      { id: 3, name: 'Charlie', email: null },
     ]
     const result = await collect(executeSql({
       tables: { users },
