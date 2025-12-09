@@ -96,7 +96,12 @@ export async function evaluateAggregate({ col, rows, tables }) {
     return values
   }
 
-  throw unknownFunctionError({ funcName: func, validFunctions: 'COUNT, SUM, AVG, MIN, MAX, JSON_ARRAYAGG' })
+  throw unknownFunctionError({
+    funcName: func,
+    positionStart: 0,
+    positionEnd: 0,
+    validFunctions: 'COUNT, SUM, AVG, MIN, MAX, JSON_ARRAYAGG',
+  })
 }
 
 /**

@@ -107,27 +107,53 @@ export async function evaluateExpr({ node, row, tables }) {
     const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, tables })))
 
     if (funcName === 'UPPER') {
-      if (args.length !== 1) throw argCountError({ funcName: 'UPPER', expected: 1, received: args.length })
+      if (args.length !== 1) {
+        throw argCountError({
+          funcName: 'UPPER',
+          expected: 1,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       const val = args[0]
       if (val == null) return null
       return String(val).toUpperCase()
     }
 
     if (funcName === 'LOWER') {
-      if (args.length !== 1) throw argCountError({ funcName: 'LOWER', expected: 1, received: args.length })
+      if (args.length !== 1) {
+        throw argCountError({
+          funcName: 'LOWER',
+          expected: 1,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       const val = args[0]
       if (val == null) return null
       return String(val).toLowerCase()
     }
 
     if (funcName === 'CONCAT') {
-      if (args.length < 1) throw argCountError({ funcName: 'CONCAT', expected: 'at least 1', received: args.length })
+      if (args.length < 1) {
+        throw argCountError({
+          funcName: 'CONCAT',
+          expected: 'at least 1',
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       // SQL CONCAT returns NULL if any argument is NULL
       if (args.some(a => a == null)) return null
       if (args.some(a => typeof a === 'object')) {
         throw argValueError({
           funcName: 'CONCAT',
           message: 'does not support object arguments',
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
           hint: 'Use CAST to convert objects to strings first.',
         })
       }
@@ -135,7 +161,15 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'LENGTH') {
-      if (args.length !== 1) throw argCountError({ funcName: 'LENGTH', expected: 1, received: args.length })
+      if (args.length !== 1) {
+        throw argCountError({
+          funcName: 'LENGTH',
+          expected: 1,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       const val = args[0]
       if (val == null) return null
       return String(val).length
@@ -143,7 +177,13 @@ export async function evaluateExpr({ node, row, tables }) {
 
     if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
       if (args.length < 2 || args.length > 3) {
-        throw argCountError({ funcName, expected: '2 or 3', received: args.length })
+        throw argCountError({
+          funcName,
+          expected: '2 or 3',
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
       }
       const str = args[0]
       if (str == null) return null
@@ -153,6 +193,8 @@ export async function evaluateExpr({ node, row, tables }) {
         throw argValueError({
           funcName,
           message: `start position must be a positive integer, got ${args[1]}`,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
           hint: 'SQL uses 1-based indexing.',
         })
       }
@@ -164,6 +206,8 @@ export async function evaluateExpr({ node, row, tables }) {
           throw argValueError({
             funcName,
             message: `length must be a non-negative integer, got ${args[2]}`,
+            positionStart: node.positionStart,
+            positionEnd: node.positionEnd,
           })
         }
         return strVal.substring(startIdx, startIdx + len)
@@ -172,14 +216,30 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'TRIM') {
-      if (args.length !== 1) throw argCountError({ funcName: 'TRIM', expected: 1, received: args.length })
+      if (args.length !== 1) {
+        throw argCountError({
+          funcName: 'TRIM',
+          expected: 1,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       const val = args[0]
       if (val == null) return null
       return String(val).trim()
     }
 
     if (funcName === 'REPLACE') {
-      if (args.length !== 3) throw argCountError({ funcName: 'REPLACE', expected: 3, received: args.length })
+      if (args.length !== 3) {
+        throw argCountError({
+          funcName: 'REPLACE',
+          expected: 3,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       const str = args[0]
       const searchStr = args[1]
       const replaceStr = args[2]
@@ -189,28 +249,66 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'RANDOM' || funcName === 'RAND') {
-      if (args.length !== 0) throw argCountError({ funcName, expected: 0, received: args.length })
+      if (args.length !== 0) {
+        throw argCountError({
+          funcName,
+          expected: 0,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       return Math.random()
     }
 
     if (funcName === 'CURRENT_DATE') {
-      if (args.length !== 0) throw argCountError({ funcName: 'CURRENT_DATE', expected: 0, received: args.length })
+      if (args.length !== 0) {
+        throw argCountError({
+          funcName: 'CURRENT_DATE',
+          expected: 0,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       return new Date().toISOString().split('T')[0]
     }
 
     if (funcName === 'CURRENT_TIME') {
-      if (args.length !== 0) throw argCountError({ funcName: 'CURRENT_TIME', expected: 0, received: args.length })
+      if (args.length !== 0) {
+        throw argCountError({
+          funcName: 'CURRENT_TIME',
+          expected: 0,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       return new Date().toISOString().split('T')[1].replace('Z', '')
     }
 
     if (funcName === 'CURRENT_TIMESTAMP') {
-      if (args.length !== 0) throw argCountError({ funcName: 'CURRENT_TIMESTAMP', expected: 0, received: args.length })
+      if (args.length !== 0) {
+        throw argCountError({
+          funcName: 'CURRENT_TIMESTAMP',
+          expected: 0,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       return new Date().toISOString()
     }
 
     if (funcName === 'JSON_OBJECT') {
       if (args.length % 2 !== 0) {
-        throw argCountError({ funcName: 'JSON_OBJECT', expected: 'even number', received: args.length })
+        throw argCountError({
+          funcName: 'JSON_OBJECT',
+          expected: 'even number',
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
       }
       /** @type {Record<string, SqlPrimitive>} */
       const result = {}
@@ -221,6 +319,8 @@ export async function evaluateExpr({ node, row, tables }) {
           throw argValueError({
             funcName: 'JSON_OBJECT',
             message: 'key cannot be null',
+            positionStart: node.positionStart,
+            positionEnd: node.positionEnd,
             hint: 'All keys must be non-null values.',
           })
         }
@@ -230,7 +330,15 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
-      if (args.length !== 2) throw argCountError({ funcName, expected: 2, received: args.length })
+      if (args.length !== 2) {
+        throw argCountError({
+          funcName,
+          expected: 2,
+          received: args.length,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+        })
+      }
       let jsonArg = args[0]
       const pathArg = args[1]
       if (jsonArg == null || pathArg == null) return null
@@ -243,6 +351,8 @@ export async function evaluateExpr({ node, row, tables }) {
           throw argValueError({
             funcName,
             message: 'invalid JSON string',
+            positionStart: node.positionStart,
+            positionEnd: node.positionEnd,
             hint: 'First argument must be valid JSON.',
           })
         }
@@ -251,6 +361,8 @@ export async function evaluateExpr({ node, row, tables }) {
         throw argValueError({
           funcName,
           message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
         })
       }
 
@@ -281,10 +393,19 @@ export async function evaluateExpr({ node, row, tables }) {
     }
 
     if (isMathFunc(funcName)) {
-      return evaluateMathFunc(funcName, args)
+      return evaluateMathFunc({
+        funcName,
+        args,
+        positionStart: node.positionStart,
+        positionEnd: node.positionEnd,
+      })
     }
 
-    throw unknownFunctionError({ funcName })
+    throw unknownFunctionError({
+      funcName,
+      positionStart: node.positionStart,
+      positionEnd: node.positionEnd,
+    })
   }
 
   if (node.type === 'cast') {
@@ -296,7 +417,14 @@ export async function evaluateExpr({ node, row, tables }) {
       return String(val)
     }
     // Can only cast primitives to other primitive types
-    if (typeof val === 'object') throw castError({ toType: node.toType, fromType: 'object' })
+    if (typeof val === 'object') {
+      throw castError({
+        toType: node.toType,
+        positionStart: node.positionStart,
+        positionEnd: node.positionEnd,
+        fromType: 'object',
+      })
+    }
     if (toType === 'INTEGER' || toType === 'INT') {
       const num = Number(val)
       if (isNaN(num)) return null
@@ -313,7 +441,11 @@ export async function evaluateExpr({ node, row, tables }) {
     if (toType === 'BOOLEAN' || toType === 'BOOL') {
       return Boolean(val)
     }
-    throw castError({ toType: node.toType })
+    throw castError({
+      toType: node.toType,
+      positionStart: node.positionStart,
+      positionEnd: node.positionEnd,
+    })
   }
 
   // IN and NOT IN with value lists
@@ -384,6 +516,8 @@ export async function evaluateExpr({ node, row, tables }) {
     throw invalidContextError({
       item: 'INTERVAL',
       validContext: 'date arithmetic (+ or -)',
+      positionStart: node.positionStart,
+      positionEnd: node.positionEnd,
     })
   }
 

@@ -86,8 +86,8 @@ export function unexpectedCharError({ char, positionStart, expectsSelect = false
  *
  * @param {Object} options
  * @param {string} options.funcName - The unknown function name
- * @param {number} [options.positionStart] - Start position in query
- * @param {number} [options.positionEnd] - End position in query
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
  * @param {string} [options.validFunctions] - List of valid functions
  * @returns {ParseError}
  */
@@ -95,10 +95,11 @@ export function unknownFunctionError({ funcName, positionStart, positionEnd, val
   const supported = validFunctions ||
     'COUNT, SUM, AVG, MIN, MAX, UPPER, LOWER, CONCAT, LENGTH, SUBSTRING, TRIM, REPLACE, FLOOR, CEIL, ABS, MOD, EXP, LN, LOG10, POWER, SQRT, JSON_OBJECT, JSON_VALUE, JSON_QUERY, JSON_ARRAYAGG'
 
-  if (positionStart !== undefined) {
-    return new ParseError(`Unknown function "${funcName}" at position ${positionStart}. Supported: ${supported}`, positionStart, positionEnd ?? positionStart + funcName.length)
-  }
-  return new ParseError(`Unsupported function: ${funcName}. Supported: ${supported}`, 0, 0)
+  return new ParseError(
+    `Unknown function "${funcName}" at position ${positionStart}. Supported: ${supported}`,
+    positionStart,
+    positionEnd
+  )
 }
 
 /**
@@ -120,6 +121,23 @@ export function missingClauseError({ missing, context, positionStart, positionEn
 // ============================================================================
 
 /**
+ * Structured execution error with position range.
+ */
+export class ExecutionError extends Error {
+  /**
+   * @param {string} message - Human-readable error message
+   * @param {number} positionStart - Start position (0-based character offset)
+   * @param {number} positionEnd - End position (exclusive, 0-based character offset)
+   */
+  constructor(message, positionStart, positionEnd) {
+    super(message)
+    this.name = 'ExecutionError'
+    this.positionStart = positionStart
+    this.positionEnd = positionEnd
+  }
+}
+
+/**
  * Error for missing table.
  *
  * @param {Object} options
@@ -136,10 +154,12 @@ export function tableNotFoundError({ tableName }) {
  * @param {Object} options
  * @param {string} options.item - What was used incorrectly
  * @param {string} options.validContext - Where it can be used
- * @returns {Error}
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @returns {ExecutionError}
  */
-export function invalidContextError({ item, validContext }) {
-  return new Error(`${item} can only be used with ${validContext}`)
+export function invalidContextError({ item, validContext, positionStart, positionEnd }) {
+  return new ExecutionError(`${item} can only be used with ${validContext}`, positionStart, positionEnd)
 }
 
 /**
@@ -215,9 +235,11 @@ const FUNCTION_SIGNATURES = {
  * @param {string} options.funcName - The function name
  * @param {number | string} options.expected - Expected count (number or range like "2 or 3")
  * @param {number} options.received - Actual argument count
- * @returns {Error}
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @returns {ExecutionError}
  */
-export function argCountError({ funcName, expected, received }) {
+export function argCountError({ funcName, expected, received, positionStart, positionEnd }) {
   const signature = FUNCTION_SIGNATURES[funcName] ?? ''
   let expectedStr = `${expected} arguments`
   if (expected === 0) expectedStr = 'no arguments'
@@ -226,7 +248,7 @@ export function argCountError({ funcName, expected, received }) {
     expectedStr = `${expected} argument`
   }
 
-  return new Error(`${funcName}(${signature}) function requires ${expectedStr}, got ${received}`)
+  return new ExecutionError(`${funcName}(${signature}) function requires ${expectedStr}, got ${received}`, positionStart, positionEnd)
 }
 
 /**
@@ -235,13 +257,15 @@ export function argCountError({ funcName, expected, received }) {
  * @param {Object} options
  * @param {string} options.funcName - The function name
  * @param {string} options.message - Specific error message
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
  * @param {string} [options.hint] - Recovery hint
- * @returns {Error}
+ * @returns {ExecutionError}
  */
-export function argValueError({ funcName, message, hint }) {
+export function argValueError({ funcName, message, positionStart, positionEnd, hint }) {
   const signature = FUNCTION_SIGNATURES[funcName] ?? ''
   const suffix = hint ? `. ${hint}` : ''
-  return new Error(`${funcName}(${signature}): ${message}${suffix}`)
+  return new ExecutionError(`${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd)
 }
 
 /**
@@ -261,13 +285,15 @@ export function aggregateError({ funcName, issue }) {
  *
  * @param {Object} options
  * @param {string} options.toType - The unsupported target type
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
  * @param {string} [options.fromType] - The source type (optional)
- * @returns {Error}
+ * @returns {ExecutionError}
  */
-export function castError({ toType, fromType }) {
+export function castError({ toType, positionStart, positionEnd, fromType }) {
   const message = fromType
     ? `Cannot CAST ${fromType} to ${toType}`
     : `Unsupported CAST to type ${toType}`
 
-  return new Error(`${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`)
+  return new ExecutionError(`${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd)
 }
