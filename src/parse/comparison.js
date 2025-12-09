@@ -1,7 +1,7 @@
 import { syntaxError } from '../errors.js'
 import { isBinaryOp } from '../validation.js'
 import { parseAdditive, parseExpression, parseSubquery } from './expression.js'
-import { consume, current, expect, match, peekToken } from './state.js'
+import { consume, current, expect, lastPosition, match, peekToken } from './state.js'
 
 /**
  * @import { ExprNode, ParserState } from '../types.js'
@@ -26,6 +26,8 @@ export function parseComparison(state) {
         type: 'unary',
         op: 'IS NOT NULL',
         argument: left,
+        positionStart: left.positionStart,
+        positionEnd: lastPosition(state),
       }
     }
     expect(state, 'keyword', 'NULL')
@@ -33,6 +35,8 @@ export function parseComparison(state) {
       type: 'unary',
       op: 'IS NULL',
       argument: left,
+      positionStart: left.positionStart,
+      positionEnd: lastPosition(state),
     }
   }
 
@@ -40,6 +44,7 @@ export function parseComparison(state) {
   if (tok.type === 'keyword' && tok.value === 'NOT') {
     const nextTok = peekToken(state, 1)
     if (nextTok.type === 'keyword' && nextTok.value === 'LIKE') {
+      const notPositionStart = tok.positionStart
       consume(state) // NOT
       consume(state) // LIKE
       const right = parseAdditive(state)
@@ -51,7 +56,11 @@ export function parseComparison(state) {
           op: 'LIKE',
           left,
           right,
+          positionStart: left.positionStart,
+          positionEnd: right.positionEnd,
         },
+        positionStart: notPositionStart,
+        positionEnd: right.positionEnd,
       }
     }
   }
@@ -64,6 +73,8 @@ export function parseComparison(state) {
       op: 'LIKE',
       left,
       right,
+      positionStart: left.positionStart,
+      positionEnd: right.positionEnd,
     }
   }
 
@@ -71,6 +82,7 @@ export function parseComparison(state) {
   if (tok.type === 'keyword' && tok.value === 'NOT') {
     const nextTok = peekToken(state, 1)
     if (nextTok.type === 'keyword' && nextTok.value === 'BETWEEN') {
+      const notPositionStart = tok.positionStart
       consume(state) // NOT
       consume(state) // BETWEEN
       const lower = parseAdditive(state)
@@ -80,8 +92,10 @@ export function parseComparison(state) {
       return {
         type: 'binary',
         op: 'OR',
-        left: { type: 'binary', op: '<', left, right: lower },
-        right: { type: 'binary', op: '>', left, right: upper },
+        left: { type: 'binary', op: '<', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
+        right: { type: 'binary', op: '>', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
+        positionStart: notPositionStart,
+        positionEnd: upper.positionEnd,
       }
     }
   }
@@ -95,8 +109,10 @@ export function parseComparison(state) {
     return {
       type: 'binary',
       op: 'AND',
-      left: { type: 'binary', op: '>=', left, right: lower },
-      right: { type: 'binary', op: '<=', left, right: upper },
+      left: { type: 'binary', op: '>=', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
+      right: { type: 'binary', op: '<=', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
+      positionStart: left.positionStart,
+      positionEnd: upper.positionEnd,
     }
   }
 
@@ -104,6 +120,7 @@ export function parseComparison(state) {
   if (tok.type === 'keyword' && tok.value === 'NOT') {
     const nextTok = peekToken(state, 1)
     if (nextTok.type === 'keyword' && nextTok.value === 'IN') {
+      const notPositionStart = tok.positionStart
       consume(state) // NOT
       consume(state) // IN
 
@@ -117,6 +134,7 @@ export function parseComparison(state) {
       if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
         // Subquery - let parseSubquery handle the parens
         const subquery = parseSubquery(state)
+        const positionEnd = lastPosition(state)
         return {
           type: 'unary',
           op: 'NOT',
@@ -124,7 +142,11 @@ export function parseComparison(state) {
             type: 'in',
             expr: left,
             subquery,
+            positionStart: left.positionStart,
+            positionEnd,
           },
+          positionStart: notPositionStart,
+          positionEnd,
         }
       } else {
         // Parse list of values - we handle the parens
@@ -136,6 +158,7 @@ export function parseComparison(state) {
           if (!match(state, 'comma')) break
         }
         expect(state, 'paren', ')')
+        const positionEnd = lastPosition(state)
         return {
           type: 'unary',
           op: 'NOT',
@@ -143,7 +166,11 @@ export function parseComparison(state) {
             type: 'in valuelist',
             expr: left,
             values,
+            positionStart: left.positionStart,
+            positionEnd,
           },
+          positionStart: notPositionStart,
+          positionEnd,
         }
       }
     }
@@ -166,6 +193,8 @@ export function parseComparison(state) {
         type: 'in',
         expr: left,
         subquery,
+        positionStart: left.positionStart,
+        positionEnd: lastPosition(state),
       }
     } else {
       // Parse list of values - we handle the parens
@@ -181,6 +210,8 @@ export function parseComparison(state) {
         type: 'in valuelist',
         expr: left,
         values,
+        positionStart: left.positionStart,
+        positionEnd: lastPosition(state),
       }
     }
   }
@@ -193,6 +224,8 @@ export function parseComparison(state) {
       op: tok.value,
       left,
       right,
+      positionStart: left.positionStart,
+      positionEnd: right.positionEnd,
     }
   }
 

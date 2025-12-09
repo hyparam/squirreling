@@ -5,29 +5,74 @@ describe('ORDER BY clause', () => {
   it('should parse ORDER BY with default ASC', () => {
     const select = parseSql('SELECT * FROM users ORDER BY name')
     expect(select.orderBy).toEqual([
-      { expr: { type: 'identifier', name: 'name' }, direction: 'ASC' },
+      {
+        expr: {
+          type: 'identifier',
+          name: 'name',
+          positionStart: 29,
+          positionEnd: 33,
+        },
+        direction: 'ASC',
+        nulls: undefined,
+      },
     ])
   })
 
   it('should parse ORDER BY with explicit ASC', () => {
     const select = parseSql('SELECT * FROM users ORDER BY name ASC')
     expect(select.orderBy).toEqual([
-      { expr: { type: 'identifier', name: 'name' }, direction: 'ASC' },
+      {
+        expr: {
+          type: 'identifier',
+          name: 'name',
+          positionStart: 29,
+          positionEnd: 33,
+        },
+        direction: 'ASC',
+        nulls: undefined,
+      },
     ])
   })
 
   it('should parse ORDER BY with DESC', () => {
     const select = parseSql('SELECT * FROM users ORDER BY age DESC')
     expect(select.orderBy).toEqual([
-      { expr: { type: 'identifier', name: 'age' }, direction: 'DESC' },
+      {
+        expr: {
+          type: 'identifier',
+          name: 'age',
+          positionStart: 29,
+          positionEnd: 32,
+        },
+        direction: 'DESC',
+        nulls: undefined,
+      },
     ])
   })
 
   it('should parse ORDER BY with multiple columns', () => {
     const select = parseSql('SELECT * FROM users ORDER BY city ASC, age DESC')
     expect(select.orderBy).toEqual([
-      { expr: { type: 'identifier', name: 'city' }, direction: 'ASC' },
-      { expr: { type: 'identifier', name: 'age' }, direction: 'DESC' },
+      {
+        expr: {
+          type: 'identifier',
+          name: 'city',
+          positionStart: 29,
+          positionEnd: 33,
+        },
+        direction: 'ASC',
+        nulls: undefined,
+      },
+      {
+        expr: {
+          type: 'identifier',
+          name: 'age',
+          positionStart: 39,
+          positionEnd: 42,
+        },
+        direction: 'DESC',
+        nulls: undefined,
+      },
     ])
   })
 
@@ -37,10 +82,18 @@ describe('ORDER BY clause', () => {
       {
         expr: {
           type: 'cast',
-          expr: { type: 'identifier', name: 'size' },
+          expr: {
+            type: 'identifier',
+            name: 'size',
+            positionStart: 34,
+            positionEnd: 38,
+          },
           toType: 'INTEGER',
+          positionStart: 29,
+          positionEnd: 50,
         },
         direction: 'ASC',
+        nulls: undefined,
       },
     ])
   })
@@ -49,7 +102,12 @@ describe('ORDER BY clause', () => {
     const select = parseSql('SELECT * FROM users ORDER BY name NULLS FIRST')
     expect(select.orderBy).toEqual([
       {
-        expr: { type: 'identifier', name: 'name' },
+        expr: {
+          type: 'identifier',
+          name: 'name',
+          positionStart: 29,
+          positionEnd: 33,
+        },
         direction: 'ASC',
         nulls: 'FIRST',
       },
@@ -60,7 +118,12 @@ describe('ORDER BY clause', () => {
     const select = parseSql('SELECT * FROM users ORDER BY age DESC NULLS LAST')
     expect(select.orderBy).toEqual([
       {
-        expr: { type: 'identifier', name: 'age' },
+        expr: {
+          type: 'identifier',
+          name: 'age',
+          positionStart: 29,
+          positionEnd: 32,
+        },
         direction: 'DESC',
         nulls: 'LAST',
       },
@@ -71,8 +134,15 @@ describe('ORDER BY clause', () => {
     const select = parseSql('SELECT * FROM users ORDER BY RANDOM()')
     expect(select.orderBy).toEqual([
       {
-        expr: { type: 'function', name: 'RANDOM', args: [] },
+        expr: {
+          type: 'function',
+          name: 'RANDOM',
+          args: [],
+          positionStart: 29,
+          positionEnd: 37,
+        },
         direction: 'ASC',
+        nulls: undefined,
       },
     ])
   })
@@ -81,8 +151,15 @@ describe('ORDER BY clause', () => {
     const select = parseSql('SELECT * FROM users ORDER BY RAND()')
     expect(select.orderBy).toEqual([
       {
-        expr: { type: 'function', name: 'RAND', args: [] },
+        expr: {
+          type: 'function',
+          name: 'RAND',
+          args: [],
+          positionStart: 29,
+          positionEnd: 35,
+        },
         direction: 'ASC',
+        nulls: undefined,
       },
     ])
   })

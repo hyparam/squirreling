@@ -31,10 +31,20 @@ export function peekToken(state, offset) {
  */
 export function consume(state) {
   const tok = current(state)
+  state.lastPos = tok.positionEnd
   if (state.pos < state.tokens.length - 1) {
     state.pos += 1
   }
   return tok
+}
+
+/**
+ * Gets the position after the last consumed token.
+ * @param {ParserState} state
+ * @returns {number}
+ */
+export function lastPosition(state) {
+  return state.lastPos ?? 0
 }
 
 /**

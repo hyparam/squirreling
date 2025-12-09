@@ -6,7 +6,7 @@ describe('parseSql', () => {
     it('should parse literal SELECT', () => {
       const select = parseSql('SELECT 1 from users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'literal', value: 1 } },
+        { kind: 'derived', expr: { type: 'literal', value: 1, positionStart: 7, positionEnd: 8 }, alias: undefined },
       ])
     })
 
@@ -37,16 +37,16 @@ describe('parseSql', () => {
     it('should parse SELECT with single column', () => {
       const select = parseSql('SELECT name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
       ])
     })
 
     it('should parse SELECT with multiple columns', () => {
       const select = parseSql('SELECT name, age, email FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' } },
-        { kind: 'derived', expr: { type: 'identifier', name: 'age' } },
-        { kind: 'derived', expr: { type: 'identifier', name: 'email' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'age', positionStart: 13, positionEnd: 16 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email', positionStart: 18, positionEnd: 23 }, alias: undefined },
       ])
     })
 
@@ -68,7 +68,9 @@ describe('parseSql', () => {
           expr: {
             type: 'unary',
             op: '-',
-            argument: { type: 'identifier', name: 'age' },
+            argument: { type: 'identifier', name: 'age', positionStart: 8, positionEnd: 11 },
+            positionStart: 7,
+            positionEnd: 11,
           },
           alias: 'neg_age',
         },
@@ -80,14 +82,14 @@ describe('parseSql', () => {
     it('should parse column alias with AS', () => {
       const select = parseSql('SELECT name AS full_name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: 'full_name' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: 'full_name' },
       ])
     })
 
     it('should parse column alias without AS', () => {
       const select = parseSql('SELECT name full_name FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' }, alias: 'full_name' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: 'full_name' },
       ])
     })
 
@@ -102,8 +104,8 @@ describe('parseSql', () => {
     it('should parse column names with spaces using double quotes', () => {
       const select = parseSql('SELECT "first name", "last name" FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'first name' } },
-        { kind: 'derived', expr: { type: 'identifier', name: 'last name' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'first name', positionStart: 7, positionEnd: 19 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'last name', positionStart: 21, positionEnd: 32 }, alias: undefined },
       ])
     })
 
@@ -125,16 +127,16 @@ describe('parseSql', () => {
     it('should parse quoted column with alias', () => {
       const select = parseSql('SELECT "first name" AS fname FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'first name' }, alias: 'fname' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'first name', positionStart: 7, positionEnd: 19 }, alias: 'fname' },
       ])
     })
 
     it('should parse mixed quoted and unquoted identifiers', () => {
       const select = parseSql('SELECT id, "full name", email FROM users')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'id' } },
-        { kind: 'derived', expr: { type: 'identifier', name: 'full name' } },
-        { kind: 'derived', expr: { type: 'identifier', name: 'email' } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'full name', positionStart: 11, positionEnd: 22 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email', positionStart: 24, positionEnd: 29 }, alias: undefined },
       ])
     })
   })
@@ -155,9 +157,10 @@ describe('parseSql', () => {
           func: 'COUNT',
           arg: {
             kind: 'expression',
-            expr: { type: 'identifier', name: 'id' },
+            expr: { type: 'identifier', name: 'id', positionStart: 13, positionEnd: 15 },
             quantifier: 'all',
           },
+          alias: undefined,
         },
       ])
     })
@@ -168,7 +171,8 @@ describe('parseSql', () => {
         {
           kind: 'aggregate',
           func: 'SUM',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount' }, quantifier: 'all' },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount', positionStart: 11, positionEnd: 17 }, quantifier: 'all' },
+          alias: undefined,
         },
       ])
     })
@@ -179,7 +183,8 @@ describe('parseSql', () => {
         {
           kind: 'aggregate',
           func: 'AVG',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'score' }, quantifier: 'all' },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'score', positionStart: 11, positionEnd: 16 }, quantifier: 'all' },
+          alias: undefined,
         },
       ])
     })
@@ -190,12 +195,14 @@ describe('parseSql', () => {
         {
           kind: 'aggregate',
           func: 'MIN',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' }, quantifier: 'all' },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price', positionStart: 11, positionEnd: 16 }, quantifier: 'all' },
+          alias: undefined,
         },
         {
           kind: 'aggregate',
           func: 'MAX',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price' }, quantifier: 'all' },
+          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price', positionStart: 23, positionEnd: 28 }, quantifier: 'all' },
+          alias: undefined,
         },
       ])
     })
@@ -211,14 +218,16 @@ describe('parseSql', () => {
   describe('GROUP BY clause', () => {
     it('should parse GROUP BY with single column', () => {
       const select = parseSql('SELECT city, COUNT(*) FROM users GROUP BY city')
-      expect(select.groupBy).toEqual([{ type: 'identifier', name: 'city' }])
+      expect(select.groupBy).toEqual([
+        { type: 'identifier', name: 'city', positionStart: 42, positionEnd: 46 },
+      ])
     })
 
     it('should parse GROUP BY with multiple columns', () => {
       const select = parseSql('SELECT city, state, COUNT(*) FROM users GROUP BY city, state')
       expect(select.groupBy).toEqual([
-        { type: 'identifier', name: 'city' },
-        { type: 'identifier', name: 'state' },
+        { type: 'identifier', name: 'city', positionStart: 49, positionEnd: 53 },
+        { type: 'identifier', name: 'state', positionStart: 55, positionEnd: 60 },
       ])
     })
 
@@ -230,7 +239,7 @@ describe('parseSql', () => {
           func: 'MAX',
           arg: {
             kind: 'expression',
-            expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'problem' }] },
+            expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'problem', positionStart: 18, positionEnd: 25 }], positionStart: 11, positionEnd: 26 },
             quantifier: 'all',
           },
           alias: 'max_problem_len',
@@ -246,7 +255,7 @@ describe('parseSql', () => {
           func: 'COUNT',
           arg: {
             kind: 'expression',
-            expr: { type: 'identifier', name: 'problem_id' },
+            expr: { type: 'identifier', name: 'problem_id', positionStart: 22, positionEnd: 32 },
             quantifier: 'distinct',
           },
           alias: 'n_unique_problems',
@@ -261,9 +270,10 @@ describe('parseSql', () => {
           func: 'COUNT',
           arg: {
             kind: 'expression',
-            expr: { type: 'identifier', name: 'problem_id' },
+            expr: { type: 'identifier', name: 'problem_id', positionStart: 17, positionEnd: 27 },
             quantifier: 'all',
           },
+          alias: undefined,
         },
       ])
     })
@@ -303,20 +313,53 @@ describe('parseSql', () => {
       expect(select).toEqual({
         distinct: true,
         columns: [
-          { kind: 'derived', expr: { type: 'identifier', name: 'city' } },
+          {
+            kind: 'derived',
+            expr: {
+              type: 'identifier',
+              name: 'city',
+              positionStart: 25,
+              positionEnd: 29,
+            },
+            alias: undefined,
+          },
           { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' },
         ],
-        from: { kind: 'table', table: 'users' },
+        from: { kind: 'table', table: 'users', alias: undefined },
         joins: [],
         where: {
           type: 'binary',
           op: '>',
-          left: { type: 'identifier', name: 'age' },
-          right: { type: 'literal', value: 18 },
+          left: {
+            type: 'identifier',
+            name: 'age',
+            positionStart: 82,
+            positionEnd: 85,
+          },
+          right: { type: 'literal', value: 18, positionStart: 88, positionEnd: 90 },
+          positionStart: 82,
+          positionEnd: 90,
         },
-        groupBy: [{ type: 'identifier', name: 'city' }],
+        groupBy: [
+          {
+            type: 'identifier',
+            name: 'city',
+            positionStart: 108,
+            positionEnd: 112,
+          },
+        ],
+        having: undefined,
         orderBy: [
-          { expr: { type: 'identifier', name: 'total' }, direction: 'DESC' },
+          {
+            expr: {
+              type: 'identifier',
+              name: 'total',
+              positionStart: 130,
+              positionEnd: 135,
+            },
+            direction: 'DESC',
+            nulls: undefined,
+          },
         ],
         limit: 5,
         offset: 10,
@@ -341,8 +384,10 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'cast',
-            expr: { type: 'identifier', name: 'age' },
+            expr: { type: 'identifier', name: 'age', positionStart: 12, positionEnd: 15 },
             toType: 'STRING',
+            positionStart: 7,
+            positionEnd: 26,
           },
           alias: 'age_str',
         },
@@ -359,8 +404,10 @@ describe('parseSql', () => {
             kind: 'expression',
             expr: {
               type: 'cast',
-              expr: { type: 'identifier', name: 'size' },
+              expr: { type: 'identifier', name: 'size', positionStart: 16, positionEnd: 20 },
               toType: 'BIGINT',
+              positionStart: 11,
+              positionEnd: 31,
             },
             quantifier: 'all',
           },
@@ -372,7 +419,16 @@ describe('parseSql', () => {
     it('should parse subquery in FROM clause', () => {
       const select = parseSql('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'identifier',
+            name: 'name',
+            positionStart: 7,
+            positionEnd: 11,
+          },
+          alias: undefined,
+        },
       ])
       expect(select.from).toMatchObject({
         kind: 'subquery',
@@ -404,14 +460,39 @@ describe('parseSql', () => {
                 condition: {
                   type: 'binary',
                   op: '>',
-                  left: { type: 'identifier', name: 'age' },
-                  right: { type: 'literal', value: 18 },
+                  left: {
+                    type: 'identifier',
+                    name: 'age',
+                    positionStart: 17,
+                    positionEnd: 20,
+                  },
+                  right: {
+                    type: 'literal',
+                    value: 18,
+                    positionStart: 23,
+                    positionEnd: 25,
+                  },
+                  positionStart: 17,
+                  positionEnd: 25,
                 },
-                result: { type: 'literal', value: 'adult' },
+                result: {
+                  type: 'literal',
+                  value: 'adult',
+                  positionStart: 31,
+                  positionEnd: 38,
+                },
               },
             ],
-            elseResult: { type: 'literal', value: 'minor' },
+            elseResult: {
+              type: 'literal',
+              value: 'minor',
+              positionStart: 44,
+              positionEnd: 51,
+            },
+            positionStart: 7,
+            positionEnd: 55,
           },
+          alias: undefined,
         },
       ])
     })
@@ -423,18 +504,46 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'case',
-            caseExpr: { type: 'identifier', name: 'status' },
+            caseExpr: {
+              type: 'identifier',
+              name: 'status',
+              positionStart: 12,
+              positionEnd: 18,
+            },
             whenClauses: [
               {
-                condition: { type: 'literal', value: 1 },
-                result: { type: 'literal', value: 'active' },
+                condition: {
+                  type: 'literal',
+                  value: 1,
+                  positionStart: 24,
+                  positionEnd: 25,
+                },
+                result: {
+                  type: 'literal',
+                  value: 'active',
+                  positionStart: 31,
+                  positionEnd: 39,
+                },
               },
               {
-                condition: { type: 'literal', value: 0 },
-                result: { type: 'literal', value: 'inactive' },
+                condition: {
+                  type: 'literal',
+                  value: 0,
+                  positionStart: 45,
+                  positionEnd: 46,
+                },
+                result: {
+                  type: 'literal',
+                  value: 'inactive',
+                  positionStart: 52,
+                  positionEnd: 62,
+                },
               },
             ],
+            positionStart: 7,
+            positionEnd: 66,
           },
+          alias: undefined,
         },
       ])
     })

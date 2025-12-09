@@ -73,54 +73,59 @@ export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp | ArithmeticOp
 
 export type ComparisonOp = '=' | '!=' | '<>' | '<' | '>' | '<=' | '>='
 
-export interface LiteralNode {
+export interface ExprNodeBase {
+  positionStart: number
+  positionEnd: number
+}
+
+export interface LiteralNode extends ExprNodeBase {
   type: 'literal'
   value: SqlPrimitive
 }
 
-export interface IdentifierNode {
+export interface IdentifierNode extends ExprNodeBase {
   type: 'identifier'
   name: string
 }
 
-export interface UnaryNode {
+export interface UnaryNode extends ExprNodeBase {
   type: 'unary'
   op: 'NOT' | 'IS NULL' | 'IS NOT NULL' | '-'
   argument: ExprNode
 }
 
-export interface BinaryNode {
+export interface BinaryNode extends ExprNodeBase {
   type: 'binary'
   op: BinaryOp
   left: ExprNode
   right: ExprNode
 }
 
-export interface FunctionNode {
+export interface FunctionNode extends ExprNodeBase {
   type: 'function'
   name: string
   args: ExprNode[]
 }
 
-export interface CastNode {
+export interface CastNode extends ExprNodeBase {
   type: 'cast'
   expr: ExprNode
   toType: string
 }
 
-export interface InSubqueryNode {
+export interface InSubqueryNode extends ExprNodeBase {
   type: 'in'
   expr: ExprNode
   subquery: SelectStatement
 }
 
-export interface InValuesNode {
+export interface InValuesNode extends ExprNodeBase {
   type: 'in valuelist'
   expr: ExprNode
   values: ExprNode[]
 }
 
-export interface ExistsNode {
+export interface ExistsNode extends ExprNodeBase {
   type: 'exists' | 'not exists'
   subquery: SelectStatement
 }
@@ -130,21 +135,21 @@ export interface WhenClause {
   result: ExprNode
 }
 
-export interface CaseNode {
+export interface CaseNode extends ExprNodeBase {
   type: 'case'
   caseExpr?: ExprNode
   whenClauses: WhenClause[]
   elseResult?: ExprNode
 }
 
-export interface SubqueryNode {
+export interface SubqueryNode extends ExprNodeBase {
   type: 'subquery'
   subquery: SelectStatement
 }
 
 export type IntervalUnit = 'DAY' | 'MONTH' | 'YEAR' | 'HOUR' | 'MINUTE' | 'SECOND'
 
-export interface IntervalNode {
+export interface IntervalNode extends ExprNodeBase {
   type: 'interval'
   value: number
   unit: IntervalUnit
@@ -245,6 +250,7 @@ export interface JoinClause {
 export interface ParserState {
   tokens: Token[]
   pos: number
+  lastPos?: number
 }
 
 // Tokenizer types

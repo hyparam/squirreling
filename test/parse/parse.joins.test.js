@@ -9,11 +9,24 @@ describe('parseSql - JOIN queries', () => {
       {
         joinType: 'INNER',
         table: 'orders',
+        alias: undefined,
         on: {
           type: 'binary',
           op: '=',
-          left: { type: 'identifier', name: 'users.id' },
-          right: { type: 'identifier', name: 'orders.user_id' },
+          left: {
+            type: 'identifier',
+            name: 'users.id',
+            positionStart: 35,
+            positionEnd: 43,
+          },
+          right: {
+            type: 'identifier',
+            name: 'orders.user_id',
+            positionStart: 46,
+            positionEnd: 60,
+          },
+          positionStart: 35,
+          positionEnd: 60,
         },
       },
     ])
@@ -30,11 +43,24 @@ describe('parseSql - JOIN queries', () => {
       {
         joinType: 'LEFT',
         table: 'orders',
+        alias: undefined,
         on: {
           type: 'binary',
           op: '=',
-          left: { type: 'identifier', name: 'users.id' },
-          right: { type: 'identifier', name: 'orders.user_id' },
+          left: {
+            type: 'identifier',
+            name: 'users.id',
+            positionStart: 40,
+            positionEnd: 48,
+          },
+          right: {
+            type: 'identifier',
+            name: 'orders.user_id',
+            positionStart: 51,
+            positionEnd: 65,
+          },
+          positionStart: 40,
+          positionEnd: 65,
         },
       },
     ])
@@ -73,8 +99,15 @@ describe('parseSql - JOIN queries', () => {
     expect(select.where).toEqual({
       type: 'binary',
       op: '>',
-      left: { type: 'identifier', name: 'users.age' },
-      right: { type: 'literal', value: 18 },
+      left: {
+        type: 'identifier',
+        name: 'users.age',
+        positionStart: 26,
+        positionEnd: 35,
+      },
+      right: { type: 'literal', value: 18, positionStart: 38, positionEnd: 40 },
+      positionStart: 26,
+      positionEnd: 40,
     })
   })
 })

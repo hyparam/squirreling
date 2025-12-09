@@ -7,7 +7,7 @@ import {
 import { isAggregateFunc, isIntervalUnit, isMathFunc, isStringFunc } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'
-import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
+import { consume, current, expect, expectIdentifier, lastPosition, match, peekToken } from './state.js'
 
 /**
  * @import { ExprNode, IntervalNode, ParserState, SelectStatement, WhenClause } from '../types.js'
@@ -18,6 +18,7 @@ import { consume, current, expect, expectIdentifier, match, peekToken } from './
  * @returns {IntervalNode}
  */
 function parseInterval(state) {
+  const { positionStart } = current(state)
   consume(state) // INTERVAL
 
   // Handle optional negative sign
@@ -59,7 +60,7 @@ function parseInterval(state) {
   }
   consume(state)
 
-  return { type: 'interval', value, unit: unitTok.value }
+  return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: lastPosition(state) }
 }
 
 /**
@@ -76,6 +77,7 @@ export function parseExpression(state) {
  */
 export function parsePrimary(state) {
   const tok = current(state)
+  const { positionStart } = tok
 
   if (tok.type === 'paren' && tok.value === '(') {
     // Peek ahead to see if this is a scalar subquery
@@ -86,6 +88,8 @@ export function parsePrimary(state) {
       return {
         type: 'subquery',
         subquery,
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
     // Regular grouped expression
@@ -110,6 +114,8 @@ export function parsePrimary(state) {
         type: 'cast',
         expr,
         toType: typeTok.value,
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
 
@@ -132,10 +138,13 @@ export function parsePrimary(state) {
         while (true) {
           // Handle COUNT(*) - treat * as a special identifier
           if (current(state).type === 'operator' && current(state).value === '*') {
+            const starTok = current(state)
             consume(state)
             args.push({
               type: 'identifier',
               name: '*',
+              positionStart: starTok.positionStart,
+              positionEnd: lastPosition(state),
             })
           } else {
             const arg = parseExpression(state)
@@ -151,6 +160,8 @@ export function parsePrimary(state) {
         type: 'function',
         name: funcName,
         args,
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
 
@@ -162,6 +173,8 @@ export function parsePrimary(state) {
         type: 'function',
         name: tok.value,
         args: [],
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
 
@@ -178,6 +191,8 @@ export function parsePrimary(state) {
     return {
       type: 'identifier',
       name,
+      positionStart,
+      positionEnd: lastPosition(state),
     }
   }
 
@@ -186,6 +201,8 @@ export function parsePrimary(state) {
     return {
       type: 'literal',
       value: tok.numericValue ?? null,
+      positionStart,
+      positionEnd: lastPosition(state),
     }
   }
 
@@ -194,21 +211,23 @@ export function parsePrimary(state) {
     return {
       type: 'literal',
       value: tok.value,
+      positionStart,
+      positionEnd: lastPosition(state),
     }
   }
 
   if (tok.type === 'keyword') {
     if (tok.value === 'TRUE') {
       consume(state)
-      return { type: 'literal', value: true }
+      return { type: 'literal', value: true, positionStart, positionEnd: lastPosition(state) }
     }
     if (tok.value === 'FALSE') {
       consume(state)
-      return { type: 'literal', value: false }
+      return { type: 'literal', value: false, positionStart, positionEnd: lastPosition(state) }
     }
     if (tok.value === 'NULL') {
       consume(state)
-      return { type: 'literal', value: null }
+      return { type: 'literal', value: null, positionStart, positionEnd: lastPosition(state) }
     }
     if (tok.value === 'EXISTS') {
       consume(state) // EXISTS
@@ -216,6 +235,8 @@ export function parsePrimary(state) {
       return {
         type: 'exists',
         subquery,
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
     if (tok.value === 'CASE') {
@@ -261,6 +282,8 @@ export function parsePrimary(state) {
         caseExpr,
         whenClauses,
         elseResult,
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
     if (tok.value === 'INTERVAL') {
@@ -275,6 +298,8 @@ export function parsePrimary(state) {
       type: 'unary',
       op: '-',
       argument,
+      positionStart,
+      positionEnd: argument.positionEnd,
     }
   }
 
@@ -295,6 +320,8 @@ function parseOr(state) {
       op: 'OR',
       left: node,
       right,
+      positionStart: node.positionStart,
+      positionEnd: right.positionEnd,
     }
   }
   return node
@@ -313,6 +340,8 @@ function parseAnd(state) {
       op: 'AND',
       left: node,
       right,
+      positionStart: node.positionStart,
+      positionEnd: right.positionEnd,
     }
   }
   return node
@@ -323,7 +352,9 @@ function parseAnd(state) {
  * @returns {ExprNode}
  */
 function parseNot(state) {
+  const tok = current(state)
   if (match(state, 'keyword', 'NOT')) {
+    const { positionStart } = tok
     // Check for NOT EXISTS
     const nextTok = current(state)
     if (nextTok.type === 'keyword' && nextTok.value === 'EXISTS') {
@@ -332,6 +363,8 @@ function parseNot(state) {
       return {
         type: 'not exists',
         subquery,
+        positionStart,
+        positionEnd: lastPosition(state),
       }
     }
     const argument = parseNot(state)
@@ -339,6 +372,8 @@ function parseNot(state) {
       type: 'unary',
       op: 'NOT',
       argument,
+      positionStart,
+      positionEnd: argument.positionEnd,
     }
   }
   return parseComparison(state)
@@ -360,6 +395,8 @@ export function parseAdditive(state) {
         op: tok.value,
         left: node,
         right,
+        positionStart: node.positionStart,
+        positionEnd: right.positionEnd,
       }
     } else {
       break
@@ -384,6 +421,8 @@ function parseMultiplicative(state) {
         op: tok.value,
         left: node,
         right,
+        positionStart: node.positionStart,
+        positionEnd: right.positionEnd,
       }
     } else {
       break

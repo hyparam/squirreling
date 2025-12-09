@@ -6,42 +6,102 @@ describe('INTERVAL parsing', () => {
     it('should parse INTERVAL with DAY', () => {
       const select = parseSql('SELECT INTERVAL 1 DAY FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 1, unit: 'DAY' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 1,
+            unit: 'DAY',
+            positionStart: 7,
+            positionEnd: 21,
+          },
+          alias: undefined,
+        },
       ])
     })
 
     it('should parse INTERVAL with MONTH', () => {
       const select = parseSql('SELECT INTERVAL 2 MONTH FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 2, unit: 'MONTH' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 2,
+            unit: 'MONTH',
+            positionStart: 7,
+            positionEnd: 23,
+          },
+          alias: undefined,
+        },
       ])
     })
 
     it('should parse INTERVAL with YEAR', () => {
       const select = parseSql('SELECT INTERVAL 5 YEAR FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 5, unit: 'YEAR' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 5,
+            unit: 'YEAR',
+            positionStart: 7,
+            positionEnd: 22,
+          },
+          alias: undefined,
+        },
       ])
     })
 
     it('should parse INTERVAL with HOUR', () => {
       const select = parseSql('SELECT INTERVAL 12 HOUR FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 12, unit: 'HOUR' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 12,
+            unit: 'HOUR',
+            positionStart: 7,
+            positionEnd: 23,
+          },
+          alias: undefined,
+        },
       ])
     })
 
     it('should parse INTERVAL with MINUTE', () => {
       const select = parseSql('SELECT INTERVAL 30 MINUTE FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 30, unit: 'MINUTE' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 30,
+            unit: 'MINUTE',
+            positionStart: 7,
+            positionEnd: 25,
+          },
+          alias: undefined,
+        },
       ])
     })
 
     it('should parse INTERVAL with SECOND', () => {
       const select = parseSql('SELECT INTERVAL 45 SECOND FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 45, unit: 'SECOND' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 45,
+            unit: 'SECOND',
+            positionStart: 7,
+            positionEnd: 25,
+          },
+          alias: undefined,
+        },
       ])
     })
   })
@@ -50,14 +110,34 @@ describe('INTERVAL parsing', () => {
     it('should parse quoted INTERVAL value', () => {
       const select = parseSql('SELECT INTERVAL \'1\' DAY FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 1, unit: 'DAY' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 1,
+            unit: 'DAY',
+            positionStart: 7,
+            positionEnd: 23,
+          },
+          alias: undefined,
+        },
       ])
     })
 
     it('should parse quoted decimal INTERVAL', () => {
       const select = parseSql('SELECT INTERVAL \'2.5\' HOUR FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: 2.5, unit: 'HOUR' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: 2.5,
+            unit: 'HOUR',
+            positionStart: 7,
+            positionEnd: 26,
+          },
+          alias: undefined,
+        },
       ])
     })
   })
@@ -70,9 +150,23 @@ describe('INTERVAL parsing', () => {
         expr: {
           type: 'binary',
           op: '+',
-          left: { type: 'identifier', name: 'order_date' },
-          right: { type: 'interval', value: 7, unit: 'DAY' },
+          left: {
+            type: 'identifier',
+            name: 'order_date',
+            positionStart: 7,
+            positionEnd: 17,
+          },
+          right: {
+            type: 'interval',
+            value: 7,
+            unit: 'DAY',
+            positionStart: 20,
+            positionEnd: 34,
+          },
+          positionStart: 7,
+          positionEnd: 34,
         },
+        alias: undefined,
       }])
     })
 
@@ -83,9 +177,23 @@ describe('INTERVAL parsing', () => {
         expr: {
           type: 'binary',
           op: '-',
-          left: { type: 'identifier', name: 'created_at' },
-          right: { type: 'interval', value: 30, unit: 'MINUTE' },
+          left: {
+            type: 'identifier',
+            name: 'created_at',
+            positionStart: 7,
+            positionEnd: 17,
+          },
+          right: {
+            type: 'interval',
+            value: 30,
+            unit: 'MINUTE',
+            positionStart: 20,
+            positionEnd: 38,
+          },
+          positionStart: 7,
+          positionEnd: 38,
         },
+        alias: undefined,
       }])
     })
 
@@ -96,9 +204,24 @@ describe('INTERVAL parsing', () => {
         expr: {
           type: 'binary',
           op: '+',
-          left: { type: 'function', name: 'CURRENT_DATE', args: [] },
-          right: { type: 'interval', value: 1, unit: 'MONTH' },
+          left: {
+            type: 'function',
+            name: 'CURRENT_DATE',
+            args: [],
+            positionStart: 7,
+            positionEnd: 19,
+          },
+          right: {
+            type: 'interval',
+            value: 1,
+            unit: 'MONTH',
+            positionStart: 22,
+            positionEnd: 38,
+          },
+          positionStart: 7,
+          positionEnd: 38,
         },
+        alias: undefined,
       }])
     })
   })
@@ -107,7 +230,17 @@ describe('INTERVAL parsing', () => {
     it('should parse negative INTERVAL value', () => {
       const select = parseSql('SELECT INTERVAL -1 DAY FROM dummy')
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'interval', value: -1, unit: 'DAY' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'interval',
+            value: -1,
+            unit: 'DAY',
+            positionStart: 7,
+            positionEnd: 22,
+          },
+          alias: undefined,
+        },
       ])
     })
 
@@ -118,9 +251,23 @@ describe('INTERVAL parsing', () => {
         expr: {
           type: 'binary',
           op: '-',
-          left: { type: 'identifier', name: 'date_col' },
-          right: { type: 'interval', value: 1, unit: 'DAY' },
+          left: {
+            type: 'identifier',
+            name: 'date_col',
+            positionStart: 7,
+            positionEnd: 15,
+          },
+          right: {
+            type: 'interval',
+            value: 1,
+            unit: 'DAY',
+            positionStart: 18,
+            positionEnd: 32,
+          },
+          positionStart: 7,
+          positionEnd: 32,
         },
+        alias: undefined,
       }])
     })
   })

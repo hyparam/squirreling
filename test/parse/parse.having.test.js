@@ -10,9 +10,20 @@ describe('parseSql - HAVING clause', () => {
       left: {
         type: 'function',
         name: 'COUNT',
-        args: [{ type: 'identifier', name: '*' }],
+        args: [
+          {
+            type: 'identifier',
+            name: '*',
+            positionStart: 60,
+            positionEnd: 61,
+          },
+        ],
+        positionStart: 54,
+        positionEnd: 62,
       },
-      right: { type: 'literal', value: 5 },
+      right: { type: 'literal', value: 5, positionStart: 65, positionEnd: 66 },
+      positionStart: 54,
+      positionEnd: 66,
     })
   })
 
@@ -24,9 +35,25 @@ describe('parseSql - HAVING clause', () => {
       left: {
         type: 'function',
         name: 'SUM',
-        args: [{ type: 'identifier', name: 'sales' }],
+        args: [
+          {
+            type: 'identifier',
+            name: 'sales',
+            positionStart: 76,
+            positionEnd: 81,
+          },
+        ],
+        positionStart: 72,
+        positionEnd: 82,
       },
-      right: { type: 'literal', value: 1000 },
+      right: {
+        type: 'literal',
+        value: 1000,
+        positionStart: 85,
+        positionEnd: 89,
+      },
+      positionStart: 72,
+      positionEnd: 89,
     })
   })
 
@@ -41,9 +68,20 @@ describe('parseSql - HAVING clause', () => {
         left: {
           type: 'function',
           name: 'COUNT',
-          args: [{ type: 'identifier', name: '*' }],
+          args: [
+            {
+              type: 'identifier',
+              name: '*',
+              positionStart: 60,
+              positionEnd: 61,
+            },
+          ],
+          positionStart: 54,
+          positionEnd: 62,
         },
-        right: { type: 'literal', value: 5 },
+        right: { type: 'literal', value: 5, positionStart: 65, positionEnd: 66 },
+        positionStart: 54,
+        positionEnd: 66,
       },
       right: {
         type: 'binary',
@@ -51,10 +89,28 @@ describe('parseSql - HAVING clause', () => {
         left: {
           type: 'function',
           name: 'AVG',
-          args: [{ type: 'identifier', name: 'age' }],
+          args: [
+            {
+              type: 'identifier',
+              name: 'age',
+              positionStart: 75,
+              positionEnd: 78,
+            },
+          ],
+          positionStart: 71,
+          positionEnd: 79,
         },
-        right: { type: 'literal', value: 25 },
+        right: {
+          type: 'literal',
+          value: 25,
+          positionStart: 82,
+          positionEnd: 84,
+        },
+        positionStart: 71,
+        positionEnd: 84,
       },
+      positionStart: 54,
+      positionEnd: 84,
     })
   })
 
@@ -63,8 +119,20 @@ describe('parseSql - HAVING clause', () => {
     expect(select.having).toEqual({
       type: 'binary',
       op: '=',
-      left: { type: 'identifier', name: 'city' },
-      right: { type: 'literal', value: 'NYC' },
+      left: {
+        type: 'identifier',
+        name: 'city',
+        positionStart: 61,
+        positionEnd: 65,
+      },
+      right: {
+        type: 'literal',
+        value: 'NYC',
+        positionStart: 68,
+        positionEnd: 73,
+      },
+      positionStart: 61,
+      positionEnd: 73,
     })
   })
 
@@ -87,11 +155,18 @@ describe('parseSql - HAVING clause', () => {
     expect(select.where).toEqual({
       type: 'binary',
       op: '>',
-      left: { type: 'identifier', name: 'age' },
-      right: { type: 'literal', value: 18 },
+      left: {
+        type: 'identifier',
+        name: 'age',
+        positionStart: 86,
+        positionEnd: 89,
+      },
+      right: { type: 'literal', value: 18, positionStart: 92, positionEnd: 94 },
+      positionStart: 86,
+      positionEnd: 94,
     })
     expect(select.groupBy).toEqual([
-      { type: 'identifier', name: 'city' },
+      { type: 'identifier', name: 'city', positionStart: 110, positionEnd: 114 },
     ])
     expect(select.having).toEqual({
       type: 'binary',
@@ -102,9 +177,25 @@ describe('parseSql - HAVING clause', () => {
         left: {
           type: 'function',
           name: 'COUNT',
-          args: [{ type: 'identifier', name: '*' }],
+          args: [
+            {
+              type: 'identifier',
+              name: '*',
+              positionStart: 134,
+              positionEnd: 135,
+            },
+          ],
+          positionStart: 128,
+          positionEnd: 136,
         },
-        right: { type: 'literal', value: 10 },
+        right: {
+          type: 'literal',
+          value: 10,
+          positionStart: 140,
+          positionEnd: 142,
+        },
+        positionStart: 128,
+        positionEnd: 142,
       },
       right: {
         type: 'binary',
@@ -112,13 +203,40 @@ describe('parseSql - HAVING clause', () => {
         left: {
           type: 'function',
           name: 'AVG',
-          args: [{ type: 'identifier', name: 'age' }],
+          args: [
+            {
+              type: 'identifier',
+              name: 'age',
+              positionStart: 151,
+              positionEnd: 154,
+            },
+          ],
+          positionStart: 147,
+          positionEnd: 155,
         },
-        right: { type: 'literal', value: 50 },
+        right: {
+          type: 'literal',
+          value: 50,
+          positionStart: 158,
+          positionEnd: 160,
+        },
+        positionStart: 147,
+        positionEnd: 160,
       },
+      positionStart: 128,
+      positionEnd: 160,
     })
     expect(select.orderBy).toEqual([
-      { expr: { type: 'identifier', name: 'cnt' }, direction: 'DESC' },
+      {
+        expr: {
+          type: 'identifier',
+          name: 'cnt',
+          positionStart: 176,
+          positionEnd: 179,
+        },
+        direction: 'DESC',
+        nulls: undefined,
+      },
     ])
     expect(select.limit).toBe(5)
   })
