@@ -237,6 +237,7 @@ async function* evaluateSelectAst(select, dataSource, tables) {
 async function* evaluateStreaming(select, dataSource, tables) {
   let rowsYielded = 0
   let rowsSkipped = 0
+  let rowIndex = 0
   const offset = select.offset ?? 0
   const limit = select.limit ?? Infinity
   if (limit <= 0) return
@@ -255,9 +256,10 @@ async function* evaluateStreaming(select, dataSource, tables) {
   }
 
   for await (const row of dataSource.getRows(hints)) {
+    rowIndex++
     // WHERE filter
     if (select.where) {
-      const pass = await evaluateExpr({ node: select.where, row, tables })
+      const pass = await evaluateExpr({ node: select.where, row, tables, rowIndex })
       if (!pass) continue
     }
 
@@ -270,6 +272,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
     // SELECT projection
     /** @type {AsyncRow} */
     const outRow = {}
+    const currentRowIndex = rowIndex
     for (const col of select.columns) {
       if (col.kind === 'star') {
         for (const [key, cell] of Object.entries(row)) {
@@ -277,7 +280,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
         }
       } else if (col.kind === 'derived') {
         const alias = col.alias ?? defaultDerivedAlias(col.expr)
-        outRow[alias] = () => evaluateExpr({ node: col.expr, row, tables })
+        outRow[alias] = () => evaluateExpr({ node: col.expr, row, tables, rowIndex: currentRowIndex })
       } else if (col.kind === 'aggregate') {
         throw new Error(
           'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'
@@ -335,9 +338,11 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   /** @type {AsyncRow[]} */
   const filtered = []
 
-  for (const row of working) {
+  for (let i = 0; i < working.length; i++) {
+    const row = working[i]
+    const rowIndex = i + 1 // 1-based
     if (select.where) {
-      const passes = await evaluateExpr({ node: select.where, row, tables })
+      const passes = await evaluateExpr({ node: select.where, row, tables, rowIndex })
 
       if (!passes) {
         continue

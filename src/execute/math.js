@@ -11,9 +11,10 @@ import { argCountError } from '../validationErrors.js'
  * @param {SqlPrimitive[]} options.args - Function arguments
  * @param {number} options.positionStart - Start position in query
  * @param {number} options.positionEnd - End position in query
+ * @param {number} [options.rowNumber] - 1-based row number for error reporting
  * @returns {SqlPrimitive} Result
  */
-export function evaluateMathFunc({ funcName, args, positionStart, positionEnd }) {
+export function evaluateMathFunc({ funcName, args, positionStart, positionEnd, rowNumber }) {
   if (funcName === 'FLOOR') {
     if (args.length !== 1) {
       throw argCountError({
@@ -22,6 +23,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]
@@ -37,6 +39,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]
@@ -52,6 +55,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]
@@ -67,6 +71,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const dividend = args[0]
@@ -83,6 +88,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]
@@ -98,6 +104,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]
@@ -113,6 +120,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]
@@ -128,6 +136,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const base = args[0]
@@ -144,6 +153,7 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd })
         received: args.length,
         positionStart,
         positionEnd,
+        rowNumber,
       })
     }
     const val = args[0]

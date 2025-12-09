@@ -22,9 +22,10 @@ import { applyBinaryOp, stringify } from './utils.js'
  * @param {ExprNode} params.node - The expression node to evaluate
  * @param {AsyncRow} params.row - The data row to evaluate against
  * @param {Record<string, AsyncDataSource>} params.tables
+ * @param {number} [params.rowIndex] - 1-based row index for error reporting
  * @returns {Promise<SqlPrimitive>} The result of the evaluation
  */
-export async function evaluateExpr({ node, row, tables }) {
+export async function evaluateExpr({ node, row, tables, rowIndex }) {
   if (node.type === 'literal') {
     return node.value
   }
@@ -59,16 +60,16 @@ export async function evaluateExpr({ node, row, tables }) {
   // Unary operators
   if (node.type === 'unary') {
     if (node.op === 'NOT') {
-      return !await evaluateExpr({ node: node.argument, row, tables })
+      return !await evaluateExpr({ node: node.argument, row, tables, rowIndex })
     }
     if (node.op === 'IS NULL') {
-      return await evaluateExpr({ node: node.argument, row, tables }) == null
+      return await evaluateExpr({ node: node.argument, row, tables, rowIndex }) == null
     }
     if (node.op === 'IS NOT NULL') {
-      return await evaluateExpr({ node: node.argument, row, tables }) != null
+      return await evaluateExpr({ node: node.argument, row, tables, rowIndex }) != null
     }
     if (node.op === '-') {
-      const val = await evaluateExpr({ node: node.argument, row, tables })
+      const val = await evaluateExpr({ node: node.argument, row, tables, rowIndex })
       if (val == null) return null
       return -val
     }
@@ -78,15 +79,15 @@ export async function evaluateExpr({ node, row, tables }) {
   if (node.type === 'binary') {
     // Handle date +/- interval at AST level
     if ((node.op === '+' || node.op === '-') && node.right.type === 'interval') {
-      const dateVal = await evaluateExpr({ node: node.left, row, tables })
+      const dateVal = await evaluateExpr({ node: node.left, row, tables, rowIndex })
       return applyIntervalToDate(dateVal, node.right.value, node.right.unit, node.op)
     }
     if (node.op === '+' && node.left.type === 'interval') {
-      const dateVal = await evaluateExpr({ node: node.right, row, tables })
+      const dateVal = await evaluateExpr({ node: node.right, row, tables, rowIndex })
       return applyIntervalToDate(dateVal, node.left.value, node.left.unit, '+')
     }
 
-    const left = await evaluateExpr({ node: node.left, row, tables })
+    const left = await evaluateExpr({ node: node.left, row, tables, rowIndex })
 
     // Short-circuit evaluation for AND and OR
     if (node.op === 'AND') {
@@ -96,7 +97,7 @@ export async function evaluateExpr({ node, row, tables }) {
       if (left) return true
     }
 
-    const right = await evaluateExpr({ node: node.right, row, tables })
+    const right = await evaluateExpr({ node: node.right, row, tables, rowIndex })
     return applyBinaryOp(node.op, left, right)
   }
 
@@ -104,7 +105,7 @@ export async function evaluateExpr({ node, row, tables }) {
   if (node.type === 'function') {
     const funcName = node.name.toUpperCase()
     /** @type {SqlPrimitive[]} */
-    const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, tables })))
+    const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, tables, rowIndex })))
 
     if (funcName === 'UPPER') {
       if (args.length !== 1) {
@@ -114,6 +115,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       const val = args[0]
@@ -129,6 +131,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       const val = args[0]
@@ -144,6 +147,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       // SQL CONCAT returns NULL if any argument is NULL
@@ -155,6 +159,7 @@ export async function evaluateExpr({ node, row, tables }) {
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
           hint: 'Use CAST to convert objects to strings first.',
+          rowNumber: rowIndex,
         })
       }
       return args.map(a => String(a)).join('')
@@ -168,6 +173,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       const val = args[0]
@@ -183,6 +189,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       const str = args[0]
@@ -196,6 +203,7 @@ export async function evaluateExpr({ node, row, tables }) {
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
           hint: 'SQL uses 1-based indexing.',
+          rowNumber: rowIndex,
         })
       }
       // SQL uses 1-based indexing
@@ -208,6 +216,7 @@ export async function evaluateExpr({ node, row, tables }) {
             message: `length must be a non-negative integer, got ${args[2]}`,
             positionStart: node.positionStart,
             positionEnd: node.positionEnd,
+            rowNumber: rowIndex,
           })
         }
         return strVal.substring(startIdx, startIdx + len)
@@ -223,6 +232,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       const val = args[0]
@@ -238,6 +248,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       const str = args[0]
@@ -256,6 +267,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       return Math.random()
@@ -269,6 +281,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       return new Date().toISOString().split('T')[0]
@@ -282,6 +295,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       return new Date().toISOString().split('T')[1].replace('Z', '')
@@ -295,6 +309,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       return new Date().toISOString()
@@ -308,6 +323,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       /** @type {Record<string, SqlPrimitive>} */
@@ -322,6 +338,7 @@ export async function evaluateExpr({ node, row, tables }) {
             positionStart: node.positionStart,
             positionEnd: node.positionEnd,
             hint: 'All keys must be non-null values.',
+            rowNumber: rowIndex,
           })
         }
         result[String(key)] = value
@@ -337,6 +354,7 @@ export async function evaluateExpr({ node, row, tables }) {
           received: args.length,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
       let jsonArg = args[0]
@@ -354,6 +372,7 @@ export async function evaluateExpr({ node, row, tables }) {
             positionStart: node.positionStart,
             positionEnd: node.positionEnd,
             hint: 'First argument must be valid JSON.',
+            rowNumber: rowIndex,
           })
         }
       }
@@ -363,6 +382,7 @@ export async function evaluateExpr({ node, row, tables }) {
           message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
         })
       }
 
@@ -398,6 +418,7 @@ export async function evaluateExpr({ node, row, tables }) {
         args,
         positionStart: node.positionStart,
         positionEnd: node.positionEnd,
+        rowNumber: rowIndex,
       })
     }
 
@@ -409,7 +430,7 @@ export async function evaluateExpr({ node, row, tables }) {
   }
 
   if (node.type === 'cast') {
-    const val = await evaluateExpr({ node: node.expr, row, tables })
+    const val = await evaluateExpr({ node: node.expr, row, tables, rowIndex })
     if (val == null) return null
     const toType = node.toType.toUpperCase()
     if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
@@ -423,6 +444,7 @@ export async function evaluateExpr({ node, row, tables }) {
         positionStart: node.positionStart,
         positionEnd: node.positionEnd,
         fromType: 'object',
+        rowNumber: rowIndex,
       })
     }
     if (toType === 'INTEGER' || toType === 'INT') {
@@ -445,21 +467,22 @@ export async function evaluateExpr({ node, row, tables }) {
       toType: node.toType,
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
+      rowNumber: rowIndex,
     })
   }
 
   // IN and NOT IN with value lists
   if (node.type === 'in valuelist') {
-    const exprVal = await evaluateExpr({ node: node.expr, row, tables })
+    const exprVal = await evaluateExpr({ node: node.expr, row, tables, rowIndex })
     for (const valueNode of node.values) {
-      const val = await evaluateExpr({ node: valueNode, row, tables })
+      const val = await evaluateExpr({ node: valueNode, row, tables, rowIndex })
       if (exprVal === val) return true
     }
     return false
   }
   // IN with subqueries
   if (node.type === 'in') {
-    const exprVal = await evaluateExpr({ node: node.expr, row, tables })
+    const exprVal = await evaluateExpr({ node: node.expr, row, tables, rowIndex })
     const results = executeSelect(node.subquery, tables)
     /** @type {SqlPrimitive[]} */
     const values = []
@@ -484,28 +507,28 @@ export async function evaluateExpr({ node, row, tables }) {
   // CASE expressions
   if (node.type === 'case') {
     // For simple CASE: evaluate the case expression once
-    const caseValue = node.caseExpr && await evaluateExpr({ node: node.caseExpr, row, tables })
+    const caseValue = node.caseExpr && await evaluateExpr({ node: node.caseExpr, row, tables, rowIndex })
 
     // Iterate through WHEN clauses
     for (const whenClause of node.whenClauses) {
       let conditionResult
       if (caseValue !== undefined) {
         // Simple CASE: compare caseValue with condition
-        const whenValue = await evaluateExpr({ node: whenClause.condition, row, tables })
+        const whenValue = await evaluateExpr({ node: whenClause.condition, row, tables, rowIndex })
         conditionResult = caseValue === whenValue
       } else {
         // Searched CASE: evaluate condition as boolean
-        conditionResult = await evaluateExpr({ node: whenClause.condition, row, tables })
+        conditionResult = await evaluateExpr({ node: whenClause.condition, row, tables, rowIndex })
       }
 
       if (conditionResult) {
-        return evaluateExpr({ node: whenClause.result, row, tables })
+        return evaluateExpr({ node: whenClause.result, row, tables, rowIndex })
       }
     }
 
     // No WHEN clause matched, return ELSE result or NULL
     if (node.elseResult) {
-      return evaluateExpr({ node: node.elseResult, row, tables })
+      return evaluateExpr({ node: node.elseResult, row, tables, rowIndex })
     }
     return null
   }
@@ -518,6 +541,7 @@ export async function evaluateExpr({ node, row, tables }) {
       validContext: 'date arithmetic (+ or -)',
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
+      rowNumber: rowIndex,
     })
   }
 

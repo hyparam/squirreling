@@ -217,4 +217,45 @@ describe('executeSql error handling', () => {
       }))).rejects.toThrow('Invalid interval unit FORTNIGHT at position 33. Valid values: DAY, MONTH, YEAR, HOUR, MINUTE, SECOND')
     })
   })
+
+  describe('row number in errors', () => {
+    const bad = [
+      { id: 1, val: '{"x":1}' },
+      { id: 2, val: '{"x":2}' },
+      { id: 3, val: 'bad json' },
+    ]
+    it('should include row number in WHERE clause errors (streaming)', async () => {
+      await expect(collect(executeSql({
+        tables: { bad },
+        query: 'SELECT * FROM bad WHERE JSON_VALUE(val, \'$.x\') IS NOT NULL',
+      }))).rejects.toThrow('JSON_VALUE(expression, path): invalid JSON string. First argument must be valid JSON. (row 3)')
+    })
+
+    it('should include row number in streaming projection errors', async () => {
+      await expect(collect(executeSql({
+        tables: { bad },
+        query: 'SELECT JSON_VALUE(val, \'$.x\') FROM bad',
+      }))).rejects.toThrow('JSON_VALUE(expression, path): invalid JSON string. First argument must be valid JSON. (row 3)')
+    })
+
+    it('should include row number for specific row in multi-row error', async () => {
+      const data = [
+        { id: 1, val: 5 },
+        { id: 2, val: 0 }, // SUBSTRING with 0 start will fail
+        { id: 3, val: 3 },
+      ]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT SUBSTRING(\'hello\', val, 2) FROM data',
+      }))).rejects.toThrow('SUBSTRING(string, start[, length]): start position must be a positive integer, got 0. SQL uses 1-based indexing. (row 2)')
+    })
+
+    it('should include row number in WHERE clause errors (buffered)', async () => {
+      // ORDER BY forces buffered path
+      await expect(collect(executeSql({
+        tables: { bad },
+        query: 'SELECT * FROM bad WHERE JSON_VALUE(val, \'$.x\') IS NOT NULL ORDER BY id',
+      }))).rejects.toThrow('JSON_VALUE(expression, path): invalid JSON string. First argument must be valid JSON. (row 3)')
+    })
+  })
 })
