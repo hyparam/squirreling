@@ -83,12 +83,12 @@ export function expectIdentifier(state) {
  * Helper function to create consistent parser error messages.
  * @param {ParserState} state
  * @param {string} expected - Description of what was expected
- * @returns {Error}
+ * @returns {import('../errors.js').ParseError}
  */
 export function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken ? prevToken.originalValue ?? prevToken.value : undefined
   const received = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  return syntaxError({ expected, received, position: tok.position, after })
+  return syntaxError({ expected, received, positionStart: tok.positionStart, positionEnd: tok.positionEnd, after })
 }

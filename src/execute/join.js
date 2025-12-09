@@ -23,7 +23,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     const join = joins[0]
     const rightSource = tables[join.table]
     if (rightSource === undefined) {
-      throw tableNotFoundError(join.table)
+      throw tableNotFoundError({ tableName: join.table })
     }
 
     // Buffer right rows for hash index (required for hash join)
@@ -63,7 +63,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     const join = joins[i]
     const rightSource = tables[join.table]
     if (rightSource === undefined) {
-      throw tableNotFoundError(join.table)
+      throw tableNotFoundError({ tableName: join.table })
     }
 
     /** @type {AsyncRow[]} */
@@ -99,7 +99,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   const lastJoin = joins[joins.length - 1]
   const rightSource = tables[lastJoin.table]
   if (rightSource === undefined) {
-    throw tableNotFoundError(lastJoin.table)
+    throw tableNotFoundError({ tableName: lastJoin.table })
   }
 
   /** @type {AsyncRow[]} */

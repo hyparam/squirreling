@@ -153,5 +153,5 @@ async function evaluateAggregateFunction(funcName, args, group, tables) {
     return max
   }
 
-  throw unknownFunctionError(funcName, undefined, 'COUNT, SUM, AVG, MIN, MAX')
+  throw unknownFunctionError({ funcName, validFunctions: 'COUNT, SUM, AVG, MIN, MAX' })
 }

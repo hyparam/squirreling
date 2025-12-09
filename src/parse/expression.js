@@ -39,11 +39,11 @@ function parseInterval(state) {
     consume(state)
     const parsed = parseFloat(valueTok.value)
     if (isNaN(parsed)) {
-      throw invalidLiteralError({ type: 'interval value', value: valueTok.value, position: valueTok.position })
+      throw invalidLiteralError({ type: 'interval value', value: valueTok.value, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
     }
     value = sign * parsed
   } else {
-    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, position: valueTok.position })
+    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
   }
 
   // Get unit keyword
@@ -52,7 +52,8 @@ function parseInterval(state) {
     throw invalidLiteralError({
       type: 'interval unit',
       value: unitTok.value,
-      position: unitTok.position,
+      positionStart: unitTok.positionStart,
+      positionEnd: unitTok.positionEnd,
       validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
     })
   }
@@ -118,7 +119,7 @@ export function parsePrimary(state) {
 
       // validate function names
       if (!isStringFunc(funcName) && !isAggregateFunc(funcName) && !isMathFunc(funcName)) {
-        throw unknownFunctionError(funcName, tok.position)
+        throw unknownFunctionError({ funcName, positionStart: tok.positionStart, positionEnd: tok.positionEnd })
       }
 
       consume(state) // function name
@@ -278,7 +279,7 @@ export function parsePrimary(state) {
   }
 
   const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  throw syntaxError({ expected: 'expression', received: found, position: tok.position })
+  throw syntaxError({ expected: 'expression', received: found, positionStart: tok.positionStart, positionEnd: tok.positionEnd })
 }
 
 /**

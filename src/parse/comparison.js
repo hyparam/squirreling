@@ -111,7 +111,7 @@ export function parseComparison(state) {
       // parseSubquery expects to consume the opening paren itself
       const parenTok = current(state)
       if (parenTok.type !== 'paren' || parenTok.value !== '(') {
-        throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, position: parenTok.position, after: 'IN' })
+        throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, positionStart: parenTok.positionStart, positionEnd: parenTok.positionEnd, after: 'IN' })
       }
       const peekTok = peekToken(state, 1)
       if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
@@ -156,7 +156,7 @@ export function parseComparison(state) {
     // parseSubquery expects to consume the opening paren itself
     const parenTok = current(state)
     if (parenTok.type !== 'paren' || parenTok.value !== '(') {
-      throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, position: parenTok.position, after: 'IN' })
+      throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, positionStart: parenTok.positionStart, positionEnd: parenTok.positionEnd, after: 'IN' })
     }
     const peekTok = peekToken(state, 1)
     if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {

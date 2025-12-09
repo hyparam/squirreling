@@ -117,24 +117,26 @@ export function tokenize(sql) {
         return {
           type: 'number',
           value: text,
-          position: startPos,
+          positionStart: startPos,
+          positionEnd: i,
           numericValue: BigInt(text.slice(0, -1)),
         }
       } catch {
-        throw invalidLiteralError({ type: 'bigint', value: text.slice(0, -1), position: startPos })
+        throw invalidLiteralError({ type: 'bigint', value: text.slice(0, -1), positionStart: startPos, positionEnd: i })
       }
     }
     if (isAlpha(peek())) {
-      throw invalidLiteralError({ type: 'number', value: text + peek(), position: startPos })
+      throw invalidLiteralError({ type: 'number', value: text + peek(), positionStart: startPos, positionEnd: i + 1 })
     }
     const num = parseFloat(text)
     if (isNaN(num)) {
-      throw invalidLiteralError({ type: 'number', value: text, position: startPos })
+      throw invalidLiteralError({ type: 'number', value: text, positionStart: startPos, positionEnd: i })
     }
     return {
       type: 'number',
       value: text,
-      position: startPos,
+      positionStart: startPos,
+      positionEnd: i,
       numericValue: num,
     }
   }
@@ -204,13 +206,15 @@ export function tokenize(sql) {
           type: 'keyword',
           value: upper,
           originalValue: text,
-          position: pos,
+          positionStart: pos,
+          positionEnd: i,
         })
       } else {
         tokens.push({
           type: 'identifier',
           value: text,
-          position: pos,
+          positionStart: pos,
+          positionEnd: i,
         })
       }
       continue
@@ -222,7 +226,7 @@ export function tokenize(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw unterminatedError('string', pos)
+          throw unterminatedError('string', pos, length)
         }
         const c = nextChar()
         if (c === quote) {
@@ -239,7 +243,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'string',
         value: text,
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -250,7 +255,7 @@ export function tokenize(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw unterminatedError('identifier', pos)
+          throw unterminatedError('identifier', pos, length)
         }
         const c = nextChar()
         if (c === quote) {
@@ -267,7 +272,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'identifier',
         value: text,
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -283,7 +289,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'operator',
         value: op,
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -294,7 +301,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'operator',
         value: ch,
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -304,7 +312,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'comma',
         value: ',',
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -314,7 +323,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'dot',
         value: '.',
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -324,7 +334,8 @@ export function tokenize(sql) {
       tokens.push({
         type: 'paren',
         value: ch,
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
@@ -334,21 +345,23 @@ export function tokenize(sql) {
       tokens.push({
         type: 'semicolon',
         value: ';',
-        position: pos,
+        positionStart: pos,
+        positionEnd: i,
       })
       continue
     }
 
     if (tokens.length === 0) {
-      throw unexpectedCharError(ch, pos, true)
+      throw unexpectedCharError({ char: ch, positionStart: pos, expectsSelect: true })
     }
-    throw unexpectedCharError(ch, pos)
+    throw unexpectedCharError({ char: ch, positionStart: pos })
   }
 
   tokens.push({
     type: 'eof',
     value: '',
-    position: length,
+    positionStart: length,
+    positionEnd: length,
   })
 
   return tokens

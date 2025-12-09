@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseSql } from '../../src/parse/parse.js'
+import { ParseError } from '../../src/errors.js'
 
 describe('parseSql error handling', () => {
   describe('basic syntax errors', () => {
@@ -203,5 +204,54 @@ describe('parseSql error handling', () => {
     it('should throw error on invalid OFFSET after LIMIT', () => {
       expect(() => parseSql('SELECT * FROM users LIMIT 10 OFFSET abc')).toThrow('Expected numeric OFFSET')
     })
+  })
+})
+
+describe('ParseError structure', () => {
+  it('should throw ParseError with positionStart and positionEnd', () => {
+    try {
+      parseSql('FROM users')
+      expect.fail('should have thrown')
+    } catch (/** @type {any} */ error) {
+      expect(error).toBeInstanceOf(ParseError)
+      expect(error).toBeInstanceOf(Error)
+      expect(error.name).toBe('ParseError')
+      expect(error.positionStart).toBe(0)
+      expect(error.positionEnd).toBe(4) // "FROM" is 4 chars
+      expect(error.message).toBe('Expected SELECT but found "FROM" at position 0')
+    }
+  })
+
+  it('should have correct position range for syntax errors', () => {
+    try {
+      parseSql('SELECT * FROM')
+      expect.fail('should have thrown')
+    } catch (/** @type {any} */ error) {
+      expect(error).toBeInstanceOf(ParseError)
+      expect(error.positionStart).toBe(13)
+      expect(error.positionEnd).toBe(13) // EOF has same start/end
+    }
+  })
+
+  it('should have correct position range for unknown function', () => {
+    try {
+      parseSql('SELECT FOOBAR(x) FROM t')
+      expect.fail('should have thrown')
+    } catch (/** @type {any} */ error) {
+      expect(error).toBeInstanceOf(ParseError)
+      expect(error.positionStart).toBe(7)
+      expect(error.positionEnd).toBe(13) // "FOOBAR" is 6 chars
+    }
+  })
+
+  it('should have correct position range for unexpected character', () => {
+    try {
+      parseSql('@')
+      expect.fail('should have thrown')
+    } catch (/** @type {any} */ error) {
+      expect(error).toBeInstanceOf(ParseError)
+      expect(error.positionStart).toBe(0)
+      expect(error.positionEnd).toBe(1) // single char
+    }
   })
 })

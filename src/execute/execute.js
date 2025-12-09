@@ -61,7 +61,7 @@ export async function* executeSelect(select, tables) {
     fromTableName = select.from.alias ?? select.from.table
     dataSource = tables[select.from.table]
     if (dataSource === undefined) {
-      throw tableNotFoundError(select.from.table)
+      throw tableNotFoundError({ tableName: select.from.table })
     }
   } else {
     // Nested subquery - recursively resolve
@@ -379,10 +379,10 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
 
     const hasStar = select.columns.some(col => col.kind === 'star')
     if (hasStar && hasAggregate) {
-      throw unsupportedOperationError(
-        'SELECT * with aggregate functions is not supported',
-        'Replace * with specific column names when using aggregate functions.'
-      )
+      throw unsupportedOperationError({
+        operation: 'SELECT * with aggregate functions is not supported',
+        hint: 'Replace * with specific column names when using aggregate functions.',
+      })
     }
 
     for (const group of groups) {

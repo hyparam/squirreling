@@ -263,7 +263,15 @@ export type TokenType =
 export interface Token {
   type: TokenType
   value: string
-  position: number
+  positionStart: number
+  positionEnd: number
   numericValue?: number | bigint
   originalValue?: string
+}
+
+export declare class ParseError extends Error {
+  name: 'ParseError'
+  positionStart: number
+  positionEnd: number
+  constructor(message: string, positionStart: number, positionEnd: number)
 }
