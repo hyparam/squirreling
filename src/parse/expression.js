@@ -4,7 +4,7 @@ import {
   syntaxError,
   unknownFunctionError,
 } from '../errors.js'
-import { isAggregateFunc, isIntervalUnit, isStringFunc } from '../validation.js'
+import { isAggregateFunc, isIntervalUnit, isMathFunc, isStringFunc } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'
 import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
@@ -117,7 +117,7 @@ export function parsePrimary(state) {
       const funcName = tok.value
 
       // validate function names
-      if (!isStringFunc(funcName) && !isAggregateFunc(funcName)) {
+      if (!isStringFunc(funcName) && !isAggregateFunc(funcName) && !isMathFunc(funcName)) {
         throw unknownFunctionError(funcName, tok.position)
       }
 

@@ -5,8 +5,10 @@ import {
   invalidContextError,
   unknownFunctionError,
 } from '../errors.js'
+import { isMathFunc } from '../validation.js'
 import { applyIntervalToDate } from './date.js'
 import { executeSelect } from './execute.js'
+import { evaluateMathFunc } from './math.js'
 import { applyBinaryOp, stringify } from './utils.js'
 
 /**
@@ -276,6 +278,10 @@ export async function evaluateExpr({ node, row, tables }) {
 
       if (current == null) return null
       return current
+    }
+
+    if (isMathFunc(funcName)) {
+      return evaluateMathFunc(funcName, args)
     }
 
     throw unknownFunctionError(funcName)

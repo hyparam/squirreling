@@ -6,6 +6,11 @@
 export interface QueryHints {
   columns?: string[] // columns needed
   where?: ExprNode // where clause
+  // important: only apply limit/offset if where is fully applied by the data source
+  // otherwise, the data source must return at least enough rows to ensure the engine
+  // can apply limit/offset correctly after filtering
+  // even with offset, the datasource must return rows starting from offset 0
+  // but doesn't need to resolve async rows before the offset
   limit?: number
   offset?: number
 }
@@ -166,6 +171,18 @@ export interface StarColumn {
 }
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG'
+
+export type MathFunc =
+  | 'FLOOR'
+  | 'CEIL'
+  | 'CEILING'
+  | 'ABS'
+  | 'MOD'
+  | 'EXP'
+  | 'LN'
+  | 'LOG10'
+  | 'POWER'
+  | 'SQRT'
 
 export type StringFunc =
   | 'UPPER'

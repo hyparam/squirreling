@@ -69,7 +69,7 @@ export function unexpectedCharError(char, position, expectsSelect = false) {
  */
 export function unknownFunctionError(funcName, position, validFunctions) {
   const supported = validFunctions ||
-    'COUNT, SUM, AVG, MIN, MAX, UPPER, LOWER, CONCAT, LENGTH, SUBSTRING, TRIM, REPLACE, JSON_OBJECT, JSON_VALUE, JSON_QUERY, JSON_ARRAYAGG'
+    'COUNT, SUM, AVG, MIN, MAX, UPPER, LOWER, CONCAT, LENGTH, SUBSTRING, TRIM, REPLACE, FLOOR, CEIL, ABS, MOD, EXP, LN, LOG10, POWER, SQRT, JSON_OBJECT, JSON_VALUE, JSON_QUERY, JSON_ARRAYAGG'
 
   if (position !== undefined) {
     return new Error(`Unknown function "${funcName}" at position ${position}. Supported: ${supported}`)
@@ -153,6 +153,18 @@ const FUNCTION_SIGNATURES = {
   CURRENT_DATE: '',
   CURRENT_TIME: '',
   CURRENT_TIMESTAMP: '',
+
+  // Math functions
+  FLOOR: 'number',
+  CEIL: 'number',
+  CEILING: 'number',
+  ABS: 'number',
+  MOD: 'dividend, divisor',
+  EXP: 'number',
+  LN: 'number',
+  LOG10: 'number',
+  POWER: 'base, exponent',
+  SQRT: 'number',
 
   // JSON functions
   JSON_VALUE: 'expression, path',
