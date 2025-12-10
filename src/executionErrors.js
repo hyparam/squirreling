@@ -7,12 +7,13 @@
  */
 export class ExecutionError extends Error {
   /**
-   * @param {string} message - Human-readable error message
-   * @param {number} positionStart - Start position (0-based character offset)
-   * @param {number} positionEnd - End position (exclusive, 0-based character offset)
-   * @param {number} [rowNumber] - 1-based row number where error occurred
+   * @param {Object} options
+   * @param {string} options.message - Human-readable error message
+   * @param {number} options.positionStart - Start position (0-based character offset)
+   * @param {number} options.positionEnd - End position (exclusive, 0-based character offset)
+   * @param {number} [options.rowNumber] - 1-based row number where error occurred
    */
-  constructor(message, positionStart, positionEnd, rowNumber) {
+  constructor({ message, positionStart, positionEnd, rowNumber }) {
     const rowSuffix = rowNumber != null ? ` (row ${rowNumber})` : ''
     super(message + rowSuffix)
     this.name = 'ExecutionError'
@@ -45,7 +46,7 @@ export function tableNotFoundError({ tableName }) {
  * @returns {ExecutionError}
  */
 export function invalidContextError({ item, validContext, positionStart, positionEnd, rowNumber }) {
-  return new ExecutionError(`${item} can only be used with ${validContext}`, positionStart, positionEnd, rowNumber)
+  return new ExecutionError({ message: `${item} can only be used with ${validContext}`, positionStart, positionEnd, rowNumber })
 }
 
 /**

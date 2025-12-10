@@ -7,11 +7,12 @@
  */
 export class ParseError extends Error {
   /**
-   * @param {string} message - Human-readable error message
-   * @param {number} positionStart - Start position (0-based character offset)
-   * @param {number} positionEnd - End position (exclusive, 0-based character offset)
+   * @param {Object} options
+   * @param {string} options.message - Human-readable error message
+   * @param {number} options.positionStart - Start position (0-based character offset)
+   * @param {number} options.positionEnd - End position (exclusive, 0-based character offset)
    */
-  constructor(message, positionStart, positionEnd) {
+  constructor({ message, positionStart, positionEnd }) {
     super(message)
     this.name = 'ParseError'
     this.positionStart = positionStart
@@ -32,7 +33,7 @@ export class ParseError extends Error {
  */
 export function syntaxError({ expected, received, positionStart, positionEnd, after }) {
   const afterClause = after ? ` after "${after}"` : ''
-  return new ParseError(`Expected ${expected}${afterClause} but found ${received} at position ${positionStart}`, positionStart, positionEnd)
+  return new ParseError({ message: `Expected ${expected}${afterClause} but found ${received} at position ${positionStart}`, positionStart, positionEnd })
 }
 
 /**
@@ -45,7 +46,7 @@ export function syntaxError({ expected, received, positionStart, positionEnd, af
  */
 export function unterminatedError(type, positionStart, positionEnd) {
   const name = type === 'string' ? 'string literal' : 'identifier'
-  return new ParseError(`Unterminated ${name} starting at position ${positionStart}`, positionStart, positionEnd)
+  return new ParseError({ message: `Unterminated ${name} starting at position ${positionStart}`, positionStart, positionEnd })
 }
 
 /**
@@ -61,7 +62,7 @@ export function unterminatedError(type, positionStart, positionEnd) {
  */
 export function invalidLiteralError({ type, value, positionStart, positionEnd, validValues }) {
   const suffix = validValues ? `. Valid values: ${validValues}` : ''
-  return new ParseError(`Invalid ${type} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd)
+  return new ParseError({ message: `Invalid ${type} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd })
 }
 
 /**
@@ -76,9 +77,9 @@ export function invalidLiteralError({ type, value, positionStart, positionEnd, v
 export function unexpectedCharError({ char, positionStart, expectsSelect = false }) {
   const positionEnd = positionStart + 1
   if (expectsSelect) {
-    return new ParseError(`Expected SELECT but found "${char}" at position ${positionStart}. Queries must start with SELECT.`, positionStart, positionEnd)
+    return new ParseError({ message: `Expected SELECT but found "${char}" at position ${positionStart}. Queries must start with SELECT.`, positionStart, positionEnd })
   }
-  return new ParseError(`Unexpected character "${char}" at position ${positionStart}`, positionStart, positionEnd)
+  return new ParseError({ message: `Unexpected character "${char}" at position ${positionStart}`, positionStart, positionEnd })
 }
 
 /**
@@ -95,11 +96,11 @@ export function unknownFunctionError({ funcName, positionStart, positionEnd, val
   const supported = validFunctions ||
     'COUNT, SUM, AVG, MIN, MAX, UPPER, LOWER, CONCAT, LENGTH, SUBSTRING, TRIM, REPLACE, FLOOR, CEIL, ABS, MOD, EXP, LN, LOG10, POWER, SQRT, JSON_OBJECT, JSON_VALUE, JSON_QUERY, JSON_ARRAYAGG'
 
-  return new ParseError(
-    `Unknown function "${funcName}" at position ${positionStart}. Supported: ${supported}`,
+  return new ParseError({
+    message: `Unknown function "${funcName}" at position ${positionStart}. Supported: ${supported}`,
     positionStart,
-    positionEnd
-  )
+    positionEnd,
+  })
 }
 
 /**
@@ -113,5 +114,5 @@ export function unknownFunctionError({ funcName, positionStart, positionEnd, val
  * @returns {ParseError}
  */
 export function missingClauseError({ missing, context, positionStart, positionEnd }) {
-  return new ParseError(`${context} requires ${missing}`, positionStart ?? 0, positionEnd ?? 0)
+  return new ParseError({ message: `${context} requires ${missing}`, positionStart: positionStart ?? 0, positionEnd: positionEnd ?? 0 })
 }

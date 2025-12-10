@@ -29,7 +29,7 @@ export type Row = Record<string, SqlPrimitive>[]
 
 export interface ExecuteSqlOptions {
   tables: Record<string, Row | AsyncDataSource>
-  query: string
+  query: string | SelectStatement
 }
 
 export type SqlPrimitive =

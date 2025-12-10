@@ -85,7 +85,7 @@ export function argCountError({ funcName, expected, received, positionStart, pos
     expectedStr = `${expected} argument`
   }
 
-  return new ExecutionError(`${funcName}(${signature}) function requires ${expectedStr}, got ${received}`, positionStart, positionEnd, rowNumber)
+  return new ExecutionError({ message: `${funcName}(${signature}) function requires ${expectedStr}, got ${received}`, positionStart, positionEnd, rowNumber })
 }
 
 /**
@@ -103,7 +103,7 @@ export function argCountError({ funcName, expected, received, positionStart, pos
 export function argValueError({ funcName, message, positionStart, positionEnd, hint, rowNumber }) {
   const signature = FUNCTION_SIGNATURES[funcName] ?? ''
   const suffix = hint ? `. ${hint}` : ''
-  return new ExecutionError(`${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd, rowNumber)
+  return new ExecutionError({ message: `${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd, rowNumber })
 }
 
 /**
@@ -134,5 +134,5 @@ export function castError({ toType, positionStart, positionEnd, fromType, rowNum
     ? `Cannot CAST ${fromType} to ${toType}`
     : `Unsupported CAST to type ${toType}`
 
-  return new ExecutionError(`${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd, rowNumber)
+  return new ExecutionError({ message: `${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd, rowNumber })
 }
