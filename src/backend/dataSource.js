@@ -11,7 +11,7 @@
  */
 export function generatorSource(gen) {
   return {
-    async *getRows() {
+    async *scan() {
       yield* gen
     },
   }
@@ -40,7 +40,7 @@ function asyncRow(obj) {
  */
 export function memorySource(data) {
   return {
-    async *getRows() {
+    async *scan() {
       for (const item of data) {
         yield asyncRow(item)
       }
@@ -60,9 +60,9 @@ export function cachedDataSource(source) {
     /**
      * @yields {AsyncRow}
      */
-    async *getRows() {
+    async *scan() {
       let index = 0
-      for await (const row of source.getRows()) {
+      for await (const row of source.scan()) {
         const rowIndex = index
         /** @type {AsyncRow} */
         const out = {}

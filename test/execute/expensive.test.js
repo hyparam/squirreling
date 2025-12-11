@@ -178,8 +178,8 @@ function countingDataSource(data, expensiveColumns) {
     /**
      * @yields {AsyncRow}
      */
-    async *getRows() {
-      for await (const row of source.getRows()) {
+    async *scan() {
+      for await (const row of source.scan()) {
         /** @type {AsyncRow} */
         const out = {}
         for (const [key, cell] of Object.entries(row)) {

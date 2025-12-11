@@ -30,7 +30,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     // Buffer right rows for hash index (required for hash join)
     /** @type {AsyncRow[]} */
     const rightRows = []
-    for await (const row of rightSource.getRows()) {
+    for await (const row of rightSource.scan()) {
       rightRows.push(row)
     }
 
@@ -39,9 +39,9 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 
     // Return streaming data source - left rows stream through without buffering
     return {
-      async *getRows() {
+      async *scan() {
         yield* hashJoin({
-          leftRows: leftSource.getRows(), // Stream directly, not buffered
+          leftRows: leftSource.scan(), // Stream directly, not buffered
           rightRows,
           join,
           leftTable: currentLeftTable,
@@ -55,7 +55,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   // Multiple joins: buffer intermediate results, stream final join
   /** @type {AsyncRow[]} */
   let leftRows = []
-  for await (const row of leftSource.getRows()) {
+  for await (const row of leftSource.scan()) {
     leftRows.push(row)
   }
 
@@ -69,7 +69,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 
     /** @type {AsyncRow[]} */
     const rightRows = []
-    for await (const row of rightSource.getRows()) {
+    for await (const row of rightSource.scan()) {
       rightRows.push(row)
     }
 
@@ -105,7 +105,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 
   /** @type {AsyncRow[]} */
   const rightRows = []
-  for await (const row of rightSource.getRows()) {
+  for await (const row of rightSource.scan()) {
     rightRows.push(row)
   }
 
@@ -113,7 +113,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   const lastRightTableName = lastJoin.alias ?? lastJoin.table
 
   return {
-    async *getRows() {
+    async *scan() {
       yield* hashJoin({
         leftRows,
         rightRows,

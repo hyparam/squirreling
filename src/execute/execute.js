@@ -255,7 +255,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
     offset: select.offset,
   }
 
-  for await (const row of dataSource.getRows(hints)) {
+  for await (const row of dataSource.scan(hints)) {
     rowIndex++
     // WHERE filter
     if (select.where) {
@@ -330,7 +330,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   // Step 1: Collect all rows from data source
   /** @type {AsyncRow[]} */
   const working = []
-  for await (const row of dataSource.getRows(hints)) {
+  for await (const row of dataSource.scan(hints)) {
     working.push(row)
   }
 

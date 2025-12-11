@@ -20,7 +20,7 @@ export interface QueryHints {
  * Provides an async iterator over rows.
  */
 export interface AsyncDataSource {
-  getRows(hints?: QueryHints): AsyncIterable<AsyncRow>
+  scan(hints?: QueryHints): AsyncIterable<AsyncRow>
 }
 export type AsyncRow = Record<string, AsyncCell>
 export type AsyncCell = () => Promise<SqlPrimitive>
