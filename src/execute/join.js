@@ -4,7 +4,7 @@ import { evaluateExpr } from './expression.js'
 import { stringify } from './utils.js'
 
 /**
- * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode } from '../types.js'
+ * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode, AsyncCells } from '../types.js'
  */
 
 /**
@@ -172,12 +172,12 @@ function extractJoinKeys(onCondition, leftTable, rightTable) {
  * @returns {AsyncRow}
  */
 function createNullRow(columnNames) {
-  /** @type {AsyncRow} */
-  const row = {}
+  /** @type {AsyncCells} */
+  const cells = {}
   for (const col of columnNames) {
-    row[col] = () => Promise.resolve(null)
+    cells[col] = () => Promise.resolve(null)
   }
-  return row
+  return { columns: columnNames, cells }
 }
 
 /**
@@ -190,33 +190,35 @@ function createNullRow(columnNames) {
  * @returns {AsyncRow}
  */
 function mergeRows(leftRow, rightRow, leftTable, rightTable) {
-  /** @type {AsyncRow} */
-  const merged = {}
+  const columns = []
+  /** @type {AsyncCells} */
+  const cells = {}
 
   // Add left table columns with prefix
-  for (const [key, cell] of Object.entries(leftRow)) {
+  for (const [key, cell] of Object.entries(leftRow.cells)) {
     // Skip already-prefixed keys (from previous joins)
     if (!key.includes('.')) {
-      merged[`${leftTable}.${key}`] = cell
-    } else {
-      merged[key] = cell
+      const alias = `${leftTable}.${key}`
+      cells[alias] = cell
     }
-    // Also keep unqualified name for convenience (may be overwritten if ambiguous)
-    merged[key] = cell
+    // Also keep unqualified name for convenience
+    columns.push(key)
+    cells[key] = cell
   }
 
   // Add right table columns with prefix
-  for (const [key, cell] of Object.entries(rightRow)) {
+  for (const [key, cell] of Object.entries(rightRow.cells)) {
     if (!key.includes('.')) {
-      merged[`${rightTable}.${key}`] = cell
+      cells[`${rightTable}.${key}`] = cell
     } else {
-      merged[key] = cell
+      cells[key] = cell
     }
     // Unqualified name (overwrites if same name exists in left table)
-    merged[key] = cell
+    columns.push(key)
+    cells[key] = cell
   }
 
-  return merged
+  return { columns, cells }
 }
 
 /**
@@ -245,7 +247,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
   const keys = extractJoinKeys(onCondition, leftTable, rightTable)
 
   // Get column names for NULL row generation (right side is always buffered)
-  const rightCols = rightRows.length ? Object.keys(rightRows[0]) : []
+  const rightCols = rightRows.length ? rightRows[0].columns : []
   const rightPrefixedCols = rightCols.flatMap(col =>
     col.includes('.') ? [col] : [`${rightTable}.${col}`, col]
   )
@@ -281,8 +283,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
     for await (const leftRow of leftRows) {
       // Capture left column info from first row (for NULL row generation)
       if (!leftPrefixedCols) {
-        const leftCols = Object.keys(leftRow)
-        leftPrefixedCols = leftCols.flatMap(col =>
+        leftPrefixedCols = leftRow.columns.flatMap(col =>
           col.includes('.') ? [col] : [`${leftTable}.${col}`, col]
         )
       }
@@ -323,8 +324,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
     for await (const leftRow of leftRows) {
       // Capture left column info from first row (for NULL row generation)
       if (!leftPrefixedCols) {
-        const leftCols = Object.keys(leftRow)
-        leftPrefixedCols = leftCols.flatMap(col =>
+        leftPrefixedCols = leftRow.columns.flatMap(col =>
           col.includes('.') ? [col] : [`${leftTable}.${col}`, col]
         )
       }

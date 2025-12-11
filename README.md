@@ -40,7 +40,10 @@ const users = [
   // ...more rows
 ]
 
-type AsyncRow = Record<string, AsyncCell>
+interface AsyncRow {
+  columns: string[]
+  cells: Record<string, AsyncCell>
+}
 type AsyncCell = () => Promise<SqlPrimitive>
 
 // Returns an async iterable of rows with async cells

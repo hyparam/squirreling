@@ -3,7 +3,7 @@ import { collect, executeSql } from '../../src/index.js'
 import { cachedDataSource, memorySource } from '../../src/backend/dataSource.js'
 
 /**
- * @import { AsyncRow, AsyncDataSource, SqlPrimitive } from '../../src/types.js'
+ * @import { AsyncRow, AsyncDataSource, SqlPrimitive, AsyncCells } from '../../src/types.js'
  */
 
 const data = [
@@ -180,20 +180,21 @@ function countingDataSource(data, expensiveColumns) {
      */
     async *scan() {
       for await (const row of source.scan()) {
-        /** @type {AsyncRow} */
-        const out = {}
-        for (const [key, cell] of Object.entries(row)) {
+        /** @type {AsyncCells} */
+        const cells = {}
+        for (const key of row.columns) {
+          const cell = row.cells[key]
           if (expensiveColumns.includes(key)) {
             // Wrap the cell to count accesses
-            out[key] = () => {
+            cells[key] = () => {
               expensiveCallCount++
               return cell()
             }
           } else {
-            out[key] = cell
+            cells[key] = cell
           }
         }
-        yield out
+        yield { columns: row.columns, cells }
       }
     },
     getExpensiveCallCount() {

@@ -97,8 +97,8 @@ export async function collect(asyncRows) {
   for await (const asyncRow of asyncRows) {
     /** @type {Record<string, SqlPrimitive>} */
     const item = {}
-    for (const [key, cell] of Object.entries(asyncRow)) {
-      item[key] = await cell()
+    for (const key of asyncRow.columns) {
+      item[key] = await asyncRow.cells[key]()
     }
     results.push(item)
   }

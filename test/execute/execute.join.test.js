@@ -38,7 +38,7 @@ describe('JOIN queries', () => {
     // Charlie and Eve have no orders, so their product should be null
     const charlie = result.find(r => r.name === 'Charlie')
     expect(charlie).toBeTruthy()
-    expect(charlie.product).toBeNull()
+    expect(charlie?.product).toBeNull()
   })
 
   it('should perform RIGHT JOIN', async () => {
@@ -279,7 +279,7 @@ describe('JOIN queries', () => {
       // All 3 users should appear; Bob won't match any order (null != null)
       expect(result).toHaveLength(3)
       const bob = result.find(r => r.name === 'Bob')
-      expect(bob.product == null).toBe(true)
+      expect(bob?.product == null).toBe(true)
     })
 
     it('should preserve rows with null join columns in RIGHT JOIN', async () => {
@@ -290,7 +290,7 @@ describe('JOIN queries', () => {
       // All 3 orders should appear; Mouse won't match any user (null != null)
       expect(result).toHaveLength(3)
       const mouse = result.find(r => r.product === 'Mouse')
-      expect(mouse.name == null).toBe(true)
+      expect(mouse?.name == null).toBe(true)
     })
   })
 
@@ -343,9 +343,9 @@ describe('JOIN queries', () => {
         `,
       }))
       expect(result).toHaveLength(3)
-      expect(result.find(r => r.employee === 'Bob').manager).toBe('Alice')
-      expect(result.find(r => r.employee === 'Charlie').manager).toBe('Alice')
-      expect(result.find(r => r.employee === 'Diana').manager).toBe('Bob')
+      expect(result.find(r => r.employee === 'Bob')?.manager).toBe('Alice')
+      expect(result.find(r => r.employee === 'Charlie')?.manager).toBe('Alice')
+      expect(result.find(r => r.employee === 'Diana')?.manager).toBe('Bob')
     })
 
     it('should handle self-join using table aliases', async () => {
@@ -414,9 +414,9 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(5)
       const bob = result.find(r => r.name === 'Bob')
-      expect(bob.label).toBe('young')
+      expect(bob?.label).toBe('young')
       const charlie = result.find(r => r.name === 'Charlie')
-      expect(charlie.label).toBe('adult')
+      expect(charlie?.label).toBe('adult')
     })
   })
 
@@ -477,7 +477,7 @@ describe('JOIN queries', () => {
       // All joined user-order pairs, with profile info where available
       expect(result).toHaveLength(4)
       const diana = result.find(r => r.name === 'Diana')
-      expect(diana.bio).toBeNull()
+      expect(diana?.bio).toBeNull()
     })
   })
 
@@ -571,7 +571,7 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(5)
       const alice = result.find(r => r.name === 'Alice')
-      expect(alice.population).toBe(8000000)
+      expect(alice?.population).toBe(8000000)
     })
 
     it('should join on boolean columns', async () => {
@@ -585,7 +585,7 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(5)
       const charlie = result.find(r => r.name === 'Charlie')
-      expect(charlie.label).toBe('Inactive User')
+      expect(charlie?.label).toBe('Inactive User')
     })
   })
 
@@ -627,7 +627,7 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(3)
       const alice = result.find(r => r.name === 'Alice')
-      expect(alice.order_count).toBe(2)
+      expect(alice?.order_count).toBe(2)
     })
 
     it('should apply HAVING after JOIN and GROUP BY', async () => {
@@ -794,13 +794,13 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(4)
       const laptop = result.find(r => r.name === 'Laptop')
-      expect(laptop.discount).toBe(0.1)
+      expect(laptop?.discount).toBe(0.1)
       const mouse = result.find(r => r.name === 'Mouse')
-      expect(mouse.discount == null).toBe(true)
+      expect(mouse?.discount == null).toBe(true)
       const desk = result.find(r => r.name === 'Desk')
-      expect(desk.discount).toBe(0.15)
+      expect(desk?.discount).toBe(0.15)
       const chair = result.find(r => r.name === 'Chair')
-      expect(chair.discount == null).toBe(true)
+      expect(chair?.discount == null).toBe(true)
     })
 
     it('should handle RIGHT JOIN with complex ON where some right rows do not match', async () => {
@@ -818,9 +818,9 @@ describe('JOIN queries', () => {
       }))
       expect(result).toHaveLength(2)
       const electronics = result.find(r => r.discount_category === 'Electronics')
-      expect(electronics.name).toBe('Laptop')
+      expect(electronics?.name).toBe('Laptop')
       const furniture = result.find(r => r.discount_category === 'Furniture')
-      expect(furniture.name == null).toBe(true)
+      expect(furniture?.name == null).toBe(true)
     })
 
     it('should handle FULL JOIN with complex ON where rows on both sides do not match', async () => {
@@ -843,12 +843,12 @@ describe('JOIN queries', () => {
       // Laptop matches Electronics, Mouse doesn't match (too cheap), Clothing has no product
       expect(result).toHaveLength(3)
       const laptop = result.find(r => r.name === 'Laptop')
-      expect(laptop.discount).toBe(0.1)
+      expect(laptop?.discount).toBe(0.1)
       const mouse = result.find(r => r.name === 'Mouse')
-      expect(mouse.discount == null).toBe(true)
+      expect(mouse?.discount == null).toBe(true)
       const clothing = result.find(r => r.discount_category === 'Clothing')
-      expect(clothing.name == null).toBe(true)
-      expect(clothing.discount).toBe(0.2)
+      expect(clothing?.name == null).toBe(true)
+      expect(clothing?.discount).toBe(0.2)
     })
   })
 

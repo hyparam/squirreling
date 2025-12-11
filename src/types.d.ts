@@ -22,7 +22,11 @@ export interface QueryHints {
 export interface AsyncDataSource {
   scan(hints?: QueryHints): AsyncIterable<AsyncRow>
 }
-export type AsyncRow = Record<string, AsyncCell>
+export interface AsyncRow {
+  columns: string[]
+  cells: AsyncCells
+}
+export type AsyncCells = Record<string, AsyncCell>
 export type AsyncCell = () => Promise<SqlPrimitive>
 
 export type Row = Record<string, SqlPrimitive>[]

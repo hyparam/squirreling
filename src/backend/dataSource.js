@@ -1,5 +1,5 @@
 /**
- * @import { AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
+ * @import { AsyncCell, AsyncCells, AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
  */
 
 
@@ -24,12 +24,12 @@ export function generatorSource(gen) {
  * @returns {AsyncRow} a row accessor interface
  */
 function asyncRow(obj) {
-  /** @type {AsyncRow} */
-  const row = {}
+  /** @type {AsyncCells} */
+  const cells = {}
   for (const [key, value] of Object.entries(obj)) {
-    row[key] = () => Promise.resolve(value)
+    cells[key] = () => Promise.resolve(value)
   }
-  return row
+  return { columns: Object.keys(obj), cells }
 }
 
 /**
@@ -64,11 +64,12 @@ export function cachedDataSource(source) {
       let index = 0
       for await (const row of source.scan()) {
         const rowIndex = index
-        /** @type {AsyncRow} */
-        const out = {}
-        for (const [key, cell] of Object.entries(row)) {
+        /** @type {AsyncCells} */
+        const cells = {}
+        for (const key of row.columns) {
+          const cell = row.cells[key]
           // Wrap the cell to cache accesses
-          out[key] = () => {
+          cells[key] = () => {
             const cacheKey = `${rowIndex}:${key}`
             let value = cache.get(cacheKey)
             if (!value) {
@@ -78,7 +79,7 @@ export function cachedDataSource(source) {
             return value
           }
         }
-        yield out
+        yield { columns: row.columns, cells }
         index++
       }
     },

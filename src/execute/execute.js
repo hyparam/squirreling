@@ -10,7 +10,7 @@ import { executeJoins } from './join.js'
 import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
 
 /**
- * @import { AsyncDataSource, AsyncRow, ExecuteSqlOptions, OrderByItem, QueryHints, SelectStatement, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, OrderByItem, QueryHints, SelectStatement, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -81,15 +81,15 @@ export async function* executeSelect(select, tables) {
 /**
  * Creates a stable string key for a row to enable deduplication
  *
- * @param {AsyncRow} row
+ * @param {AsyncCells} cells
  * @returns {Promise<string>} a stable string representation of the row
  */
-async function stableRowKey(row) {
-  const keys = Object.keys(row).sort()
+async function stableRowKey(cells) {
+  const keys = Object.keys(cells).sort()
   /** @type {string[]} */
   const parts = []
   for (const k of keys) {
-    const v = await row[k]()
+    const v = await cells[k]()
     parts.push(k + ':' + stringify(v))
   }
   return parts.join('|')
@@ -109,7 +109,7 @@ async function applyDistinct(rows, distinct) {
   /** @type {AsyncRow[]} */
   const result = []
   for (const row of rows) {
-    const key = await stableRowKey(row)
+    const key = await stableRowKey(row.cells)
     if (seen.has(key)) continue
     seen.add(key)
     result.push(row)
@@ -270,17 +270,21 @@ async function* evaluateStreaming(select, dataSource, tables) {
     }
 
     // SELECT projection
-    /** @type {AsyncRow} */
-    const outRow = {}
+    /** @type {string[]} */
+    const columns = []
+    /** @type {AsyncCells} */
+    const cells = {}
     const currentRowIndex = rowIndex
     for (const col of select.columns) {
       if (col.kind === 'star') {
-        for (const [key, cell] of Object.entries(row)) {
-          outRow[key] = cell
+        for (const key of row.columns) {
+          columns.push(key)
+          cells[key] = row.cells[key]
         }
       } else if (col.kind === 'derived') {
         const alias = col.alias ?? defaultDerivedAlias(col.expr)
-        outRow[alias] = () => evaluateExpr({ node: col.expr, row, tables, rowIndex: currentRowIndex })
+        columns.push(alias)
+        cells[alias] = () => evaluateExpr({ node: col.expr, row, tables, rowIndex: currentRowIndex })
       } else if (col.kind === 'aggregate') {
         throw new Error(
           'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'
@@ -290,7 +294,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
 
     // DISTINCT: skip duplicate rows
     if (seen) {
-      const key = await stableRowKey(outRow)
+      const key = await stableRowKey(cells)
       if (seen.has(key)) continue
       seen.add(key)
       // OFFSET applies to distinct rows
@@ -300,7 +304,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
       }
     }
 
-    yield outRow
+    yield { columns, cells }
     rowsYielded++
     if (rowsYielded >= limit) {
       break
@@ -392,14 +396,16 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
     }
 
     for (const group of groups) {
-      /** @type {AsyncRow} */
-      const resultRow = {}
+      const columns = []
+      /** @type {AsyncCells} */
+      const cells = {}
       for (const col of select.columns) {
         if (col.kind === 'star') {
           const firstRow = group[0]
           if (firstRow) {
-            for (const [key, cell] of Object.entries(firstRow)) {
-              resultRow[key] = cell
+            for (const key of firstRow.columns) {
+              columns.push(key)
+              cells[key] = firstRow.cells[key]
             }
           }
           continue
@@ -407,29 +413,32 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
 
         if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
+          columns.push(alias)
           if (group.length > 0) {
-            resultRow[alias] = () => evaluateExpr({ node: col.expr, row: group[0], tables })
+            cells[alias] = () => evaluateExpr({ node: col.expr, row: group[0], tables })
           } else {
-            delete resultRow[alias]
+            delete cells[alias]
           }
           continue
         }
 
         if (col.kind === 'aggregate') {
           const alias = col.alias ?? defaultAggregateAlias(col)
-          resultRow[alias] = () => evaluateAggregate({ col, rows: group, tables })
+          columns.push(alias)
+          cells[alias] = () => evaluateAggregate({ col, rows: group, tables })
           continue
         }
       }
+      const asyncRow = { columns, cells }
 
       // Apply HAVING filter before adding to projected results
       if (select.having) {
-        if (!await evaluateHavingExpr(select.having, resultRow, group, tables)) {
+        if (!await evaluateHavingExpr(select.having, asyncRow, group, tables)) {
           continue
         }
       }
 
-      projected.push(resultRow)
+      projected.push(asyncRow)
     }
   } else {
     // No grouping, simple projection
@@ -446,19 +455,22 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
     }
 
     for (const row of rowsToProject) {
-      /** @type {AsyncRow} */
-      const outRow = {}
+      const columns = []
+      /** @type {AsyncCells} */
+      const cells = {}
       for (const col of select.columns) {
         if (col.kind === 'star') {
-          for (const [key, cell] of Object.entries(row)) {
-            outRow[key] = cell
+          for (const key of row.columns) {
+            columns.push(key)
+            cells[key] = row.cells[key]
           }
         } else if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          outRow[alias] = () => evaluateExpr({ node: col.expr, row, tables })
+          columns.push(alias)
+          cells[alias] = () => evaluateExpr({ node: col.expr, row, tables })
         }
       }
-      projected.push(outRow)
+      projected.push({ columns, cells })
     }
   }
 

@@ -198,6 +198,25 @@ describe('executeSql', () => {
       expect(result[0].neg_value).toBe(-10)
     })
 
+    it('should handle numeric select items', async () => {
+      const { value } = await executeSql({
+        tables: { users },
+        query: 'SELECT 1 as one, 2 FROM users',
+      }).next()
+      expect(value.columns).toEqual(['one', '2'])
+      expect(value.cells['one']()).resolves.toBe(1)
+      expect(value.cells['2']()).resolves.toBe(2)
+    })
+
+    it('should handle duplicate column names in select', async () => {
+      const { value } = await executeSql({
+        tables: { users },
+        query: 'SELECT name, name FROM users',
+      }).next()
+      expect(value.columns).toEqual(['name', 'name'])
+      expect(value.cells['name']()).resolves.toBe('Alice')
+    })
+
     it('should handle rows with different keys', async () => {
       const users = [
         { id: 1, name: 'Alice' },

@@ -1,5 +1,5 @@
 /**
- * @import { SqlPrimitive } from '../types.js'
+ * @import { MathFunc, SqlPrimitive } from '../types.js'
  */
 import { argCountError } from '../validationErrors.js'
 
@@ -7,7 +7,7 @@ import { argCountError } from '../validationErrors.js'
  * Evaluate a math function
  *
  * @param {Object} options
- * @param {string} options.funcName - Uppercase function name
+ * @param {MathFunc} options.funcName - Uppercase function name
  * @param {SqlPrimitive[]} options.args - Function arguments
  * @param {number} options.positionStart - Start position in query
  * @param {number} options.positionEnd - End position in query
@@ -336,5 +336,5 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd, r
     return Math.PI
   }
 
-  return undefined
+  return null
 }

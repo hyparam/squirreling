@@ -32,14 +32,14 @@ export async function evaluateExpr({ node, row, tables, rowIndex }) {
 
   if (node.type === 'identifier') {
     // Try exact match first (handles both qualified and unqualified names)
-    if (row[node.name]) {
-      return row[node.name]()
+    if (row.cells[node.name]) {
+      return row.cells[node.name]()
     }
     // For qualified names like 'users.id', also try just the column part
     if (node.name.includes('.')) {
       const colName = node.name.split('.').pop()
-      if (colName && row[colName]) {
-        return row[colName]()
+      if (colName && row.cells[colName]) {
+        return row.cells[colName]()
       }
     }
     return null
@@ -48,13 +48,10 @@ export async function evaluateExpr({ node, row, tables, rowIndex }) {
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
     const gen = executeSelect(node.subquery, tables)
-    const first = await gen.next() // Start the generator
+    const { value } = await gen.next() // Start the generator
     gen.return(undefined) // Stop further execution
-    if (!first.value) return null
-    /** @type {AsyncRow} */
-    const firstRow = first.value
-    const firstKey = Object.keys(firstRow)[0]
-    return firstRow[firstKey]()
+    if (!value) return null
+    return value.cells[value.columns[0]]()
   }
 
   // Unary operators
@@ -484,14 +481,11 @@ export async function evaluateExpr({ node, row, tables, rowIndex }) {
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, tables, rowIndex })
     const results = executeSelect(node.subquery, tables)
-    /** @type {SqlPrimitive[]} */
-    const values = []
     for await (const resRow of results) {
-      const firstKey = Object.keys(resRow)[0]
-      const val = await resRow[firstKey]()
-      values.push(val)
+      const value = await resRow.cells[resRow.columns[0]]()
+      if (exprVal === value) return true
     }
-    return values.includes(exprVal)
+    return false
   }
 
   // EXISTS and NOT EXISTS with subqueries
