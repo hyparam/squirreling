@@ -5,7 +5,7 @@ import { whereToParquetFilter } from './parquetFilter.js'
 
 /**
  * @import { AsyncBuffer, FileMetaData, ParquetQueryFilter } from 'hyparquet'
- * @import { AsyncDataSource, QueryHints } from '../types.js'
+ * @import { AsyncDataSource, ScanOptions } from '../types.js'
  */
 
 /**
@@ -19,27 +19,39 @@ import { whereToParquetFilter } from './parquetFilter.js'
 export function createParquetSource({ file, metadata }) {
   return {
     /**
-     * @param {QueryHints} [hints]
+     * @param {ScanOptions} options
      */
-    async *scan(hints) {
+    async *scan({ hints, signal }) {
       metadata ??= await parquetMetadataAsync(file)
 
       // Convert WHERE AST to hyparquet filter format
       const whereFilter = hints?.where && whereToParquetFilter(hints.where)
       /** @type {ParquetQueryFilter | undefined} */
       const filter = hints?.where ? whereFilter : undefined
+      const filterApplied = !filter || whereFilter
 
       // Emit rows by row group
       let groupStart = 0
+      let remainingLimit = hints?.limit ?? Infinity
       for (const rowGroup of metadata.row_groups) {
+        if (signal?.aborted) break
         const rowCount = Number(rowGroup.num_rows)
 
         // Skip row groups by offset if where is fully applied
-        if ((!filter || whereFilter) && hints?.offset !== undefined && groupStart + rowCount <= hints.offset) {
-          for (let i = 0; i < rowCount; i++) {
-            // yield empty rows
-            yield asyncRow({})
+        let safeOffset = 0
+        let safeLimit = rowCount
+        if (filterApplied) {
+          if (hints?.offset !== undefined && groupStart < hints.offset) {
+            safeOffset = Math.min(rowCount, hints.offset - groupStart)
           }
+          safeLimit = Math.min(rowCount - safeOffset, remainingLimit)
+          if (safeLimit <= 0 && safeOffset < rowCount) break
+        }
+        for (let i = 0; i < safeOffset; i++) {
+          // yield empty rows
+          yield asyncRow({})
+        }
+        if (safeOffset === rowCount) {
           groupStart += rowCount
           continue
         }
@@ -48,8 +60,8 @@ export function createParquetSource({ file, metadata }) {
         const data = await parquetReadObjects({
           file,
           metadata,
-          rowStart: groupStart,
-          rowEnd: groupStart + rowCount,
+          rowStart: groupStart + safeOffset,
+          rowEnd: groupStart + safeOffset + safeLimit,
           columns: hints?.columns,
           filter,
           filterStrict: false,
@@ -62,6 +74,7 @@ export function createParquetSource({ file, metadata }) {
           yield asyncRow(row)
         }
 
+        remainingLimit -= data.length
         groupStart += rowCount
       }
     },

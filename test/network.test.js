@@ -24,9 +24,7 @@ describe('parquet backend', async () => {
         text: expect.any(String),
       },
     ])
-    // reads entire second row group
-    expect(counting.bytes).toBe(6111314) // 1 row group
-    // expect(counting.bytes).toBe(617381) // TODO: 1 text page!
+    expect(counting.bytes).toBe(617381) // 1 text page
     expect(counting.fetches).toBe(3) // 1 offset index + 1 run of 3 column chunks + 1 page
   })
 
@@ -49,5 +47,22 @@ describe('parquet backend', async () => {
     expect(counting.bytes).toBe(6111314)
     // expect(counting.bytes).toBe(617381) // TODO: 1 text page!
     expect(counting.fetches).toBe(3) // 1 offset index + 1 run of 3 column chunks + 1 page
+  })
+
+  it('should respect limit across row group boundaries', async () => {
+    // wiki1k.parquet has 2 row groups of 500 rows each
+    // Test the source directly to verify limit is tracked across row groups
+    // LIMIT 2 OFFSET 499 should yield: 499 empty rows + 1 real row from group 0, then 1 real row from group 1
+    // Bug: without tracking remaining limit, source yields 499 empty + 1 real + 2 real = 3 real rows
+    const wiki = createParquetSource({ file, metadata })
+    const rows = []
+    for await (const row of wiki.scan({ hints: { limit: 2, offset: 499 } })) {
+      // Only count non-empty rows (real data rows have columns)
+      if (row.columns.length > 0) {
+        rows.push(row)
+      }
+    }
+    // Should yield exactly 2 real rows, not 3
+    expect(rows).toHaveLength(2)
   })
 })

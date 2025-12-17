@@ -8,7 +8,7 @@
  */
 
 /**
- * Converts a WHERE clause AST to hyparquet filter format.
+ * Converts a squirreling WHERE clause AST to hyparquet filter format.
  * Returns undefined if the expression cannot be fully converted.
  *
  * @param {ExprNode | undefined} where - the WHERE clause AST
