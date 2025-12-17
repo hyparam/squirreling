@@ -37,11 +37,11 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "24.10.2",
-    "@vitest/coverage-v8": "4.0.15",
-    "eslint": "9.39.1",
+    "@types/node": "24.10.4",
+    "@vitest/coverage-v8": "4.0.16",
+    "eslint": "9.39.2",
     "eslint-plugin-jsdoc": "61.5.0",
     "typescript": "5.9.3",
-    "vitest": "4.0.15"
+    "vitest": "4.0.16"
   }
 }

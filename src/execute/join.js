@@ -30,7 +30,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     // Buffer right rows for hash index (required for hash join)
     /** @type {AsyncRow[]} */
     const rightRows = []
-    for await (const row of rightSource.scan()) {
+    for await (const row of rightSource.scan({})) {
       rightRows.push(row)
     }
 
@@ -39,14 +39,16 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 
     // Return streaming data source - left rows stream through without buffering
     return {
-      async *scan() {
+      async *scan(options) {
+        const { signal } = options
         yield* hashJoin({
-          leftRows: leftSource.scan(), // Stream directly, not buffered
+          leftRows: leftSource.scan(options), // Stream directly, not buffered
           rightRows,
           join,
           leftTable: currentLeftTable,
           rightTable: rightTableName,
           tables,
+          signal,
         })
       },
     }
@@ -55,7 +57,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   // Multiple joins: buffer intermediate results, stream final join
   /** @type {AsyncRow[]} */
   let leftRows = []
-  for await (const row of leftSource.scan()) {
+  for await (const row of leftSource.scan({})) {
     leftRows.push(row)
   }
 
@@ -69,7 +71,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 
     /** @type {AsyncRow[]} */
     const rightRows = []
-    for await (const row of rightSource.scan()) {
+    for await (const row of rightSource.scan({})) {
       rightRows.push(row)
     }
 
@@ -105,7 +107,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
 
   /** @type {AsyncRow[]} */
   const rightRows = []
-  for await (const row of rightSource.scan()) {
+  for await (const row of rightSource.scan({})) {
     rightRows.push(row)
   }
 
@@ -113,7 +115,8 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   const lastRightTableName = lastJoin.alias ?? lastJoin.table
 
   return {
-    async *scan() {
+    async *scan(options) {
+      const { signal } = options
       yield* hashJoin({
         leftRows,
         rightRows,
@@ -121,6 +124,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
         leftTable: currentLeftTable,
         rightTable: lastRightTableName,
         tables,
+        signal,
       })
     },
   }
@@ -232,9 +236,10 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
  * @param {string} params.leftTable - name of left table (for column prefixing)
  * @param {string} params.rightTable - name of right table (for column prefixing, may be alias)
  * @param {Record<string, AsyncDataSource>} params.tables - all tables for expression evaluation
+ * @param {AbortSignal} [params.signal] - abort signal for cancellation
  * @yields {AsyncRow} joined rows
  */
-async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tables }) {
+async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tables, signal }) {
   const { joinType, on: onCondition } = join
 
   if (!onCondition) {
@@ -281,6 +286,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
 
     // PROBE PHASE: Stream through left rows, yield matches immediately
     for await (const leftRow of leftRows) {
+      if (signal?.aborted) break
       // Capture left column info from first row (for NULL row generation)
       if (!leftPrefixedCols) {
         leftPrefixedCols = leftRow.columns.flatMap(col =>
@@ -322,6 +328,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
     const matchedRightRows = joinType === 'RIGHT' || joinType === 'FULL' ? new Set() : null
 
     for await (const leftRow of leftRows) {
+      if (signal?.aborted) break
       // Capture left column info from first row (for NULL row generation)
       if (!leftPrefixedCols) {
         leftPrefixedCols = leftRow.columns.flatMap(col =>

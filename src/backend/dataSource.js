@@ -1,7 +1,6 @@
 /**
- * @import { AsyncCell, AsyncCells, AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
+ * @import { AsyncCell, AsyncCells, AsyncDataSource, AsyncRow, ScanOptions, SqlPrimitive } from '../types.js'
  */
-
 
 /**
  * Wraps an async generator of plain objects into an AsyncDataSource
@@ -11,8 +10,11 @@
  */
 export function generatorSource(gen) {
   return {
-    async *scan() {
-      yield* gen
+    async *scan({ signal }) {
+      for await (const row of gen) {
+        if (signal?.aborted) break
+        yield row
+      }
     },
   }
 }
@@ -40,8 +42,9 @@ function asyncRow(obj) {
  */
 export function memorySource(data) {
   return {
-    async *scan() {
+    async *scan({ signal }) {
       for (const item of data) {
+        if (signal?.aborted) break
         yield asyncRow(item)
       }
     },
@@ -58,11 +61,14 @@ export function cachedDataSource(source) {
   const cache = new Map()
   return {
     /**
+     * @param {ScanOptions} options
      * @yields {AsyncRow}
      */
-    async *scan() {
+    async *scan(options) {
+      const { signal } = options
       let index = 0
-      for await (const row of source.scan()) {
+      for await (const row of source.scan(options)) {
+        if (signal?.aborted) break
         const rowIndex = index
         /** @type {AsyncCells} */
         const cells = {}

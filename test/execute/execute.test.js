@@ -204,8 +204,8 @@ describe('executeSql', () => {
         query: 'SELECT 1 as one, 2 FROM users',
       }).next()
       expect(value.columns).toEqual(['one', '2'])
-      expect(value.cells['one']()).resolves.toBe(1)
-      expect(value.cells['2']()).resolves.toBe(2)
+      await expect(value.cells['one']()).resolves.toBe(1)
+      await expect(value.cells['2']()).resolves.toBe(2)
     })
 
     it('should handle duplicate column names in select', async () => {
@@ -214,7 +214,7 @@ describe('executeSql', () => {
         query: 'SELECT name, name FROM users',
       }).next()
       expect(value.columns).toEqual(['name', 'name'])
-      expect(value.cells['name']()).resolves.toBe('Alice')
+      await expect(value.cells['name']()).resolves.toBe('Alice')
     })
 
     it('should handle rows with different keys', async () => {

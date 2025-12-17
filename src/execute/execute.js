@@ -19,7 +19,7 @@ import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
  * @param {ExecuteSqlOptions} options - the execution options
  * @yields {AsyncRow} async generator yielding result rows
  */
-export async function* executeSql({ tables, query }) {
+export async function* executeSql({ tables, query, signal }) {
   const select = typeof query === 'string' ? parseSql(query) : query
 
   // Check for unsupported operations
@@ -41,17 +41,23 @@ export async function* executeSql({ tables, query }) {
     }
   }
 
-  yield* executeSelect(select, normalizedTables)
+  yield* executeSelect({ select, tables: normalizedTables, signal })
 }
+
+/**
+ * @typedef {Object} ExecuteSelectOptions
+ * @property {SelectStatement} select
+ * @property {Record<string, AsyncDataSource>} tables
+ * @property {AbortSignal} [signal]
+ */
 
 /**
  * Executes a SELECT query against the provided tables
  *
- * @param {SelectStatement} select
- * @param {Record<string, AsyncDataSource>} tables
+ * @param {ExecuteSelectOptions} options
  * @yields {AsyncRow}
  */
-export async function* executeSelect(select, tables) {
+export async function* executeSelect({ select, tables, signal }) {
   /** @type {AsyncDataSource} */
   let dataSource
   /** @type {string} */
@@ -67,7 +73,7 @@ export async function* executeSelect(select, tables) {
   } else {
     // Nested subquery - recursively resolve
     fromTableName = select.from.alias
-    dataSource = generatorSource(executeSelect(select.from.query, tables))
+    dataSource = generatorSource(executeSelect({ select: select.from.query, tables, signal }))
   }
 
   // Execute JOINs if present
@@ -75,7 +81,7 @@ export async function* executeSelect(select, tables) {
     dataSource = await executeJoins(dataSource, select.joins, fromTableName, tables)
   }
 
-  yield* evaluateSelectAst(select, dataSource, tables)
+  yield* evaluateSelectAst({ select, dataSource, tables, signal })
 }
 
 /**
@@ -202,14 +208,20 @@ async function sortRows(rows, orderBy, tables) {
 }
 
 /**
+ * @typedef {Object} EvaluateSelectAstOptions
+ * @property {SelectStatement} select
+ * @property {AsyncDataSource} dataSource
+ * @property {Record<string, AsyncDataSource>} tables
+ * @property {AbortSignal} [signal]
+ */
+
+/**
  * Evaluates a select with a resolved FROM data source
  *
- * @param {SelectStatement} select
- * @param {AsyncDataSource} dataSource
- * @param {Record<string, AsyncDataSource>} tables
+ * @param {EvaluateSelectAstOptions} options
  * @yields {AsyncRow}
  */
-async function* evaluateSelectAst(select, dataSource, tables) {
+async function* evaluateSelectAst({ select, dataSource, tables, signal }) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
   const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
@@ -218,23 +230,29 @@ async function* evaluateSelectAst(select, dataSource, tables) {
 
   if (needsBuffering) {
     // BUFFERING PATH: Collect all rows, process, then yield
-    yield* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping)
+    yield* evaluateBuffered({ select, dataSource, tables, hasAggregate, useGrouping, signal })
   } else {
     // STREAMING PATH: Yield rows one by one
-    yield* evaluateStreaming(select, dataSource, tables)
+    yield* evaluateStreaming({ select, dataSource, tables, signal })
   }
 }
+
+/**
+ * @typedef {Object} EvaluateStreamingOptions
+ * @property {SelectStatement} select
+ * @property {AsyncDataSource} dataSource
+ * @property {Record<string, AsyncDataSource>} tables
+ * @property {AbortSignal} [signal]
+ */
 
 /**
  * Streaming evaluation for simple queries (no ORDER BY or GROUP BY)
  * Supports DISTINCT by tracking seen row keys without buffering full rows
  *
- * @param {SelectStatement} select
- * @param {AsyncDataSource} dataSource
- * @param {Record<string, AsyncDataSource>} tables
+ * @param {EvaluateStreamingOptions} options
  * @yields {AsyncRow}
  */
-async function* evaluateStreaming(select, dataSource, tables) {
+async function* evaluateStreaming({ select, dataSource, tables, signal }) {
   let rowsYielded = 0
   let rowsSkipped = 0
   let rowIndex = 0
@@ -255,7 +273,7 @@ async function* evaluateStreaming(select, dataSource, tables) {
     offset: select.offset,
   }
 
-  for await (const row of dataSource.scan(hints)) {
+  for await (const row of dataSource.scan({ hints, signal })) {
     rowIndex++
     // WHERE filter
     if (select.where) {
@@ -313,16 +331,22 @@ async function* evaluateStreaming(select, dataSource, tables) {
 }
 
 /**
+ * @typedef {Object} EvaluateBufferedOptions
+ * @property {SelectStatement} select
+ * @property {AsyncDataSource} dataSource
+ * @property {Record<string, AsyncDataSource>} tables
+ * @property {boolean} hasAggregate
+ * @property {boolean} useGrouping
+ * @property {AbortSignal} [signal]
+ */
+
+/**
  * Buffered evaluation for complex queries (with ORDER BY or GROUP BY)
  *
- * @param {SelectStatement} select
- * @param {AsyncDataSource} dataSource
- * @param {Record<string, AsyncDataSource>} tables
- * @param {boolean} hasAggregate
- * @param {boolean} useGrouping
+ * @param {EvaluateBufferedOptions} options
  * @yields {AsyncRow}
  */
-async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGrouping) {
+async function* evaluateBuffered({ select, dataSource, tables, hasAggregate, useGrouping, signal }) {
   // Build hints for data source optimization
   // Note: limit/offset not passed here since buffering needs all rows for sorting/grouping
   /** @type {QueryHints} */
@@ -334,7 +358,7 @@ async function* evaluateBuffered(select, dataSource, tables, hasAggregate, useGr
   // Step 1: Collect all rows from data source
   /** @type {AsyncRow[]} */
   const working = []
-  for await (const row of dataSource.scan(hints)) {
+  for await (const row of dataSource.scan({ hints, signal })) {
     working.push(row)
   }
 

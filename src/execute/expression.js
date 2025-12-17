@@ -47,7 +47,7 @@ export async function evaluateExpr({ node, row, tables, rowIndex }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const gen = executeSelect(node.subquery, tables)
+    const gen = executeSelect({ select: node.subquery, tables })
     const { value } = await gen.next() // Start the generator
     gen.return(undefined) // Stop further execution
     if (!value) return null
@@ -480,7 +480,7 @@ export async function evaluateExpr({ node, row, tables, rowIndex }) {
   // IN with subqueries
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, tables, rowIndex })
-    const results = executeSelect(node.subquery, tables)
+    const results = executeSelect({ select: node.subquery, tables })
     for await (const resRow of results) {
       const value = await resRow.cells[resRow.columns[0]]()
       if (exprVal === value) return true
@@ -490,11 +490,11 @@ export async function evaluateExpr({ node, row, tables, rowIndex }) {
 
   // EXISTS and NOT EXISTS with subqueries
   if (node.type === 'exists') {
-    const results = await executeSelect(node.subquery, tables).next()
+    const results = await executeSelect({ select: node.subquery, tables }).next()
     return results.done === false
   }
   if (node.type === 'not exists') {
-    const results = await executeSelect(node.subquery, tables).next()
+    const results = await executeSelect({ select: node.subquery, tables }).next()
     return results.done === true
   }
 

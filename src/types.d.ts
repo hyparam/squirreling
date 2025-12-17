@@ -1,4 +1,31 @@
+// executeSql(options)
+export interface ExecuteSqlOptions {
+  tables: Record<string, Row | AsyncDataSource>
+  query: string | SelectStatement
+  signal?: AbortSignal
+}
 
+// AsyncRow represents a row with async cell values
+export interface AsyncRow {
+  columns: string[]
+  cells: AsyncCells
+}
+export type AsyncCells = Record<string, AsyncCell>
+export type AsyncCell = () => Promise<SqlPrimitive>
+
+export type Row = Record<string, SqlPrimitive>[]
+
+/**
+ * Async data source for streaming SQL execution.
+ * Provides an async iterator over rows.
+ */
+export interface AsyncDataSource {
+  scan(options: ScanOptions): AsyncIterable<AsyncRow>
+}
+export interface ScanOptions {
+  hints?: QueryHints
+  signal?: AbortSignal
+}
 /**
  * Hints passed to data sources for query optimization.
  * All hints are optional and "best effort" - sources may ignore them.
@@ -13,27 +40,6 @@ export interface QueryHints {
   // but doesn't need to resolve async rows before the offset
   limit?: number
   offset?: number
-}
-
-/**
- * Async data source for streaming SQL execution.
- * Provides an async iterator over rows.
- */
-export interface AsyncDataSource {
-  scan(hints?: QueryHints): AsyncIterable<AsyncRow>
-}
-export interface AsyncRow {
-  columns: string[]
-  cells: AsyncCells
-}
-export type AsyncCells = Record<string, AsyncCell>
-export type AsyncCell = () => Promise<SqlPrimitive>
-
-export type Row = Record<string, SqlPrimitive>[]
-
-export interface ExecuteSqlOptions {
-  tables: Record<string, Row | AsyncDataSource>
-  query: string | SelectStatement
 }
 
 export type SqlPrimitive =
