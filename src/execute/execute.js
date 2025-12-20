@@ -2,8 +2,7 @@ import { missingClauseError } from '../parseErrors.js'
 import { tableNotFoundError, unsupportedOperationError } from '../executionErrors.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { parseSql } from '../parse/parse.js'
-import { defaultAggregateAlias, evaluateAggregate } from './aggregates.js'
-import { extractColumns } from './columns.js'
+import { containsAggregate, extractColumns } from './columns.js'
 import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
 import { executeJoins } from './join.js'
@@ -224,7 +223,7 @@ async function sortRows(rows, orderBy, tables) {
 async function* evaluateSelectAst({ select, dataSource, tables, signal }) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
-  const hasAggregate = select.columns.some(col => col.kind === 'aggregate')
+  const hasAggregate = select.columns.some(col => col.kind === 'derived' && containsAggregate(col.expr))
   const useGrouping = hasAggregate || select.groupBy.length > 0
   const needsBuffering = useGrouping || select.orderBy.length > 0
 
@@ -303,10 +302,6 @@ async function* evaluateStreaming({ select, dataSource, tables, signal }) {
         const alias = col.alias ?? defaultDerivedAlias(col.expr)
         columns.push(alias)
         cells[alias] = () => evaluateExpr({ node: col.expr, row, tables, rowIndex: currentRowIndex })
-      } else if (col.kind === 'aggregate') {
-        throw new Error(
-          'Aggregate functions require GROUP BY or will act on the whole dataset; add GROUP BY or remove aggregates'
-        )
       }
     }
 
@@ -438,18 +433,9 @@ async function* evaluateBuffered({ select, dataSource, tables, hasAggregate, use
         if (col.kind === 'derived') {
           const alias = col.alias ?? defaultDerivedAlias(col.expr)
           columns.push(alias)
-          if (group.length > 0) {
-            cells[alias] = () => evaluateExpr({ node: col.expr, row: group[0], tables })
-          } else {
-            delete cells[alias]
-          }
-          continue
-        }
-
-        if (col.kind === 'aggregate') {
-          const alias = col.alias ?? defaultAggregateAlias(col)
-          columns.push(alias)
-          cells[alias] = () => evaluateAggregate({ col, rows: group, tables })
+          // Pass group to evaluateExpr so it can handle aggregate functions within expressions
+          // For empty groups, still provide an empty row context for aggregates to return appropriate values
+          cells[alias] = () => evaluateExpr({ node: col.expr, row: group[0] ?? { columns: [], cells: {} }, tables, rows: group })
           continue
         }
       }

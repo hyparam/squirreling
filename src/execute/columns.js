@@ -1,6 +1,45 @@
+import { isAggregateFunc } from '../validation.js'
+
 /**
  * @import { ExprNode, SelectStatement, SelectColumn } from '../types.js'
  */
+
+/**
+ * Checks if an expression contains any aggregate function calls
+ *
+ * @param {ExprNode | undefined} expr
+ * @returns {boolean}
+ */
+export function containsAggregate(expr) {
+  if (!expr) return false
+  if (expr.type === 'function' && isAggregateFunc(expr.name.toUpperCase())) {
+    return true
+  }
+  if (expr.type === 'binary') {
+    return containsAggregate(expr.left) || containsAggregate(expr.right)
+  }
+  if (expr.type === 'unary') {
+    return containsAggregate(expr.argument)
+  }
+  if (expr.type === 'cast') {
+    return containsAggregate(expr.expr)
+  }
+  if (expr.type === 'case') {
+    if (expr.caseExpr && containsAggregate(expr.caseExpr)) return true
+    for (const when of expr.whenClauses) {
+      if (containsAggregate(when.condition) || containsAggregate(when.result)) return true
+    }
+    if (containsAggregate(expr.elseResult)) return true
+  }
+  if (expr.type === 'in valuelist') {
+    if (containsAggregate(expr.expr)) return true
+    for (const val of expr.values) {
+      if (containsAggregate(val)) return true
+    }
+  }
+  // Note: Don't recurse into subqueries - they have their own aggregate scope
+  return false
+}
 
 /**
  * Extracts column names needed from a SELECT statement.
@@ -50,11 +89,6 @@ export function extractColumns(select) {
 function collectColumnsFromSelectColumn(col, columns) {
   if (col.kind === 'derived') {
     collectColumnsFromExpr(col.expr, columns)
-  } else if (col.kind === 'aggregate') {
-    if (col.arg.kind === 'expression') {
-      collectColumnsFromExpr(col.arg.expr, columns)
-    }
-    // 'star' aggregate (COUNT(*)) doesn't reference specific columns
   }
   // 'star' columns handled separately (returns undefined for all columns)
 }

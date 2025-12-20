@@ -115,6 +115,7 @@ export interface FunctionNode extends ExprNodeBase {
   type: 'function'
   name: string
   args: ExprNode[]
+  distinct?: boolean
 }
 
 export interface CastNode extends ExprNodeBase {
@@ -226,32 +227,13 @@ export type StringFunc =
   | 'CURRENT_TIME'
   | 'CURRENT_TIMESTAMP'
 
-export interface AggregateArgStar {
-  kind: 'star'
-}
-
-export interface AggregateArgExpression {
-  kind: 'expression'
-  expr: ExprNode
-  quantifier: 'all' | 'distinct'
-}
-
-export type AggregateArg = AggregateArgStar | AggregateArgExpression
-
-export interface AggregateColumn {
-  kind: 'aggregate'
-  func: AggregateFunc
-  arg: AggregateArg
-  alias?: string
-}
-
 export interface DerivedColumn {
   kind: 'derived'
   expr: ExprNode
   alias?: string
 }
 
-export type SelectColumn = StarColumn | AggregateColumn | DerivedColumn
+export type SelectColumn = StarColumn | DerivedColumn
 
 export interface OrderByItem {
   expr: ExprNode

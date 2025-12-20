@@ -1,11 +1,11 @@
 import { tokenize } from './tokenize.js'
 import { parseExpression } from './expression.js'
-import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isAggregateFunc } from '../validation.js'
+import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation.js'
 import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
 import { parseJoins } from './joins.js'
 
 /**
- * @import { AggregateColumn, AggregateArg, AggregateFunc, ExprNode, FromSubquery, FromTable, OrderByItem, ParserState, SelectStatement, SelectColumn } from '../types.js'
+ * @import { ExprNode, FromSubquery, FromTable, OrderByItem, ParserState, SelectStatement, SelectColumn } from '../types.js'
  */
 
 /**
@@ -79,59 +79,10 @@ function parseSelectItem(state) {
     throw parseError(state, 'column name or expression')
   }
 
-  const next = peekToken(state, 1)
-  if (next.type === 'paren' && next.value === '(') {
-    const upper = tok.value.toUpperCase()
-    if (isAggregateFunc(upper)) {
-      expectIdentifier(state) // consume function name
-      return parseAggregateItem(state, upper)
-    }
-  }
-
-  // Delegate to expression parser
+  // Delegate to expression parser (handles all expressions including aggregates)
   const expr = parseExpression(state)
   const alias = parseAs(state)
   return { kind: 'derived', expr, alias }
-}
-
-/**
- * @param {ParserState} state
- * @param {AggregateFunc} func
- * @returns {AggregateColumn}
- */
-function parseAggregateItem(state, func) {
-  expect(state, 'paren', '(')
-
-  /** @type {AggregateArg} */
-  let arg
-
-  const cur = current(state)
-  if (cur.type === 'operator' && cur.value === '*') {
-    consume(state)
-    arg = { kind: 'star' }
-  } else {
-    /** @type {'all' | 'distinct'} */
-    let quantifier = 'all'
-    if (cur.type === 'keyword' && cur.value === 'ALL') {
-      consume(state) // consume ALL
-    } else if (cur.type === 'keyword' && cur.value === 'DISTINCT') {
-      consume(state)
-      quantifier = 'distinct'
-    }
-
-    const expr = parseExpression(state)
-    arg = {
-      kind: 'expression',
-      expr,
-      quantifier,
-    }
-  }
-
-  expect(state, 'paren', ')')
-
-  const alias = parseAs(state)
-
-  return { kind: 'aggregate', func, arg, alias }
 }
 
 /**

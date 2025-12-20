@@ -133,6 +133,15 @@ export function parsePrimary(state) {
 
       /** @type {ExprNode[]} */
       const args = []
+      let distinct = false
+
+      // Check for DISTINCT or ALL keyword (for aggregate functions like COUNT(DISTINCT x))
+      if (current(state).type === 'keyword' && current(state).value === 'DISTINCT') {
+        consume(state) // consume DISTINCT
+        distinct = true
+      } else if (current(state).type === 'keyword' && current(state).value === 'ALL') {
+        consume(state) // consume ALL (default behavior, just consume it)
+      }
 
       if (current(state).type !== 'paren' || current(state).value !== ')') {
         while (true) {
@@ -156,10 +165,21 @@ export function parsePrimary(state) {
 
       expect(state, 'paren', ')')
 
+      // Aggregate functions require at least one argument
+      if (isAggregateFunc(funcName) && args.length === 0) {
+        throw syntaxError({
+          expected: 'expression',
+          received: '")"',
+          positionStart: positionStart + funcName.length + 1, // position after opening paren
+          positionEnd: lastPosition(state),
+        })
+      }
+
       return {
         type: 'function',
         name: funcName,
         args,
+        distinct: distinct || undefined,
         positionStart,
         positionEnd: lastPosition(state),
       }

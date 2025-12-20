@@ -377,7 +377,16 @@ describe('parseSql - string functions', () => {
         },
         alias: undefined,
       },
-      { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: undefined },
+      {
+        kind: 'derived',
+        expr: {
+          type: 'function',
+          name: 'COUNT',
+          args: [{ type: 'identifier', name: '*', positionStart: 26, positionEnd: 27 }],
+          positionStart: 20,
+          positionEnd: 28,
+        },
+      },
     ])
   })
 })

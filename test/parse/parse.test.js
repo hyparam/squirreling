@@ -145,7 +145,16 @@ describe('parseSql', () => {
     it('should parse COUNT(*)', () => {
       const select = parseSql('SELECT COUNT(*) FROM users')
       expect(select.columns).toEqual([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' } },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'COUNT',
+            args: [{ type: 'identifier', name: '*', positionStart: 13, positionEnd: 14 }],
+            positionStart: 7,
+            positionEnd: 15,
+          },
+        },
       ])
     })
 
@@ -153,14 +162,14 @@ describe('parseSql', () => {
       const select = parseSql('SELECT COUNT(id) FROM users')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'COUNT',
-          arg: {
-            kind: 'expression',
-            expr: { type: 'identifier', name: 'id', positionStart: 13, positionEnd: 15 },
-            quantifier: 'all',
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'COUNT',
+            args: [{ type: 'identifier', name: 'id', positionStart: 13, positionEnd: 15 }],
+            positionStart: 7,
+            positionEnd: 16,
           },
-          alias: undefined,
         },
       ])
     })
@@ -169,10 +178,14 @@ describe('parseSql', () => {
       const select = parseSql('SELECT SUM(amount) FROM transactions')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'SUM',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'amount', positionStart: 11, positionEnd: 17 }, quantifier: 'all' },
-          alias: undefined,
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'SUM',
+            args: [{ type: 'identifier', name: 'amount', positionStart: 11, positionEnd: 17 }],
+            positionStart: 7,
+            positionEnd: 18,
+          },
         },
       ])
     })
@@ -181,10 +194,14 @@ describe('parseSql', () => {
       const select = parseSql('SELECT AVG(score) FROM tests')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'AVG',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'score', positionStart: 11, positionEnd: 16 }, quantifier: 'all' },
-          alias: undefined,
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'AVG',
+            args: [{ type: 'identifier', name: 'score', positionStart: 11, positionEnd: 16 }],
+            positionStart: 7,
+            positionEnd: 17,
+          },
         },
       ])
     })
@@ -193,16 +210,24 @@ describe('parseSql', () => {
       const select = parseSql('SELECT MIN(price), MAX(price) FROM products')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'MIN',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price', positionStart: 11, positionEnd: 16 }, quantifier: 'all' },
-          alias: undefined,
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'MIN',
+            args: [{ type: 'identifier', name: 'price', positionStart: 11, positionEnd: 16 }],
+            positionStart: 7,
+            positionEnd: 17,
+          },
         },
         {
-          kind: 'aggregate',
-          func: 'MAX',
-          arg: { kind: 'expression', expr: { type: 'identifier', name: 'price', positionStart: 23, positionEnd: 28 }, quantifier: 'all' },
-          alias: undefined,
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'MAX',
+            args: [{ type: 'identifier', name: 'price', positionStart: 23, positionEnd: 28 }],
+            positionStart: 19,
+            positionEnd: 29,
+          },
         },
       ])
     })
@@ -210,7 +235,17 @@ describe('parseSql', () => {
     it('should parse aggregate with alias', () => {
       const select = parseSql('SELECT COUNT(*) AS total FROM users')
       expect(select.columns).toEqual([
-        { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'COUNT',
+            args: [{ type: 'identifier', name: '*', positionStart: 13, positionEnd: 14 }],
+            positionStart: 7,
+            positionEnd: 15,
+          },
+          alias: 'total',
+        },
       ])
     })
   })
@@ -235,12 +270,19 @@ describe('parseSql', () => {
       const select = parseSql('SELECT MAX(LENGTH(problem)) AS max_problem_len FROM table')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'MAX',
-          arg: {
-            kind: 'expression',
-            expr: { type: 'function', name: 'LENGTH', args: [{ type: 'identifier', name: 'problem', positionStart: 18, positionEnd: 25 }], positionStart: 11, positionEnd: 26 },
-            quantifier: 'all',
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'MAX',
+            args: [{
+              type: 'function',
+              name: 'LENGTH',
+              args: [{ type: 'identifier', name: 'problem', positionStart: 18, positionEnd: 25 }],
+              positionStart: 11,
+              positionEnd: 26,
+            }],
+            positionStart: 7,
+            positionEnd: 27,
           },
           alias: 'max_problem_len',
         },
@@ -251,29 +293,32 @@ describe('parseSql', () => {
       const select = parseSql('SELECT COUNT(DISTINCT problem_id) AS n_unique_problems FROM table')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'COUNT',
-          arg: {
-            kind: 'expression',
-            expr: { type: 'identifier', name: 'problem_id', positionStart: 22, positionEnd: 32 },
-            quantifier: 'distinct',
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'COUNT',
+            args: [{ type: 'identifier', name: 'problem_id', positionStart: 22, positionEnd: 32 }],
+            distinct: true,
+            positionStart: 7,
+            positionEnd: 33,
           },
           alias: 'n_unique_problems',
         },
       ])
     })
+
     it('should parse COUNT(ALL ...)', () => {
       const select = parseSql('SELECT COUNT(ALL problem_id) FROM table')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'COUNT',
-          arg: {
-            kind: 'expression',
-            expr: { type: 'identifier', name: 'problem_id', positionStart: 17, positionEnd: 27 },
-            quantifier: 'all',
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'COUNT',
+            args: [{ type: 'identifier', name: 'problem_id', positionStart: 17, positionEnd: 27 }],
+            positionStart: 7,
+            positionEnd: 28,
           },
-          alias: undefined,
         },
       ])
     })
@@ -323,7 +368,17 @@ describe('parseSql', () => {
             },
             alias: undefined,
           },
-          { kind: 'aggregate', func: 'COUNT', arg: { kind: 'star' }, alias: 'total' },
+          {
+            kind: 'derived',
+            expr: {
+              type: 'function',
+              name: 'COUNT',
+              args: [{ type: 'identifier', name: '*', positionStart: 37, positionEnd: 38 }],
+              positionStart: 31,
+              positionEnd: 39,
+            },
+            alias: 'total',
+          },
         ],
         from: { kind: 'table', table: 'users', alias: undefined },
         joins: [],
@@ -398,18 +453,19 @@ describe('parseSql', () => {
       const select = parseSql('SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM files')
       expect(select.columns).toEqual([
         {
-          kind: 'aggregate',
-          func: 'SUM',
-          arg: {
-            kind: 'expression',
-            expr: {
+          kind: 'derived',
+          expr: {
+            type: 'function',
+            name: 'SUM',
+            args: [{
               type: 'cast',
               expr: { type: 'identifier', name: 'size', positionStart: 16, positionEnd: 20 },
               toType: 'BIGINT',
               positionStart: 11,
               positionEnd: 31,
-            },
-            quantifier: 'all',
+            }],
+            positionStart: 7,
+            positionEnd: 32,
           },
           alias: 'total_size',
         },

@@ -233,4 +233,46 @@ describe('executeSql', () => {
       expect(nullGroup?.total).toBe(50)
     })
   })
+
+  describe('aggregate expressions', () => {
+    it('should handle arithmetic on aggregate result: SUM(x) * 2', async () => {
+      const data = [
+        { id: 1, value: 10 },
+        { id: 2, value: 20 },
+        { id: 3, value: 30 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SUM(value) * 2 AS doubled FROM data',
+      }))
+      expect(result).toEqual([{ doubled: 120 }])
+    })
+
+    it('should handle expression inside aggregate: SUM(price * quantity)', async () => {
+      const orders = [
+        { id: 1, price: 10, quantity: 2 },
+        { id: 2, price: 5, quantity: 4 },
+        { id: 3, price: 8, quantity: 3 },
+      ]
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT SUM(price * quantity) AS total_revenue FROM orders',
+      }))
+      expect(result).toEqual([{ total_revenue: 64 }]) // 20 + 20 + 24 = 64
+    })
+
+    it('should handle division of aggregates: SUM(price) / COUNT(*)', async () => {
+      const items = [
+        { id: 1, price: 10 },
+        { id: 2, price: 20 },
+        { id: 3, price: 30 },
+        { id: 4, price: 40 },
+      ]
+      const result = await collect(executeSql({
+        tables: { items },
+        query: 'SELECT SUM(price) / COUNT(*) AS avg_price FROM items',
+      }))
+      expect(result).toEqual([{ avg_price: 25 }]) // 100 / 4 = 25
+    })
+  })
 })

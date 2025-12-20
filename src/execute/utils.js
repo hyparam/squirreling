@@ -132,6 +132,10 @@ export function defaultDerivedAlias(expr) {
     return defaultDerivedAlias(expr.left) + '_' + expr.op + '_' + defaultDerivedAlias(expr.right)
   }
   if (expr.type === 'function') {
+    // Handle aggregate functions with star (COUNT(*) -> count_all)
+    if (expr.args.length === 1 && expr.args[0].type === 'identifier' && expr.args[0].name === '*') {
+      return expr.name.toLowerCase() + '_all'
+    }
     return expr.name.toLowerCase() + '_' + expr.args.map(defaultDerivedAlias).join('_')
   }
   if (expr.type === 'interval') {
