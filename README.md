@@ -19,6 +19,7 @@ Squirreling is a streaming async SQL engine for JavaScript. It is designed to pr
 - Lets you move query execution closer to your users
 - Supports standard SQL queries
 - Async streaming for large datasets
+- Native javascript Promises, AsyncGenerators, AbortSignals
 - Constant memory usage for simple queries with LIMIT
 - Robust error handling and validation designed for LLM tool use
 - In-memory data option for simple use cases
@@ -27,12 +28,12 @@ Squirreling is a streaming async SQL engine for JavaScript. It is designed to pr
 
 ## Usage
 
-Squirreling returns an async generator, allowing you to process rows one at a time without loading everything into memory.
+Squirreling returns an AsyncGenerator of AsyncRows, allowing you to process rows one at a time without loading everything into memory. AsyncRows are made up of AsyncCells, allowing for late materialization of values.
 
 ```typescript
 import { executeSql } from 'squirreling'
 
-// In-memory table
+// Input table (in-memory for this example)
 const users = [
   { id: 1, name: 'Alice', active: true },
   { id: 2, name: 'Bob', active: false },
@@ -40,35 +41,37 @@ const users = [
   // ...more rows
 ]
 
+// Squirreling return types
 interface AsyncRow {
   columns: string[]
   cells: Record<string, AsyncCell>
 }
 type AsyncCell = () => Promise<SqlPrimitive>
 
-// Returns an async iterable of rows with async cells
+// Returns an AsyncIterable of rows with async cell loading
 const asyncRows: AsyncIterable<AsyncRow> = executeSql({
   tables: { users },
-  query: 'SELECT count(*) as cnt FROM users WHERE active = TRUE LIMIT 10',
+  query: 'SELECT * FROM users',
 })
 
 // Process rows as they arrive (streaming)
-for await (const { cnt } of asyncRows) {
-  console.log('Count', await cnt())
+for await (const { id, name } of asyncRows) {
+  console.log(`User id=${await id()}, name=${await name()}`)
 }
 ```
 
-There is an exported helper function `collect` to gather all rows into an array if needed:
+Squirreling exports a helper function `collect` to gather all rows into an array:
 
 ```javascript
 import { collect, executeSql } from 'squirreling'
 
 // Collect all rows and cells into a materialized array
-const allUsers: Record<string, SqlPrimitive>[] = await collect(executeSql({
+const rows: Record<string, SqlPrimitive>[] = await collect(executeSql({
   tables: { users },
-  query: 'SELECT * FROM users',
+  query: 'SELECT active, count(*) as cnt FROM users GROUP BY active',
 }))
-console.log(allUsers)
+console.log(`Collected rows:`, rows)
+// Collected rows: [ { active: true, cnt: 2 }, { active: false, cnt: 1 } ]
 ```
 
 ## Supported SQL Features

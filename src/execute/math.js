@@ -258,19 +258,25 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd, r
   }
 
   if (funcName === 'ATAN') {
-    if (args.length !== 1) {
+    if (args.length === 1) {
+      const val = args[0]
+      if (val == null) return null
+      return Math.atan(Number(val))
+    } else if (args.length === 2) {
+      const y = args[0]
+      const x = args[1]
+      if (y == null || x == null) return null
+      return Math.atan2(Number(y), Number(x))
+    } else {
       throw argCountError({
         funcName: 'ATAN',
-        expected: 1,
+        expected: '1 or 2',
         received: args.length,
         positionStart,
         positionEnd,
         rowNumber,
       })
     }
-    const val = args[0]
-    if (val == null) return null
-    return Math.atan(Number(val))
   }
 
   if (funcName === 'ATAN2') {
@@ -335,6 +341,4 @@ export function evaluateMathFunc({ funcName, args, positionStart, positionEnd, r
     }
     return Math.PI
   }
-
-  return null
 }

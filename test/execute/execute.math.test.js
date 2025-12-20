@@ -663,6 +663,22 @@ describe('math functions', () => {
       }))
       expect(result[0].atan_val).toBeNull()
     })
+
+    it('should return two-argument arctangent when given 2 args', async () => {
+      // Postgres supports ATAN(y, x)
+      const data = [
+        { id: 1, y: 0, x: 1 },
+        { id: 2, y: 1, x: 1 },
+        { id: 3, y: 1, x: 0 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN(y, x) AS atan_val FROM data',
+      }))
+      expect(result[0].atan_val).toBeCloseTo(0, 10)
+      expect(result[1].atan_val).toBeCloseTo(Math.PI / 4, 10)
+      expect(result[2].atan_val).toBeCloseTo(Math.PI / 2, 10)
+    })
   })
 
   describe('ATAN2', () => {
@@ -872,6 +888,118 @@ describe('math functions', () => {
         tables: { data },
         query: 'SELECT PI(value) FROM data',
       }))).rejects.toThrow('PI() function requires no arguments, got 1')
+    })
+
+    it('should throw for ATAN with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT ATAN(value, 2, 3) FROM data',
+      }))).rejects.toThrow('ATAN(number) function requires 1 or 2 arguments, got 3')
+    })
+
+    it('should throw for DEGREES with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT DEGREES(value, 2) FROM data',
+      }))).rejects.toThrow('DEGREES(radians) function requires 1 argument, got 2')
+    })
+
+    it('should throw for RADIANS with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT RADIANS(value, 2) FROM data',
+      }))).rejects.toThrow('RADIANS(degrees) function requires 1 argument, got 2')
+    })
+
+    it('should throw for CEIL with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT CEIL(value, 2) FROM data',
+      }))).rejects.toThrow('CEIL(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for LN with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT LN(value, 2) FROM data',
+      }))).rejects.toThrow('LN(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for ASIN with wrong argument count', async () => {
+      const data = [{ id: 1, value: 0.5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT ASIN(value, 2) FROM data',
+      }))).rejects.toThrow('ASIN(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for ACOS with wrong argument count', async () => {
+      const data = [{ id: 1, value: 0.5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT ACOS(value, 2) FROM data',
+      }))).rejects.toThrow('ACOS(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for COS with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT COS(value, 2) FROM data',
+      }))).rejects.toThrow('COS(radians) function requires 1 argument, got 2')
+    })
+
+    it('should throw for TAN with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT TAN(value, 2) FROM data',
+      }))).rejects.toThrow('TAN(radians) function requires 1 argument, got 2')
+    })
+
+    it('should throw for COT with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT COT(value, 2) FROM data',
+      }))).rejects.toThrow('COT(radians) function requires 1 argument, got 2')
+    })
+
+    it('should throw for ABS with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT ABS(value, 2) FROM data',
+      }))).rejects.toThrow('ABS(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for EXP with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT EXP(value, 2) FROM data',
+      }))).rejects.toThrow('EXP(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for LOG10 with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT LOG10(value, 2) FROM data',
+      }))).rejects.toThrow('LOG10(number) function requires 1 argument, got 2')
+    })
+
+    it('should throw for SQRT with wrong argument count', async () => {
+      const data = [{ id: 1, value: 5 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT SQRT(value, 2) FROM data',
+      }))).rejects.toThrow('SQRT(number) function requires 1 argument, got 2')
     })
   })
 })
