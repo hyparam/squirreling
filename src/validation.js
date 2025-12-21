@@ -1,6 +1,6 @@
 
 /**
- * @import {AggregateFunc, BinaryOp, ComparisonOp, IntervalUnit, MathFunc, StringFunc} from './types.js'
+ * @import {AggregateFunc, BinaryOp, ComparisonOp, IntervalUnit, MathFunc, StringFunc, UserDefinedFunction} from './types.js'
  * @param {string} name
  * @returns {name is AggregateFunc}
  */
@@ -155,6 +155,31 @@ export function validateFunctionArgCount(funcName, argCount) {
   }
 
   return { valid: true, expected: formatExpected(min, max) }
+}
+
+/**
+ * Checks if a function is known (either built-in or user-defined).
+ * @param {string} funcName - The function name (uppercase)
+ * @param {Record<string, UserDefinedFunction>} [functions] - User-defined functions
+ * @returns {boolean}
+ */
+export function isKnownFunction(funcName, functions) {
+  // Check built-in functions
+  if (isAggregateFunc(funcName) || isMathFunc(funcName) || isStringFunc(funcName)) {
+    return true
+  }
+
+  // Special case: CAST is not in any function list but is a built-in
+  if (funcName === 'CAST') {
+    return true
+  }
+
+  // Check user-defined functions (case-insensitive)
+  if (functions) {
+    return Object.keys(functions).some(k => k.toUpperCase() === funcName)
+  }
+
+  return false
 }
 
 // Keywords that cannot be used as implicit aliases after a column

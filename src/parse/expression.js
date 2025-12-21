@@ -5,7 +5,7 @@ import {
   syntaxError,
   unknownFunctionError,
 } from '../parseErrors.js'
-import { isAggregateFunc, isIntervalUnit, isMathFunc, isStringFunc, validateFunctionArgCount } from '../validation.js'
+import { isIntervalUnit, isKnownFunction, validateFunctionArgCount } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'
 import { consume, current, expect, expectIdentifier, lastPosition, match, peekToken } from './state.js'
@@ -123,10 +123,15 @@ export function parsePrimary(state) {
     // function call
     if (next.type === 'paren' && next.value === '(') {
       const funcName = tok.value
+      const funcNameUpper = funcName.toUpperCase()
 
-      // validate function names
-      if (!isStringFunc(funcName) && !isAggregateFunc(funcName) && !isMathFunc(funcName)) {
-        throw unknownFunctionError({ funcName, positionStart: tok.positionStart, positionEnd: tok.positionEnd })
+      // Validate function existence early for better error messages
+      if (!isKnownFunction(funcNameUpper, state.functions)) {
+        throw unknownFunctionError({
+          funcName,
+          positionStart,
+          positionEnd: tok.positionEnd,
+        })
       }
 
       consume(state) // function name
@@ -167,7 +172,7 @@ export function parsePrimary(state) {
       expect(state, 'paren', ')')
 
       // Validate argument count at parse time
-      const validation = validateFunctionArgCount(funcName, args.length)
+      const validation = validateFunctionArgCount(funcNameUpper, args.length)
       if (!validation.valid) {
         throw argCountParseError({
           funcName,

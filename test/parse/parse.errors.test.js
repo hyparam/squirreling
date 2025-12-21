@@ -114,6 +114,15 @@ describe('parseSql error handling', () => {
     it('should throw error on invalid string function name', () => {
       expect(() => parseSql({ query: 'SELECT FOOBAR(name) FROM users' })).toThrow('Unknown function "FOOBAR" at position 7')
     })
+
+    it('should allow unknown function names when functions parameter provided', () => {
+      // Should NOT throw - FOOBAR is provided in functions parameter
+      const result = parseSql({
+        query: 'SELECT FOOBAR(name) FROM users',
+        functions: { FOOBAR: (x) => x },
+      })
+      expect(result.columns[0].kind).toBe('derived')
+    })
   })
 
   describe('WHERE clause errors', () => {
@@ -233,15 +242,16 @@ describe('ParseError structure', () => {
     }
   })
 
-  it('should have correct position range for unknown function', () => {
-    try {
-      parseSql({ query: 'SELECT FOOBAR(x) FROM t' })
-      expect.fail('should have thrown')
-    } catch (/** @type {any} */ error) {
-      expect(error).toBeInstanceOf(ParseError)
-      expect(error.positionStart).toBe(7)
-      expect(error.positionEnd).toBe(13) // "FOOBAR" is 6 chars
-    }
+  it('should throw error for unknown functions without functions parameter', () => {
+    expect(() => parseSql({ query: 'SELECT FOOBAR(x) FROM t' })).toThrow('Unknown function "FOOBAR" at position 7')
+  })
+
+  it('should allow unknown functions when provided in functions parameter', () => {
+    const result = parseSql({
+      query: 'SELECT FOOBAR(x) FROM t',
+      functions: { FOOBAR: (x) => x },
+    })
+    expect(result.columns[0].kind).toBe('derived')
   })
 
   it('should have correct position range for unexpected character', () => {

@@ -1,7 +1,11 @@
+// User-defined function type
+export type UserDefinedFunction = (...args: SqlPrimitive[]) => SqlPrimitive | Promise<SqlPrimitive>
+
 // executeSql(options)
 export interface ExecuteSqlOptions {
   tables: Record<string, Row | AsyncDataSource>
   query: string | SelectStatement
+  functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
 }
 
@@ -254,6 +258,7 @@ export interface ParserState {
   tokens: Token[]
   pos: number
   lastPos?: number
+  functions?: Record<string, UserDefinedFunction>
 }
 
 // Tokenizer types

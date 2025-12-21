@@ -4,7 +4,7 @@ import { evaluateExpr } from './expression.js'
 import { stringify } from './utils.js'
 
 /**
- * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode, AsyncCells } from '../types.js'
+ * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode, AsyncCells, UserDefinedFunction } from '../types.js'
  */
 
 /**
@@ -15,9 +15,10 @@ import { stringify } from './utils.js'
  * @param {JoinClause[]} options.joins - array of join clauses to execute
  * @param {string} options.leftTable - name of the left table (for column prefixing)
  * @param {Record<string, AsyncDataSource>} options.tables - all available tables
+ * @param {Record<string, UserDefinedFunction>} [options.functions]
  * @returns {Promise<AsyncDataSource>} data source yielding joined rows
  */
-export async function executeJoins({ leftSource, joins, leftTable, tables }) {
+export async function executeJoins({ leftSource, joins, leftTable, tables, functions }) {
   let currentLeftTable = leftTable
 
   // Single join optimization: stream left rows without buffering
@@ -49,6 +50,7 @@ export async function executeJoins({ leftSource, joins, leftTable, tables }) {
           leftTable: currentLeftTable,
           rightTable,
           tables,
+          functions,
           signal,
         })
       },
@@ -89,6 +91,7 @@ export async function executeJoins({ leftSource, joins, leftTable, tables }) {
       leftTable: currentLeftTable,
       rightTable,
       tables,
+      functions,
     })
     for await (const row of joined) {
       newLeftRows.push(row)
@@ -125,6 +128,7 @@ export async function executeJoins({ leftSource, joins, leftTable, tables }) {
         leftTable: currentLeftTable,
         rightTable,
         tables,
+        functions,
         signal,
       })
     },
@@ -237,10 +241,11 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
  * @param {string} params.leftTable - name of left table (for column prefixing)
  * @param {string} params.rightTable - name of right table (for column prefixing, may be alias)
  * @param {Record<string, AsyncDataSource>} params.tables - all tables for expression evaluation
+ * @param {Record<string, UserDefinedFunction>} [params.functions]
  * @param {AbortSignal} [params.signal] - abort signal for cancellation
  * @yields {AsyncRow} joined rows
  */
-async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tables, signal }) {
+async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tables, functions, signal }) {
   const { joinType, on: onCondition } = join
 
   if (!onCondition) {
@@ -270,7 +275,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
     // BUILD PHASE: Index right rows by join key
     // Skip null keys - SQL semantics: NULL != NULL
     for (const rightRow of rightRows) {
-      const keyValue = await evaluateExpr({ node: keys.rightKey, row: rightRow, tables })
+      const keyValue = await evaluateExpr({ node: keys.rightKey, row: rightRow, tables, functions })
       if (keyValue == null) continue // NULL keys never match
       const keyStr = stringify(keyValue)
       let bucket = hashMap.get(keyStr)
@@ -295,7 +300,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
         )
       }
 
-      const keyValue = await evaluateExpr({ node: keys.leftKey, row: leftRow, tables })
+      const keyValue = await evaluateExpr({ node: keys.leftKey, row: leftRow, tables, functions })
       const keyStr = stringify(keyValue)
 
       const matchingRightRows = hashMap.get(keyStr)
@@ -341,7 +346,7 @@ async function* hashJoin({ leftRows, rightRows, join, leftTable, rightTable, tab
 
       for (const rightRow of rightRows) {
         const tempMerged = mergeRows(leftRow, rightRow, leftTable, rightTable)
-        const matches = await evaluateExpr({ node: onCondition, row: tempMerged, tables })
+        const matches = await evaluateExpr({ node: onCondition, row: tempMerged, tables, functions })
 
         if (matches) {
           hasMatch = true

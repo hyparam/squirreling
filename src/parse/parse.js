@@ -5,18 +5,17 @@ import { consume, current, expect, expectIdentifier, match, parseError, peekToke
 import { parseJoins } from './joins.js'
 
 /**
- * @import { ExprNode, FromSubquery, FromTable, OrderByItem, ParserState, SelectStatement, SelectColumn } from '../types.js'
+ * @import { ExprNode, FromSubquery, FromTable, OrderByItem, ParserState, SelectStatement, SelectColumn, UserDefinedFunction } from '../types.js'
  */
 
 /**
- * @param {{ query: string }} options
+ * @param {{ query: string, functions?: Record<string, UserDefinedFunction> }} options
  * @returns {SelectStatement}
  */
-export function parseSql(options) {
-  const { query } = options
+export function parseSql({ query, functions }) {
   const tokens = tokenize(query)
   /** @type {ParserState} */
-  const state = { tokens, pos: 0 }
+  const state = { tokens, pos: 0, functions }
   const select = parseSelectInternal(state)
 
   const tok = current(state)
