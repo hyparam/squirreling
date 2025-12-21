@@ -20,6 +20,7 @@ Squirreling is a streaming async SQL engine for JavaScript. It is designed to pr
 - Supports standard SQL queries
 - Async streaming for large datasets
 - Native javascript Promises, AsyncGenerators, AbortSignals
+- Async user-defined functions (UDFs)
 - Constant memory usage for simple queries with LIMIT
 - Robust error handling and validation designed for LLM tool use
 - In-memory data option for simple use cases
