@@ -44,40 +44,36 @@ export async function* executeSql({ tables, query, signal }) {
 }
 
 /**
- * @typedef {Object} ExecuteSelectOptions
- * @property {SelectStatement} select
- * @property {Record<string, AsyncDataSource>} tables
- * @property {AbortSignal} [signal]
- */
-
-/**
  * Executes a SELECT query against the provided tables
  *
- * @param {ExecuteSelectOptions} options
+ * @param {Object} options
+ * @param {SelectStatement} options.select
+ * @param {Record<string, AsyncDataSource>} options.tables
+ * @param {AbortSignal} [options.signal]
  * @yields {AsyncRow}
  */
 export async function* executeSelect({ select, tables, signal }) {
   /** @type {AsyncDataSource} */
   let dataSource
   /** @type {string} */
-  let fromTableName
+  let leftTable
 
   if (select.from.kind === 'table') {
     // Use alias for column prefixing, but look up the actual table name
-    fromTableName = select.from.alias ?? select.from.table
+    leftTable = select.from.alias ?? select.from.table
     dataSource = tables[select.from.table]
     if (dataSource === undefined) {
       throw tableNotFoundError({ tableName: select.from.table })
     }
   } else {
     // Nested subquery - recursively resolve
-    fromTableName = select.from.alias
+    leftTable = select.from.alias
     dataSource = generatorSource(executeSelect({ select: select.from.query, tables, signal }))
   }
 
   // Execute JOINs if present
   if (select.joins.length) {
-    dataSource = await executeJoins(dataSource, select.joins, fromTableName, tables)
+    dataSource = await executeJoins({ leftSource: dataSource, joins: select.joins, leftTable, tables })
   }
 
   yield* evaluateSelectAst({ select, dataSource, tables, signal })
@@ -121,17 +117,19 @@ async function applyDistinct(rows, distinct) {
   }
   return result
 }
+
 /**
  * Applies ORDER BY sorting to rows using multi-pass lazy evaluation.
  * Secondary ORDER BY columns are only evaluated for rows that tie on
  * previous columns, reducing expensive cell evaluations.
  *
- * @param {AsyncRow[]} rows - the input rows
- * @param {OrderByItem[]} orderBy - the sort specifications
- * @param {Record<string, AsyncDataSource>} tables
+ * @param {Object} options
+ * @param {AsyncRow[]} options.rows - the input rows
+ * @param {OrderByItem[]} options.orderBy - the sort specifications
+ * @param {Record<string, AsyncDataSource>} options.tables
  * @returns {Promise<AsyncRow[]>} the sorted rows
  */
-async function sortRows(rows, orderBy, tables) {
+async function sortRows({ rows, orderBy, tables }) {
   if (!orderBy.length) return rows
 
   // Cache for evaluated values: evaluatedValues[rowIdx][colIdx]
@@ -207,17 +205,13 @@ async function sortRows(rows, orderBy, tables) {
 }
 
 /**
- * @typedef {Object} EvaluateSelectAstOptions
- * @property {SelectStatement} select
- * @property {AsyncDataSource} dataSource
- * @property {Record<string, AsyncDataSource>} tables
- * @property {AbortSignal} [signal]
- */
-
-/**
  * Evaluates a select with a resolved FROM data source
  *
- * @param {EvaluateSelectAstOptions} options
+ * @param {Object} options
+ * @param {SelectStatement} options.select
+ * @param {AsyncDataSource} options.dataSource
+ * @param {Record<string, AsyncDataSource>} options.tables
+ * @param {AbortSignal} [options.signal]
  * @yields {AsyncRow}
  */
 async function* evaluateSelectAst({ select, dataSource, tables, signal }) {
@@ -237,18 +231,14 @@ async function* evaluateSelectAst({ select, dataSource, tables, signal }) {
 }
 
 /**
- * @typedef {Object} EvaluateStreamingOptions
- * @property {SelectStatement} select
- * @property {AsyncDataSource} dataSource
- * @property {Record<string, AsyncDataSource>} tables
- * @property {AbortSignal} [signal]
- */
-
-/**
  * Streaming evaluation for simple queries (no ORDER BY or GROUP BY)
  * Supports DISTINCT by tracking seen row keys without buffering full rows
  *
- * @param {EvaluateStreamingOptions} options
+ * @param {Object} options
+ * @param {SelectStatement} options.select
+ * @param {AsyncDataSource} options.dataSource
+ * @param {Record<string, AsyncDataSource>} options.tables
+ * @param {AbortSignal} [options.signal]
  * @yields {AsyncRow}
  */
 async function* evaluateStreaming({ select, dataSource, tables, signal }) {
@@ -326,19 +316,15 @@ async function* evaluateStreaming({ select, dataSource, tables, signal }) {
 }
 
 /**
- * @typedef {Object} EvaluateBufferedOptions
- * @property {SelectStatement} select
- * @property {AsyncDataSource} dataSource
- * @property {Record<string, AsyncDataSource>} tables
- * @property {boolean} hasAggregate
- * @property {boolean} useGrouping
- * @property {AbortSignal} [signal]
- */
-
-/**
  * Buffered evaluation for complex queries (with ORDER BY or GROUP BY)
  *
- * @param {EvaluateBufferedOptions} options
+ * @param {Object} options
+ * @param {SelectStatement} options.select
+ * @param {AsyncDataSource} options.dataSource
+ * @param {Record<string, AsyncDataSource>} options.tables
+ * @param {boolean} options.hasAggregate
+ * @param {boolean} options.useGrouping
+ * @param {AbortSignal} [options.signal]
  * @yields {AsyncRow}
  */
 async function* evaluateBuffered({ select, dataSource, tables, hasAggregate, useGrouping, signal }) {
@@ -443,7 +429,7 @@ async function* evaluateBuffered({ select, dataSource, tables, hasAggregate, use
 
       // Apply HAVING filter before adding to projected results
       if (select.having) {
-        if (!await evaluateHavingExpr(select.having, asyncRow, group, tables)) {
+        if (!await evaluateHavingExpr({ expr: select.having, row: asyncRow, group, tables })) {
           continue
         }
       }
@@ -453,7 +439,7 @@ async function* evaluateBuffered({ select, dataSource, tables, hasAggregate, use
   } else {
     // No grouping, simple projection
     // Sort before projection so ORDER BY can access columns not in SELECT
-    const sorted = await sortRows(filtered, select.orderBy, tables)
+    const sorted = await sortRows({ rows: filtered, orderBy: select.orderBy, tables })
 
     // OPTIMIZATION: For non-DISTINCT queries, apply OFFSET/LIMIT before projection
     // to avoid reading expensive cells for rows that won't be in the final result
@@ -489,7 +475,7 @@ async function* evaluateBuffered({ select, dataSource, tables, hasAggregate, use
 
   // Step 5: ORDER BY (final sort for grouped queries)
   if (useGrouping) {
-    projected = await sortRows(projected, select.orderBy, tables)
+    projected = await sortRows({ rows: projected, orderBy: select.orderBy, tables })
   }
 
   // Step 6: OFFSET and LIMIT

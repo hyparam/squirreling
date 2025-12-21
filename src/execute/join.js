@@ -10,14 +10,15 @@ import { stringify } from './utils.js'
 /**
  * Executes JOIN operations against a base data source
  *
- * @param {AsyncDataSource} leftSource - the left side of the join (FROM table)
- * @param {JoinClause[]} joins - array of join clauses to execute
- * @param {string} leftTableName - name of the left table (for column prefixing)
- * @param {Record<string, AsyncDataSource>} tables - all available tables
+ * @param {Object} options
+ * @param {AsyncDataSource} options.leftSource - the left side of the join (FROM table)
+ * @param {JoinClause[]} options.joins - array of join clauses to execute
+ * @param {string} options.leftTable - name of the left table (for column prefixing)
+ * @param {Record<string, AsyncDataSource>} options.tables - all available tables
  * @returns {Promise<AsyncDataSource>} data source yielding joined rows
  */
-export async function executeJoins(leftSource, joins, leftTableName, tables) {
-  let currentLeftTable = leftTableName
+export async function executeJoins({ leftSource, joins, leftTable, tables }) {
+  let currentLeftTable = leftTable
 
   // Single join optimization: stream left rows without buffering
   if (joins.length === 1) {
@@ -35,7 +36,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     }
 
     // Use alias for column prefixing if present
-    const rightTableName = join.alias ?? join.table
+    const rightTable = join.alias ?? join.table
 
     // Return streaming data source - left rows stream through without buffering
     return {
@@ -46,7 +47,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
           rightRows,
           join,
           leftTable: currentLeftTable,
-          rightTable: rightTableName,
+          rightTable,
           tables,
           signal,
         })
@@ -76,7 +77,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     }
 
     // Use alias for column prefixing if present
-    const rightTableName = join.alias ?? join.table
+    const rightTable = join.alias ?? join.table
 
     // Collect intermediate results into array for next join
     /** @type {AsyncRow[]} */
@@ -86,7 +87,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
       rightRows,
       join,
       leftTable: currentLeftTable,
-      rightTable: rightTableName,
+      rightTable,
       tables,
     })
     for await (const row of joined) {
@@ -95,14 +96,14 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
     leftRows = newLeftRows
 
     // After join, the "left" table for the next join includes all joined tables
-    currentLeftTable = `${currentLeftTable}_${rightTableName}`
+    currentLeftTable = `${currentLeftTable}_${rightTable}`
   }
 
   // Final join: stream the results
-  const lastJoin = joins[joins.length - 1]
-  const rightSource = tables[lastJoin.table]
+  const join = joins[joins.length - 1]
+  const rightSource = tables[join.table]
   if (rightSource === undefined) {
-    throw tableNotFoundError({ tableName: lastJoin.table })
+    throw tableNotFoundError({ tableName: join.table })
   }
 
   /** @type {AsyncRow[]} */
@@ -112,7 +113,7 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
   }
 
   // Use alias for column prefixing if present
-  const lastRightTableName = lastJoin.alias ?? lastJoin.table
+  const rightTable = join.alias ?? join.table
 
   return {
     async *scan(options) {
@@ -120,9 +121,9 @@ export async function executeJoins(leftSource, joins, leftTableName, tables) {
       yield* hashJoin({
         leftRows,
         rightRows,
-        join: lastJoin,
+        join,
         leftTable: currentLeftTable,
-        rightTable: lastRightTableName,
+        rightTable,
         tables,
         signal,
       })

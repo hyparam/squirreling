@@ -10,13 +10,14 @@ import { applyBinaryOp } from './utils.js'
 /**
  * Evaluates a HAVING expression with support for aggregate functions
  *
- * @param {ExprNode} expr - the HAVING expression
- * @param {AsyncRow} row - the aggregated result row
- * @param {AsyncRow[]} group - the group of rows for re-evaluating aggregates
- * @param {Record<string, AsyncDataSource>} tables
+ * @param {Object} options
+ * @param {ExprNode} options.expr - the HAVING expression
+ * @param {AsyncRow} options.row - the aggregated result row
+ * @param {AsyncRow[]} options.group - the group of rows for re-evaluating aggregates
+ * @param {Record<string, AsyncDataSource>} options.tables
  * @returns {Promise<boolean>} whether the HAVING condition is satisfied
  */
-export async function evaluateHavingExpr(expr, row, group, tables) {
+export async function evaluateHavingExpr({ expr, row, group, tables }) {
   // Having context
   const context = { ...group[0] ?? {}, ...row }
 
@@ -26,7 +27,7 @@ export async function evaluateHavingExpr(expr, row, group, tables) {
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
       // Evaluate aggregate function on the group
-      return Boolean(await evaluateAggregateFunction(funcName, expr.args, group, tables))
+      return Boolean(await evaluateAggregateFunction({ funcName, args: expr.args, group, tables }))
     }
   }
 
@@ -47,7 +48,7 @@ export async function evaluateHavingExpr(expr, row, group, tables) {
 
   if (expr.type === 'unary') {
     if (expr.op === 'NOT') {
-      return !await evaluateHavingExpr(expr.argument, context, group, tables)
+      return !await evaluateHavingExpr({ expr: expr.argument, row: context, group, tables })
     }
     if (expr.op === 'IS NULL') {
       return await evaluateHavingValue(expr.argument, context, group, tables) == null
@@ -74,13 +75,13 @@ function evaluateHavingValue(expr, context, group, tables) {
   if (expr.type === 'function') {
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
-      return evaluateAggregateFunction(funcName, expr.args, group, tables)
+      return evaluateAggregateFunction({ funcName, args: expr.args, group, tables })
     }
   }
 
   // For binary expressions, we need to use evaluateHavingExpr to properly handle aggregates
   if (expr.type === 'binary' || expr.type === 'unary') {
-    return evaluateHavingExpr(expr, context, group, tables)
+    return evaluateHavingExpr({ expr, row: context, group, tables })
   }
 
   return evaluateExpr({ node: expr, row: context, tables })
@@ -89,13 +90,14 @@ function evaluateHavingValue(expr, context, group, tables) {
 /**
  * Evaluates an aggregate function on a group
  *
- * @param {AggregateFunc} funcName - aggregate function name
- * @param {ExprNode[]} args - function arguments
- * @param {AsyncRow[]} group - the group of rows
- * @param {Record<string, AsyncDataSource>} tables
+ * @param {Object} options
+ * @param {AggregateFunc} options.funcName - aggregate function name
+ * @param {ExprNode[]} options.args - function arguments
+ * @param {AsyncRow[]} options.group - the group of rows
+ * @param {Record<string, AsyncDataSource>} options.tables
  * @returns {Promise<SqlPrimitive>} the aggregate result
  */
-async function evaluateAggregateFunction(funcName, args, group, tables) {
+async function evaluateAggregateFunction({ funcName, args, group, tables }) {
   if (funcName === 'COUNT') {
     if (args.length === 1 && args[0].type === 'identifier' && args[0].name === '*') {
       return group.length
