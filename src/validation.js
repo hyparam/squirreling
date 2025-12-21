@@ -62,6 +62,101 @@ export function isBinaryOp(op) {
   return ['AND', 'OR', 'LIKE', '=', '!=', '<>', '<', '>', '<=', '>='].includes(op)
 }
 
+/**
+ * Function argument count specifications.
+ * min: minimum number of arguments
+ * max: maximum number of arguments (null = unlimited)
+ * @type {Record<string, {min: number, max: number | null}>}
+ */
+export const FUNCTION_ARG_COUNTS = {
+  // String functions
+  UPPER: { min: 1, max: 1 },
+  LOWER: { min: 1, max: 1 },
+  LENGTH: { min: 1, max: 1 },
+  TRIM: { min: 1, max: 1 },
+  REPLACE: { min: 3, max: 3 },
+  SUBSTRING: { min: 2, max: 3 },
+  SUBSTR: { min: 2, max: 3 },
+  CONCAT: { min: 1, max: null },
+
+  // Date/time functions
+  RANDOM: { min: 0, max: 0 },
+  RAND: { min: 0, max: 0 },
+  CURRENT_DATE: { min: 0, max: 0 },
+  CURRENT_TIME: { min: 0, max: 0 },
+  CURRENT_TIMESTAMP: { min: 0, max: 0 },
+
+  // Math functions
+  FLOOR: { min: 1, max: 1 },
+  CEIL: { min: 1, max: 1 },
+  CEILING: { min: 1, max: 1 },
+  ABS: { min: 1, max: 1 },
+  MOD: { min: 2, max: 2 },
+  EXP: { min: 1, max: 1 },
+  LN: { min: 1, max: 1 },
+  LOG10: { min: 1, max: 1 },
+  POWER: { min: 2, max: 2 },
+  SQRT: { min: 1, max: 1 },
+  SIN: { min: 1, max: 1 },
+  COS: { min: 1, max: 1 },
+  TAN: { min: 1, max: 1 },
+  COT: { min: 1, max: 1 },
+  ASIN: { min: 1, max: 1 },
+  ACOS: { min: 1, max: 1 },
+  ATAN: { min: 1, max: 2 },
+  ATAN2: { min: 2, max: 2 },
+  DEGREES: { min: 1, max: 1 },
+  RADIANS: { min: 1, max: 1 },
+  PI: { min: 0, max: 0 },
+
+  // JSON functions
+  JSON_VALUE: { min: 2, max: 2 },
+  JSON_QUERY: { min: 2, max: 2 },
+  JSON_OBJECT: { min: 0, max: null },
+  JSON_ARRAYAGG: { min: 1, max: 1 },
+
+  // Aggregate functions
+  COUNT: { min: 1, max: 1 },
+  SUM: { min: 1, max: 1 },
+  AVG: { min: 1, max: 1 },
+  MIN: { min: 1, max: 1 },
+  MAX: { min: 1, max: 1 },
+}
+
+/**
+ * Format expected argument count for error messages.
+ * @param {number} min
+ * @param {number | null} max
+ * @returns {string | number}
+ */
+function formatExpected(min, max) {
+  if (max === null) return `at least ${min}`
+  if (min === max) return min
+  return `${min} or ${max}`
+}
+
+/**
+ * Validates function argument count.
+ * @param {string} funcName - The function name (uppercase)
+ * @param {number} argCount - Number of arguments provided
+ * @returns {{ valid: boolean, expected: string | number }}
+ */
+export function validateFunctionArgCount(funcName, argCount) {
+  const spec = FUNCTION_ARG_COUNTS[funcName]
+  if (!spec) return { valid: true, expected: 0 }
+
+  const { min, max } = spec
+
+  if (argCount < min) {
+    return { valid: false, expected: formatExpected(min, max) }
+  }
+  if (max !== null && argCount > max) {
+    return { valid: false, expected: formatExpected(min, max) }
+  }
+
+  return { valid: true, expected: formatExpected(min, max) }
+}
+
 // Keywords that cannot be used as implicit aliases after a column
 export const RESERVED_AFTER_COLUMN = new Set([
   'FROM', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',

@@ -88,12 +88,12 @@ describe('parseSql error handling', () => {
 
     it('should throw error on empty aggregate function', () => {
       expect(() => parseSql('SELECT COUNT() FROM users'))
-        .toThrow('Expected expression but found ")" at position 13')
+        .toThrow('COUNT(expression) function requires 1 argument, got 0')
     })
 
     it('should throw error on missing aggregate argument', () => {
       expect(() => parseSql('SELECT SUM() FROM users'))
-        .toThrow('Expected expression but found ")" at position 11')
+        .toThrow('SUM(expression) function requires 1 argument, got 0')
     })
 
     it('should throw error when expecting closing paren in aggregate', () => {

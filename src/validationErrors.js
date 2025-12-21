@@ -9,7 +9,7 @@ import { ExecutionError } from './executionErrors.js'
  * Maps function name to its parameter signature.
  * @type {Record<string, string>}
  */
-const FUNCTION_SIGNATURES = {
+export const FUNCTION_SIGNATURES = {
   // String functions
   UPPER: 'string',
   LOWER: 'string',
@@ -62,30 +62,6 @@ const FUNCTION_SIGNATURES = {
   AVG: 'expression',
   MIN: 'expression',
   MAX: 'expression',
-}
-
-/**
- * Error for wrong number of function arguments.
- *
- * @param {Object} options
- * @param {string} options.funcName - The function name
- * @param {number | string} options.expected - Expected count (number or range like "2 or 3")
- * @param {number} options.received - Actual argument count
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
- * @param {number} [options.rowNumber] - 1-based row number where error occurred
- * @returns {ExecutionError}
- */
-export function argCountError({ funcName, expected, received, positionStart, positionEnd, rowNumber }) {
-  const signature = FUNCTION_SIGNATURES[funcName] ?? ''
-  let expectedStr = `${expected} arguments`
-  if (expected === 0) expectedStr = 'no arguments'
-  if (expected === 1) expectedStr = '1 argument'
-  if (typeof expected === 'string' && expected.endsWith(' 1')) {
-    expectedStr = `${expected} argument`
-  }
-
-  return new ExecutionError({ message: `${funcName}(${signature}) function requires ${expectedStr}, got ${received}`, positionStart, positionEnd, rowNumber })
 }
 
 /**

@@ -1,10 +1,11 @@
 import {
+  argCountParseError,
   invalidLiteralError,
   missingClauseError,
   syntaxError,
   unknownFunctionError,
 } from '../parseErrors.js'
-import { isAggregateFunc, isIntervalUnit, isMathFunc, isStringFunc } from '../validation.js'
+import { isAggregateFunc, isIntervalUnit, isMathFunc, isStringFunc, validateFunctionArgCount } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseSelectInternal } from './parse.js'
 import { consume, current, expect, expectIdentifier, lastPosition, match, peekToken } from './state.js'
@@ -165,12 +166,14 @@ export function parsePrimary(state) {
 
       expect(state, 'paren', ')')
 
-      // Aggregate functions require at least one argument
-      if (isAggregateFunc(funcName) && args.length === 0) {
-        throw syntaxError({
-          expected: 'expression',
-          received: '")"',
-          positionStart: positionStart + funcName.length + 1, // position after opening paren
+      // Validate argument count at parse time
+      const validation = validateFunctionArgCount(funcName, args.length)
+      if (!validation.valid) {
+        throw argCountParseError({
+          funcName,
+          expected: validation.expected,
+          received: args.length,
+          positionStart,
           positionEnd: lastPosition(state),
         })
       }

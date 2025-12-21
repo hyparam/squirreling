@@ -2,6 +2,8 @@
 // PARSE ERRORS - Issues during SQL tokenization and parsing
 // ============================================================================
 
+import { FUNCTION_SIGNATURES } from './validationErrors.js'
+
 /**
  * Structured parse error with position range.
  */
@@ -98,6 +100,33 @@ export function unknownFunctionError({ funcName, positionStart, positionEnd, val
 
   return new ParseError({
     message: `Unknown function "${funcName}" at position ${positionStart}. Supported: ${supported}`,
+    positionStart,
+    positionEnd,
+  })
+}
+
+/**
+ * Error for wrong number of function arguments at parse time.
+ *
+ * @param {Object} options
+ * @param {string} options.funcName - The function name
+ * @param {number | string} options.expected - Expected count (number or range like "2 to 3")
+ * @param {number} options.received - Actual argument count
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @returns {ParseError}
+ */
+export function argCountParseError({ funcName, expected, received, positionStart, positionEnd }) {
+  const signature = FUNCTION_SIGNATURES[funcName] ?? ''
+  let expectedStr = `${expected} arguments`
+  if (expected === 0) expectedStr = 'no arguments'
+  if (expected === 1) expectedStr = '1 argument'
+  if (typeof expected === 'string' && expected.endsWith(' 1')) {
+    expectedStr = `${expected} argument`
+  }
+
+  return new ParseError({
+    message: `${funcName}(${signature}) function requires ${expectedStr}, got ${received}`,
     positionStart,
     positionEnd,
   })

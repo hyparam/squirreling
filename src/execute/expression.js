@@ -2,7 +2,6 @@ import { unknownFunctionError } from '../parseErrors.js'
 import { invalidContextError } from '../executionErrors.js'
 import {
   aggregateError,
-  argCountError,
   argValueError,
   castError,
 } from '../validationErrors.js'
@@ -124,17 +123,6 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
         })
       }
 
-      if (node.args.length !== 1) {
-        throw argCountError({
-          funcName,
-          expected: 1,
-          received: node.args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
-
       const argNode = node.args[0]
 
       if (funcName === 'COUNT') {
@@ -212,48 +200,18 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
     const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, tables, rowIndex, rows })))
 
     if (funcName === 'UPPER') {
-      if (args.length !== 1) {
-        throw argCountError({
-          funcName: 'UPPER',
-          expected: 1,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       const val = args[0]
       if (val == null) return null
       return String(val).toUpperCase()
     }
 
     if (funcName === 'LOWER') {
-      if (args.length !== 1) {
-        throw argCountError({
-          funcName: 'LOWER',
-          expected: 1,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       const val = args[0]
       if (val == null) return null
       return String(val).toLowerCase()
     }
 
     if (funcName === 'CONCAT') {
-      if (args.length < 1) {
-        throw argCountError({
-          funcName: 'CONCAT',
-          expected: 'at least 1',
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       // SQL CONCAT returns NULL if any argument is NULL
       if (args.some(a => a == null)) return null
       if (args.some(a => typeof a === 'object')) {
@@ -270,32 +228,12 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
     }
 
     if (funcName === 'LENGTH') {
-      if (args.length !== 1) {
-        throw argCountError({
-          funcName: 'LENGTH',
-          expected: 1,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       const val = args[0]
       if (val == null) return null
       return String(val).length
     }
 
     if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
-      if (args.length < 2 || args.length > 3) {
-        throw argCountError({
-          funcName,
-          expected: '2 or 3',
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       const str = args[0]
       if (str == null) return null
       const strVal = String(str)
@@ -329,32 +267,12 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
     }
 
     if (funcName === 'TRIM') {
-      if (args.length !== 1) {
-        throw argCountError({
-          funcName: 'TRIM',
-          expected: 1,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       const val = args[0]
       if (val == null) return null
       return String(val).trim()
     }
 
     if (funcName === 'REPLACE') {
-      if (args.length !== 3) {
-        throw argCountError({
-          funcName: 'REPLACE',
-          expected: 3,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       const str = args[0]
       const searchStr = args[1]
       const replaceStr = args[2]
@@ -364,67 +282,26 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
     }
 
     if (funcName === 'RANDOM' || funcName === 'RAND') {
-      if (args.length !== 0) {
-        throw argCountError({
-          funcName,
-          expected: 0,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       return Math.random()
     }
 
     if (funcName === 'CURRENT_DATE') {
-      if (args.length !== 0) {
-        throw argCountError({
-          funcName: 'CURRENT_DATE',
-          expected: 0,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       return new Date().toISOString().split('T')[0]
     }
 
     if (funcName === 'CURRENT_TIME') {
-      if (args.length !== 0) {
-        throw argCountError({
-          funcName: 'CURRENT_TIME',
-          expected: 0,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       return new Date().toISOString().split('T')[1].replace('Z', '')
     }
 
     if (funcName === 'CURRENT_TIMESTAMP') {
-      if (args.length !== 0) {
-        throw argCountError({
-          funcName: 'CURRENT_TIMESTAMP',
-          expected: 0,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       return new Date().toISOString()
     }
 
     if (funcName === 'JSON_OBJECT') {
       if (args.length % 2 !== 0) {
-        throw argCountError({
+        throw argValueError({
           funcName: 'JSON_OBJECT',
-          expected: 'even number',
-          received: args.length,
+          message: 'requires an even number of arguments (key-value pairs)',
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
           rowNumber: rowIndex,
@@ -451,16 +328,6 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
     }
 
     if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
-      if (args.length !== 2) {
-        throw argCountError({
-          funcName,
-          expected: 2,
-          received: args.length,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
-        })
-      }
       let jsonArg = args[0]
       const pathArg = args[1]
       if (jsonArg == null || pathArg == null) return null
@@ -517,13 +384,7 @@ export async function evaluateExpr({ node, row, tables, rowIndex, rows }) {
     }
 
     if (isMathFunc(funcName)) {
-      return evaluateMathFunc({
-        funcName,
-        args,
-        positionStart: node.positionStart,
-        positionEnd: node.positionEnd,
-        rowNumber: rowIndex,
-      })
+      return evaluateMathFunc({ funcName, args })
     }
 
     throw unknownFunctionError({

@@ -181,7 +181,7 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT JSON_OBJECT(\'a\', 1, \'b\') FROM data',
-      }))).rejects.toThrow('JSON_OBJECT(key1, value1[, ...]) function requires even number arguments, got 3')
+      }))).rejects.toThrow('JSON_OBJECT(key1, value1[, ...]): requires an even number of arguments (key-value pairs)')
     })
   })
 

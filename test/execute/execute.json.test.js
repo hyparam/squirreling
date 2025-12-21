@@ -255,7 +255,7 @@ describe('string functions', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT JSON_OBJECT(\'name\', \'Alice\', \'age\') AS obj FROM data',
-      }))).rejects.toThrow('JSON_OBJECT(key1, value1[, ...]) function requires even number arguments, got 3')
+      }))).rejects.toThrow('JSON_OBJECT(key1, value1[, ...]): requires an even number of arguments (key-value pairs)')
     })
 
     it('should convert numeric keys to strings', async () => {
