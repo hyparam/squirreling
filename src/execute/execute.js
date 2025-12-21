@@ -19,7 +19,7 @@ import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
  * @yields {AsyncRow} async generator yielding result rows
  */
 export async function* executeSql({ tables, query, signal }) {
-  const select = typeof query === 'string' ? parseSql(query) : query
+  const select = typeof query === 'string' ? parseSql({ query }) : query
 
   // Check for unsupported operations
   if (!select.from) {

@@ -4,14 +4,14 @@ import { parseSql } from '../../src/parse/parse.js'
 describe('parseSql', () => {
   describe('basic SELECT queries', () => {
     it('should parse literal SELECT', () => {
-      const select = parseSql('SELECT 1 from users')
+      const select = parseSql({ query: 'SELECT 1 from users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'literal', value: 1, positionStart: 7, positionEnd: 8 }, alias: undefined },
       ])
     })
 
     it('should parse SELECT *', () => {
-      const select = parseSql('SELECT * FROM users')
+      const select = parseSql({ query: 'SELECT * FROM users' })
       expect(select).toEqual({
         distinct: false,
         columns: [{ kind: 'star' }],
@@ -23,7 +23,7 @@ describe('parseSql', () => {
     })
 
     it('should parse SELECT with qualified asterisk', () => {
-      const select = parseSql('SELECT users.* FROM users')
+      const select = parseSql({ query: 'SELECT users.* FROM users' })
       expect(select).toEqual({
         distinct: false,
         columns: [{ kind: 'star', table: 'users' }],
@@ -35,14 +35,14 @@ describe('parseSql', () => {
     })
 
     it('should parse SELECT with single column', () => {
-      const select = parseSql('SELECT name FROM users')
+      const select = parseSql({ query: 'SELECT name FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
       ])
     })
 
     it('should parse SELECT with multiple columns', () => {
-      const select = parseSql('SELECT name, age, email FROM users')
+      const select = parseSql({ query: 'SELECT name, age, email FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
         { kind: 'derived', expr: { type: 'identifier', name: 'age', positionStart: 13, positionEnd: 16 }, alias: undefined },
@@ -51,17 +51,17 @@ describe('parseSql', () => {
     })
 
     it('should parse SELECT DISTINCT', () => {
-      const select = parseSql('SELECT DISTINCT city FROM users')
+      const select = parseSql({ query: 'SELECT DISTINCT city FROM users' })
       expect(select.distinct).toBe(true)
     })
 
     it('should handle trailing semicolon', () => {
-      const select = parseSql('SELECT * FROM users;')
+      const select = parseSql({ query: 'SELECT * FROM users;' })
       expect(select.from).toEqual({ kind: 'table', table: 'users' })
     })
 
     it('should parse SELECT with negative number', () => {
-      const select = parseSql('SELECT -age as neg_age FROM users')
+      const select = parseSql({ query: 'SELECT -age as neg_age FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -80,21 +80,21 @@ describe('parseSql', () => {
 
   describe('column aliases', () => {
     it('should parse column alias with AS', () => {
-      const select = parseSql('SELECT name AS full_name FROM users')
+      const select = parseSql({ query: 'SELECT name AS full_name FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: 'full_name' },
       ])
     })
 
     it('should parse column alias without AS', () => {
-      const select = parseSql('SELECT name full_name FROM users')
+      const select = parseSql({ query: 'SELECT name full_name FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: 'full_name' },
       ])
     })
 
     it('should not treat FROM as implicit alias', () => {
-      const select = parseSql('SELECT name FROM users')
+      const select = parseSql({ query: 'SELECT name FROM users' })
       expect(select.columns[0].alias).toBeUndefined()
       expect(select.from).toEqual({ kind: 'table', table: 'users' })
     })
@@ -102,7 +102,7 @@ describe('parseSql', () => {
 
   describe('quoted identifiers', () => {
     it('should parse column names with spaces using double quotes', () => {
-      const select = parseSql('SELECT "first name", "last name" FROM users')
+      const select = parseSql({ query: 'SELECT "first name", "last name" FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'first name', positionStart: 7, positionEnd: 19 }, alias: undefined },
         { kind: 'derived', expr: { type: 'identifier', name: 'last name', positionStart: 21, positionEnd: 32 }, alias: undefined },
@@ -110,29 +110,29 @@ describe('parseSql', () => {
     })
 
     it('should parse quoted table names with spaces', () => {
-      const select = parseSql('SELECT * FROM "user data"')
+      const select = parseSql({ query: 'SELECT * FROM "user data"' })
       expect(select.from).toEqual({ kind: 'table', table: 'user data' })
     })
 
     it('should parse table alias', () => {
-      const select = parseSql('SELECT u.name FROM users u WHERE u.active = 1')
+      const select = parseSql({ query: 'SELECT u.name FROM users u WHERE u.active = 1' })
       expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
     })
 
     it('should parse table alias with AS', () => {
-      const select = parseSql('SELECT u.name FROM users AS u')
+      const select = parseSql({ query: 'SELECT u.name FROM users AS u' })
       expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
     })
 
     it('should parse quoted column with alias', () => {
-      const select = parseSql('SELECT "first name" AS fname FROM users')
+      const select = parseSql({ query: 'SELECT "first name" AS fname FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'first name', positionStart: 7, positionEnd: 19 }, alias: 'fname' },
       ])
     })
 
     it('should parse mixed quoted and unquoted identifiers', () => {
-      const select = parseSql('SELECT id, "full name", email FROM users')
+      const select = parseSql({ query: 'SELECT id, "full name", email FROM users' })
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 }, alias: undefined },
         { kind: 'derived', expr: { type: 'identifier', name: 'full name', positionStart: 11, positionEnd: 22 }, alias: undefined },
@@ -143,7 +143,7 @@ describe('parseSql', () => {
 
   describe('aggregate functions', () => {
     it('should parse COUNT(*)', () => {
-      const select = parseSql('SELECT COUNT(*) FROM users')
+      const select = parseSql({ query: 'SELECT COUNT(*) FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -159,7 +159,7 @@ describe('parseSql', () => {
     })
 
     it('should parse COUNT with column', () => {
-      const select = parseSql('SELECT COUNT(id) FROM users')
+      const select = parseSql({ query: 'SELECT COUNT(id) FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -175,7 +175,7 @@ describe('parseSql', () => {
     })
 
     it('should parse SUM', () => {
-      const select = parseSql('SELECT SUM(amount) FROM transactions')
+      const select = parseSql({ query: 'SELECT SUM(amount) FROM transactions' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -191,7 +191,7 @@ describe('parseSql', () => {
     })
 
     it('should parse AVG', () => {
-      const select = parseSql('SELECT AVG(score) FROM tests')
+      const select = parseSql({ query: 'SELECT AVG(score) FROM tests' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -207,7 +207,7 @@ describe('parseSql', () => {
     })
 
     it('should parse MIN and MAX', () => {
-      const select = parseSql('SELECT MIN(price), MAX(price) FROM products')
+      const select = parseSql({ query: 'SELECT MIN(price), MAX(price) FROM products' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -233,7 +233,7 @@ describe('parseSql', () => {
     })
 
     it('should parse aggregate with alias', () => {
-      const select = parseSql('SELECT COUNT(*) AS total FROM users')
+      const select = parseSql({ query: 'SELECT COUNT(*) AS total FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -252,14 +252,14 @@ describe('parseSql', () => {
 
   describe('GROUP BY clause', () => {
     it('should parse GROUP BY with single column', () => {
-      const select = parseSql('SELECT city, COUNT(*) FROM users GROUP BY city')
+      const select = parseSql({ query: 'SELECT city, COUNT(*) FROM users GROUP BY city' })
       expect(select.groupBy).toEqual([
         { type: 'identifier', name: 'city', positionStart: 42, positionEnd: 46 },
       ])
     })
 
     it('should parse GROUP BY with multiple columns', () => {
-      const select = parseSql('SELECT city, state, COUNT(*) FROM users GROUP BY city, state')
+      const select = parseSql({ query: 'SELECT city, state, COUNT(*) FROM users GROUP BY city, state' })
       expect(select.groupBy).toEqual([
         { type: 'identifier', name: 'city', positionStart: 49, positionEnd: 53 },
         { type: 'identifier', name: 'state', positionStart: 55, positionEnd: 60 },
@@ -267,7 +267,7 @@ describe('parseSql', () => {
     })
 
     it('should parse nested function in aggregate', () => {
-      const select = parseSql('SELECT MAX(LENGTH(problem)) AS max_problem_len FROM table')
+      const select = parseSql({ query: 'SELECT MAX(LENGTH(problem)) AS max_problem_len FROM table' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -290,7 +290,7 @@ describe('parseSql', () => {
     })
 
     it('should parse COUNT(DISTINCT ...)', () => {
-      const select = parseSql('SELECT COUNT(DISTINCT problem_id) AS n_unique_problems FROM table')
+      const select = parseSql({ query: 'SELECT COUNT(DISTINCT problem_id) AS n_unique_problems FROM table' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -308,7 +308,7 @@ describe('parseSql', () => {
     })
 
     it('should parse COUNT(ALL ...)', () => {
-      const select = parseSql('SELECT COUNT(ALL problem_id) FROM table')
+      const select = parseSql({ query: 'SELECT COUNT(ALL problem_id) FROM table' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -326,19 +326,19 @@ describe('parseSql', () => {
 
   describe('LIMIT and OFFSET', () => {
     it('should parse LIMIT', () => {
-      const select = parseSql('SELECT * FROM users LIMIT 10')
+      const select = parseSql({ query: 'SELECT * FROM users LIMIT 10' })
       expect(select.limit).toBe(10)
       expect(select.offset).toBeUndefined()
     })
 
     it('should parse LIMIT with OFFSET', () => {
-      const select = parseSql('SELECT * FROM users LIMIT 10 OFFSET 20')
+      const select = parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET 20' })
       expect(select.limit).toBe(10)
       expect(select.offset).toBe(20)
     })
 
     it('should parse OFFSET without LIMIT', () => {
-      const select = parseSql('SELECT * FROM users OFFSET 20')
+      const select = parseSql({ query: 'SELECT * FROM users OFFSET 20' })
       expect(select.limit).toBeUndefined()
       expect(select.offset).toBe(20)
     })
@@ -346,7 +346,7 @@ describe('parseSql', () => {
 
   describe('complex queries', () => {
     it('should parse query with all clauses', () => {
-      const select = parseSql(`
+      const select = parseSql({ query: `
         SELECT DISTINCT city, COUNT(*) AS total
         FROM users
         WHERE age > 18
@@ -354,7 +354,7 @@ describe('parseSql', () => {
         ORDER BY total DESC
         LIMIT 5
         OFFSET 10
-      `)
+      ` })
       expect(select).toEqual({
         distinct: true,
         columns: [
@@ -422,10 +422,10 @@ describe('parseSql', () => {
     })
 
     it('should parse query with complex WHERE expression', () => {
-      const select = parseSql(`
+      const select = parseSql({ query: `
         SELECT * FROM users
         WHERE (age > 18 AND age < 65) OR status = 'admin'
-      `)
+      ` })
       expect(select.where?.type).toBe('binary')
       if (select.where?.type === 'binary') {
         expect(select.where.op).toBe('OR')
@@ -433,7 +433,7 @@ describe('parseSql', () => {
     })
 
     it('should parse cast', () => {
-      const select = parseSql('SELECT CAST(age AS STRING) AS age_str FROM users')
+      const select = parseSql({ query: 'SELECT CAST(age AS STRING) AS age_str FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -450,7 +450,7 @@ describe('parseSql', () => {
     })
 
     it('should parse nested cast in aggregate', () => {
-      const select = parseSql('SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM files')
+      const select = parseSql({ query: 'SELECT SUM(CAST(size AS BIGINT)) AS total_size FROM files' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -473,7 +473,7 @@ describe('parseSql', () => {
     })
 
     it('should parse subquery in FROM clause', () => {
-      const select = parseSql('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
+      const select = parseSql({ query: 'SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -505,7 +505,7 @@ describe('parseSql', () => {
 
   describe('CASE expressions', () => {
     it('should parse searched CASE expression', () => {
-      const select = parseSql('SELECT CASE WHEN age > 18 THEN \'adult\' ELSE \'minor\' END FROM users')
+      const select = parseSql({ query: 'SELECT CASE WHEN age > 18 THEN \'adult\' ELSE \'minor\' END FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -554,7 +554,7 @@ describe('parseSql', () => {
     })
 
     it('should parse simple CASE expression', () => {
-      const select = parseSql('SELECT CASE status WHEN 1 THEN \'active\' WHEN 0 THEN \'inactive\' END FROM users')
+      const select = parseSql({ query: 'SELECT CASE status WHEN 1 THEN \'active\' WHEN 0 THEN \'inactive\' END FROM users' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -605,7 +605,7 @@ describe('parseSql', () => {
     })
 
     it('should parse CASE expression with alias', () => {
-      const select = parseSql('SELECT CASE WHEN age >= 18 THEN \'adult\' ELSE \'minor\' END AS age_group FROM users')
+      const select = parseSql({ query: 'SELECT CASE WHEN age >= 18 THEN \'adult\' ELSE \'minor\' END AS age_group FROM users' })
       expect(select.columns[0].alias).toBe('age_group')
       expect(select.columns[0].kind).toBe('derived')
     })

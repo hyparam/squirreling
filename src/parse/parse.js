@@ -9,10 +9,11 @@ import { parseJoins } from './joins.js'
  */
 
 /**
- * @param {string} query
+ * @param {{ query: string }} options
  * @returns {SelectStatement}
  */
-export function parseSql(query) {
+export function parseSql(options) {
+  const { query } = options
   const tokens = tokenize(query)
   /** @type {ParserState} */
   const state = { tokens, pos: 0 }

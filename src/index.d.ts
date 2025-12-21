@@ -14,10 +14,11 @@ export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
 /**
  * Parses a SQL query string into an abstract syntax tree
  *
- * @param query - SQL query string to parse
+ * @param options
+ * @param options.query - SQL query string to parse
  * @returns parsed SQL select statement
  */
-export function parseSql(query: string): SelectStatement
+export function parseSql(options: { query: string }): SelectStatement
 
 /**
  * Collects all results from an async generator into an array

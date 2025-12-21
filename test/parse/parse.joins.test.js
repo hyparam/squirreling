@@ -3,7 +3,7 @@ import { parseSql } from '../../src/parse/parse.js'
 
 describe('parseSql - JOIN queries', () => {
   it('should parse simple INNER JOIN', () => {
-    const select = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id')
+    const select = parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
     expect(select.from).toEqual({ kind: 'table', table: 'users' })
     expect(select.joins).toEqual([
       {
@@ -33,12 +33,12 @@ describe('parseSql - JOIN queries', () => {
   })
 
   it('should parse explicit INNER JOIN', () => {
-    const select = parseSql('SELECT * FROM users INNER JOIN orders ON users.id = orders.user_id')
+    const select = parseSql({ query: 'SELECT * FROM users INNER JOIN orders ON users.id = orders.user_id' })
     expect(select.joins[0].joinType).toBe('INNER')
   })
 
   it('should parse LEFT JOIN', () => {
-    const select = parseSql('SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id')
+    const select = parseSql({ query: 'SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id' })
     expect(select.joins).toEqual([
       {
         joinType: 'LEFT',
@@ -67,35 +67,35 @@ describe('parseSql - JOIN queries', () => {
   })
 
   it('should parse LEFT OUTER JOIN', () => {
-    const select = parseSql('SELECT * FROM users LEFT OUTER JOIN orders ON users.id = orders.user_id')
+    const select = parseSql({ query: 'SELECT * FROM users LEFT OUTER JOIN orders ON users.id = orders.user_id' })
     expect(select.joins[0].joinType).toBe('LEFT')
   })
 
   it('should parse RIGHT JOIN', () => {
-    const select = parseSql('SELECT * FROM users RIGHT JOIN orders ON users.id = orders.user_id')
+    const select = parseSql({ query: 'SELECT * FROM users RIGHT JOIN orders ON users.id = orders.user_id' })
     expect(select.joins[0].joinType).toBe('RIGHT')
   })
 
   it('should parse FULL JOIN', () => {
-    const select = parseSql('SELECT * FROM users FULL JOIN orders ON users.id = orders.user_id')
+    const select = parseSql({ query: 'SELECT * FROM users FULL JOIN orders ON users.id = orders.user_id' })
     expect(select.joins[0].joinType).toBe('FULL')
   })
 
   it('should parse multiple JOINs', () => {
-    const select = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id JOIN products ON orders.product_id = products.id')
+    const select = parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id JOIN products ON orders.product_id = products.id' })
     expect(select.joins).toHaveLength(2)
     expect(select.joins[0].table).toBe('orders')
     expect(select.joins[1].table).toBe('products')
   })
 
   it('should parse JOIN with WHERE clause', () => {
-    const select = parseSql('SELECT * FROM users JOIN orders ON users.id = orders.user_id WHERE orders.total > 100')
+    const select = parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id WHERE orders.total > 100' })
     expect(select.joins).toHaveLength(1)
     expect(select.where).toBeTruthy()
   })
 
   it('should parse qualified column names in WHERE', () => {
-    const select = parseSql('SELECT * FROM users WHERE users.age > 18')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE users.age > 18' })
     expect(select.where).toEqual({
       type: 'binary',
       op: '>',

@@ -3,7 +3,7 @@ import { parseSql } from '../../src/parse/parse.js'
 
 describe('parseSql - WHERE clause', () => {
   it('should parse WHERE with equality', () => {
-    const select = parseSql('SELECT * FROM users WHERE age = 25')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age = 25' })
     expect(select.where).toEqual({
       type: 'binary',
       op: '=',
@@ -15,7 +15,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with string literal', () => {
-    const select = parseSql('SELECT * FROM users WHERE name = \'John\'')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE name = \'John\'' })
     expect(select.where).toEqual({
       type: 'binary',
       op: '=',
@@ -32,7 +32,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with comparison operators', () => {
-    const select = parseSql('SELECT * FROM users WHERE age > 18')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age > 18' })
     expect(select.where?.type).toBe('binary')
     if (select.where?.type === 'binary') {
       expect(select.where.op).toBe('>')
@@ -40,7 +40,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with negative numbers', () => {
-    const select = parseSql('SELECT * FROM users WHERE age > -18')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age > -18' })
     expect(select.where).toEqual({
       type: 'binary',
       op: '>',
@@ -62,7 +62,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with AND', () => {
-    const select = parseSql('SELECT * FROM users WHERE age > 18 AND city = "NYC"')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age > 18 AND city = "NYC"' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -108,7 +108,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with OR', () => {
-    const select = parseSql('SELECT * FROM users WHERE age < 18 OR age > 65')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age < 18 OR age > 65' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'OR',
@@ -154,7 +154,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with NOT', () => {
-    const select = parseSql('SELECT * FROM users WHERE NOT active')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE NOT active' })
     expect(select.where).toEqual({
       type: 'unary',
       op: 'NOT',
@@ -170,7 +170,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with parentheses', () => {
-    const select = parseSql('SELECT * FROM users WHERE (age > 18 AND age < 65)')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE (age > 18 AND age < 65)' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -216,7 +216,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with boolean literals', () => {
-    const ast1 = parseSql('SELECT * FROM users WHERE active = TRUE')
+    const ast1 = parseSql({ query: 'SELECT * FROM users WHERE active = TRUE' })
     expect(ast1.where?.type).toBe('binary')
     if (ast1.where?.type === 'binary') {
       expect(ast1.where.right).toEqual({
@@ -227,7 +227,7 @@ describe('parseSql - WHERE clause', () => {
       })
     }
 
-    const ast2 = parseSql('SELECT * FROM users WHERE deleted = FALSE')
+    const ast2 = parseSql({ query: 'SELECT * FROM users WHERE deleted = FALSE' })
     expect(ast2.where?.type).toBe('binary')
     if (ast2.where?.type === 'binary') {
       expect(ast2.where.right).toEqual({
@@ -240,7 +240,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with NULL', () => {
-    const select = parseSql('SELECT * FROM users WHERE email = NULL')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE email = NULL' })
     expect(select.where?.type).toBe('binary')
     if (select.where?.type === 'binary') {
       expect(select.where.right).toEqual({
@@ -253,7 +253,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with IS NULL', () => {
-    const select = parseSql('SELECT * FROM users WHERE email IS NULL')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE email IS NULL' })
     expect(select.where).toEqual({
       type: 'unary',
       op: 'IS NULL',
@@ -269,7 +269,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with IS NOT NULL', () => {
-    const select = parseSql('SELECT * FROM users WHERE email IS NOT NULL')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE email IS NOT NULL' })
     expect(select.where).toEqual({
       type: 'unary',
       op: 'IS NOT NULL',
@@ -285,7 +285,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with IS NULL in complex expression', () => {
-    const select = parseSql('SELECT * FROM users WHERE email IS NULL AND age > 18')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE email IS NULL AND age > 18' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -325,7 +325,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with IS NOT NULL in OR expression', () => {
-    const select = parseSql('SELECT * FROM users WHERE email IS NOT NULL OR phone IS NOT NULL')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE email IS NOT NULL OR phone IS NOT NULL' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'OR',
@@ -359,7 +359,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with LIKE', () => {
-    const select = parseSql('SELECT * FROM users WHERE name LIKE \'John%\'')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE name LIKE \'John%\'' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'LIKE',
@@ -381,7 +381,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with BETWEEN', () => {
-    const select = parseSql('SELECT * FROM users WHERE age BETWEEN 18 AND 65')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age BETWEEN 18 AND 65' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -427,7 +427,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with NOT BETWEEN', () => {
-    const select = parseSql('SELECT * FROM users WHERE age NOT BETWEEN 18 AND 65')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age NOT BETWEEN 18 AND 65' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'OR',
@@ -473,7 +473,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with BETWEEN and strings', () => {
-    const select = parseSql('SELECT * FROM users WHERE name BETWEEN \'A\' AND \'M\'')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE name BETWEEN \'A\' AND \'M\'' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -519,7 +519,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with BETWEEN in complex expression', () => {
-    const select = parseSql('SELECT * FROM users WHERE age BETWEEN 18 AND 65 AND city = \'NYC\'')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE age BETWEEN 18 AND 65 AND city = \'NYC\'' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -589,7 +589,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with BETWEEN and qualified column names', () => {
-    const select = parseSql('SELECT * FROM users WHERE users.age BETWEEN 18 AND 65')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE users.age BETWEEN 18 AND 65' })
     expect(select.where).toEqual({
       type: 'binary',
       op: 'AND',
@@ -635,7 +635,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with IN subquery', () => {
-    const select = parseSql('SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1)')
+    const select = parseSql({ query: 'SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1)' })
     expect(select.where).toEqual({
       type: 'in',
       expr: {
@@ -686,7 +686,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with IN list of values', () => {
-    const select = parseSql('SELECT * FROM users WHERE name IN (\'Alice\', \'Bob\', \'Charlie\')')
+    const select = parseSql({ query: 'SELECT * FROM users WHERE name IN (\'Alice\', \'Bob\', \'Charlie\')' })
     expect(select.where).toEqual({
       type: 'in valuelist',
       expr: {
@@ -721,7 +721,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with EXISTS subquery', () => {
-    const select = parseSql('SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
+    const select = parseSql({ query: 'SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)' })
     expect(select.where).toEqual({
       type: 'exists',
       subquery: {
@@ -756,7 +756,7 @@ describe('parseSql - WHERE clause', () => {
   })
 
   it('should parse WHERE with NOT EXISTS subquery', () => {
-    const select = parseSql('SELECT * FROM orders WHERE NOT EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
+    const select = parseSql({ query: 'SELECT * FROM orders WHERE NOT EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)' })
     expect(select.where).toEqual({
       type: 'not exists',
       subquery: {

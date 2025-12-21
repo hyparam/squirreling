@@ -4,7 +4,7 @@ import { parseSql } from '../../src/parse/parse.js'
 describe('INTERVAL parsing', () => {
   describe('MySQL-style syntax (unquoted)', () => {
     it('should parse INTERVAL with DAY', () => {
-      const select = parseSql('SELECT INTERVAL 1 DAY FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL 1 DAY FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -21,7 +21,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse INTERVAL with MONTH', () => {
-      const select = parseSql('SELECT INTERVAL 2 MONTH FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL 2 MONTH FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -38,7 +38,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse INTERVAL with YEAR', () => {
-      const select = parseSql('SELECT INTERVAL 5 YEAR FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL 5 YEAR FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -55,7 +55,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse INTERVAL with HOUR', () => {
-      const select = parseSql('SELECT INTERVAL 12 HOUR FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL 12 HOUR FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -72,7 +72,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse INTERVAL with MINUTE', () => {
-      const select = parseSql('SELECT INTERVAL 30 MINUTE FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL 30 MINUTE FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -89,7 +89,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse INTERVAL with SECOND', () => {
-      const select = parseSql('SELECT INTERVAL 45 SECOND FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL 45 SECOND FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -108,7 +108,7 @@ describe('INTERVAL parsing', () => {
 
   describe('Standard SQL syntax (quoted)', () => {
     it('should parse quoted INTERVAL value', () => {
-      const select = parseSql('SELECT INTERVAL \'1\' DAY FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL \'1\' DAY FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -125,7 +125,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse quoted decimal INTERVAL', () => {
-      const select = parseSql('SELECT INTERVAL \'2.5\' HOUR FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL \'2.5\' HOUR FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -144,7 +144,7 @@ describe('INTERVAL parsing', () => {
 
   describe('date arithmetic expressions', () => {
     it('should parse date + INTERVAL', () => {
-      const select = parseSql('SELECT order_date + INTERVAL 7 DAY FROM orders')
+      const select = parseSql({ query: 'SELECT order_date + INTERVAL 7 DAY FROM orders' })
       expect(select.columns).toEqual([{
         kind: 'derived',
         expr: {
@@ -171,7 +171,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse date - INTERVAL', () => {
-      const select = parseSql('SELECT created_at - INTERVAL 30 MINUTE FROM events')
+      const select = parseSql({ query: 'SELECT created_at - INTERVAL 30 MINUTE FROM events' })
       expect(select.columns).toEqual([{
         kind: 'derived',
         expr: {
@@ -198,7 +198,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse CURRENT_DATE + INTERVAL', () => {
-      const select = parseSql('SELECT CURRENT_DATE + INTERVAL 1 MONTH FROM dummy')
+      const select = parseSql({ query: 'SELECT CURRENT_DATE + INTERVAL 1 MONTH FROM dummy' })
       expect(select.columns).toEqual([{
         kind: 'derived',
         expr: {
@@ -228,7 +228,7 @@ describe('INTERVAL parsing', () => {
 
   describe('negative intervals', () => {
     it('should parse negative INTERVAL value', () => {
-      const select = parseSql('SELECT INTERVAL -1 DAY FROM dummy')
+      const select = parseSql({ query: 'SELECT INTERVAL -1 DAY FROM dummy' })
       expect(select.columns).toEqual([
         {
           kind: 'derived',
@@ -245,7 +245,7 @@ describe('INTERVAL parsing', () => {
     })
 
     it('should parse date subtraction with INTERVAL', () => {
-      const select = parseSql('SELECT date_col - INTERVAL 1 DAY FROM t')
+      const select = parseSql({ query: 'SELECT date_col - INTERVAL 1 DAY FROM t' })
       expect(select.columns).toEqual([{
         kind: 'derived',
         expr: {
