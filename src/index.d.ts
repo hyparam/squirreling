@@ -1,5 +1,5 @@
-import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
-export type { AsyncDataSource, AsyncRow, SqlPrimitive } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ParseSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
+export type { AsyncDataSource, AsyncRow, ParseSqlOptions, SqlPrimitive } from './types.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows
@@ -7,6 +7,8 @@ export type { AsyncDataSource, AsyncRow, SqlPrimitive } from './types.js'
  * @param options
  * @param options.tables - source data as a list of objects or an AsyncDataSource
  * @param options.query - SQL query string
+ * @param options.functions - user-defined functions available in the SQL context
+ * @param options.signal - AbortSignal to cancel the query
  * @returns async generator yielding rows matching the query
  */
 export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
@@ -16,9 +18,10 @@ export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
  *
  * @param options
  * @param options.query - SQL query string to parse
+ * @param options.functions - user-defined functions available in the SQL context
  * @returns parsed SQL select statement
  */
-export function parseSql(options: { query: string }): SelectStatement
+export function parseSql(options: ParseSqlOptions): SelectStatement
 
 /**
  * Collects all results from an async generator into an array

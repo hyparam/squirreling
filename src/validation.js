@@ -65,8 +65,8 @@ export function isBinaryOp(op) {
 /**
  * Function argument count specifications.
  * min: minimum number of arguments
- * max: maximum number of arguments (null = unlimited)
- * @type {Record<string, {min: number, max: number | null}>}
+ * max: maximum number of arguments
+ * @type {Record<string, {min: number, max?: number}>}
  */
 export const FUNCTION_ARG_COUNTS = {
   // String functions
@@ -77,7 +77,7 @@ export const FUNCTION_ARG_COUNTS = {
   REPLACE: { min: 3, max: 3 },
   SUBSTRING: { min: 2, max: 3 },
   SUBSTR: { min: 2, max: 3 },
-  CONCAT: { min: 1, max: null },
+  CONCAT: { min: 1 },
 
   // Date/time functions
   RANDOM: { min: 0, max: 0 },
@@ -112,7 +112,7 @@ export const FUNCTION_ARG_COUNTS = {
   // JSON functions
   JSON_VALUE: { min: 2, max: 2 },
   JSON_QUERY: { min: 2, max: 2 },
-  JSON_OBJECT: { min: 0, max: null },
+  JSON_OBJECT: { min: 0 },
   JSON_ARRAYAGG: { min: 1, max: 1 },
 
   // Aggregate functions
@@ -126,11 +126,11 @@ export const FUNCTION_ARG_COUNTS = {
 /**
  * Format expected argument count for error messages.
  * @param {number} min
- * @param {number | null} max
+ * @param {number | undefined} max
  * @returns {string | number}
  */
 function formatExpected(min, max) {
-  if (max === null) return `at least ${min}`
+  if (max == null) return `at least ${min}`
   if (min === max) return min
   return `${min} or ${max}`
 }
@@ -139,10 +139,21 @@ function formatExpected(min, max) {
  * Validates function argument count.
  * @param {string} funcName - The function name (uppercase)
  * @param {number} argCount - Number of arguments provided
+ * @param {Record<string, UserDefinedFunction>} [functions] - User-defined functions
  * @returns {{ valid: boolean, expected: string | number }}
  */
-export function validateFunctionArgCount(funcName, argCount) {
-  const spec = FUNCTION_ARG_COUNTS[funcName]
+export function validateFunctionArgCount(funcName, argCount, functions) {
+  // Check built-in functions
+  let spec = FUNCTION_ARG_COUNTS[funcName]
+
+  // Check user-defined functions (case-insensitive)
+  if (!spec && functions) {
+    const udfName = Object.keys(functions).find(k => k.toUpperCase() === funcName)
+    if (udfName) {
+      spec = functions[udfName].arguments
+    }
+  }
+
   if (!spec) return { valid: true, expected: 0 }
 
   const { min, max } = spec
@@ -150,7 +161,7 @@ export function validateFunctionArgCount(funcName, argCount) {
   if (argCount < min) {
     return { valid: false, expected: formatExpected(min, max) }
   }
-  if (max !== null && argCount > max) {
+  if (max != null && argCount > max) {
     return { valid: false, expected: formatExpected(min, max) }
   }
 

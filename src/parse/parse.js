@@ -5,11 +5,11 @@ import { consume, current, expect, expectIdentifier, match, parseError, peekToke
 import { parseJoins } from './joins.js'
 
 /**
- * @import { ExprNode, FromSubquery, FromTable, OrderByItem, ParserState, SelectStatement, SelectColumn, UserDefinedFunction } from '../types.js'
+ * @import { ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, SelectColumn } from '../types.js'
  */
 
 /**
- * @param {{ query: string, functions?: Record<string, UserDefinedFunction> }} options
+ * @param {ParseSqlOptions} options
  * @returns {SelectStatement}
  */
 export function parseSql({ query, functions }) {

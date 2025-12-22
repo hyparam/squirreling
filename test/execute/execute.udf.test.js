@@ -14,7 +14,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT DOUBLE(score) AS doubled FROM users',
         functions: {
-          DOUBLE: x => Number(x) * 2,
+          DOUBLE: {
+            apply: x => Number(x) * 2,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([
@@ -29,9 +32,12 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT ASYNC_DOUBLE(score) AS doubled FROM users',
         functions: {
-          ASYNC_DOUBLE: async x => {
-            await new Promise(resolve => setTimeout(resolve, 1))
-            return Number(x) * 2
+          ASYNC_DOUBLE: {
+            apply: async x => {
+              await new Promise(resolve => setTimeout(resolve, 1))
+              return Number(x) * 2
+            },
+            arguments: { min: 1, max: 1 },
           },
         },
       }))
@@ -49,7 +55,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT ADD(score, id) AS sum FROM users',
         functions: {
-          ADD: (a, b) => Number(a) + Number(b),
+          ADD: {
+            apply: (a, b) => Number(a) + Number(b),
+            arguments: { min: 2, max: 2 },
+          },
         },
       }))
       expect(result).toEqual([
@@ -66,7 +75,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT NULLIFY(score) AS nulled FROM users',
         functions: {
-          NULLIFY: () => null,
+          NULLIFY: {
+            apply: () => null,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([
@@ -83,7 +95,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT double(score) AS doubled FROM users WHERE id = 1',
         functions: {
-          DOUBLE: x => Number(x) * 2,
+          DOUBLE: {
+            apply: x => Number(x) * 2,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([{ doubled: 20 }])
@@ -94,7 +109,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT DOUBLE(score) AS doubled FROM users WHERE id = 1',
         functions: {
-          double: x => Number(x) * 2,
+          double: {
+            apply: x => Number(x) * 2,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([{ doubled: 20 }])
@@ -107,7 +125,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT name FROM users WHERE IS_EVEN(score)',
         functions: {
-          IS_EVEN: x => Number(x) % 2 === 0,
+          IS_EVEN: {
+            apply: x => Number(x) % 2 === 0,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([
@@ -131,7 +152,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT UNKNOWN_FUNC(score) FROM users',
         functions: {
-          OTHER_FUNC: x => x,
+          OTHER_FUNC: {
+            apply: x => x,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))).rejects.toThrow(/unknown function/i)
     })
@@ -143,7 +167,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT name, DOUBLE(score) + 5 AS calc FROM users WHERE id = 1',
         functions: {
-          DOUBLE: x => Number(x) * 2,
+          DOUBLE: {
+            apply: x => Number(x) * 2,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([{ name: 'Alice', calc: 25 }])
@@ -154,7 +181,10 @@ describe('user-defined functions', () => {
         tables: { users },
         query: 'SELECT DOUBLE(DOUBLE(score)) AS quadrupled FROM users WHERE id = 1',
         functions: {
-          DOUBLE: x => Number(x) * 2,
+          DOUBLE: {
+            apply: x => Number(x) * 2,
+            arguments: { min: 1, max: 1 },
+          },
         },
       }))
       expect(result).toEqual([{ quadrupled: 40 }])

@@ -392,7 +392,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
     if (functions) {
       const udfName = Object.keys(functions).find(k => k.toUpperCase() === funcName)
       if (udfName) {
-        return await functions[udfName](...args)
+        return await functions[udfName].apply(...args)
       }
     }
 

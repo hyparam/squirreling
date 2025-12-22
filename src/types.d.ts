@@ -1,5 +1,8 @@
-// User-defined function type
-export type UserDefinedFunction = (...args: SqlPrimitive[]) => SqlPrimitive | Promise<SqlPrimitive>
+// parseSql(options)
+export interface ParseSqlOptions {
+  query: string
+  functions?: Record<string, UserDefinedFunction>
+}
 
 // executeSql(options)
 export interface ExecuteSqlOptions {
@@ -55,6 +58,14 @@ export type SqlPrimitive =
   | null
   | SqlPrimitive[]
   | Record<string, any>
+
+export interface UserDefinedFunction {
+  apply: (...args: SqlPrimitive[]) => SqlPrimitive | Promise<SqlPrimitive>
+  arguments: {
+    min: number
+    max?: number
+  }
+}
 
 export interface SelectStatement {
   distinct: boolean

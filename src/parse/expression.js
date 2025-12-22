@@ -172,7 +172,7 @@ export function parsePrimary(state) {
       expect(state, 'paren', ')')
 
       // Validate argument count at parse time
-      const validation = validateFunctionArgCount(funcNameUpper, args.length)
+      const validation = validateFunctionArgCount(funcNameUpper, args.length, state.functions)
       if (!validation.valid) {
         throw argCountParseError({
           funcName,

@@ -119,7 +119,12 @@ describe('parseSql error handling', () => {
       // Should NOT throw - FOOBAR is provided in functions parameter
       const result = parseSql({
         query: 'SELECT FOOBAR(name) FROM users',
-        functions: { FOOBAR: (x) => x },
+        functions: {
+          FOOBAR: {
+            apply: (x) => x,
+            arguments: { min: 1, max: 1 },
+          },
+        },
       })
       expect(result.columns[0].kind).toBe('derived')
     })
@@ -249,7 +254,12 @@ describe('ParseError structure', () => {
   it('should allow unknown functions when provided in functions parameter', () => {
     const result = parseSql({
       query: 'SELECT FOOBAR(x) FROM t',
-      functions: { FOOBAR: (x) => x },
+      functions: {
+        FOOBAR: {
+          apply: (x) => x,
+          arguments: { min: 1, max: 1 },
+        },
+      },
     })
     expect(result.columns[0].kind).toBe('derived')
   })
