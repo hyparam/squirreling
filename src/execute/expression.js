@@ -5,10 +5,11 @@ import {
   argValueError,
   castError,
 } from '../validationErrors.js'
-import { isAggregateFunc, isMathFunc } from '../validation.js'
+import { isAggregateFunc, isMathFunc, isRegexpFunc } from '../validation.js'
 import { applyIntervalToDate } from './date.js'
 import { executeSelect } from './execute.js'
 import { evaluateMathFunc } from './math.js'
+import { evaluateRegexpFunc } from './regexp.js'
 import { applyBinaryOp, stringify } from './utils.js'
 
 /**
@@ -325,6 +326,16 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       // INSTR returns 1-based position, 0 if not found
       const pos = String(str).indexOf(String(search))
       return pos === -1 ? 0 : pos + 1
+    }
+
+    if (isRegexpFunc(funcName)) {
+      return evaluateRegexpFunc({
+        funcName,
+        args,
+        positionStart: node.positionStart,
+        positionEnd: node.positionEnd,
+        rowIndex,
+      })
     }
 
     if (funcName === 'RANDOM' || funcName === 'RAND') {

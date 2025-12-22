@@ -10,6 +10,14 @@ export function isAggregateFunc(name) {
 
 /**
  * @param {string} name
+ * @returns {boolean}
+ */
+export function isRegexpFunc(name) {
+  return ['REGEXP_SUBSTR', 'REGEXP_REPLACE'].includes(name)
+}
+
+/**
+ * @param {string} name
  * @returns {name is MathFunc}
  */
 export function isMathFunc(name) {
@@ -46,6 +54,8 @@ export function isStringFunc(name) {
     'LEFT',
     'RIGHT',
     'INSTR',
+    'REGEXP_SUBSTR',
+    'REGEXP_REPLACE',
     'RANDOM',
     'RAND',
     'JSON_VALUE',
@@ -84,6 +94,8 @@ export const FUNCTION_ARG_COUNTS = {
   LEFT: { min: 2, max: 2 },
   RIGHT: { min: 2, max: 2 },
   INSTR: { min: 2, max: 2 },
+  REGEXP_SUBSTR: { min: 2, max: 4 },
+  REGEXP_REPLACE: { min: 3, max: 5 },
 
   // Date/time functions
   RANDOM: { min: 0, max: 0 },

@@ -238,6 +238,7 @@ export type StringFunc =
   | 'LEFT'
   | 'RIGHT'
   | 'INSTR'
+  | 'REGEXP_SUBSTR'
   | 'JSON_VALUE'
   | 'JSON_QUERY'
   | 'JSON_OBJECT'
