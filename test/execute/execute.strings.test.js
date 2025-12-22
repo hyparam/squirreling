@@ -512,6 +512,196 @@ describe('string functions', () => {
     })
   })
 
+  describe('LEFT', () => {
+    it('should return first n characters', async () => {
+      const data = [
+        { id: 1, text: 'Hello World' },
+        { id: 2, text: 'JavaScript' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEFT(text, 5) AS left_text FROM data',
+      }))
+      expect(result).toEqual([
+        { left_text: 'Hello' },
+        { left_text: 'JavaS' },
+      ])
+    })
+
+    it('should return entire string if n > length', async () => {
+      const data = [{ id: 1, text: 'Hi' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEFT(text, 10) AS left_text FROM data',
+      }))
+      expect(result[0].left_text).toBe('Hi')
+    })
+
+    it('should return empty string for n = 0', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEFT(text, 0) AS left_text FROM data',
+      }))
+      expect(result[0].left_text).toBe('')
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEFT(text, 5) AS left_text FROM data',
+      }))
+      expect(result[0].left_text).toBeNull()
+    })
+
+    it('should throw for negative length', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEFT(text, -1) FROM data',
+      }))).rejects.toThrow('LEFT(string, length): length must be a non-negative integer')
+    })
+  })
+
+  describe('RIGHT', () => {
+    it('should return last n characters', async () => {
+      const data = [
+        { id: 1, text: 'Hello World' },
+        { id: 2, text: 'JavaScript' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RIGHT(text, 5) AS right_text FROM data',
+      }))
+      expect(result).toEqual([
+        { right_text: 'World' },
+        { right_text: 'cript' },
+      ])
+    })
+
+    it('should return entire string if n > length', async () => {
+      const data = [{ id: 1, text: 'Hi' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RIGHT(text, 10) AS right_text FROM data',
+      }))
+      expect(result[0].right_text).toBe('Hi')
+    })
+
+    it('should return empty string for n = 0', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RIGHT(text, 0) AS right_text FROM data',
+      }))
+      expect(result[0].right_text).toBe('')
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT RIGHT(text, 5) AS right_text FROM data',
+      }))
+      expect(result[0].right_text).toBeNull()
+    })
+
+    it('should throw for negative length', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT RIGHT(text, -1) FROM data',
+      }))).rejects.toThrow('RIGHT(string, length): length must be a non-negative integer')
+    })
+  })
+
+  describe('INSTR', () => {
+    it('should return 1-based position of substring', async () => {
+      const data = [
+        { id: 1, text: 'Hello World' },
+        { id: 2, text: 'Goodbye' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, \'o\') AS pos FROM data',
+      }))
+      expect(result).toEqual([
+        { pos: 5 }, // 'o' in 'Hello' at position 5
+        { pos: 2 }, // 'o' in 'Goodbye' at position 2
+      ])
+    })
+
+    it('should return 0 when substring not found', async () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, \'xyz\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(0)
+    })
+
+    it('should find multi-character substrings', async () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, \'World\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(7)
+    })
+
+    it('should be case-sensitive', async () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, \'world\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(0)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, \'a\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBeNull()
+    })
+
+    it('should handle null search string', async () => {
+      const data = [{ id: 1, text: 'Hello', search: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, search) AS pos FROM data',
+      }))
+      expect(result[0].pos).toBeNull()
+    })
+
+    it('should return 1 for empty search string', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT INSTR(text, \'\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(1)
+    })
+
+    it('should work in WHERE clause', async () => {
+      const data = [
+        { id: 1, email: 'alice@example.com' },
+        { id: 2, email: 'bob@test.org' },
+        { id: 3, email: 'charlie@example.com' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT email FROM data WHERE INSTR(email, \'example\') > 0',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result[0].email).toBe('alice@example.com')
+      expect(result[1].email).toBe('charlie@example.com')
+    })
+  })
+
   describe('combined string functions', () => {
     it('should use multiple different string functions in one query', async () => {
       const result = await collect(executeSql({

@@ -282,6 +282,51 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       return String(str).replaceAll(String(searchStr), String(replaceStr))
     }
 
+    if (funcName === 'LEFT') {
+      const str = args[0]
+      const n = args[1]
+      if (str == null || n == null) return null
+      const len = Number(n)
+      if (!Number.isInteger(len) || len < 0) {
+        throw argValueError({
+          funcName,
+          message: `length must be a non-negative integer, got ${n}`,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
+        })
+      }
+      return String(str).substring(0, len)
+    }
+
+    if (funcName === 'RIGHT') {
+      const str = args[0]
+      const n = args[1]
+      if (str == null || n == null) return null
+      const len = Number(n)
+      if (!Number.isInteger(len) || len < 0) {
+        throw argValueError({
+          funcName,
+          message: `length must be a non-negative integer, got ${n}`,
+          positionStart: node.positionStart,
+          positionEnd: node.positionEnd,
+          rowNumber: rowIndex,
+        })
+      }
+      const strVal = String(str)
+      if (len >= strVal.length) return strVal
+      return strVal.substring(strVal.length - len)
+    }
+
+    if (funcName === 'INSTR') {
+      const str = args[0]
+      const search = args[1]
+      if (str == null || search == null) return null
+      // INSTR returns 1-based position, 0 if not found
+      const pos = String(str).indexOf(String(search))
+      return pos === -1 ? 0 : pos + 1
+    }
+
     if (funcName === 'RANDOM' || funcName === 'RAND') {
       return Math.random()
     }

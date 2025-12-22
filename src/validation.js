@@ -43,6 +43,9 @@ export function isStringFunc(name) {
     'SUBSTR',
     'TRIM',
     'REPLACE',
+    'LEFT',
+    'RIGHT',
+    'INSTR',
     'RANDOM',
     'RAND',
     'JSON_VALUE',
@@ -78,6 +81,9 @@ export const FUNCTION_ARG_COUNTS = {
   SUBSTRING: { min: 2, max: 3 },
   SUBSTR: { min: 2, max: 3 },
   CONCAT: { min: 1 },
+  LEFT: { min: 2, max: 2 },
+  RIGHT: { min: 2, max: 2 },
+  INSTR: { min: 2, max: 2 },
 
   // Date/time functions
   RANDOM: { min: 0, max: 0 },

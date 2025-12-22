@@ -1,6 +1,6 @@
 import { tokenize } from './tokenize.js'
 import { parseExpression } from './expression.js'
-import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation.js'
+import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isKnownFunction } from '../validation.js'
 import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
 import { parseJoins } from './joins.js'
 
@@ -75,7 +75,13 @@ const EXPRESSION_START_KEYWORDS = new Set([
 function parseSelectItem(state) {
   const tok = current(state)
 
-  if (tok.type === 'keyword' && !EXPRESSION_START_KEYWORDS.has(tok.value) || tok.type === 'eof') {
+  // Check if keyword followed by ( is a known function (e.g., LEFT, RIGHT)
+  const isKeywordFunction = tok.type === 'keyword' &&
+    peekToken(state, 1).type === 'paren' &&
+    peekToken(state, 1).value === '(' &&
+    isKnownFunction(tok.value, state.functions)
+
+  if (tok.type === 'keyword' && !EXPRESSION_START_KEYWORDS.has(tok.value) && !isKeywordFunction || tok.type === 'eof') {
     throw parseError(state, 'column name or expression')
   }
 

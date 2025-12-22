@@ -1,12 +1,12 @@
 import {
-  argCountParseError,
   invalidLiteralError,
   missingClauseError,
   syntaxError,
   unknownFunctionError,
 } from '../parseErrors.js'
-import { isIntervalUnit, isKnownFunction, validateFunctionArgCount } from '../validation.js'
+import { isIntervalUnit, isKnownFunction } from '../validation.js'
 import { parseComparison } from './comparison.js'
+import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'
 import { consume, current, expect, expectIdentifier, lastPosition, match, peekToken } from './state.js'
 
@@ -123,10 +123,9 @@ export function parsePrimary(state) {
     // function call
     if (next.type === 'paren' && next.value === '(') {
       const funcName = tok.value
-      const funcNameUpper = funcName.toUpperCase()
 
       // Validate function existence early for better error messages
-      if (!isKnownFunction(funcNameUpper, state.functions)) {
+      if (!isKnownFunction(funcName.toUpperCase(), state.functions)) {
         throw unknownFunctionError({
           funcName,
           positionStart,
@@ -135,62 +134,7 @@ export function parsePrimary(state) {
       }
 
       consume(state) // function name
-      consume(state) // '('
-
-      /** @type {ExprNode[]} */
-      const args = []
-      let distinct = false
-
-      // Check for DISTINCT or ALL keyword (for aggregate functions like COUNT(DISTINCT x))
-      if (current(state).type === 'keyword' && current(state).value === 'DISTINCT') {
-        consume(state) // consume DISTINCT
-        distinct = true
-      } else if (current(state).type === 'keyword' && current(state).value === 'ALL') {
-        consume(state) // consume ALL (default behavior, just consume it)
-      }
-
-      if (current(state).type !== 'paren' || current(state).value !== ')') {
-        while (true) {
-          // Handle COUNT(*) - treat * as a special identifier
-          if (current(state).type === 'operator' && current(state).value === '*') {
-            const starTok = current(state)
-            consume(state)
-            args.push({
-              type: 'identifier',
-              name: '*',
-              positionStart: starTok.positionStart,
-              positionEnd: lastPosition(state),
-            })
-          } else {
-            const arg = parseExpression(state)
-            args.push(arg)
-          }
-          if (!match(state, 'comma')) break
-        }
-      }
-
-      expect(state, 'paren', ')')
-
-      // Validate argument count at parse time
-      const validation = validateFunctionArgCount(funcNameUpper, args.length, state.functions)
-      if (!validation.valid) {
-        throw argCountParseError({
-          funcName,
-          expected: validation.expected,
-          received: args.length,
-          positionStart,
-          positionEnd: lastPosition(state),
-        })
-      }
-
-      return {
-        type: 'function',
-        name: funcName,
-        args,
-        distinct: distinct || undefined,
-        positionStart,
-        positionEnd: lastPosition(state),
-      }
+      return parseFunctionCall(state, funcName, positionStart)
     }
 
     // Niladic datetime functions (no parentheses required per ANSI SQL)
@@ -244,7 +188,14 @@ export function parsePrimary(state) {
     }
   }
 
+  // Keywords that can be used as function names (e.g., LEFT, RIGHT)
   if (tok.type === 'keyword') {
+    const next = peekToken(state, 1)
+    if (next.type === 'paren' && next.value === '(' && isKnownFunction(tok.value, state.functions)) {
+      consume(state) // function name
+      return parseFunctionCall(state, tok.value, positionStart)
+    }
+
     if (tok.value === 'TRUE') {
       consume(state)
       return { type: 'literal', value: true, positionStart, positionEnd: lastPosition(state) }

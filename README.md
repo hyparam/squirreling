@@ -81,9 +81,12 @@ console.log(`Collected rows:`, rows)
 - Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
 - `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`
 - `GROUP BY` and `HAVING` clauses
-- Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
-- String functions: `CONCAT`, `SUBSTRING`, `LENGTH`, `UPPER`, `LOWER`
-- Math functions: `ABS`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
-- Date functions: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
-- Json functions: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
-- Basic expressions and arithmetic operations
+
+### Functions
+
+- Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
+- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`
+- Math: `ABS`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
+- Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
+- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
+- User-defined functions (UDFs)

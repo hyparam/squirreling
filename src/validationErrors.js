@@ -19,6 +19,9 @@ export const FUNCTION_SIGNATURES = {
   SUBSTRING: 'string, start[, length]',
   SUBSTR: 'string, start[, length]',
   CONCAT: 'value1, value2[, ...]',
+  LEFT: 'string, length',
+  RIGHT: 'string, length',
+  INSTR: 'string, substring',
 
   // Date/time functions
   RANDOM: '',
