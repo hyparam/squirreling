@@ -702,6 +702,96 @@ describe('string functions', () => {
     })
   })
 
+  describe('COALESCE', () => {
+    it('should return first non-null value', async () => {
+      const data = [
+        { id: 1, a: NULL, b: 'second', c: 'third' },
+        { id: 2, a: 'first', b: 'second', c: 'third' },
+        { id: 3, a: NULL, b: NULL, c: 'third' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COALESCE(a, b, c) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: 'second' },
+        { result: 'first' },
+        { result: 'third' },
+      ])
+    })
+
+    it('should return null when all values are null', async () => {
+      const data = [{ id: 1, a: NULL, b: NULL, c: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COALESCE(a, b, c) AS result FROM data',
+      }))
+      expect(result[0].result).toBeNull()
+    })
+
+    it('should work with a single argument', async () => {
+      const data = [
+        { id: 1, a: 'value' },
+        { id: 2, a: NULL },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COALESCE(a) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: 'value' },
+        { result: null },
+      ])
+    })
+
+    it('should work with literal values', async () => {
+      const data = [{ id: 1, a: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COALESCE(a, \'default\') AS result FROM data',
+      }))
+      expect(result[0].result).toBe('default')
+    })
+
+    it('should work with mixed types', async () => {
+      const data = [
+        { id: 1, a: NULL, b: 42 },
+        { id: 2, a: 'string', b: 42 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COALESCE(a, b) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: 42 },
+        { result: 'string' },
+      ])
+    })
+
+    it('should work in WHERE clause', async () => {
+      const data = [
+        { id: 1, name: 'Alice', nickname: NULL },
+        { id: 2, name: 'Bob', nickname: 'Bobby' },
+        { id: 3, name: 'Charlie', nickname: NULL },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE COALESCE(nickname, name) = \'Alice\'',
+      }))
+      expect(result).toEqual([{ id: 1 }])
+    })
+
+    it('should work without alias', async () => {
+      const data = [{ id: 1, a: NULL, b: 'value' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COALESCE(a, b) FROM data',
+      }))
+      expect(result[0]).toHaveProperty('coalesce_a_b')
+      expect(result[0].coalesce_a_b).toBe('value')
+    })
+  })
+
   describe('combined string functions', () => {
     it('should use multiple different string functions in one query', async () => {
       const result = await collect(executeSql({

@@ -342,6 +342,15 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       return Math.random()
     }
 
+    if (funcName === 'COALESCE') {
+      // Short-circuit: evaluate args one at a time, return first non-null
+      for (const arg of node.args) {
+        const val = await evaluateExpr({ node: arg, row, tables, functions, rowIndex, rows })
+        if (val != null) return val
+      }
+      return null
+    }
+
     if (funcName === 'CURRENT_DATE') {
       return new Date().toISOString().split('T')[0]
     }

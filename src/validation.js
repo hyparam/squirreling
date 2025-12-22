@@ -64,6 +64,7 @@ export function isStringFunc(name) {
     'CURRENT_DATE',
     'CURRENT_TIME',
     'CURRENT_TIMESTAMP',
+    'COALESCE',
   ].includes(name)
 }
 
@@ -132,6 +133,9 @@ export const FUNCTION_ARG_COUNTS = {
   JSON_QUERY: { min: 2, max: 2 },
   JSON_OBJECT: { min: 0 },
   JSON_ARRAYAGG: { min: 1, max: 1 },
+
+  // Conditional functions
+  COALESCE: { min: 1 },
 
   // Aggregate functions
   COUNT: { min: 1, max: 1 },
