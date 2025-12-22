@@ -22,10 +22,9 @@ export function isRegexpFunc(name) {
  */
 export function isMathFunc(name) {
   return [
-    'FLOOR', 'CEIL', 'CEILING', 'ABS', 'MOD',
-    'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
-    'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2',
-    'DEGREES', 'RADIANS', 'PI',
+    'FLOOR', 'CEIL', 'CEILING', 'ABS', 'MOD', 'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
+    'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'DEGREES', 'RADIANS', 'PI',
+    'RAND', 'RANDOM',
   ].includes(name)
 }
 
@@ -43,28 +42,8 @@ export function isIntervalUnit(name) {
  */
 export function isStringFunc(name) {
   return [
-    'UPPER',
-    'LOWER',
-    'CONCAT',
-    'LENGTH',
-    'SUBSTRING',
-    'SUBSTR',
-    'TRIM',
-    'REPLACE',
-    'LEFT',
-    'RIGHT',
-    'INSTR',
-    'REGEXP_SUBSTR',
-    'REGEXP_REPLACE',
-    'RANDOM',
-    'RAND',
-    'JSON_VALUE',
-    'JSON_QUERY',
-    'JSON_OBJECT',
-    'CURRENT_DATE',
-    'CURRENT_TIME',
-    'CURRENT_TIMESTAMP',
-    'COALESCE',
+    'UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM',
+    'REPLACE', 'LEFT', 'RIGHT', 'INSTR',
   ].includes(name)
 }
 
@@ -198,12 +177,21 @@ export function validateFunctionArgCount(funcName, argCount, functions) {
  */
 export function isKnownFunction(funcName, functions) {
   // Check built-in functions
-  if (isAggregateFunc(funcName) || isMathFunc(funcName) || isStringFunc(funcName)) {
+  if (
+    isAggregateFunc(funcName) ||
+    isMathFunc(funcName) ||
+    isStringFunc(funcName) ||
+    isRegexpFunc(funcName)
+  ) {
     return true
   }
 
-  // Special case: CAST is not in any function list but is a built-in
-  if (funcName === 'CAST') {
+  // Date/time, JSON, conditional, and CAST functions
+  if ([
+    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
+    'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
+    'COALESCE', 'CAST',
+  ].includes(funcName)) {
     return true
   }
 

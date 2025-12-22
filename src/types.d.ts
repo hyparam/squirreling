@@ -225,6 +225,8 @@ export type MathFunc =
   | 'DEGREES'
   | 'RADIANS'
   | 'PI'
+  | 'RAND'
+  | 'RANDOM'
 
 export type StringFunc =
   | 'UPPER'
@@ -238,13 +240,6 @@ export type StringFunc =
   | 'LEFT'
   | 'RIGHT'
   | 'INSTR'
-  | 'REGEXP_SUBSTR'
-  | 'JSON_VALUE'
-  | 'JSON_QUERY'
-  | 'JSON_OBJECT'
-  | 'CURRENT_DATE'
-  | 'CURRENT_TIME'
-  | 'CURRENT_TIMESTAMP'
 
 export interface DerivedColumn {
   kind: 'derived'

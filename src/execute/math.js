@@ -6,9 +6,9 @@
  * Evaluate a math function
  *
  * @param {Object} options
- * @param {MathFunc} options.funcName - Uppercase function name
- * @param {SqlPrimitive[]} options.args - Function arguments
- * @returns {SqlPrimitive} Result
+ * @param {MathFunc} options.funcName
+ * @param {SqlPrimitive[]} options.args
+ * @returns {SqlPrimitive}
  */
 export function evaluateMathFunc({ funcName, args }) {
   if (funcName === 'FLOOR') {
@@ -137,5 +137,9 @@ export function evaluateMathFunc({ funcName, args }) {
 
   if (funcName === 'PI') {
     return Math.PI
+  }
+
+  if (funcName === 'RAND' || funcName === 'RANDOM') {
+    return Math.random()
   }
 }
