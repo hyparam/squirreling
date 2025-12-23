@@ -110,4 +110,37 @@ describe('parseSql - JOIN queries', () => {
       positionEnd: 40,
     })
   })
+
+  it('should parse POSITIONAL JOIN', () => {
+    const select = parseSql({ query: 'SELECT * FROM users POSITIONAL JOIN orders' })
+    expect(select.from).toEqual({ kind: 'table', table: 'users' })
+    expect(select.joins).toEqual([
+      {
+        joinType: 'POSITIONAL',
+        table: 'orders',
+        alias: undefined,
+        on: undefined,
+      },
+    ])
+  })
+
+  it('should parse POSITIONAL JOIN with alias', () => {
+    const select = parseSql({ query: 'SELECT * FROM users u POSITIONAL JOIN orders o' })
+    expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
+    expect(select.joins).toEqual([
+      {
+        joinType: 'POSITIONAL',
+        table: 'orders',
+        alias: 'o',
+        on: undefined,
+      },
+    ])
+  })
+
+  it('should parse POSITIONAL JOIN with WHERE clause', () => {
+    const select = parseSql({ query: 'SELECT * FROM users POSITIONAL JOIN orders WHERE users.id > 1' })
+    expect(select.joins[0].joinType).toBe('POSITIONAL')
+    expect(select.joins[0].on).toBeUndefined()
+    expect(select.where).toBeTruthy()
+  })
 })

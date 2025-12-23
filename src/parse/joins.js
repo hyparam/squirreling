@@ -40,6 +40,9 @@ export function parseJoins(state) {
           // FULL OUTER JOIN
         }
         joinType = 'FULL'
+      } else if (tok.value === 'POSITIONAL') {
+        consume(state)
+        joinType = 'POSITIONAL'
       } else if (tok.value === 'JOIN') {
         // Just JOIN (defaults to INNER)
         consume(state)
@@ -61,9 +64,13 @@ export function parseJoins(state) {
     const tableName = expectIdentifier(state).value
     const tableAlias = parseTableAlias(state)
 
-    // Parse ON condition
-    expect(state, 'keyword', 'ON')
-    const condition = parseExpression(state)
+    // Parse ON condition (not for POSITIONAL joins)
+    /** @type {import('../types.js').ExprNode | undefined} */
+    let condition
+    if (joinType !== 'POSITIONAL') {
+      expect(state, 'keyword', 'ON')
+      condition = parseExpression(state)
+    }
 
     joins.push({
       joinType,

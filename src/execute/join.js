@@ -43,16 +43,26 @@ export async function executeJoins({ leftSource, joins, leftTable, tables, funct
     return {
       async *scan(options) {
         const { signal } = options
-        yield* hashJoin({
-          leftRows: leftSource.scan(options), // Stream directly, not buffered
-          rightRows,
-          join,
-          leftTable: currentLeftTable,
-          rightTable,
-          tables,
-          functions,
-          signal,
-        })
+        if (join.joinType === 'POSITIONAL') {
+          yield* positionalJoin({
+            leftRows: leftSource.scan(options),
+            rightRows,
+            leftTable: currentLeftTable,
+            rightTable,
+            signal,
+          })
+        } else {
+          yield* hashJoin({
+            leftRows: leftSource.scan(options), // Stream directly, not buffered
+            rightRows,
+            join,
+            leftTable: currentLeftTable,
+            rightTable,
+            tables,
+            functions,
+            signal,
+          })
+        }
       },
     }
   }
@@ -84,15 +94,22 @@ export async function executeJoins({ leftSource, joins, leftTable, tables, funct
     // Collect intermediate results into array for next join
     /** @type {AsyncRow[]} */
     const newLeftRows = []
-    const joined = hashJoin({
-      leftRows,
-      rightRows,
-      join,
-      leftTable: currentLeftTable,
-      rightTable,
-      tables,
-      functions,
-    })
+    const joined = join.joinType === 'POSITIONAL'
+      ? positionalJoin({
+        leftRows,
+        rightRows,
+        leftTable: currentLeftTable,
+        rightTable,
+      })
+      : hashJoin({
+        leftRows,
+        rightRows,
+        join,
+        leftTable: currentLeftTable,
+        rightTable,
+        tables,
+        functions,
+      })
     for await (const row of joined) {
       newLeftRows.push(row)
     }
@@ -121,16 +138,26 @@ export async function executeJoins({ leftSource, joins, leftTable, tables, funct
   return {
     async *scan(options) {
       const { signal } = options
-      yield* hashJoin({
-        leftRows,
-        rightRows,
-        join,
-        leftTable: currentLeftTable,
-        rightTable,
-        tables,
-        functions,
-        signal,
-      })
+      if (join.joinType === 'POSITIONAL') {
+        yield* positionalJoin({
+          leftRows,
+          rightRows,
+          leftTable: currentLeftTable,
+          rightTable,
+          signal,
+        })
+      } else {
+        yield* hashJoin({
+          leftRows,
+          rightRows,
+          join,
+          leftTable: currentLeftTable,
+          rightTable,
+          tables,
+          functions,
+          signal,
+        })
+      }
     },
   }
 }
@@ -228,6 +255,48 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
   }
 
   return { columns, cells }
+}
+
+/**
+ * Performs a positional join between left and right row sets.
+ * Matches rows by their index position (row 0 with row 0, row 1 with row 1, etc.).
+ * When tables have different lengths, the shorter table is padded with NULLs.
+ *
+ * @param {Object} params
+ * @param {AsyncIterable<AsyncRow>|AsyncRow[]} params.leftRows - rows from left table
+ * @param {AsyncRow[]} params.rightRows - rows from right table (must be buffered)
+ * @param {string} params.leftTable - name of left table (for column prefixing)
+ * @param {string} params.rightTable - name of right table (for column prefixing, may be alias)
+ * @param {AbortSignal} [params.signal] - abort signal for cancellation
+ * @yields {AsyncRow} joined rows
+ */
+async function* positionalJoin({ leftRows, rightRows, leftTable, rightTable, signal }) {
+  // Buffer left rows if streaming
+  /** @type {AsyncRow[]} */
+  const leftArr = []
+  for await (const row of leftRows) {
+    if (signal?.aborted) return
+    leftArr.push(row)
+  }
+
+  const maxLen = Math.max(leftArr.length, rightRows.length)
+
+  // Get column info for NULL row creation
+  const leftCols = leftArr[0]?.columns ?? []
+  const rightCols = rightRows[0]?.columns ?? []
+  const leftPrefixedCols = leftCols.flatMap(col =>
+    col.includes('.') ? [col] : [`${leftTable}.${col}`, col]
+  )
+  const rightPrefixedCols = rightCols.flatMap(col =>
+    col.includes('.') ? [col] : [`${rightTable}.${col}`, col]
+  )
+
+  for (let i = 0; i < maxLen; i++) {
+    if (signal?.aborted) return
+    const leftRow = leftArr[i] ?? createNullRow(leftPrefixedCols)
+    const rightRow = rightRows[i] ?? createNullRow(rightPrefixedCols)
+    yield mergeRows(leftRow, rightRow, leftTable, rightTable)
+  }
 }
 
 /**

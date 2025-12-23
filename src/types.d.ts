@@ -255,7 +255,7 @@ export interface OrderByItem {
   nulls?: 'FIRST' | 'LAST'
 }
 
-export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'
+export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS' | 'POSITIONAL'
 
 export interface JoinClause {
   joinType: JoinType

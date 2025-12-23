@@ -10,7 +10,7 @@
 ![coverage](https://img.shields.io/badge/Coverage-95-darkred)
 [![dependencies](https://img.shields.io/badge/Dependencies-0-blueviolet)](https://www.npmjs.com/package/squirreling?activeTab=dependencies)
 
-Squirreling is a streaming async SQL engine for JavaScript. It is designed to provide efficient streaming of results from pluggable backends for highly efficient retrieval of data for browser applications.
+Squirreling is a streaming async SQL engine built for the web. It is designed to query over various data sources and provide efficient streaming of results. 100% JavaScript with zero dependencies.
 
 ## Features
 
@@ -79,7 +79,7 @@ console.log(`Collected rows:`, rows)
 
 - `SELECT` statements with `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
 - Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
-- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`
+- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `POSITIONAL JOIN`
 - `GROUP BY` and `HAVING` clauses
 
 ### Functions

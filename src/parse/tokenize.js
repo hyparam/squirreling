@@ -46,6 +46,7 @@ const KEYWORDS = new Set([
   'RIGHT',
   'FULL',
   'OUTER',
+  'POSITIONAL',
   'ON',
   'INTERVAL',
   'DAY',

@@ -211,5 +211,5 @@ export const RESERVED_AFTER_COLUMN = new Set([
 // Keywords that cannot be used as table aliases
 export const RESERVED_AFTER_TABLE = new Set([
   'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'JOIN', 'INNER',
-  'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON',
+  'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'POSITIONAL',
 ])
