@@ -79,7 +79,7 @@ export function invalidLiteralError({ type, value, positionStart, positionEnd, v
 export function unexpectedCharError({ char, positionStart, expectsSelect = false }) {
   const positionEnd = positionStart + 1
   if (expectsSelect) {
-    return new ParseError({ message: `Expected SELECT but found "${char}" at position ${positionStart}. Queries must start with SELECT.`, positionStart, positionEnd })
+    return new ParseError({ message: `Expected SELECT but found "${char}" at position ${positionStart}. Queries must start with SELECT or WITH.`, positionStart, positionEnd })
   }
   return new ParseError({ message: `Unexpected character "${char}" at position ${positionStart}`, positionStart, positionEnd })
 }
@@ -144,4 +144,21 @@ export function argCountParseError({ funcName, expected, received, positionStart
  */
 export function missingClauseError({ missing, context, positionStart, positionEnd }) {
   return new ParseError({ message: `${context} requires ${missing}`, positionStart: positionStart ?? 0, positionEnd: positionEnd ?? 0 })
+}
+
+/**
+ * Error for duplicate CTE names in WITH clause.
+ *
+ * @param {Object} options
+ * @param {string} options.cteName - The duplicate CTE name
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @returns {ParseError}
+ */
+export function duplicateCTEError({ cteName, positionStart, positionEnd }) {
+  return new ParseError({
+    message: `CTE "${cteName}" is defined more than once at position ${positionStart}`,
+    positionStart,
+    positionEnd,
+  })
 }

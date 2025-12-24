@@ -43,8 +43,10 @@ describe('parseSql error handling', () => {
     })
 
     it('should throw error on nonsense', () => {
-      expect(() => parseSql({ query: '@' })).toThrow('Expected SELECT but found "@" at position 0')
-      expect(() => parseSql({ query: ' #' })).toThrow('Expected SELECT but found "#" at position 1')
+      // '@' and '#' are invalid characters - tokenizer error says "SELECT or WITH"
+      expect(() => parseSql({ query: '@' })).toThrow('Expected SELECT but found "@" at position 0. Queries must start with SELECT or WITH.')
+      expect(() => parseSql({ query: ' #' })).toThrow('Expected SELECT but found "#" at position 1. Queries must start with SELECT or WITH.')
+      // '.' is a valid token (dot), but parser expects SELECT keyword
       expect(() => parseSql({ query: '.' })).toThrow('Expected SELECT but found "." at position 0')
     })
 

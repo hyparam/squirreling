@@ -9,6 +9,7 @@ import {
  */
 
 const KEYWORDS = new Set([
+  'WITH',
   'SELECT',
   'FROM',
   'WHERE',

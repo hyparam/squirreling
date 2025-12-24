@@ -1,10 +1,10 @@
 import { missingClauseError } from '../parseErrors.js'
-import { tableNotFoundError } from '../executionErrors.js'
 import { evaluateExpr } from './expression.js'
+import { resolveTableSource } from './tableSource.js'
 import { stringify } from './utils.js'
 
 /**
- * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode, AsyncCells, UserDefinedFunction } from '../types.js'
+ * @import { AsyncRow, AsyncDataSource, JoinClause, ExprNode, AsyncCells, UserDefinedFunction, WithClause } from '../types.js'
  */
 
 /**
@@ -15,19 +15,19 @@ import { stringify } from './utils.js'
  * @param {JoinClause[]} options.joins - array of join clauses to execute
  * @param {string} options.leftTable - name of the left table (for column prefixing)
  * @param {Record<string, AsyncDataSource>} options.tables - all available tables
+ * @param {WithClause} [options.withClause] - WITH clause containing CTE definitions
  * @param {Record<string, UserDefinedFunction>} [options.functions]
+ * @param {Function} [options.executeSelectFn] - function to execute SELECT for CTEs (passed to avoid circular dep)
+ * @param {AbortSignal} [options.signal]
  * @returns {Promise<AsyncDataSource>} data source yielding joined rows
  */
-export async function executeJoins({ leftSource, joins, leftTable, tables, functions }) {
+export async function executeJoins({ leftSource, joins, leftTable, tables, withClause, functions, executeSelectFn, signal }) {
   let currentLeftTable = leftTable
 
   // Single join optimization: stream left rows without buffering
   if (joins.length === 1) {
     const join = joins[0]
-    const rightSource = tables[join.table]
-    if (rightSource === undefined) {
-      throw tableNotFoundError({ tableName: join.table })
-    }
+    const rightSource = resolveTableSource(join.table, tables, withClause, executeSelectFn, functions, signal)
 
     // Buffer right rows for hash index (required for hash join)
     /** @type {AsyncRow[]} */
@@ -77,10 +77,7 @@ export async function executeJoins({ leftSource, joins, leftTable, tables, funct
   // Process all but the last join, buffering intermediate results
   for (let i = 0; i < joins.length - 1; i++) {
     const join = joins[i]
-    const rightSource = tables[join.table]
-    if (rightSource === undefined) {
-      throw tableNotFoundError({ tableName: join.table })
-    }
+    const rightSource = resolveTableSource(join.table, tables, withClause, executeSelectFn, functions, signal)
 
     /** @type {AsyncRow[]} */
     const rightRows = []
@@ -121,10 +118,7 @@ export async function executeJoins({ leftSource, joins, leftTable, tables, funct
 
   // Final join: stream the results
   const join = joins[joins.length - 1]
-  const rightSource = tables[join.table]
-  if (rightSource === undefined) {
-    throw tableNotFoundError({ tableName: join.table })
-  }
+  const rightSource = resolveTableSource(join.table, tables, withClause, executeSelectFn, functions, signal)
 
   /** @type {AsyncRow[]} */
   const rightRows = []

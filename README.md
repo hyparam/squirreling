@@ -78,6 +78,7 @@ console.log(`Collected rows:`, rows)
 ## Supported SQL Features
 
 - `SELECT` statements with `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
+- `WITH` clause for Common Table Expressions (CTEs)
 - Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
 - `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `POSITIONAL JOIN`
 - `GROUP BY` and `HAVING` clauses

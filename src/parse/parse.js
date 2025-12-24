@@ -1,12 +1,63 @@
-import { tokenizeSql } from './tokenize.js'
 import { parseExpression } from './expression.js'
-import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isKnownFunction } from '../validation.js'
+import { tokenizeSql } from './tokenize.js'
 import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
 import { parseJoins } from './joins.js'
+import { duplicateCTEError } from '../parseErrors.js'
+import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isKnownFunction } from '../validation.js'
 
 /**
- * @import { ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, SelectColumn } from '../types.js'
+ * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, SelectColumn, WithClause } from '../types.js'
  */
+
+/**
+ * Parses a WITH clause containing one or more CTEs
+ * @param {ParserState} state
+ * @returns {WithClause}
+ */
+function parseWithClause(state) {
+  /** @type {CTEDefinition[]} */
+  const ctes = []
+  /** @type {Set<string>} */
+  const seenNames = new Set()
+
+  while (true) {
+    // Parse CTE name
+    const nameTok = expectIdentifier(state)
+    const name = nameTok.value
+    const nameLower = name.toLowerCase()
+
+    // Check for duplicate CTE names
+    if (seenNames.has(nameLower)) {
+      throw duplicateCTEError({
+        cteName: name,
+        positionStart: nameTok.positionStart,
+        positionEnd: nameTok.positionEnd,
+      })
+    }
+    seenNames.add(nameLower)
+
+    // Expect AS keyword
+    expect(state, 'keyword', 'AS')
+
+    // Expect opening parenthesis
+    expect(state, 'paren', '(')
+
+    // Parse the CTE's SELECT statement
+    const query = parseSelectInternal(state)
+
+    // Expect closing parenthesis
+    expect(state, 'paren', ')')
+
+    ctes.push({ name, query })
+
+    // Check for comma (more CTEs) or end of WITH clause
+    if (!match(state, 'comma')) {
+      break
+    }
+  }
+
+  return { ctes }
+}
 
 /**
  * @param {ParseSqlOptions} options
@@ -16,7 +67,20 @@ export function parseSql({ query, functions }) {
   const tokens = tokenizeSql(query)
   /** @type {ParserState} */
   const state = { tokens, pos: 0, functions }
+
+  // Check for WITH clause
+  /** @type {WithClause | undefined} */
+  let withClause
+  if (match(state, 'keyword', 'WITH')) {
+    withClause = parseWithClause(state)
+  }
+
   const select = parseSelectInternal(state)
+
+  // Attach WITH clause to the select statement
+  if (withClause) {
+    select.with = withClause
+  }
 
   const tok = current(state)
   if (tok.type !== 'eof') {

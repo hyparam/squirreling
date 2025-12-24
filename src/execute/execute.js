@@ -1,15 +1,16 @@
 import { missingClauseError } from '../parseErrors.js'
-import { tableNotFoundError, unsupportedOperationError } from '../executionErrors.js'
+import { unsupportedOperationError } from '../executionErrors.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { parseSql } from '../parse/parse.js'
 import { containsAggregate, extractColumns } from './columns.js'
 import { evaluateExpr } from './expression.js'
 import { evaluateHavingExpr } from './having.js'
 import { executeJoins } from './join.js'
+import { resolveTableSource } from './tableSource.js'
 import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, OrderByItem, QueryHints, SelectStatement, SqlPrimitive, UserDefinedFunction } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, CTEDefinition, ExecuteSqlOptions, OrderByItem, QueryHints, SelectStatement, SqlPrimitive, UserDefinedFunction, WithClause } from '../types.js'
  */
 
 /**
@@ -40,7 +41,7 @@ export async function* executeSql({ tables, query, functions, signal }) {
     }
   }
 
-  yield* executeSelect({ select, tables: normalizedTables, functions, signal })
+  yield* executeSelect({ select, tables: normalizedTables, withClause: select.with, functions, signal })
 }
 
 /**
@@ -49,32 +50,45 @@ export async function* executeSql({ tables, query, functions, signal }) {
  * @param {Object} options
  * @param {SelectStatement} options.select
  * @param {Record<string, AsyncDataSource>} options.tables
+ * @param {WithClause} [options.withClause] - WITH clause containing CTE definitions
  * @param {Record<string, UserDefinedFunction>} [options.functions]
  * @param {AbortSignal} [options.signal]
  * @yields {AsyncRow}
  */
-export async function* executeSelect({ select, tables, functions, signal }) {
+export async function* executeSelect({ select, tables, withClause, functions, signal }) {
   /** @type {AsyncDataSource} */
   let dataSource
   /** @type {string} */
   let leftTable
 
   if (select.from.kind === 'table') {
-    // Use alias for column prefixing, but look up the actual table name
-    leftTable = select.from.alias ?? select.from.table
-    dataSource = tables[select.from.table]
-    if (dataSource === undefined) {
-      throw tableNotFoundError({ tableName: select.from.table })
-    }
+    const tableName = select.from.table
+    leftTable = select.from.alias ?? tableName
+    dataSource = resolveTableSource(tableName, tables, withClause, executeSelect, functions, signal)
   } else {
     // Nested subquery - recursively resolve
     leftTable = select.from.alias
-    dataSource = generatorSource(executeSelect({ select: select.from.query, tables, functions, signal }))
+    dataSource = generatorSource(executeSelect({
+      select: select.from.query,
+      tables,
+      withClause,
+      functions,
+      signal,
+    }))
   }
 
   // Execute JOINs if present
   if (select.joins.length) {
-    dataSource = await executeJoins({ leftSource: dataSource, joins: select.joins, leftTable, tables, functions })
+    dataSource = await executeJoins({
+      leftSource: dataSource,
+      joins: select.joins,
+      leftTable,
+      tables,
+      withClause,
+      functions,
+      executeSelectFn: executeSelect,
+      signal,
+    })
   }
 
   yield* evaluateSelectAst({ select, dataSource, tables, functions, signal })

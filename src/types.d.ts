@@ -67,7 +67,17 @@ export interface UserDefinedFunction {
   }
 }
 
+export interface CTEDefinition {
+  name: string
+  query: SelectStatement
+}
+
+export interface WithClause {
+  ctes: CTEDefinition[]
+}
+
 export interface SelectStatement {
+  with?: WithClause
   distinct: boolean
   columns: SelectColumn[]
   from: FromTable | FromSubquery
