@@ -1,4 +1,4 @@
-import { tokenize } from './tokenize.js'
+import { tokenizeSql } from './tokenize.js'
 import { parseExpression } from './expression.js'
 import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isKnownFunction } from '../validation.js'
 import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
@@ -13,7 +13,7 @@ import { parseJoins } from './joins.js'
  * @returns {SelectStatement}
  */
 export function parseSql({ query, functions }) {
-  const tokens = tokenize(query)
+  const tokens = tokenizeSql(query)
   /** @type {ParserState} */
   const state = { tokens, pos: 0, functions }
   const select = parseSelectInternal(state)

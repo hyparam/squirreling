@@ -1,5 +1,5 @@
-import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ParseSqlOptions, SelectStatement, SqlPrimitive } from './types.js'
-export type { AsyncCells, AsyncDataSource, AsyncRow, ParseSqlOptions, SqlPrimitive } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ParseSqlOptions, SelectStatement, SqlPrimitive, Token } from './types.js'
+export type { AsyncCells, AsyncDataSource, AsyncRow, ExprNode, ParseSqlOptions, SelectStatement, SqlPrimitive, Token, UserDefinedFunction } from './types.js'
 
 /**
  * Executes a SQL SELECT query against an array of data rows
@@ -22,6 +22,14 @@ export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
  * @returns parsed SQL select statement
  */
 export function parseSql(options: ParseSqlOptions): SelectStatement
+
+/**
+ * Tokenizes a SQL query string into an array of tokens
+ *
+ * @param sql - SQL query string to tokenize
+ * @returns array of tokens
+ */
+export function tokenizeSql(sql: string): Token[]
 
 /**
  * Collects all results from an async generator into an array

@@ -1,5 +1,6 @@
 export { executeSql } from './execute/execute.js'
 export { parseSql } from './parse/parse.js'
+export { tokenizeSql } from './parse/tokenize.js'
 export { collect } from './execute/utils.js'
 export { cachedDataSource } from './backend/dataSource.js'
 export { ParseError } from './parseErrors.js'

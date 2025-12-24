@@ -61,7 +61,7 @@ const KEYWORDS = new Set([
  * @param {string} sql
  * @returns {Token[]}
  */
-export function tokenize(sql) {
+export function tokenizeSql(sql) {
   /** @type {Token[]} */
   const tokens = []
   const { length } = sql

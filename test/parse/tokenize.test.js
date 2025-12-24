@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { tokenize } from '../../src/parse/tokenize.js'
+import { tokenizeSql } from '../../src/parse/tokenize.js'
 
 describe('tokenize', () => {
   it('should tokenize simple SELECT query', () => {
-    const tokens = tokenize('SELECT name FROM users')
+    const tokens = tokenizeSql('SELECT name FROM users')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
@@ -14,7 +14,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize numbers', () => {
-    const tokens = tokenize('123 45.67 1.2e10 3E-5')
+    const tokens = tokenizeSql('123 45.67 1.2e10 3E-5')
     expect(tokens[0]).toMatchObject({ type: 'number', value: '123', numericValue: 123 })
     expect(tokens[1]).toMatchObject({ type: 'number', value: '45.67', numericValue: 45.67 })
     expect(tokens[2]).toMatchObject({ type: 'number', value: '1.2e10', numericValue: 1.2e10 })
@@ -22,17 +22,17 @@ describe('tokenize', () => {
   })
 
   it('should tokenize negative numbers and expressions', () => {
-    expect(tokenize('-42')).toMatchObject([
+    expect(tokenizeSql('-42')).toMatchObject([
       { type: 'number', value: '-42', numericValue: -42 },
       { type: 'eof' },
     ])
-    expect(tokenize('x - 42')).toMatchObject([
+    expect(tokenizeSql('x - 42')).toMatchObject([
       { type: 'identifier', value: 'x' },
       { type: 'operator', value: '-' },
       { type: 'number', value: '42', numericValue: 42 },
       { type: 'eof' },
     ])
-    expect(tokenize('- x')).toMatchObject([
+    expect(tokenizeSql('- x')).toMatchObject([
       { type: 'operator', value: '-' },
       { type: 'identifier', value: 'x' },
       { type: 'eof' },
@@ -40,42 +40,42 @@ describe('tokenize', () => {
   })
 
   it('should tokenize string literals with single quotes', () => {
-    const tokens = tokenize('\'hello world\'')
+    const tokens = tokenizeSql('\'hello world\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'hello world' })
   })
 
   it('should tokenize identifier with double quotes', () => {
-    const tokens = tokenize('"test string"')
+    const tokens = tokenizeSql('"test string"')
     expect(tokens[0]).toMatchObject({ type: 'identifier', value: 'test string' })
   })
 
   it('should handle escaped single quotes in string literals', () => {
-    const tokens = tokenize('\'can\'\'t\'')
+    const tokens = tokenizeSql('\'can\'\'t\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'can\'t' })
   })
 
   it('should handle double quotes in string literals', () => {
-    const tokens = tokenize('\'first "middle" "" last\'')
+    const tokens = tokenizeSql('\'first "middle" "" last\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'first "middle" "" last' })
   })
 
   it('should handle escaped double quotes in identifiers', () => {
-    const tokens = tokenize('"double""quote"')
+    const tokens = tokenizeSql('"double""quote"')
     expect(tokens[0]).toMatchObject({ type: 'identifier', value: 'double"quote' })
   })
 
   it('should handle single quotes in identifiers', () => {
-    const tokens = tokenize('"it\'s an \'\' identifier"')
+    const tokens = tokenizeSql('"it\'s an \'\' identifier"')
     expect(tokens[0]).toMatchObject({ type: 'identifier', value: 'it\'s an \'\' identifier' })
   })
 
   it('should tokenize operators', () => {
-    const tokens = tokenize('= != <> < > <= >= + - * / %')
+    const tokens = tokenizeSql('= != <> < > <= >= + - * / %')
     expect(tokens.map(t => t.value)).toEqual(['=', '!=', '<>', '<', '>', '<=', '>=', '+', '-', '*', '/', '%', ''])
   })
 
   it('should skip whitespace', () => {
-    const tokens = tokenize('  SELECT  \t\n  name  ')
+    const tokens = tokenizeSql('  SELECT  \t\n  name  ')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
@@ -84,7 +84,7 @@ describe('tokenize', () => {
   })
 
   it('should skip line comments', () => {
-    const tokens = tokenize('SELECT -- this is a comment\nname')
+    const tokens = tokenizeSql('SELECT -- this is a comment\nname')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
@@ -93,7 +93,7 @@ describe('tokenize', () => {
   })
 
   it('should skip block comments', () => {
-    const tokens = tokenize('SELECT /* comment */ name')
+    const tokens = tokenizeSql('SELECT /* comment */ name')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
@@ -102,7 +102,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize special characters', () => {
-    const tokens = tokenize('SELECT * FROM table, column ( ) ;')
+    const tokens = tokenizeSql('SELECT * FROM table, column ( ) ;')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'operator', value: '*' },
@@ -118,7 +118,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize dot notation', () => {
-    const tokens = tokenize('table.column')
+    const tokens = tokenizeSql('table.column')
     expect(tokens).toMatchObject([
       { type: 'identifier', value: 'table' },
       { type: 'dot', value: '.' },
@@ -128,12 +128,12 @@ describe('tokenize', () => {
   })
 
   it('should handle special characters in string literals', () => {
-    const tokens = tokenize('\'line1\nline2\tend\'')
+    const tokens = tokenizeSql('\'line1\nline2\tend\'')
     expect(tokens[0]).toMatchObject({ type: 'string', value: 'line1\nline2\tend' })
   })
 
   it('should tokenize CAST', () => {
-    const tokens = tokenize('CAST(value AS INTEGER)')
+    const tokens = tokenizeSql('CAST(value AS INTEGER)')
     expect(tokens).toMatchObject([
       { type: 'identifier', value: 'CAST' },
       { type: 'paren', value: '(' },
@@ -146,7 +146,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize HAVING clause', () => {
-    const tokens = tokenize('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5')
+    const tokens = tokenizeSql('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'city' },
@@ -172,7 +172,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize BETWEEN clause', () => {
-    const tokens = tokenize('SELECT * FROM users WHERE age BETWEEN 18 AND 65')
+    const tokens = tokenizeSql('SELECT * FROM users WHERE age BETWEEN 18 AND 65')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'operator', value: '*' },
@@ -190,7 +190,7 @@ describe('tokenize', () => {
 
   // Special bigint case <3 JavaScript
   it('should tokenize a bigint', () => {
-    const tokens = tokenize('-1234n 1234n 90000000000000009n 90000000000000009')
+    const tokens = tokenizeSql('-1234n 1234n 90000000000000009n 90000000000000009')
     expect(tokens).toMatchObject([
       { type: 'number', value: '-1234n', numericValue: -1234n },
       { type: 'number', value: '1234n', numericValue: 1234n },
@@ -203,30 +203,30 @@ describe('tokenize', () => {
   })
 
   it('should throw error on unterminated string literal', () => {
-    expect(() => tokenize('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
+    expect(() => tokenizeSql('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
   })
 
   it('should throw error on unterminated identifier', () => {
-    expect(() => tokenize('"unterminated identifier')).toThrow('Unterminated identifier starting at position 0')
+    expect(() => tokenizeSql('"unterminated identifier')).toThrow('Unterminated identifier starting at position 0')
   })
 
   it('should throw on backticks', () => {
-    expect(() => tokenize('`backtick`')).toThrow('Expected SELECT but found "`" at position 0')
-    expect(() => tokenize('SELECT `backtick` FROM table')).toThrow('Unexpected character "`" at position 7')
+    expect(() => tokenizeSql('`backtick`')).toThrow('Expected SELECT but found "`" at position 0')
+    expect(() => tokenizeSql('SELECT `backtick` FROM table')).toThrow('Unexpected character "`" at position 7')
   })
 
   it('should throw error on invalid number', () => {
-    expect(() => tokenize('12.34n')).toThrow('Invalid bigint 12.34 at position 0')
-    expect(() => tokenize('12.34x')).toThrow('Invalid number 12.34x at position 0')
+    expect(() => tokenizeSql('12.34n')).toThrow('Invalid bigint 12.34 at position 0')
+    expect(() => tokenizeSql('12.34x')).toThrow('Invalid number 12.34x at position 0')
   })
 
   it('should throw error on unexpected character', () => {
-    expect(() => tokenize('@invalid')).toThrow('Expected SELECT but found "@" at position 0')
-    expect(() => tokenize(' #invalid')).toThrow('Expected SELECT but found "#" at position 1')
+    expect(() => tokenizeSql('@invalid')).toThrow('Expected SELECT but found "@" at position 0')
+    expect(() => tokenizeSql(' #invalid')).toThrow('Expected SELECT but found "#" at position 1')
   })
 
   it('should tokenize subquery in FROM clause', () => {
-    const tokens = tokenize('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
+    const tokens = tokenizeSql('SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
@@ -248,7 +248,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize IN with subquery in WHERE clause', () => {
-    const tokens = tokenize('SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1)')
+    const tokens = tokenizeSql('SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1)')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'operator', value: '*' },
@@ -272,7 +272,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize EXISTS with subquery in WHERE clause', () => {
-    const tokens = tokenize('SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
+    const tokens = tokenizeSql('SELECT * FROM orders WHERE EXISTS (SELECT * FROM users WHERE users.id = orders.user_id)')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'operator', value: '*' },
@@ -299,7 +299,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize CASE expressions', () => {
-    const tokens = tokenize('SELECT CASE WHEN age > 18 THEN \'adult\' ELSE \'minor\' END FROM users')
+    const tokens = tokenizeSql('SELECT CASE WHEN age > 18 THEN \'adult\' ELSE \'minor\' END FROM users')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'keyword', value: 'CASE' },
@@ -319,7 +319,7 @@ describe('tokenize', () => {
   })
 
   it('should tokenize simple CASE expression', () => {
-    const tokens = tokenize('CASE status WHEN 1 THEN \'active\' WHEN 0 THEN \'inactive\' END')
+    const tokens = tokenizeSql('CASE status WHEN 1 THEN \'active\' WHEN 0 THEN \'inactive\' END')
     expect(tokens).toMatchObject([
       { type: 'keyword', value: 'CASE' },
       { type: 'identifier', value: 'status' },
