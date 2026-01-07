@@ -101,7 +101,7 @@ function collectColumnsFromSelectColumn(col, columns) {
  */
 function collectColumnsFromExpr(expr, columns) {
   if (!expr) return
-  if (expr.type === 'identifier') {
+  if (expr.type === 'identifier' && expr.name !== '*') {
     columns.add(expr.name)
   } else if (expr.type === 'literal') {
     // No columns
