@@ -19,16 +19,26 @@ describe('query hints', () => {
 
   it('should pass column hints for selected columns', async () => {
     const hints = await captureHints('SELECT id, name FROM data')
-    expect(hints.columns).toEqual(expect.arrayContaining(['id', 'name']))
+    expect(hints.columns).toEqual(['id', 'name'])
+  })
+
+  it('should pass column hints for selected expression', async () => {
+    const hints = await captureHints('SELECT a + b FROM data')
+    expect(hints.columns).toEqual(['a', 'b'])
   })
 
   it('should pass column hints from WHERE clause', async () => {
     const hints = await captureHints('SELECT id FROM data WHERE name = \'Alice\'')
-    expect(hints.columns).toEqual(expect.arrayContaining(['id', 'name']))
+    expect(hints.columns).toEqual(['id', 'name'])
   })
 
   it('should return undefined columns for SELECT *', async () => {
     const hints = await captureHints('SELECT * FROM data')
+    expect(hints.columns).toBeUndefined()
+  })
+
+  it('should return undefined columns for * with other columns', async () => {
+    const hints = await captureHints('SELECT *, id FROM data')
     expect(hints.columns).toBeUndefined()
   })
 

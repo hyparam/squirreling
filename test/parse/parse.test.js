@@ -34,6 +34,51 @@ describe('parseSql', () => {
       })
     })
 
+    it('should parse SELECT * with additional columns', () => {
+      const select = parseSql({ query: 'SELECT *, a + b FROM data' })
+      expect(select.columns).toEqual([
+        { kind: 'star' },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'binary',
+            op: '+',
+            left: { type: 'identifier', name: 'a', positionStart: 10, positionEnd: 11 },
+            right: { type: 'identifier', name: 'b', positionStart: 14, positionEnd: 15 },
+            positionStart: 10,
+            positionEnd: 15,
+          },
+          alias: undefined,
+        },
+      ])
+    })
+
+    it('should parse SELECT with columns before and after asterisk', () => {
+      const select = parseSql({ query: 'SELECT id, *, name FROM data' })
+      expect(select.columns).toEqual([
+        { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 }, alias: undefined },
+        { kind: 'star' },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 14, positionEnd: 18 }, alias: undefined },
+      ])
+    })
+
+    it('should parse SELECT with qualified asterisk and additional columns', () => {
+      const select = parseSql({ query: 'SELECT users.*, total FROM users' })
+      expect(select.columns).toEqual([
+        { kind: 'star', table: 'users' },
+        {
+          kind: 'derived',
+          expr: {
+            type: 'identifier',
+            name: 'total',
+            positionStart: 16,
+            positionEnd: 21,
+          },
+          alias: undefined,
+        },
+      ])
+    })
+
     it('should parse SELECT with single column', () => {
       const select = parseSql({ query: 'SELECT name FROM users' })
       expect(select.columns).toEqual([

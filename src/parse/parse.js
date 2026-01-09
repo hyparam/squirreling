@@ -97,29 +97,32 @@ export function parseSql({ query, functions }) {
 function parseSelectList(state) {
   /** @type {SelectColumn[]} */
   const cols = []
-  const tok = current(state)
-
-  // Check for qualified asterisk (table.*)
-  if (tok.type === 'identifier') {
-    const next = peekToken(state, 1)
-    const nextNext = peekToken(state, 2)
-    if (next.type === 'dot' && nextNext.type === 'operator' && nextNext.value === '*') {
-      const tableTok = consume(state) // consume table name
-      consume(state) // consume dot
-      consume(state) // consume asterisk
-      cols.push({ kind: 'star', table: tableTok.value })
-      return cols
-    }
-  }
-
-  // Check for unqualified asterisk (*)
-  if (tok.type === 'operator' && tok.value === '*') {
-    consume(state)
-    cols.push({ kind: 'star' })
-    return cols
-  }
 
   while (true) {
+    const tok = current(state)
+
+    // Check for qualified asterisk (table.*)
+    if (tok.type === 'identifier') {
+      const next = peekToken(state, 1)
+      const nextNext = peekToken(state, 2)
+      if (next.type === 'dot' && nextNext.type === 'operator' && nextNext.value === '*') {
+        const tableTok = consume(state) // consume table name
+        consume(state) // consume dot
+        consume(state) // consume asterisk
+        cols.push({ kind: 'star', table: tableTok.value })
+        if (!match(state, 'comma')) break
+        continue
+      }
+    }
+
+    // Check for unqualified asterisk (*)
+    if (tok.type === 'operator' && tok.value === '*') {
+      consume(state)
+      cols.push({ kind: 'star' })
+      if (!match(state, 'comma')) break
+      continue
+    }
+
     cols.push(parseSelectItem(state))
     if (!match(state, 'comma')) break
   }

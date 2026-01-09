@@ -38,7 +38,7 @@ export interface ScanOptions {
  * All hints are optional and "best effort" - sources may ignore them.
  */
 export interface QueryHints {
-  columns?: string[] // columns needed
+  columns?: string[] // columns needed (undefined means all columns)
   where?: ExprNode // where clause
   // important: only apply limit/offset if where is fully applied by the data source
   // otherwise, the data source must return at least enough rows to ensure the engine
