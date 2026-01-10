@@ -10,7 +10,7 @@ import { resolveTableSource } from './tableSource.js'
 import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, CTEDefinition, ExecuteSqlOptions, OrderByItem, QueryHints, SelectStatement, SqlPrimitive, UserDefinedFunction, WithClause } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, ExprNode, OrderByItem, QueryHints, SelectColumn, SelectStatement, SqlPrimitive, UserDefinedFunction, WithClause } from '../types.js'
  */
 
 /**
@@ -143,9 +143,10 @@ async function applyDistinct(rows, distinct) {
  * @param {OrderByItem[]} options.orderBy - the sort specifications
  * @param {Record<string, AsyncDataSource>} options.tables
  * @param {Record<string, UserDefinedFunction>} [options.functions]
+ * @param {Map<string, ExprNode>} [options.aliases] - SELECT column aliases for ORDER BY resolution
  * @returns {Promise<AsyncRow[]>} the sorted rows
  */
-async function sortRows({ rows, orderBy, tables, functions }) {
+async function sortRows({ rows, orderBy, tables, functions, aliases }) {
   if (!orderBy.length) return rows
 
   // Cache for evaluated values: evaluatedValues[rowIdx][colIdx]
@@ -177,6 +178,7 @@ async function sortRows({ rows, orderBy, tables, functions }) {
             row: rows[idx],
             tables,
             functions,
+            aliases,
           })
         }
       }
@@ -459,7 +461,16 @@ async function* evaluateBuffered({ select, dataSource, tables, functions, hasAgg
   } else {
     // No grouping, simple projection
     // Sort before projection so ORDER BY can access columns not in SELECT
-    const sorted = await sortRows({ rows: filtered, orderBy: select.orderBy, tables, functions })
+
+    // Pass aliases so ORDER BY can reference SELECT column aliases
+    /** @type {Map<string, ExprNode>} */
+    const aliases = new Map()
+    for (const col of select.columns) {
+      if (col.kind === 'derived' && col.alias) {
+        aliases.set(col.alias, col.expr)
+      }
+    }
+    const sorted = await sortRows({ rows: filtered, orderBy: select.orderBy, tables, functions, aliases })
 
     // OPTIMIZATION: For non-DISTINCT queries, apply OFFSET/LIMIT before projection
     // to avoid reading expensive cells for rows that won't be in the final result

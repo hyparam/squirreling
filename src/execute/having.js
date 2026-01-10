@@ -20,7 +20,7 @@ import { applyBinaryOp } from './utils.js'
  */
 export async function evaluateHavingExpr({ expr, row, group, tables, functions }) {
   // Having context
-  const context = { ...group[0] ?? {}, ...row }
+  const context = { ...group[0], ...row }
 
   // For HAVING, we need special handling of aggregate functions
   // They need to be re-evaluated against the group

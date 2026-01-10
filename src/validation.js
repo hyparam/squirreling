@@ -1,6 +1,6 @@
 
 /**
- * @import {AggregateFunc, BinaryOp, ComparisonOp, IntervalUnit, MathFunc, StringFunc, UserDefinedFunction} from './types.js'
+ * @import { AggregateFunc, BinaryOp, IntervalUnit, MathFunc, StringFunc, UserDefinedFunction } from './types.js'
  * @param {string} name
  * @returns {name is AggregateFunc}
  */

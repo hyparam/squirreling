@@ -81,6 +81,33 @@ describe('ORDER BY', () => {
     expect(result.map(r => r.name)).toEqual(['Bob', 'Diana', 'Alice', 'Eve', 'Charlie'])
   })
 
+  it('should sort by SELECT alias', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT id AS user_id, name FROM users ORDER BY user_id DESC' }))
+    // Expected order by id DESC: 5, 4, 3, 2, 1
+    expect(result.map(r => r.user_id)).toEqual([5, 4, 3, 2, 1])
+  })
+
+  it('should sort by SELECT alias with expression', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT age * 2 AS double_age, name FROM users ORDER BY double_age DESC' }))
+    // Expected order by age DESC: Charlie (70), Alice (60), Eve (60), Diana (56), Bob (50)
+    expect(result[0].name).toBe('Charlie')
+    expect(result[0].double_age).toBe(70)
+    expect(result[result.length - 1].name).toBe('Bob')
+    expect(result[result.length - 1].double_age).toBe(50)
+  })
+
+  it('should sort by alias used inside ORDER BY expression', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT id AS uid, name FROM users ORDER BY uid * -1 DESC' }))
+    // uid * -1 DESC means smallest uid first
+    expect(result.map(r => r.uid)).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('should sort by alias used inside ORDER BY function', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT id AS uid, name FROM users ORDER BY ABS(uid - 3)' }))
+    // Distance from 3: id=3 (0), id=2,4 (1), id=1,5 (2)
+    expect(result[0].uid).toBe(3)
+  })
+
   it('should sort column names with spaces', async () => {
     const users = [
       { id: 1, 'full name': 'Charlie', score: 85 },

@@ -1,5 +1,5 @@
 /**
- * @import {AsyncRow, BinaryOp, ExprNode, OrderByItem, SqlPrimitive} from '../types.js'
+ * @import { AsyncRow, BinaryOp, ExprNode, OrderByItem, SqlPrimitive } from '../types.js'
  */
 
 /**
