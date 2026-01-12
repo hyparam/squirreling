@@ -10,22 +10,13 @@
 ![coverage](https://img.shields.io/badge/Coverage-95-darkred)
 [![dependencies](https://img.shields.io/badge/Dependencies-0-blueviolet)](https://www.npmjs.com/package/squirreling?activeTab=dependencies)
 
-Squirreling is a streaming async SQL engine built for the web. It is designed to query over various data sources and provide efficient streaming of results. 100% JavaScript with zero dependencies.
+Squirreling is a streaming async SQL engine in pure JavaScript. Built for the browser from the ground up: streaming input and output, pluggable data sources, and lazy async cell evaluation. This makes Squirreling ideal for querying data from network sources, APIs, or LLMs where latency and cost matter.
 
-## Features
+- **Standard SQL**: Full SQL support for querying data (read-only)
+- **Async UDFs**: User-defined functions can call APIs or models
+- **Tiny**: 13 kb bundle, zero dependencies, instant startup
 
-- Lightweight and fast
-- Easy to integrate with frontend applications
-- Lets you move query execution closer to your users
-- Supports standard SQL queries
-- Async streaming for large datasets
-- Native javascript Promises, AsyncGenerators, AbortSignals
-- Async user-defined functions (UDFs)
-- Constant memory usage for simple queries with LIMIT
-- Robust error handling and validation designed for LLM tool use
-- In-memory data option for simple use cases
-- Late materialization for efficiency
-- Select only
+The key idea is **cell-level lazy evaluation**: rows are native AsyncGenerators and cells are async thunks `() => Promise<T>`. This means expensive operations only execute for cells that actually appear in your query results. Unlike WebAssembly databases, Squirreling is fully async with true streaming during network fetches.
 
 ## Usage
 
@@ -75,7 +66,28 @@ console.log(`Collected rows:`, rows)
 // Collected rows: [ { active: true, cnt: 2 }, { active: false, cnt: 1 } ]
 ```
 
-## Supported SQL Features
+### User-Defined Functions
+
+Pass custom functions via the `functions` option. UDFs can be sync or async, making them ideal for calling APIs, models, or other external services:
+
+```javascript
+const rows = await collect(executeSql({
+  tables: { products },
+  query: 'SELECT name,AI_SCORE(description) AS score FROM products',
+  functions: {
+    AI_SCORE: {
+      apply: async (text) => completions(`Rate the following product description from 1 to 10: ${text}`),
+      arguments: { min: 1, max: 1 },
+    },
+  },
+}))
+```
+
+Because Squirreling uses lazy cell evaluation, the `AI_SCORE` function only executes for cells that are actually materialized. Combined with `LIMIT` or `WHERE`, you can efficiently query expensive operations.
+
+## Supported SQL Syntax
+
+Squirreling mostly follows the SQL standard. The following features are supported:
 
 - `SELECT` statements with `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
 - `WITH` clause for Common Table Expressions (CTEs)
