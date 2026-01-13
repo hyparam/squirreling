@@ -403,7 +403,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
     const exprVal = await evaluateExpr({ node: node.expr, row, tables, functions, rowIndex, rows })
     for (const valueNode of node.values) {
       const val = await evaluateExpr({ node: valueNode, row, tables, functions, rowIndex, rows })
-      if (exprVal === val) return true
+      if (exprVal == val) return true
     }
     return false
   }
@@ -413,7 +413,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
     const results = executeSelect({ select: node.subquery, tables })
     for await (const resRow of results) {
       const value = await resRow.cells[resRow.columns[0]]()
-      if (exprVal === value) return true
+      if (exprVal == value) return true
     }
     return false
   }
@@ -439,7 +439,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       if (caseValue !== undefined) {
         // Simple CASE: compare caseValue with condition
         const whenValue = await evaluateExpr({ node: whenClause.condition, row, tables, functions, rowIndex, rows })
-        conditionResult = caseValue === whenValue
+        conditionResult = caseValue == whenValue
       } else {
         // Searched CASE: evaluate condition as boolean
         conditionResult = await evaluateExpr({ node: whenClause.condition, row, tables, functions, rowIndex, rows })

@@ -346,6 +346,22 @@ describe('executeSql', () => {
       expect(result[0]).toEqual({ name: 'Alice', city_full: 'New York' })
       expect(result[1]).toEqual({ name: 'Bob', city_full: 'Los Angeles' })
     })
+
+    it('should use loose equality for bigints and numbers in simple CASE', async () => {
+      const data = [
+        { id: 1, value: 100n },
+        { id: 2, value: 200n },
+        { id: 3, value: 300n },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id, CASE value WHEN 100 THEN \'one hundred\' WHEN 200 THEN \'two hundred\' ELSE \'other\' END AS label FROM data',
+      }))
+      expect(result).toHaveLength(3)
+      expect(result[0]).toEqual({ id: 1, label: 'one hundred' })
+      expect(result[1]).toEqual({ id: 2, label: 'two hundred' })
+      expect(result[2]).toEqual({ id: 3, label: 'other' })
+    })
   })
 
   describe('arithmetic expressions', () => {

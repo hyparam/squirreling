@@ -293,6 +293,21 @@ describe('WHERE clause', () => {
     expect(result.map(r => r.id)).toEqual([3])
   })
 
+  it('should use loose equality for bigints and numbers in IN lists', async () => {
+    const data = [
+      { id: 1, value: 100n },
+      { id: 2, value: 200 },
+      { id: 3, value: 300n },
+      { id: 4, value: 400 },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT * FROM data WHERE value IN (100, 300)',
+    }))
+    expect(result).toHaveLength(2)
+    expect(result.map(r => r.id)).toEqual([1, 3])
+  })
+
   it('should handle null equality according to SQL semantics', async () => {
     const data = [
       { id: 1, value: null },
