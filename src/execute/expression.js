@@ -178,7 +178,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
           count++
         }
 
-        if (funcName === 'SUM') return sum
+        if (funcName === 'SUM') return count === 0 ? null : sum
         if (funcName === 'AVG') return count === 0 ? null : sum / count
         if (funcName === 'MIN') return min
         if (funcName === 'MAX') return max

@@ -60,12 +60,21 @@ describe('executeSql', () => {
       expect(result).toEqual([{ total: 5 }])
     })
 
-    it('should handle empty dataset for aggregates', async () => {
+    it('should return null for AVG of empty set', async () => {
       const result = await collect(executeSql({
         tables: { users: [] },
         query: 'SELECT AVG(age) FROM users',
       }))
       expect(result).toEqual([{ avg_age: null }])
+    })
+
+    it('should return null for SUM of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { users: [] },
+        query: 'SELECT SUM(age) FROM users',
+      }))
+      // SQL standard: SUM of empty set should be NULL, not 0
+      expect(result).toEqual([{ sum_age: null }])
     })
 
     it('should skip non-numeric values in SUM/AVG/MIN/MAX', async () => {
