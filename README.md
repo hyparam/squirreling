@@ -99,7 +99,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 
 - Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
 - String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`
-- Math: `ABS`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
+- Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
 - Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
 - Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`

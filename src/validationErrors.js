@@ -34,6 +34,7 @@ export const FUNCTION_SIGNATURES = {
   FLOOR: 'number',
   CEIL: 'number',
   CEILING: 'number',
+  ROUND: 'number[, decimals]',
   ABS: 'number',
   MOD: 'dividend, divisor',
   EXP: 'number',

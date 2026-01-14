@@ -23,10 +23,25 @@ export function evaluateMathFunc({ funcName, args }) {
     return Math.ceil(Number(val))
   }
 
+  if (funcName === 'ROUND') {
+    const val = args[0]
+    if (val == null) return null
+    const decimals = args[1] ?? 0
+    if (decimals == null) return null
+    const multiplier = 10 ** Number(decimals)
+    return Math.round(Number(val) * multiplier) / multiplier
+  }
+
   if (funcName === 'ABS') {
     const val = args[0]
     if (val == null) return null
     return Math.abs(Number(val))
+  }
+
+  if (funcName === 'SIGN') {
+    const val = args[0]
+    if (val == null) return null
+    return Math.sign(Number(val))
   }
 
   if (funcName === 'MOD') {

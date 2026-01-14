@@ -22,7 +22,7 @@ export function isRegexpFunc(name) {
  */
 export function isMathFunc(name) {
   return [
-    'FLOOR', 'CEIL', 'CEILING', 'ABS', 'MOD', 'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
+    'FLOOR', 'CEIL', 'CEILING', 'ROUND', 'ABS', 'SIGN', 'MOD', 'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
     'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'DEGREES', 'RADIANS', 'PI',
     'RAND', 'RANDOM',
   ].includes(name)
@@ -88,7 +88,9 @@ export const FUNCTION_ARG_COUNTS = {
   FLOOR: { min: 1, max: 1 },
   CEIL: { min: 1, max: 1 },
   CEILING: { min: 1, max: 1 },
+  ROUND: { min: 1, max: 2 },
   ABS: { min: 1, max: 1 },
+  SIGN: { min: 1, max: 1 },
   MOD: { min: 2, max: 2 },
   EXP: { min: 1, max: 1 },
   LN: { min: 1, max: 1 },
