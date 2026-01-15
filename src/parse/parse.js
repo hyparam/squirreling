@@ -214,8 +214,7 @@ function parseFromSubquery(state) {
   expect(state, 'paren', '(')
   const query = parseSelectInternal(state)
   expect(state, 'paren', ')')
-  expect(state, 'keyword', 'AS')
-  const alias = expectIdentifier(state).value
+  const alias = parseTableAlias(state)
   return { kind: 'subquery', query, alias }
 }
 

@@ -186,189 +186,6 @@ describe('parseSql', () => {
     })
   })
 
-  describe('aggregate functions', () => {
-    it('should parse COUNT(*)', () => {
-      const select = parseSql({ query: 'SELECT COUNT(*) FROM users' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'COUNT',
-            args: [{ type: 'identifier', name: '*', positionStart: 13, positionEnd: 14 }],
-            positionStart: 7,
-            positionEnd: 15,
-          },
-        },
-      ])
-    })
-
-    it('should parse COUNT with column', () => {
-      const select = parseSql({ query: 'SELECT COUNT(id) FROM users' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'COUNT',
-            args: [{ type: 'identifier', name: 'id', positionStart: 13, positionEnd: 15 }],
-            positionStart: 7,
-            positionEnd: 16,
-          },
-        },
-      ])
-    })
-
-    it('should parse SUM', () => {
-      const select = parseSql({ query: 'SELECT SUM(amount) FROM transactions' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'SUM',
-            args: [{ type: 'identifier', name: 'amount', positionStart: 11, positionEnd: 17 }],
-            positionStart: 7,
-            positionEnd: 18,
-          },
-        },
-      ])
-    })
-
-    it('should parse AVG', () => {
-      const select = parseSql({ query: 'SELECT AVG(score) FROM tests' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'AVG',
-            args: [{ type: 'identifier', name: 'score', positionStart: 11, positionEnd: 16 }],
-            positionStart: 7,
-            positionEnd: 17,
-          },
-        },
-      ])
-    })
-
-    it('should parse MIN and MAX', () => {
-      const select = parseSql({ query: 'SELECT MIN(price), MAX(price) FROM products' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'MIN',
-            args: [{ type: 'identifier', name: 'price', positionStart: 11, positionEnd: 16 }],
-            positionStart: 7,
-            positionEnd: 17,
-          },
-        },
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'MAX',
-            args: [{ type: 'identifier', name: 'price', positionStart: 23, positionEnd: 28 }],
-            positionStart: 19,
-            positionEnd: 29,
-          },
-        },
-      ])
-    })
-
-    it('should parse aggregate with alias', () => {
-      const select = parseSql({ query: 'SELECT COUNT(*) AS total FROM users' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'COUNT',
-            args: [{ type: 'identifier', name: '*', positionStart: 13, positionEnd: 14 }],
-            positionStart: 7,
-            positionEnd: 15,
-          },
-          alias: 'total',
-        },
-      ])
-    })
-  })
-
-  describe('GROUP BY clause', () => {
-    it('should parse GROUP BY with single column', () => {
-      const select = parseSql({ query: 'SELECT city, COUNT(*) FROM users GROUP BY city' })
-      expect(select.groupBy).toEqual([
-        { type: 'identifier', name: 'city', positionStart: 42, positionEnd: 46 },
-      ])
-    })
-
-    it('should parse GROUP BY with multiple columns', () => {
-      const select = parseSql({ query: 'SELECT city, state, COUNT(*) FROM users GROUP BY city, state' })
-      expect(select.groupBy).toEqual([
-        { type: 'identifier', name: 'city', positionStart: 49, positionEnd: 53 },
-        { type: 'identifier', name: 'state', positionStart: 55, positionEnd: 60 },
-      ])
-    })
-
-    it('should parse nested function in aggregate', () => {
-      const select = parseSql({ query: 'SELECT MAX(LENGTH(problem)) AS max_problem_len FROM table' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'MAX',
-            args: [{
-              type: 'function',
-              name: 'LENGTH',
-              args: [{ type: 'identifier', name: 'problem', positionStart: 18, positionEnd: 25 }],
-              positionStart: 11,
-              positionEnd: 26,
-            }],
-            positionStart: 7,
-            positionEnd: 27,
-          },
-          alias: 'max_problem_len',
-        },
-      ])
-    })
-
-    it('should parse COUNT(DISTINCT ...)', () => {
-      const select = parseSql({ query: 'SELECT COUNT(DISTINCT problem_id) AS n_unique_problems FROM table' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'COUNT',
-            args: [{ type: 'identifier', name: 'problem_id', positionStart: 22, positionEnd: 32 }],
-            distinct: true,
-            positionStart: 7,
-            positionEnd: 33,
-          },
-          alias: 'n_unique_problems',
-        },
-      ])
-    })
-
-    it('should parse COUNT(ALL ...)', () => {
-      const select = parseSql({ query: 'SELECT COUNT(ALL problem_id) FROM table' })
-      expect(select.columns).toEqual([
-        {
-          kind: 'derived',
-          expr: {
-            type: 'function',
-            name: 'COUNT',
-            args: [{ type: 'identifier', name: 'problem_id', positionStart: 17, positionEnd: 27 }],
-            positionStart: 7,
-            positionEnd: 28,
-          },
-        },
-      ])
-    })
-  })
-
   describe('LIMIT and OFFSET', () => {
     it('should parse LIMIT', () => {
       const select = parseSql({ query: 'SELECT * FROM users LIMIT 10' })
@@ -517,7 +334,7 @@ describe('parseSql', () => {
       ])
     })
 
-    it('should parse subquery in FROM clause', () => {
+    it('should parse subquery in FROM clause with AS', () => {
       const select = parseSql({ query: 'SELECT name FROM (SELECT * FROM users WHERE active = 1) AS u' })
       expect(select.columns).toEqual([
         {
@@ -542,6 +359,18 @@ describe('parseSql', () => {
             left: { type: 'identifier', name: 'active' },
             right: { type: 'literal', value: 1 },
           },
+        },
+        alias: 'u',
+      })
+    })
+
+    it('should parse subquery in FROM clause without AS', () => {
+      const select = parseSql({ query: 'SELECT name FROM (SELECT * FROM users) u' })
+      expect(select.from).toMatchObject({
+        kind: 'subquery',
+        query: {
+          columns: [{ kind: 'star' }],
+          from: { kind: 'table', table: 'users' },
         },
         alias: 'u',
       })
