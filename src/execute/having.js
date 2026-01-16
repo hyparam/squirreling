@@ -28,7 +28,7 @@ export async function evaluateHavingExpr({ expr, row, group, tables, functions }
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
       // Evaluate aggregate function on the group
-      return Boolean(await evaluateAggregateFunction({ funcName, args: expr.args, group, tables, functions }))
+      return Boolean(await evaluateAggregateFunction({ funcName, args: expr.args, filter: expr.filter, group, tables, functions }))
     }
   }
 
@@ -78,7 +78,7 @@ function evaluateHavingValue({ expr, context, group, tables, functions }) {
   if (expr.type === 'function') {
     const funcName = expr.name.toUpperCase()
     if (isAggregateFunc(funcName)) {
-      return evaluateAggregateFunction({ funcName, args: expr.args, group, tables, functions })
+      return evaluateAggregateFunction({ funcName, args: expr.args, filter: expr.filter, group, tables, functions })
     }
   }
 
@@ -96,19 +96,30 @@ function evaluateHavingValue({ expr, context, group, tables, functions }) {
  * @param {Object} options
  * @param {AggregateFunc} options.funcName - aggregate function name
  * @param {ExprNode[]} options.args - function arguments
+ * @param {ExprNode} [options.filter] - optional FILTER clause expression
  * @param {AsyncRow[]} options.group - the group of rows
  * @param {Record<string, AsyncDataSource>} options.tables
  * @param {Record<string, UserDefinedFunction>} [options.functions]
  * @returns {Promise<SqlPrimitive>} the aggregate result
  */
-async function evaluateAggregateFunction({ funcName, args, group, tables, functions }) {
+async function evaluateAggregateFunction({ funcName, args, filter, group, tables, functions }) {
+  // Apply FILTER clause if present
+  let filteredGroup = group
+  if (filter) {
+    filteredGroup = []
+    for (const row of group) {
+      const passes = await evaluateExpr({ node: filter, row, tables, functions })
+      if (passes) filteredGroup.push(row)
+    }
+  }
+
   if (funcName === 'COUNT') {
     if (args.length === 1 && args[0].type === 'identifier' && args[0].name === '*') {
-      return group.length
+      return filteredGroup.length
     }
     // COUNT(column) - count non-null values
     let count = 0
-    for (const row of group) {
+    for (const row of filteredGroup) {
       const val = await evaluateExpr({ node: args[0], row, tables, functions })
       if (val != null) count++
     }
@@ -117,17 +128,21 @@ async function evaluateAggregateFunction({ funcName, args, group, tables, functi
 
   if (funcName === 'SUM') {
     let sum = 0
-    for (const row of group) {
+    let hasValue = false
+    for (const row of filteredGroup) {
       const val = await evaluateExpr({ node: args[0], row, tables, functions })
-      if (val != null) sum += Number(val)
+      if (val != null) {
+        sum += Number(val)
+        hasValue = true
+      }
     }
-    return sum
+    return hasValue ? sum : null
   }
 
   if (funcName === 'AVG') {
     let sum = 0
     let count = 0
-    for (const row of group) {
+    for (const row of filteredGroup) {
       const val = await evaluateExpr({ node: args[0], row, tables, functions })
       if (val != null) {
         sum += Number(val)
@@ -139,7 +154,7 @@ async function evaluateAggregateFunction({ funcName, args, group, tables, functi
 
   if (funcName === 'MIN') {
     let min = null
-    for (const row of group) {
+    for (const row of filteredGroup) {
       const val = await evaluateExpr({ node: args[0], row, tables, functions })
       if (val != null && (min == null || val < min)) {
         min = val
@@ -150,7 +165,7 @@ async function evaluateAggregateFunction({ funcName, args, group, tables, functi
 
   if (funcName === 'MAX') {
     let max = null
-    for (const row of group) {
+    for (const row of filteredGroup) {
       const val = await evaluateExpr({ node: args[0], row, tables, functions })
       if (val != null && (max == null || val > max)) {
         max = val
@@ -161,7 +176,7 @@ async function evaluateAggregateFunction({ funcName, args, group, tables, functi
 
   if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
     const values = []
-    for (const row of group) {
+    for (const row of filteredGroup) {
       const val = await evaluateExpr({ node: args[0], row, tables, functions })
       if (val == null) continue
       const num = Number(val)

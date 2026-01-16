@@ -56,6 +56,7 @@ const KEYWORDS = new Set([
   'HOUR',
   'MINUTE',
   'SECOND',
+  'FILTER',
 ])
 
 /**

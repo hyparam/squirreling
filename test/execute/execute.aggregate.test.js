@@ -374,4 +374,172 @@ describe('executeSql', () => {
       expect(result).toEqual([{ avg_price: 25 }]) // 100 / 4 = 25
     })
   })
+
+  describe('FILTER clause', () => {
+    const orders = [
+      { id: 1, status: 'complete', amount: 100 },
+      { id: 2, status: 'pending', amount: 50 },
+      { id: 3, status: 'complete', amount: 200 },
+      { id: 4, status: 'cancelled', amount: 75 },
+      { id: 5, status: 'complete', amount: 150 },
+    ]
+
+    it('should count with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT COUNT(*) FILTER (WHERE status = \'complete\') AS complete_count FROM orders',
+      }))
+      expect(result).toEqual([{ complete_count: 3 }])
+    })
+
+    it('should sum with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT SUM(amount) FILTER (WHERE status = \'complete\') AS complete_total FROM orders',
+      }))
+      expect(result).toEqual([{ complete_total: 450 }])
+    })
+
+    it('should handle AVG with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT AVG(amount) FILTER (WHERE status = \'complete\') AS avg_complete FROM orders',
+      }))
+      expect(result).toEqual([{ avg_complete: 150 }])
+    })
+
+    it('should handle MIN/MAX with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: `SELECT
+          MIN(amount) FILTER (WHERE status = 'complete') AS min_complete,
+          MAX(amount) FILTER (WHERE status = 'complete') AS max_complete
+        FROM orders`,
+      }))
+      expect(result).toEqual([{ min_complete: 100, max_complete: 200 }])
+    })
+
+    it('should handle multiple aggregates with different filters', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: `SELECT
+          COUNT(*) FILTER (WHERE status = 'complete') AS complete_count,
+          COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+          SUM(amount) AS total
+        FROM orders`,
+      }))
+      expect(result).toEqual([{
+        complete_count: 3,
+        pending_count: 1,
+        total: 575,
+      }])
+    })
+
+    it('should handle FILTER with GROUP BY', async () => {
+      const sales = [
+        { region: 'North', type: 'online', amount: 100 },
+        { region: 'North', type: 'store', amount: 150 },
+        { region: 'North', type: 'online', amount: 50 },
+        { region: 'South', type: 'online', amount: 200 },
+        { region: 'South', type: 'store', amount: 100 },
+      ]
+      const result = await collect(executeSql({
+        tables: { sales },
+        query: `SELECT
+          region,
+          SUM(amount) AS total,
+          SUM(amount) FILTER (WHERE type = 'online') AS online_total
+        FROM sales
+        GROUP BY region
+        ORDER BY region`,
+      }))
+      expect(result).toEqual([
+        { region: 'North', total: 300, online_total: 150 },
+        { region: 'South', total: 300, online_total: 200 },
+      ])
+    })
+
+    it('should return null for SUM when filter excludes all rows', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT SUM(amount) FILTER (WHERE status = \'nonexistent\') AS total FROM orders',
+      }))
+      expect(result).toEqual([{ total: null }])
+    })
+
+    it('should return 0 for COUNT when filter excludes all rows', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT COUNT(*) FILTER (WHERE status = \'nonexistent\') AS count FROM orders',
+      }))
+      expect(result).toEqual([{ count: 0 }])
+    })
+
+    it('should handle FILTER with COUNT(DISTINCT)', async () => {
+      const data = [
+        { category: 'A', value: 1 },
+        { category: 'A', value: 1 },
+        { category: 'B', value: 2 },
+        { category: 'B', value: 3 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COUNT(DISTINCT value) FILTER (WHERE category = \'B\') AS distinct_b FROM data',
+      }))
+      expect(result).toEqual([{ distinct_b: 2 }])
+    })
+
+    it('should handle FILTER with JSON_ARRAYAGG', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT JSON_ARRAYAGG(amount) FILTER (WHERE status = \'complete\') AS amounts FROM orders',
+      }))
+      expect(result).toEqual([{ amounts: [100, 200, 150] }])
+    })
+
+    it('should handle FILTER with STDDEV functions', async () => {
+      const data = [
+        { grp: 'A', value: 10 },
+        { grp: 'A', value: 20 },
+        { grp: 'B', value: 100 },
+        { grp: 'B', value: 200 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STDDEV_POP(value) FILTER (WHERE grp = \'A\') AS stddev FROM data',
+      }))
+      expect(result[0].stddev).toBe(5) // sqrt((25 + 25) / 2) = sqrt(25) = 5
+    })
+
+    it('should throw error for FILTER on non-aggregate function', async () => {
+      await expect(async () => {
+        await collect(executeSql({
+          tables: { orders },
+          query: 'SELECT UPPER(status) FILTER (WHERE amount > 100) FROM orders',
+        }))
+      }).rejects.toThrow(/FILTER/)
+    })
+
+    it('should handle FILTER in HAVING clause', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: `SELECT status, COUNT(*) AS count
+          FROM orders
+          GROUP BY status
+          HAVING COUNT(*) FILTER (WHERE amount > 100) > 0
+          ORDER BY status`,
+      }))
+      expect(result).toEqual([{ status: 'complete', count: 3 }])
+    })
+
+    it('should handle complex filter expressions', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: `SELECT
+          SUM(amount) FILTER (WHERE status = 'complete' AND amount >= 150) AS large_complete
+        FROM orders`,
+      }))
+      expect(result).toEqual([{ large_complete: 350 }]) // 200 + 150
+    })
+  })
 })

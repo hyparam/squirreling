@@ -123,10 +123,20 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         })
       }
 
+      // Apply FILTER clause if present
+      let filteredRows = rows
+      if (node.filter) {
+        filteredRows = []
+        for (const row of rows) {
+          const passes = await evaluateExpr({ node: node.filter, row, tables, functions })
+          if (passes) filteredRows.push(row)
+        }
+      }
+
       // Check for star argument (COUNT(*))
       if (node.args.length === 1 && node.args[0].type === 'identifier' && node.args[0].name === '*') {
         if (funcName === 'COUNT') {
-          return rows.length
+          return filteredRows.length
         }
         throw aggregateError({
           funcName,
@@ -139,15 +149,15 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       if (funcName === 'COUNT') {
         if (node.distinct) {
           const seen = new Set()
-          for (const r of rows) {
-            const v = await evaluateExpr({ node: argNode, row: r, tables, functions })
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, tables, functions })
             if (v != null) seen.add(v)
           }
           return seen.size
         }
         let count = 0
-        for (const r of rows) {
-          const v = await evaluateExpr({ node: argNode, row: r, tables, functions })
+        for (const row of filteredRows) {
+          const v = await evaluateExpr({ node: argNode, row, tables, functions })
           if (v != null) count++
         }
         return count
@@ -161,8 +171,8 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         /** @type {number | null} */
         let max = null
 
-        for (const r of rows) {
-          const raw = await evaluateExpr({ node: argNode, row: r, tables, functions })
+        for (const row of filteredRows) {
+          const raw = await evaluateExpr({ node: argNode, row, tables, functions })
           if (raw == null) continue
           const num = Number(raw)
           if (!Number.isFinite(num)) continue
@@ -186,8 +196,8 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
 
       if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
         const values = []
-        for (const r of rows) {
-          const raw = await evaluateExpr({ node: argNode, row: r, tables, functions })
+        for (const row of filteredRows) {
+          const raw = await evaluateExpr({ node: argNode, row, tables, functions })
           if (raw == null) continue
           const num = Number(raw)
           if (!Number.isFinite(num)) continue
@@ -208,8 +218,8 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         const values = []
         if (node.distinct) {
           const seen = new Set()
-          for (const r of rows) {
-            const v = await evaluateExpr({ node: argNode, row: r, tables, functions })
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, tables, functions })
             const key = stringify(v)
             if (!seen.has(key)) {
               seen.add(key)
@@ -217,8 +227,8 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
             }
           }
         } else {
-          for (const r of rows) {
-            const v = await evaluateExpr({ node: argNode, row: r, tables, functions })
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, tables, functions })
             values.push(v)
           }
         }

@@ -141,6 +141,7 @@ export interface FunctionNode extends ExprNodeBase {
   name: string
   args: ExprNode[]
   distinct?: boolean
+  filter?: ExprNode
 }
 
 export interface CastNode extends ExprNodeBase {

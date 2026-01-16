@@ -1,5 +1,5 @@
-import { argCountParseError } from '../parseErrors.js'
-import { validateFunctionArgCount } from '../validation.js'
+import { argCountParseError, syntaxError } from '../parseErrors.js'
+import { isAggregateFunc, validateFunctionArgCount } from '../validation.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, lastPosition, match } from './state.js'
 
@@ -52,6 +52,26 @@ export function parseFunctionCall(state, funcName, positionStart) {
 
   expect(state, 'paren', ')')
 
+  // Check for FILTER clause (only valid for aggregate functions)
+  /** @type {ExprNode | undefined} */
+  let filter
+  if (current(state).type === 'keyword' && current(state).value === 'FILTER') {
+    const funcNameUpper = funcName.toUpperCase()
+    if (!isAggregateFunc(funcNameUpper)) {
+      throw syntaxError({
+        expected: 'aggregate function for FILTER clause',
+        received: `FILTER on non-aggregate function "${funcName}"`,
+        positionStart: current(state).positionStart,
+        positionEnd: current(state).positionEnd,
+      })
+    }
+    consume(state) // FILTER
+    expect(state, 'paren', '(')
+    expect(state, 'keyword', 'WHERE')
+    filter = parseExpression(state)
+    expect(state, 'paren', ')')
+  }
+
   // Validate argument count at parse time
   const funcNameUpper = funcName.toUpperCase()
   const validation = validateFunctionArgCount(funcNameUpper, args.length, state.functions)
@@ -70,6 +90,7 @@ export function parseFunctionCall(state, funcName, positionStart) {
     name: funcName,
     args,
     distinct: distinct || undefined,
+    filter,
     positionStart,
     positionEnd: lastPosition(state),
   }
