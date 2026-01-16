@@ -211,7 +211,7 @@ export interface StarColumn {
   alias?: string
 }
 
-export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG'
+export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP'
 
 export type MathFunc =
   | 'FLOOR'

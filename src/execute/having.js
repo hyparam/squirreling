@@ -159,10 +159,29 @@ async function evaluateAggregateFunction({ funcName, args, group, tables, functi
     return max
   }
 
+  if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
+    const values = []
+    for (const row of group) {
+      const val = await evaluateExpr({ node: args[0], row, tables, functions })
+      if (val == null) continue
+      const num = Number(val)
+      if (!Number.isFinite(num)) continue
+      values.push(num)
+    }
+    const n = values.length
+    if (n === 0) return null
+    if (funcName === 'STDDEV_SAMP' && n === 1) return null
+
+    const mean = values.reduce((a, b) => a + b, 0) / n
+    const squaredDiffs = values.reduce((acc, val) => acc + (val - mean) ** 2, 0)
+    const divisor = funcName === 'STDDEV_SAMP' ? n - 1 : n
+    return Math.sqrt(squaredDiffs / divisor)
+  }
+
   throw unknownFunctionError({
     funcName,
     positionStart: 0,
     positionEnd: 0,
-    validFunctions: 'COUNT, SUM, AVG, MIN, MAX',
+    validFunctions: 'COUNT, SUM, AVG, MIN, MAX, STDDEV_SAMP, STDDEV_POP',
   })
 }

@@ -184,6 +184,25 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         if (funcName === 'MAX') return max
       }
 
+      if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
+        const values = []
+        for (const r of rows) {
+          const raw = await evaluateExpr({ node: argNode, row: r, tables, functions })
+          if (raw == null) continue
+          const num = Number(raw)
+          if (!Number.isFinite(num)) continue
+          values.push(num)
+        }
+        const n = values.length
+        if (n === 0) return null
+        if (funcName === 'STDDEV_SAMP' && n === 1) return null
+
+        const mean = values.reduce((a, b) => a + b, 0) / n
+        const squaredDiffs = values.reduce((acc, val) => acc + (val - mean) ** 2, 0)
+        const divisor = funcName === 'STDDEV_SAMP' ? n - 1 : n
+        return Math.sqrt(squaredDiffs / divisor)
+      }
+
       if (funcName === 'JSON_ARRAYAGG') {
         /** @type {SqlPrimitive[]} */
         const values = []

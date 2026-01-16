@@ -209,6 +209,96 @@ describe('executeSql', () => {
       }))
       expect(result).toEqual([{ names: [] }])
     })
+
+    it('should calculate STDDEV_POP', async () => {
+      // Values: 2, 4, 4, 4, 5, 5, 7, 9 => mean=5, sum of squared diffs=32, stddev_pop=sqrt(32/8)=2
+      const data = [
+        { value: 2 }, { value: 4 }, { value: 4 }, { value: 4 },
+        { value: 5 }, { value: 5 }, { value: 7 }, { value: 9 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STDDEV_POP(value) AS stddev FROM data',
+      }))
+      expect(result[0].stddev).toBe(2)
+    })
+
+    it('should calculate STDDEV_SAMP', async () => {
+      // Values: 2, 4, 4, 4, 5, 5, 7, 9 => mean=5, sum of squared diffs=32, stddev_samp=sqrt(32/7)
+      const data = [
+        { value: 2 }, { value: 4 }, { value: 4 }, { value: 4 },
+        { value: 5 }, { value: 5 }, { value: 7 }, { value: 9 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STDDEV_SAMP(value) AS stddev FROM data',
+      }))
+      expect(result[0].stddev).toBeCloseTo(Math.sqrt(32 / 7), 10)
+    })
+
+    it('should return null for STDDEV of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { data: [] },
+        query: 'SELECT STDDEV_POP(value) AS pop, STDDEV_SAMP(value) AS samp FROM data',
+      }))
+      expect(result).toEqual([{ pop: null, samp: null }])
+    })
+
+    it('should return 0 for STDDEV_POP of single value', async () => {
+      const data = [{ value: 42 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STDDEV_POP(value) AS stddev FROM data',
+      }))
+      expect(result[0].stddev).toBe(0)
+    })
+
+    it('should return null for STDDEV_SAMP of single value', async () => {
+      const data = [{ value: 42 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STDDEV_SAMP(value) AS stddev FROM data',
+      }))
+      expect(result[0].stddev).toBe(null)
+    })
+
+    it('should skip nulls in STDDEV calculations', async () => {
+      const data = [
+        { value: 2 }, { value: null }, { value: 4 }, { value: 4 }, { value: 4 },
+        { value: 5 }, { value: 5 }, { value: 7 }, { value: 9 }, { value: null },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STDDEV_POP(value) AS stddev FROM data',
+      }))
+      expect(result[0].stddev).toBe(2)
+    })
+
+    it('should handle STDDEV with GROUP BY', async () => {
+      const data = [
+        { category: 'A', value: 10 },
+        { category: 'A', value: 20 },
+        { category: 'A', value: 30 },
+        { category: 'B', value: 5 },
+        { category: 'B', value: 5 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT category, STDDEV_POP(value) AS stddev FROM data GROUP BY category ORDER BY category',
+      }))
+      // A: mean=20, squared diffs=100+0+100=200, stddev_pop=sqrt(200/3)
+      // B: all values same, stddev_pop=0
+      expect(result[0].category).toBe('A')
+      expect(result[0].stddev).toBeCloseTo(Math.sqrt(200 / 3), 10)
+      expect(result[1].category).toBe('B')
+      expect(result[1].stddev).toBe(0)
+    })
+
+    it('should throw error for STDDEV(*)', async () => {
+      await expect(async () => {
+        await collect(executeSql({ tables: { users }, query: 'SELECT STDDEV_POP(*) FROM users' }))
+      }).rejects.toThrow('STDDEV_POP(*) is not supported')
+    })
   })
 
   describe('null handling in aggregates', () => {

@@ -5,7 +5,7 @@
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG'].includes(name)
+  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP'].includes(name)
 }
 
 /**
@@ -124,6 +124,8 @@ export const FUNCTION_ARG_COUNTS = {
   AVG: { min: 1, max: 1 },
   MIN: { min: 1, max: 1 },
   MAX: { min: 1, max: 1 },
+  STDDEV_SAMP: { min: 1, max: 1 },
+  STDDEV_POP: { min: 1, max: 1 },
 }
 
 /**
