@@ -40,7 +40,7 @@
     "@types/node": "25.0.9",
     "@vitest/coverage-v8": "4.0.17",
     "eslint": "9.39.2",
-    "eslint-plugin-jsdoc": "62.0.0",
+    "eslint-plugin-jsdoc": "62.1.0",
     "typescript": "5.9.3",
     "vitest": "4.0.17"
   }

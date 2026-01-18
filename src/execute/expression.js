@@ -268,6 +268,13 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       return null
     }
 
+    if (funcName === 'NULLIF') {
+      // NULLIF(a, b) returns null if a = b, otherwise returns a
+      const val1 = await evaluateExpr({ node: node.args[0], row, tables, functions, rowIndex, rows })
+      const val2 = await evaluateExpr({ node: node.args[1], row, tables, functions, rowIndex, rows })
+      return val1 == val2 ? null : val1
+    }
+
     if (funcName === 'CURRENT_DATE') {
       return new Date().toISOString().split('T')[0]
     }

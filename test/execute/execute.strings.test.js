@@ -792,6 +792,121 @@ describe('string functions', () => {
     })
   })
 
+  describe('NULLIF', () => {
+    it('should return null when values are equal', async () => {
+      const data = [
+        { id: 1, a: 'same', b: 'same' },
+        { id: 2, a: 10, b: 10 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: null },
+        { result: null },
+      ])
+    })
+
+    it('should return first value when values are different', async () => {
+      const data = [
+        { id: 1, a: 'first', b: 'second' },
+        { id: 2, a: 10, b: 20 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: 'first' },
+        { result: 10 },
+      ])
+    })
+
+    it('should work with literal values', async () => {
+      const data = [{ id: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(5, 5) AS result FROM data',
+      }))
+      expect(result[0].result).toBeNull()
+    })
+
+    it('should return first value with different literals', async () => {
+      const data = [{ id: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(5, 10) AS result FROM data',
+      }))
+      expect(result[0].result).toBe(5)
+    })
+
+    it('should handle null first argument', async () => {
+      const data = [{ id: 1, a: NULL, b: 'value' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) AS result FROM data',
+      }))
+      expect(result[0].result).toBeNull()
+    })
+
+    it('should handle null second argument', async () => {
+      const data = [{ id: 1, a: 'value', b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) AS result FROM data',
+      }))
+      expect(result[0].result).toBe('value')
+    })
+
+    it('should return null when both arguments are null', async () => {
+      const data = [{ id: 1, a: NULL, b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) AS result FROM data',
+      }))
+      expect(result[0].result).toBeNull()
+    })
+
+    it('should work in WHERE clause', async () => {
+      const data = [
+        { id: 1, status: 'active' },
+        { id: 2, status: 'inactive' },
+        { id: 3, status: 'active' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE NULLIF(status, \'inactive\') IS NOT NULL',
+      }))
+      expect(result).toEqual([{ id: 1 }, { id: 3 }])
+    })
+
+    it('should work without alias', async () => {
+      const data = [{ id: 1, a: 'x', b: 'y' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) FROM data',
+      }))
+      expect(result[0]).toHaveProperty('nullif_a_b')
+      expect(result[0].nullif_a_b).toBe('x')
+    })
+
+    it('should use loose equality for comparison', async () => {
+      const data = [
+        { id: 1, a: 0, b: '0' },
+        { id: 2, a: 1, b: '1' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT NULLIF(a, b) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: null },
+        { result: null },
+      ])
+    })
+  })
+
   describe('combined string functions', () => {
     it('should use multiple different string functions in one query', async () => {
       const result = await collect(executeSql({

@@ -117,6 +117,7 @@ export const FUNCTION_ARG_COUNTS = {
 
   // Conditional functions
   COALESCE: { min: 1 },
+  NULLIF: { min: 2, max: 2 },
 
   // Aggregate functions
   COUNT: { min: 1, max: 1 },
@@ -194,7 +195,7 @@ export function isKnownFunction(funcName, functions) {
   if ([
     'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
     'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
-    'COALESCE', 'CAST',
+    'COALESCE', 'NULLIF', 'CAST',
   ].includes(funcName)) {
     return true
   }

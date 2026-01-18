@@ -104,4 +104,5 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
 - Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_REPLACE`
+- Conditional: `COALESCE`, `NULLIF`
 - User-defined functions (UDFs)
