@@ -24,21 +24,15 @@ export function parseJoins(state) {
         joinType = 'INNER'
       } else if (tok.value === 'LEFT') {
         consume(state)
-        if (match(state, 'keyword', 'OUTER')) {
-          // LEFT OUTER JOIN
-        }
+        match(state, 'keyword', 'OUTER') // LEFT OUTER JOIN
         joinType = 'LEFT'
       } else if (tok.value === 'RIGHT') {
         consume(state)
-        if (match(state, 'keyword', 'OUTER')) {
-          // RIGHT OUTER JOIN
-        }
+        match(state, 'keyword', 'OUTER') // RIGHT OUTER JOIN
         joinType = 'RIGHT'
       } else if (tok.value === 'FULL') {
         consume(state)
-        if (match(state, 'keyword', 'OUTER')) {
-          // FULL OUTER JOIN
-        }
+        match(state, 'keyword', 'OUTER') // FULL OUTER JOIN
         joinType = 'FULL'
       } else if (tok.value === 'POSITIONAL') {
         consume(state)

@@ -66,6 +66,8 @@ export const FUNCTION_SIGNATURES = {
   AVG: 'expression',
   MIN: 'expression',
   MAX: 'expression',
+  STDDEV_SAMP: 'expression',
+  STDDEV_POP: 'expression',
 }
 
 /**
