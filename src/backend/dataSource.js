@@ -1,5 +1,5 @@
 /**
- * @import { AsyncCell, AsyncCells, AsyncDataSource, AsyncRow, ScanOptions, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ScanOptions, SqlPrimitive } from '../types.js'
  */
 
 /**
