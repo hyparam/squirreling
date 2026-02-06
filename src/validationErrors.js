@@ -79,13 +79,13 @@ export const FUNCTION_SIGNATURES = {
  * @param {number} options.positionStart - Start position in query
  * @param {number} options.positionEnd - End position in query
  * @param {string} [options.hint] - Recovery hint
- * @param {number} [options.rowNumber] - 1-based row number where error occurred
+ * @param {number} [options.rowIndex] - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
-export function argValueError({ funcName, message, positionStart, positionEnd, hint, rowNumber }) {
+export function argValueError({ funcName, message, positionStart, positionEnd, hint, rowIndex }) {
   const signature = FUNCTION_SIGNATURES[funcName] ?? ''
   const suffix = hint ? `. ${hint}` : ''
-  return new ExecutionError({ message: `${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd, rowNumber })
+  return new ExecutionError({ message: `${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd, rowIndex })
 }
 
 /**
@@ -108,13 +108,13 @@ export function aggregateError({ funcName, issue }) {
  * @param {number} options.positionStart - Start position in query
  * @param {number} options.positionEnd - End position in query
  * @param {string} [options.fromType] - The source type (optional)
- * @param {number} [options.rowNumber] - 1-based row number where error occurred
+ * @param {number} [options.rowIndex] - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
-export function castError({ toType, positionStart, positionEnd, fromType, rowNumber }) {
+export function castError({ toType, positionStart, positionEnd, fromType, rowIndex }) {
   const message = fromType
     ? `Cannot CAST ${fromType} to ${toType}`
     : `Unsupported CAST to type ${toType}`
 
-  return new ExecutionError({ message: `${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd, rowNumber })
+  return new ExecutionError({ message: `${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd, rowIndex })
 }

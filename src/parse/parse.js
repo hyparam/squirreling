@@ -1,7 +1,7 @@
 import { parseExpression } from './expression.js'
-import { tokenizeSql } from './tokenize.js'
-import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
 import { parseJoins } from './joins.js'
+import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
+import { tokenizeSql } from './tokenize.js'
 import { duplicateCTEError } from '../parseErrors.js'
 import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isKnownFunction } from '../validation.js'
 

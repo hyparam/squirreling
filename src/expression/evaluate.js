@@ -1,13 +1,14 @@
-import { unknownFunctionError } from '../parseErrors.js'
+import { executeSelect } from '../execute/execute.js'
+import { stringify } from '../execute/utils.js'
 import { columnNotFoundError, invalidContextError } from '../executionErrors.js'
+import { unknownFunctionError } from '../parseErrors.js'
 import { aggregateError, argValueError, castError } from '../validationErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isStringFunc } from '../validation.js'
+import { applyBinaryOp } from './binary.js'
 import { applyIntervalToDate } from './date.js'
-import { executeSelect } from './execute.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
 import { evaluateStringFunc } from './strings.js'
-import { applyBinaryOp, stringify } from './utils.js'
 
 /**
  * @import { ExprNode, AsyncRow, SqlPrimitive, AsyncDataSource, UserDefinedFunction } from '../types.js'
@@ -53,7 +54,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       availableColumns: Object.keys(row.cells),
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
-      rowNumber: rowIndex,
+      rowIndex,
     })
   }
 
@@ -68,25 +69,19 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
 
   // Unary operators
   if (node.type === 'unary') {
-    if (node.op === 'NOT') {
-      return !await evaluateExpr({ node: node.argument, row, tables, functions, rowIndex, rows, aliases })
-    }
-    if (node.op === 'IS NULL') {
-      return await evaluateExpr({ node: node.argument, row, tables, functions, rowIndex, rows, aliases }) == null
-    }
-    if (node.op === 'IS NOT NULL') {
-      return await evaluateExpr({ node: node.argument, row, tables, functions, rowIndex, rows, aliases }) != null
-    }
+    const val = await evaluateExpr({ node: node.argument, row, tables, functions, rowIndex, rows, aliases })
     if (node.op === '-') {
-      const val = await evaluateExpr({ node: node.argument, row, tables, functions, rowIndex, rows, aliases })
       if (val == null) return null
       return -val
     }
+    if (node.op === 'NOT') return !val
+    if (node.op === 'IS NULL') return val == null
+    if (node.op === 'IS NOT NULL') return val != null
   }
 
   // Binary operators
   if (node.type === 'binary') {
-    // Handle date +/- interval at AST level
+    // Handle date +/- interval
     if ((node.op === '+' || node.op === '-') && node.right.type === 'interval') {
       const dateVal = await evaluateExpr({ node: node.left, row, tables, functions, rowIndex, rows, aliases })
       return applyIntervalToDate(dateVal, node.right.value, node.right.unit, node.op)
@@ -99,12 +94,8 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
     const left = await evaluateExpr({ node: node.left, row, tables, functions, rowIndex, rows, aliases })
 
     // Short-circuit evaluation for AND and OR
-    if (node.op === 'AND') {
-      if (!left) return false
-    }
-    if (node.op === 'OR') {
-      if (left) return true
-    }
+    if (node.op === 'AND' && !left) return false
+    if (node.op === 'OR' && left) return true
 
     const right = await evaluateExpr({ node: node.right, row, tables, functions, rowIndex, rows, aliases })
     return applyBinaryOp(node.op, left, right)
@@ -259,6 +250,10 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       })
     }
 
+    if (isMathFunc(funcName)) {
+      return evaluateMathFunc({ funcName, args })
+    }
+
     if (funcName === 'COALESCE') {
       // Short-circuit: evaluate args one at a time, return first non-null
       for (const arg of node.args) {
@@ -294,7 +289,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
           message: 'requires an even number of arguments (key-value pairs)',
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
       /** @type {Record<string, SqlPrimitive>} */
@@ -309,7 +304,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
             positionStart: node.positionStart,
             positionEnd: node.positionEnd,
             hint: 'All keys must be non-null values.',
-            rowNumber: rowIndex,
+            rowIndex,
           })
         }
         result[String(key)] = value
@@ -333,7 +328,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
             positionStart: node.positionStart,
             positionEnd: node.positionEnd,
             hint: 'First argument must be valid JSON.',
-            rowNumber: rowIndex,
+            rowIndex,
           })
         }
       }
@@ -343,7 +338,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
           message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
           positionStart: node.positionStart,
           positionEnd: node.positionEnd,
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
 
@@ -371,10 +366,6 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
 
       if (current == null) return null
       return current
-    }
-
-    if (isMathFunc(funcName)) {
-      return evaluateMathFunc({ funcName, args })
     }
 
     // Check user-defined functions (case-insensitive lookup)
@@ -407,7 +398,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         positionStart: node.positionStart,
         positionEnd: node.positionEnd,
         fromType: 'object',
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
     if (toType === 'INTEGER' || toType === 'INT') {
@@ -430,7 +421,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       toType: node.toType,
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
-      rowNumber: rowIndex,
+      rowIndex,
     })
   }
 
@@ -501,7 +492,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       validContext: 'date arithmetic (+ or -)',
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
-      rowNumber: rowIndex,
+      rowIndex,
     })
   }
 

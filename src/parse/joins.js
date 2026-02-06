@@ -3,7 +3,10 @@ import { parseTableAlias } from './parse.js'
 import { consume, current, expect, expectIdentifier, match } from './state.js'
 
 /**
- * @import { JoinClause, JoinType, ParserState } from '../types.js'
+ * @import { ExprNode, JoinClause, JoinType, ParserState } from '../types.js'
+ */
+
+/**
  * @param {ParserState} state
  * @returns {JoinClause[]}
  */
@@ -59,7 +62,7 @@ export function parseJoins(state) {
     const tableAlias = parseTableAlias(state)
 
     // Parse ON condition (not for POSITIONAL joins)
-    /** @type {import('../types.js').ExprNode | undefined} */
+    /** @type {ExprNode | undefined} */
     let condition
     if (joinType !== 'POSITIONAL') {
       expect(state, 'keyword', 'ON')

@@ -2,6 +2,7 @@ import { syntaxError } from '../parseErrors.js'
 
 /**
  * @import { ParserState, Token, TokenType } from '../types.js'
+ * @import { ParseError } from '../parseErrors.js'
  */
 
 /**
@@ -93,7 +94,7 @@ export function expectIdentifier(state) {
  * Helper function to create consistent parser error messages.
  * @param {ParserState} state
  * @param {string} expected - Description of what was expected
- * @returns {import('../parseErrors.js').ParseError}
+ * @returns {ParseError}
  */
 export function parseError(state, expected) {
   const tok = current(state)

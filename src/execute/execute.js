@@ -1,10 +1,9 @@
 import { missingClauseError } from '../parseErrors.js'
 import { unsupportedOperationError } from '../executionErrors.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
+import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { containsAggregate, extractColumns } from './columns.js'
-import { evaluateExpr } from './expression.js'
-import { evaluateHavingExpr } from './having.js'
 import { executeJoins } from './join.js'
 import { resolveTableSource } from './tableSource.js'
 import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
@@ -451,7 +450,8 @@ async function* evaluateBuffered({ select, dataSource, tables, functions, hasAgg
 
       // Apply HAVING filter before adding to projected results
       if (select.having) {
-        if (!await evaluateHavingExpr({ expr: select.having, row: asyncRow, group, tables, functions })) {
+        const context = { ...group[0], ...asyncRow }
+        if (!await evaluateExpr({ node: select.having, row: context, tables, functions, rows: group })) {
           continue
         }
       }

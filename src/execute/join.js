@@ -1,5 +1,5 @@
 import { missingClauseError } from '../parseErrors.js'
-import { evaluateExpr } from './expression.js'
+import { evaluateExpr } from '../expression/evaluate.js'
 import { resolveTableSource } from './tableSource.js'
 import { stringify } from './utils.js'
 

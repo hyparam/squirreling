@@ -3,28 +3,12 @@
  */
 
 /**
- * @param {SqlPrimitive} val
- * @returns {Date | null}
- */
-function toDate(val) {
-  if (val instanceof Date) return val
-  const dateOrTime = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/
-  if (typeof val === 'string' && dateOrTime.test(val)) {
-    const date = new Date(val)
-    if (!isNaN(date.getTime())) {
-      return date
-    }
-  }
-  return null
-}
-
-/**
  * Apply an interval to a date
  * @param {SqlPrimitive} dateVal
  * @param {number} value
  * @param {IntervalUnit} unit
  * @param {'+' | '-'} op
- * @returns {string | null}
+ * @returns {Date | string | null}
  */
 export function applyIntervalToDate(dateVal, value, unit, op) {
   const date = toDate(dateVal)
@@ -48,10 +32,26 @@ export function applyIntervalToDate(dateVal, value, unit, op) {
   }
 
   // Return in same format as input
-  if (dateVal instanceof Date) return date.toISOString()
+  if (dateVal instanceof Date) return date
   if (String(dateVal).includes('T')) {
     return date.toISOString()
   } else {
     return date.toISOString().split('T')[0]
   }
+}
+
+/**
+ * @param {SqlPrimitive} val
+ * @returns {Date | null}
+ */
+function toDate(val) {
+  if (val instanceof Date) return val
+  const dateOrTime = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/
+  if (typeof val === 'string' && dateOrTime.test(val)) {
+    const date = new Date(val)
+    if (!isNaN(date.getTime())) {
+      return date
+    }
+  }
+  return null
 }

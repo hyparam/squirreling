@@ -36,11 +36,13 @@ SQL string → parse → SelectStatement → execute → AsyncIterable<AsyncRow>
 - `parse.js` - recursive descent parser producing `SelectStatement` AST
 - `expression.js` - expression parser with operator precedence
 
+**Expression Evaluator** (`src/expression/`):
+- `evaluate.js` - evaluates expression AST nodes against rows
+- `strings.js`, `math.js`, `regexp.js`, `date.js` - built-in function implementations
+
 **Executor** (`src/execute/`):
 - `execute.js` - main entry point, orchestrates query execution
-- `expression.js` - evaluates expression nodes against rows
 - `join.js` - implements JOIN operations
-- `having.js` - HAVING clause evaluation for aggregates
 
 ### Core Types
 

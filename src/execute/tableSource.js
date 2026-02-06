@@ -6,28 +6,11 @@ import { generatorSource } from '../backend/dataSource.js'
  */
 
 /**
- * Gets CTEs defined before the target CTE (excluding the target itself).
- * Enforces SQL scoping rules: each CTE can only reference CTEs defined before it.
- *
- * @param {CTEDefinition[]} allCtes - all CTE definitions in order
- * @param {string} targetCteName - the CTE name (case-insensitive)
- * @returns {WithClause} CTEs available to the target
- */
-export function getCtesDefinedBefore(allCtes, targetCteName) {
-  const available = []
-  for (const cte of allCtes) {
-    if (cte.name.toLowerCase() === targetCteName) break
-    available.push(cte)
-  }
-  return { ctes: available }
-}
-
-/**
  * Resolves a table name to an AsyncDataSource, checking CTEs first
  *
  * @param {string} tableName - the table name to resolve
  * @param {Record<string, AsyncDataSource>} tables - regular tables
- * @param {import('../types.js').WithClause} [withClause] - WITH clause containing CTE definitions
+ * @param {WithClause} [withClause] - WITH clause containing CTE definitions
  * @param {Function} [executeSelectFn] - function to execute SELECT for CTEs
  * @param {Record<string, UserDefinedFunction>} [functions]
  * @param {AbortSignal} [signal]
@@ -60,4 +43,21 @@ export function resolveTableSource(tableName, tables, withClause, executeSelectF
     throw tableNotFoundError({ tableName })
   }
   return tableSource
+}
+
+/**
+ * Gets CTEs defined before the target CTE (excluding the target itself).
+ * Enforces SQL scoping rules: each CTE can only reference CTEs defined before it.
+ *
+ * @param {CTEDefinition[]} allCtes - all CTE definitions in order
+ * @param {string} targetCteName - the CTE name (case-insensitive)
+ * @returns {WithClause} CTEs available to the target
+ */
+function getCtesDefinedBefore(allCtes, targetCteName) {
+  const available = []
+  for (const cte of allCtes) {
+    if (cte.name.toLowerCase() === targetCteName) break
+    available.push(cte)
+  }
+  return { ctes: available }
 }

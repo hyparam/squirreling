@@ -16,56 +16,6 @@ import { consume, current, expect, expectIdentifier, lastPosition, match, peekTo
 
 /**
  * @param {ParserState} state
- * @returns {IntervalNode}
- */
-function parseInterval(state) {
-  const { positionStart } = current(state)
-  consume(state) // INTERVAL
-
-  // Handle optional negative sign
-  let sign = 1
-  const signTok = current(state)
-  if (signTok.type === 'operator' && signTok.value === '-') {
-    consume(state)
-    sign = -1
-  }
-
-  // Get value (number or quoted string)
-  const valueTok = current(state)
-  /** @type {number} */
-  let value
-  if (valueTok.type === 'number') {
-    consume(state)
-    value = sign * Number(valueTok.numericValue)
-  } else if (valueTok.type === 'string') {
-    consume(state)
-    const parsed = parseFloat(valueTok.value)
-    if (isNaN(parsed)) {
-      throw invalidLiteralError({ type: 'interval value', value: valueTok.value, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
-    }
-    value = sign * parsed
-  } else {
-    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
-  }
-
-  // Get unit keyword
-  const unitTok = current(state)
-  if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
-    throw invalidLiteralError({
-      type: 'interval unit',
-      value: unitTok.value,
-      positionStart: unitTok.positionStart,
-      positionEnd: unitTok.positionEnd,
-      validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
-    })
-  }
-  consume(state)
-
-  return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: lastPosition(state) }
-}
-
-/**
- * @param {ParserState} state
  * @returns {ExprNode}
  */
 export function parseExpression(state) {
@@ -421,4 +371,46 @@ export function parseSubquery(state) {
   const query = parseSelectInternal(state)
   expect(state, 'paren', ')')
   return query
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {IntervalNode}
+ */
+function parseInterval(state) {
+  const { positionStart } = current(state)
+  consume(state) // INTERVAL
+
+  // Get value (number or quoted string)
+  const valueTok = current(state)
+  /** @type {number} */
+  let value
+  if (valueTok.type === 'number') {
+    consume(state)
+    value = Number(valueTok.numericValue)
+  } else if (valueTok.type === 'string') {
+    consume(state)
+    const parsed = parseFloat(valueTok.value)
+    if (isNaN(parsed)) {
+      throw invalidLiteralError({ type: 'interval value', value: valueTok.value, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
+    }
+    value = parsed
+  } else {
+    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
+  }
+
+  // Get unit keyword
+  const unitTok = current(state)
+  if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
+    throw invalidLiteralError({
+      type: 'interval unit',
+      value: unitTok.value,
+      positionStart: unitTok.positionStart,
+      positionEnd: unitTok.positionEnd,
+      validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
+    })
+  }
+  consume(state)
+
+  return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: lastPosition(state) }
 }

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
 import { memorySource } from '../../src/backend/dataSource.js'
+import { collect, executeSql } from '../../src/index.js'
 
 /**
- * @import { AsyncDataSource, AsyncRow, ScanOptions } from '../../src/types.js'
+ * @import { AsyncDataSource, AsyncRow, ScanOptions, SqlPrimitive } from '../../src/types.js'
  */
 
 const users = [
@@ -171,7 +171,7 @@ describe('abort signal', () => {
  * Creates a data source that tracks how many rows were scanned.
  * The source respects the abort signal.
  *
- * @param {Record<string, import('../../src/types.js').SqlPrimitive>[]} data
+ * @param {Record<string, SqlPrimitive>[]} data
  * @returns {{ source: AsyncDataSource, getScannedCount: () => number }}
  */
 function trackingSource(data) {

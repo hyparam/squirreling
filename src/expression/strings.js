@@ -13,23 +13,11 @@ import { argValueError } from '../validationErrors.js'
  * @param {number} [options.positionStart] - Start position for error reporting
  * @param {number} [options.positionEnd] - End position for error reporting
  * @param {number} [options.rowIndex] - Row index for error reporting
- * @returns {SqlPrimitive} Result
+ * @returns {SqlPrimitive}
  */
 export function evaluateStringFunc({ funcName, args, positionStart, positionEnd, rowIndex }) {
-  if (funcName === 'UPPER') {
-    const val = args[0]
-    if (val == null) return null
-    return String(val).toUpperCase()
-  }
-
-  if (funcName === 'LOWER') {
-    const val = args[0]
-    if (val == null) return null
-    return String(val).toLowerCase()
-  }
-
   if (funcName === 'CONCAT') {
-    // SQL CONCAT returns NULL if any argument is NULL
+    // Returns NULL if any argument is NULL
     if (args.some(a => a == null)) return null
     if (args.some(a => typeof a === 'object')) {
       throw argValueError({
@@ -38,22 +26,30 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
         positionStart,
         positionEnd,
         hint: 'Use CAST to convert objects to strings first.',
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
     return args.map(a => String(a)).join('')
   }
 
+  // String first arg
+  const [val] = args
+  if (val == null) return null
+  const str = String(val)
+
+  if (funcName === 'UPPER') {
+    return str.toUpperCase()
+  }
+
+  if (funcName === 'LOWER') {
+    return str.toLowerCase()
+  }
+
   if (funcName === 'LENGTH') {
-    const val = args[0]
-    if (val == null) return null
-    return String(val).length
+    return str.length
   }
 
   if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
-    const str = args[0]
-    if (str == null) return null
-    const strVal = String(str)
     const start = Number(args[1])
     if (!Number.isInteger(start) || start < 1) {
       throw argValueError({
@@ -62,7 +58,7 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
         positionStart,
         positionEnd,
         hint: 'SQL uses 1-based indexing.',
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
     // SQL uses 1-based indexing
@@ -75,33 +71,29 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
           message: `length must be a non-negative integer, got ${args[2]}`,
           positionStart,
           positionEnd,
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
-      return strVal.substring(startIdx, startIdx + len)
+      return str.substring(startIdx, startIdx + len)
     }
-    return strVal.substring(startIdx)
+    return str.substring(startIdx)
   }
 
   if (funcName === 'TRIM') {
-    const val = args[0]
-    if (val == null) return null
-    return String(val).trim()
+    return str.trim()
   }
 
   if (funcName === 'REPLACE') {
-    const str = args[0]
     const searchStr = args[1]
     const replaceStr = args[2]
     // SQL REPLACE returns NULL if any argument is NULL
-    if (str == null || searchStr == null || replaceStr == null) return null
-    return String(str).replaceAll(String(searchStr), String(replaceStr))
+    if (searchStr == null || replaceStr == null) return null
+    return str.replaceAll(String(searchStr), String(replaceStr))
   }
 
   if (funcName === 'LEFT') {
-    const str = args[0]
     const n = args[1]
-    if (str == null || n == null) return null
+    if (n == null) return null
     const len = Number(n)
     if (!Number.isInteger(len) || len < 0) {
       throw argValueError({
@@ -109,16 +101,15 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
         message: `length must be a non-negative integer, got ${n}`,
         positionStart,
         positionEnd,
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
-    return String(str).substring(0, len)
+    return str.substring(0, len)
   }
 
   if (funcName === 'RIGHT') {
-    const str = args[0]
     const n = args[1]
-    if (str == null || n == null) return null
+    if (n == null) return null
     const len = Number(n)
     if (!Number.isInteger(len) || len < 0) {
       throw argValueError({
@@ -126,20 +117,17 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
         message: `length must be a non-negative integer, got ${n}`,
         positionStart,
         positionEnd,
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
-    const strVal = String(str)
-    if (len >= strVal.length) return strVal
-    return strVal.substring(strVal.length - len)
+    if (len >= str.length) return str
+    return str.substring(str.length - len)
   }
 
   if (funcName === 'INSTR') {
-    const str = args[0]
     const search = args[1]
-    if (str == null || search == null) return null
+    if (search == null) return null
     // INSTR returns 1-based position, 0 if not found
-    const pos = String(str).indexOf(String(search))
-    return pos === -1 ? 0 : pos + 1
+    return str.indexOf(String(search)) + 1
   }
 }

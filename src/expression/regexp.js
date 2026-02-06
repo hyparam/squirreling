@@ -13,7 +13,7 @@ import { argValueError } from '../validationErrors.js'
  * @param {number} [options.positionStart] - Start position in SQL string for error reporting
  * @param {number} [options.positionEnd] - End position in SQL string for error reporting
  * @param {number} [options.rowIndex] - Row number for error reporting
- * @returns {SqlPrimitive} Result
+ * @returns {SqlPrimitive}
  */
 export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd, rowIndex }) {
   if (funcName === 'REGEXP_SUBSTR') {
@@ -34,7 +34,7 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
           positionStart,
           positionEnd,
           hint: 'SQL uses 1-based indexing.',
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
     }
@@ -49,7 +49,7 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
           message: `occurrence must be a positive integer, got ${args[3]}`,
           positionStart,
           positionEnd,
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
     }
@@ -64,7 +64,7 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
         message: `invalid regex pattern: ${error.message}`,
         positionStart,
         positionEnd,
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
 
@@ -104,7 +104,7 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
           positionStart,
           positionEnd,
           hint: 'SQL uses 1-based indexing.',
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
     }
@@ -120,7 +120,7 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
           positionStart,
           positionEnd,
           hint: 'Use 0 to replace all occurrences.',
-          rowNumber: rowIndex,
+          rowIndex,
         })
       }
     }
@@ -135,7 +135,7 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
         message: `invalid regex pattern: ${error.message}`,
         positionStart,
         positionEnd,
-        rowNumber: rowIndex,
+        rowIndex,
       })
     }
 
