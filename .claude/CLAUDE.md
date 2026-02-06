@@ -6,11 +6,12 @@ Uses async everywhere and late materialization for efficiency.
 ## Build and Test Commands
 
 ```bash
-npm test              # Run all tests
-npm run lint          # Run ESLint
-npm run lint:fix      # Fix linting issues
-npm run coverage      # Run tests with coverage
+npm test          # Run all tests
+npm run lint      # Run ESLint
+npm run lint:fix  # Fix linting issues
+npm run coverage  # Run tests with coverage
 npx vitest test/parse/parse.test.js  # Run a single test file
+npx tsc           # Type check with TypeScript
 ```
 
 ## Code Style

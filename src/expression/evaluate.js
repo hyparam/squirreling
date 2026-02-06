@@ -110,7 +110,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
       if (!rows) {
         throw aggregateError({
           funcName,
-          issue: 'requires GROUP BY or will act on the whole dataset',
+          issue: ' is not allowed outside of aggregate context',
         })
       }
 
@@ -131,7 +131,7 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         }
         throw aggregateError({
           funcName,
-          issue: '(*) is not supported, use a column name',
+          issue: '(*) is not supported. Only COUNT supports *.',
         })
       }
 

@@ -148,6 +148,11 @@ describe('parseSql error handling', () => {
     it('should throw error when expecting closing paren in WHERE', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users WHERE (age > 18(' })).toThrow('Expected ) after "18" but found "(" at position 35')
     })
+
+    it('should throw error for aggregate function in WHERE clause', () => {
+      expect(() => parseSql({ query: 'SELECT name FROM users WHERE SUM(age) > 10' }))
+        .toThrow('Aggregate function SUM is not allowed in WHERE clause')
+    })
   })
 
   describe('JOIN errors', () => {
@@ -170,6 +175,11 @@ describe('parseSql error handling', () => {
     it('should throw error on missing JOIN keyword after INNER', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users INNER orders' })).toThrow('Expected JOIN after "INNER" but found "orders" at position 26')
     })
+
+    it('should throw error for aggregate function in JOIN ON', () => {
+      expect(() => parseSql({ query: 'SELECT * FROM users JOIN orders ON COUNT(users.id) = orders.user_id' }))
+        .toThrow('Aggregate function COUNT is not allowed in JOIN ON clause')
+    })
   })
 
   describe('GROUP BY errors', () => {
@@ -183,6 +193,11 @@ describe('parseSql error handling', () => {
 
     it('should throw error on missing column after comma in GROUP BY', () => {
       expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY age,' })).toThrow('Expected expression but found end of query at position 40')
+    })
+
+    it('should throw error for aggregate function in GROUP BY', () => {
+      expect(() => parseSql({ query: 'SELECT name FROM users GROUP BY COUNT(name)' }))
+        .toThrow('Aggregate function COUNT is not allowed in GROUP BY clause')
     })
   })
 

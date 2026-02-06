@@ -3,7 +3,7 @@ import { parseJoins } from './joins.js'
 import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
 import { tokenizeSql } from './tokenize.js'
 import { duplicateCTEError } from '../parseErrors.js'
-import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, isKnownFunction } from '../validation.js'
+import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, expectNoAggregate, isKnownFunction } from '../validation.js'
 
 /**
  * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, SelectColumn, WithClause } from '../types.js'
@@ -266,12 +266,14 @@ export function parseSelectInternal(state) {
 
   if (match(state, 'keyword', 'WHERE')) {
     where = parseExpression(state)
+    expectNoAggregate(where, 'WHERE')
   }
 
   if (match(state, 'keyword', 'GROUP')) {
     expect(state, 'keyword', 'BY')
     while (true) {
       const expr = parseExpression(state)
+      expectNoAggregate(expr, 'GROUP BY')
       groupBy.push(expr)
       if (!match(state, 'comma')) break
     }

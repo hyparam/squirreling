@@ -1,6 +1,7 @@
 import { parseExpression } from './expression.js'
 import { parseTableAlias } from './parse.js'
 import { consume, current, expect, expectIdentifier, match } from './state.js'
+import { expectNoAggregate } from '../validation.js'
 
 /**
  * @import { ExprNode, JoinClause, JoinType, ParserState } from '../types.js'
@@ -67,6 +68,7 @@ export function parseJoins(state) {
     if (joinType !== 'POSITIONAL') {
       expect(state, 'keyword', 'ON')
       condition = parseExpression(state)
+      expectNoAggregate(condition, 'JOIN ON')
     }
 
     joins.push({

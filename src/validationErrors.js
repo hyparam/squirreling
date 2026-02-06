@@ -97,7 +97,7 @@ export function argValueError({ funcName, message, positionStart, positionEnd, h
  * @returns {Error}
  */
 export function aggregateError({ funcName, issue }) {
-  return new Error(`${funcName}${issue}. Only COUNT supports *. Use a column name for ${funcName}.`)
+  return new Error(`${funcName}${issue}`)
 }
 
 /**

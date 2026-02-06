@@ -3,7 +3,8 @@ import { unsupportedOperationError } from '../executionErrors.js'
 import { generatorSource, memorySource } from '../backend/dataSource.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
-import { containsAggregate, extractColumns } from './columns.js'
+import { extractColumns } from './columns.js'
+import { findAggregate } from '../validation.js'
 import { executeJoins } from './join.js'
 import { resolveTableSource } from './tableSource.js'
 import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
@@ -236,7 +237,7 @@ async function sortRows({ rows, orderBy, tables, functions, aliases }) {
 async function* evaluateSelectAst({ select, dataSource, tables, functions, signal }) {
   // SQL priority: from, where, group by, having, select, order by, offset, limit
 
-  const hasAggregate = select.columns.some(col => col.kind === 'derived' && containsAggregate(col.expr))
+  const hasAggregate = select.columns.some(col => col.kind === 'derived' && findAggregate(col.expr) !== undefined)
   const useGrouping = hasAggregate || select.groupBy.length > 0
   const needsBuffering = useGrouping || select.orderBy.length > 0
 
