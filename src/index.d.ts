@@ -1,8 +1,9 @@
-import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ParseSqlOptions, SelectStatement, SqlPrimitive, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ParseSqlOptions, SelectStatement, SqlPrimitive, Token, UserDefinedFunction } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
   AsyncRow,
+  DataSourceStatistics,
   ExecuteSqlOptions,
   ExprNode,
   ParseSqlOptions,
@@ -54,3 +55,19 @@ export function tokenizeSql(sql: string): Token[]
 export function collect<T>(asyncGen: AsyncGenerator<AsyncRow>): Promise<Record<string, SqlPrimitive>[]>
 
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
+
+/**
+ * Estimates the worst-case cost of a query using column weights and row counts
+ * from data source statistics.
+ *
+ * @param options
+ * @param options.query - SQL query string or parsed AST
+ * @param options.tables - data sources with optional statistics
+ * @param options.functions - user-defined functions available in the SQL context
+ * @returns estimated worst-case cost, or undefined if not estimable
+ */
+export function estimateCost(options: {
+  query: string | SelectStatement
+  tables: Record<string, AsyncDataSource>
+  functions?: Record<string, UserDefinedFunction>
+}): number | undefined

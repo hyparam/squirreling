@@ -30,6 +30,12 @@ export type Row = Record<string, SqlPrimitive>[]
  */
 export interface AsyncDataSource {
   scan(options: ScanOptions): ScanResults
+  statistics?: DataSourceStatistics
+}
+
+export interface DataSourceStatistics {
+  rowCount: number
+  columnWeights?: Record<string, number>
 }
 
 /**
