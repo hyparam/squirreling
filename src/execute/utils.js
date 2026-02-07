@@ -1,5 +1,5 @@
 /**
- * @import { AsyncRow, ExprNode, OrderByItem, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncRow, ExprNode, OrderByItem, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -108,4 +108,21 @@ export function stringify(value) {
     }
     return val
   })
+}
+
+/**
+ * Creates a stable string key for a row to enable deduplication
+ *
+ * @param {AsyncCells} cells
+ * @returns {Promise<string>}
+ */
+export async function stableRowKey(cells) {
+  const keys = Object.keys(cells).sort()
+  /** @type {string[]} */
+  const parts = []
+  for (const k of keys) {
+    const v = await cells[k]()
+    parts.push(k + ':' + stringify(v))
+  }
+  return parts.join('|')
 }
