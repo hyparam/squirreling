@@ -1,4 +1,5 @@
 export { ParserState, Token, TokenType } from './parse/types.js'
+export { QueryPlan } from './plan/types.js'
 
 // parseSql(options)
 export interface ParseSqlOptions {

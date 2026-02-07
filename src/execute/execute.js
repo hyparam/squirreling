@@ -1,16 +1,17 @@
-import { missingClauseError } from '../parseErrors.js'
-import { unsupportedOperationError } from '../executionErrors.js'
-import { generatorSource, memorySource } from '../backend/dataSource.js'
+import { memorySource } from '../backend/dataSource.js'
+import { tableNotFoundError } from '../executionErrors.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
-import { extractColumns } from './columns.js'
-import { findAggregate } from '../validation.js'
-import { executeJoins } from './join.js'
-import { resolveTableSource } from './tableSource.js'
-import { compareForTerm, defaultDerivedAlias, stringify } from './utils.js'
+import { missingClauseError } from '../parseErrors.js'
+import { buildPlan } from '../plan/plan.js'
+import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
+import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
+import { executeSort } from './sort.js'
+import { defaultDerivedAlias, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, ExprNode, OrderByItem, QueryHints, SelectColumn, SelectStatement, SqlPrimitive, UserDefinedFunction, WithClause } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, SelectStatement, UserDefinedFunction } from '../types.js'
+ * @import { DistinctNode, ExecuteContext, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
  */
 
 /**
@@ -41,7 +42,7 @@ export async function* executeSql({ tables, query, functions, signal }) {
     }
   }
 
-  yield* executeSelect({ select, tables: normalizedTables, withClause: select.with, functions, signal })
+  yield* executeSelect({ select, tables: normalizedTables, functions, signal })
 }
 
 /**
@@ -50,260 +51,117 @@ export async function* executeSql({ tables, query, functions, signal }) {
  * @param {Object} options
  * @param {SelectStatement} options.select
  * @param {Record<string, AsyncDataSource>} options.tables
- * @param {WithClause} [options.withClause] - WITH clause containing CTE definitions
  * @param {Record<string, UserDefinedFunction>} [options.functions]
  * @param {AbortSignal} [options.signal]
  * @yields {AsyncRow}
  */
-export async function* executeSelect({ select, tables, withClause, functions, signal }) {
-  /** @type {AsyncDataSource} */
-  let dataSource
-  /** @type {string} */
-  let leftTable
+export async function* executeSelect({ select, tables, functions, signal }) {
+  const plan = buildPlan(select)
+  yield* executePlan(plan, { tables, functions, signal })
+}
 
-  if (select.from.kind === 'table') {
-    const tableName = select.from.table
-    leftTable = select.from.alias ?? tableName
-    dataSource = resolveTableSource(tableName, tables, withClause, executeSelect, functions, signal)
-  } else {
-    // Nested subquery - recursively resolve
-    leftTable = select.from.alias
-    dataSource = generatorSource(executeSelect({
-      select: select.from.query,
-      tables,
-      withClause,
-      functions,
-      signal,
-    }))
+/**
+ * Executes a query plan and yields result rows
+ *
+ * @param {QueryPlan} plan - the query plan to execute
+ * @param {ExecuteContext} context - execution context
+ * @returns {AsyncGenerator<AsyncRow>}
+ */
+export async function* executePlan(plan, context) {
+  if (plan.type === 'Scan') {
+    yield* executeScan(plan, context)
+  } else if (plan.type === 'SubqueryScan') {
+    yield* executePlan(plan.subquery, context)
+  } else if (plan.type === 'Filter') {
+    yield* executeFilter(plan, context)
+  } else if (plan.type === 'Project') {
+    yield* executeProject(plan, context)
+  } else if (plan.type === 'HashJoin') {
+    yield* executeHashJoin(plan, context)
+  } else if (plan.type === 'NestedLoopJoin') {
+    yield* executeNestedLoopJoin(plan, context)
+  } else if (plan.type === 'PositionalJoin') {
+    yield* executePositionalJoin(plan, context)
+  } else if (plan.type === 'HashAggregate') {
+    yield* executeHashAggregate(plan, context)
+  } else if (plan.type === 'ScalarAggregate') {
+    yield* executeScalarAggregate(plan, context)
+  } else if (plan.type === 'Sort') {
+    yield* executeSort(plan, context)
+  } else if (plan.type === 'Distinct') {
+    yield* executeDistinct(plan, context)
+  } else if (plan.type === 'Limit') {
+    yield* executeLimit(plan, context)
+  }
+}
+
+/**
+ * Executes a table scan
+ *
+ * @param {ScanNode} plan
+ * @param {ExecuteContext} context
+ * @yields {AsyncRow}
+ */
+async function* executeScan(plan, context) {
+  const { tables, signal } = context
+  const dataSource = tables[plan.table]
+  if (dataSource === undefined) {
+    throw tableNotFoundError({ tableName: plan.table })
   }
 
-  // Execute JOINs if present
-  if (select.joins.length) {
-    dataSource = await executeJoins({
-      leftSource: dataSource,
-      joins: select.joins,
-      leftTable,
+  yield* dataSource.scan({ hints: plan.hints, signal })
+}
+
+/**
+ * Executes a filter operation (WHERE clause)
+ *
+ * @param {FilterNode} plan
+ * @param {ExecuteContext} context
+ * @yields {AsyncRow}
+ */
+async function* executeFilter(plan, context) {
+  const { tables, functions, signal } = context
+  let rowIndex = 0
+
+  for await (const row of executePlan(plan.child, context)) {
+    if (signal?.aborted) return
+    rowIndex++
+    const pass = await evaluateExpr({
+      node: plan.condition,
+      row,
       tables,
-      withClause,
       functions,
-      executeSelectFn: executeSelect,
+      rowIndex,
       signal,
     })
-  }
-
-  yield* evaluateSelectAst({ select, dataSource, tables, functions, signal })
-}
-
-/**
- * Creates a stable string key for a row to enable deduplication
- *
- * @param {AsyncCells} cells
- * @returns {Promise<string>} a stable string representation of the row
- */
-async function stableRowKey(cells) {
-  const keys = Object.keys(cells).sort()
-  /** @type {string[]} */
-  const parts = []
-  for (const k of keys) {
-    const v = await cells[k]()
-    parts.push(k + ':' + stringify(v))
-  }
-  return parts.join('|')
-}
-
-/**
- * Applies DISTINCT filtering to remove duplicate rows
- *
- * @param {AsyncRow[]} rows - the input rows
- * @param {boolean} distinct - whether to apply deduplication
- * @returns {Promise<AsyncRow[]>} the deduplicated rows
- */
-async function applyDistinct(rows, distinct) {
-  if (!distinct) return rows
-  /** @type {Set<string>} */
-  const seen = new Set()
-  /** @type {AsyncRow[]} */
-  const result = []
-  for (const row of rows) {
-    const key = await stableRowKey(row.cells)
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(row)
-  }
-  return result
-}
-
-/**
- * Applies ORDER BY sorting to rows using multi-pass lazy evaluation.
- * Secondary ORDER BY columns are only evaluated for rows that tie on
- * previous columns, reducing expensive cell evaluations.
- *
- * @param {Object} options
- * @param {AsyncRow[]} options.rows - the input rows
- * @param {OrderByItem[]} options.orderBy - the sort specifications
- * @param {Record<string, AsyncDataSource>} options.tables
- * @param {Record<string, UserDefinedFunction>} [options.functions]
- * @param {Map<string, ExprNode>} [options.aliases] - SELECT column aliases for ORDER BY resolution
- * @returns {Promise<AsyncRow[]>} the sorted rows
- */
-async function sortRows({ rows, orderBy, tables, functions, aliases }) {
-  if (!orderBy.length) return rows
-
-  // Cache for evaluated values: evaluatedValues[rowIdx][colIdx]
-  /** @type {(SqlPrimitive | undefined)[][]} */
-  const evaluatedValues = rows.map(() => Array(orderBy.length))
-
-  // Start with all indices in one group
-  /** @type {number[][]} */
-  let groups = [rows.map((_, i) => i)]
-
-  // Process each ORDER BY column incrementally
-  for (let orderByIdx = 0; orderByIdx < orderBy.length; orderByIdx++) {
-    const term = orderBy[orderByIdx]
-    /** @type {number[][]} */
-    const nextGroups = []
-
-    for (const group of groups) {
-      // Single-element groups don't need sorting or evaluation
-      if (group.length <= 1) {
-        nextGroups.push(group)
-        continue
-      }
-
-      // Evaluate this column for all rows in the group
-      for (const idx of group) {
-        if (evaluatedValues[idx][orderByIdx] === undefined) {
-          evaluatedValues[idx][orderByIdx] = await evaluateExpr({
-            node: term.expr,
-            row: rows[idx],
-            tables,
-            functions,
-            aliases,
-          })
-        }
-      }
-
-      // Sort the group by this column
-      group.sort((aIdx, bIdx) => {
-        const av = evaluatedValues[aIdx][orderByIdx]
-        const bv = evaluatedValues[bIdx][orderByIdx]
-        return compareForTerm(av, bv, term)
-      })
-
-      // Split into sub-groups based on ties (for next column)
-      if (orderByIdx < orderBy.length - 1) {
-        /** @type {number[]} */
-        let currentSubGroup = [group[0]]
-        for (let i = 1; i < group.length; i++) {
-          const prevIdx = group[i - 1]
-          const currIdx = group[i]
-          const prevVal = evaluatedValues[prevIdx][orderByIdx]
-          const currVal = evaluatedValues[currIdx][orderByIdx]
-
-          if (compareForTerm(prevVal, currVal, term) === 0) {
-            // Same value, extend current sub-group
-            currentSubGroup.push(currIdx)
-          } else {
-            // Different value, start new sub-group
-            nextGroups.push(currentSubGroup)
-            currentSubGroup = [currIdx]
-          }
-        }
-        nextGroups.push(currentSubGroup)
-      } else {
-        // Last column, no need to split
-        nextGroups.push(group)
-      }
+    if (pass) {
+      yield row
     }
-
-    groups = nextGroups
-  }
-
-  // Flatten groups to get final sorted indices
-  return groups.flat().map(i => rows[i])
-}
-
-/**
- * Evaluates a select with a resolved FROM data source
- *
- * @param {Object} options
- * @param {SelectStatement} options.select
- * @param {AsyncDataSource} options.dataSource
- * @param {Record<string, AsyncDataSource>} options.tables
- * @param {Record<string, UserDefinedFunction>} [options.functions]
- * @param {AbortSignal} [options.signal]
- * @yields {AsyncRow}
- */
-async function* evaluateSelectAst({ select, dataSource, tables, functions, signal }) {
-  // SQL priority: from, where, group by, having, select, order by, offset, limit
-
-  const hasAggregate = select.columns.some(col => col.kind === 'derived' && findAggregate(col.expr) !== undefined)
-  const useGrouping = hasAggregate || select.groupBy.length > 0
-  const needsBuffering = useGrouping || select.orderBy.length > 0
-
-  if (needsBuffering) {
-    // BUFFERING PATH: Collect all rows, process, then yield
-    yield* evaluateBuffered({ select, dataSource, tables, functions, hasAggregate, useGrouping, signal })
-  } else {
-    // STREAMING PATH: Yield rows one by one
-    yield* evaluateStreaming({ select, dataSource, tables, functions, signal })
   }
 }
 
 /**
- * Streaming evaluation for simple queries (no ORDER BY or GROUP BY)
- * Supports DISTINCT by tracking seen row keys without buffering full rows
+ * Executes a projection operation (SELECT columns)
  *
- * @param {Object} options
- * @param {SelectStatement} options.select
- * @param {AsyncDataSource} options.dataSource
- * @param {Record<string, AsyncDataSource>} options.tables
- * @param {Record<string, UserDefinedFunction>} [options.functions]
- * @param {AbortSignal} [options.signal]
+ * @param {ProjectNode} plan
+ * @param {ExecuteContext} context
  * @yields {AsyncRow}
  */
-async function* evaluateStreaming({ select, dataSource, tables, functions, signal }) {
-  let rowsYielded = 0
-  let rowsSkipped = 0
+async function* executeProject(plan, context) {
+  const { tables, functions, signal } = context
   let rowIndex = 0
-  const offset = select.offset ?? 0
-  const limit = select.limit ?? Infinity
-  if (limit <= 0) return
 
-  // For DISTINCT, track seen row keys
-  /** @type {Set<string> | undefined} */
-  const seen = select.distinct ? new Set() : undefined
-
-  // hints for data source optimization
-  /** @type {QueryHints} */
-  const hints = {
-    columns: extractColumns(select),
-    where: select.where,
-    limit: select.limit,
-    offset: select.offset,
-  }
-
-  for await (const row of dataSource.scan({ hints, signal })) {
+  for await (const row of executePlan(plan.child, context)) {
+    if (signal?.aborted) return
     rowIndex++
-    // WHERE filter
-    if (select.where) {
-      const pass = await evaluateExpr({ node: select.where, row, tables, functions, rowIndex })
-      if (!pass) continue
-    }
+    const currentRowIndex = rowIndex
 
-    // For non-DISTINCT queries, we can skip rows before projection (optimization)
-    if (!seen && rowsSkipped < offset) {
-      rowsSkipped++
-      continue
-    }
-
-    // SELECT projection
     /** @type {string[]} */
     const columns = []
     /** @type {AsyncCells} */
     const cells = {}
-    const currentRowIndex = rowIndex
-    for (const col of select.columns) {
+
+    for (const col of plan.columns) {
       if (col.kind === 'star') {
         for (const key of row.columns) {
           columns.push(key)
@@ -312,218 +170,75 @@ async function* evaluateStreaming({ select, dataSource, tables, functions, signa
       } else if (col.kind === 'derived') {
         const alias = col.alias ?? defaultDerivedAlias(col.expr)
         columns.push(alias)
-        cells[alias] = () => evaluateExpr({ node: col.expr, row, tables, functions, rowIndex: currentRowIndex })
-      }
-    }
-
-    // DISTINCT: skip duplicate rows
-    if (seen) {
-      const key = await stableRowKey(cells)
-      if (seen.has(key)) continue
-      seen.add(key)
-      // OFFSET applies to distinct rows
-      if (rowsSkipped < offset) {
-        rowsSkipped++
-        continue
+        cells[alias] = () => evaluateExpr({
+          node: col.expr,
+          row,
+          tables,
+          functions,
+          rowIndex: currentRowIndex,
+          signal,
+        })
       }
     }
 
     yield { columns, cells }
-    rowsYielded++
-    if (rowsYielded >= limit) {
-      break
+  }
+}
+
+/**
+ * Executes a distinct operation
+ *
+ * @param {DistinctNode} plan
+ * @param {ExecuteContext} context
+ * @yields {AsyncRow}
+ */
+async function* executeDistinct(plan, context) {
+  const { signal } = context
+
+  /** @type {Set<string>} */
+  const seen = new Set()
+
+  for await (const row of executePlan(plan.child, context)) {
+    if (signal?.aborted) return
+
+    const key = await stableRowKey(row.cells)
+    if (!seen.has(key)) {
+      seen.add(key)
+      yield row
     }
   }
 }
 
 /**
- * Buffered evaluation for complex queries (with ORDER BY or GROUP BY)
+ * Executes a limit operation (LIMIT/OFFSET)
  *
- * @param {Object} options
- * @param {SelectStatement} options.select
- * @param {AsyncDataSource} options.dataSource
- * @param {Record<string, AsyncDataSource>} options.tables
- * @param {Record<string, UserDefinedFunction>} [options.functions]
- * @param {boolean} options.hasAggregate
- * @param {boolean} options.useGrouping
- * @param {AbortSignal} [options.signal]
+ * @param {LimitNode} plan
+ * @param {ExecuteContext} context
  * @yields {AsyncRow}
  */
-async function* evaluateBuffered({ select, dataSource, tables, functions, hasAggregate, useGrouping, signal }) {
-  // Build hints for data source optimization
-  // Note: limit/offset not passed here since buffering needs all rows for sorting/grouping
-  /** @type {QueryHints} */
-  const hints = {
-    where: select.where,
-    columns: extractColumns(select),
-  }
+async function* executeLimit(plan, context) {
+  const { signal } = context
 
-  // Step 1: Collect all rows from data source
-  /** @type {AsyncRow[]} */
-  const working = []
-  for await (const row of dataSource.scan({ hints, signal })) {
-    working.push(row)
-  }
+  const offset = plan.offset ?? 0
+  const limit = plan.limit ?? Infinity
+  if (limit <= 0) return
 
-  // Step 2: WHERE clause filtering
-  /** @type {AsyncRow[]} */
-  const filtered = []
+  let rowsSkipped = 0
+  let rowsYielded = 0
 
-  for (let i = 0; i < working.length; i++) {
-    const row = working[i]
-    const rowIndex = i + 1 // 1-based
-    if (select.where) {
-      const passes = await evaluateExpr({ node: select.where, row, tables, functions, rowIndex })
+  for await (const row of executePlan(plan.child, context)) {
+    if (signal?.aborted) return
 
-      if (!passes) {
-        continue
-      }
-    }
-    filtered.push(row)
-  }
-
-  // Step 3: Projection (grouping vs non-grouping)
-  /** @type {AsyncRow[]} */
-  let projected = []
-
-  if (useGrouping) {
-    // Grouping due to GROUP BY or aggregate functions
-    /** @type {AsyncRow[][]} */
-    const groups = []
-
-    if (select.groupBy.length) {
-      /** @type {Map<string, AsyncRow[]>} */
-      const map = new Map()
-      for (const row of filtered) {
-        /** @type {string[]} */
-        const keyParts = []
-        for (const expr of select.groupBy) {
-          const v = await evaluateExpr({ node: expr, row, tables, functions })
-          keyParts.push(stringify(v))
-        }
-        const key = keyParts.join('|')
-        let group = map.get(key)
-        if (!group) {
-          group = []
-          map.set(key, group)
-          groups.push(group)
-        }
-        group.push(row)
-      }
-    } else {
-      groups.push(filtered)
+    if (rowsSkipped < offset) {
+      rowsSkipped++
+      continue
     }
 
-    const hasStar = select.columns.some(col => col.kind === 'star')
-    if (hasStar && hasAggregate) {
-      throw unsupportedOperationError({
-        operation: 'SELECT * with aggregate functions is not supported',
-        hint: 'Replace * with specific column names when using aggregate functions.',
-      })
-    }
+    yield row
+    rowsYielded++
 
-    for (const group of groups) {
-      const columns = []
-      /** @type {AsyncCells} */
-      const cells = {}
-      for (const col of select.columns) {
-        if (col.kind === 'star') {
-          const firstRow = group[0]
-          if (firstRow) {
-            for (const key of firstRow.columns) {
-              columns.push(key)
-              cells[key] = firstRow.cells[key]
-            }
-          }
-          continue
-        }
-
-        if (col.kind === 'derived') {
-          const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          columns.push(alias)
-          // Pass group to evaluateExpr so it can handle aggregate functions within expressions
-          // For empty groups, still provide an empty row context for aggregates to return appropriate values
-          cells[alias] = () => evaluateExpr({ node: col.expr, row: group[0] ?? { columns: [], cells: {} }, tables, functions, rows: group })
-          continue
-        }
-      }
-      const asyncRow = { columns, cells }
-
-      // Apply HAVING filter before adding to projected results
-      if (select.having) {
-        const context = { ...group[0], ...asyncRow }
-        if (!await evaluateExpr({ node: select.having, row: context, tables, functions, rows: group })) {
-          continue
-        }
-      }
-
-      projected.push(asyncRow)
-    }
-  } else {
-    // No grouping, simple projection
-    // Sort before projection so ORDER BY can access columns not in SELECT
-
-    // Pass aliases so ORDER BY can reference SELECT column aliases
-    /** @type {Map<string, ExprNode>} */
-    const aliases = new Map()
-    for (const col of select.columns) {
-      if (col.kind === 'derived' && col.alias) {
-        aliases.set(col.alias, col.expr)
-      }
-    }
-    const sorted = await sortRows({ rows: filtered, orderBy: select.orderBy, tables, functions, aliases })
-
-    // OPTIMIZATION: For non-DISTINCT queries, apply OFFSET/LIMIT before projection
-    // to avoid reading expensive cells for rows that won't be in the final result
-    let rowsToProject = sorted
-    if (!select.distinct) {
-      const start = select.offset ?? 0
-      const end = select.limit ? start + select.limit : sorted.length
-      rowsToProject = sorted.slice(start, end)
-    }
-
-    for (const row of rowsToProject) {
-      const columns = []
-      /** @type {AsyncCells} */
-      const cells = {}
-      for (const col of select.columns) {
-        if (col.kind === 'star') {
-          for (const key of row.columns) {
-            columns.push(key)
-            cells[key] = row.cells[key]
-          }
-        } else if (col.kind === 'derived') {
-          const alias = col.alias ?? defaultDerivedAlias(col.expr)
-          columns.push(alias)
-          cells[alias] = () => evaluateExpr({ node: col.expr, row, tables, functions })
-        }
-      }
-      projected.push({ columns, cells })
-    }
-  }
-
-  // Step 4: DISTINCT
-  projected = await applyDistinct(projected, select.distinct)
-
-  // Step 5: ORDER BY (final sort for grouped queries)
-  if (useGrouping) {
-    projected = await sortRows({ rows: projected, orderBy: select.orderBy, tables, functions })
-  }
-
-  // Step 6: OFFSET and LIMIT
-  // For non-DISTINCT, non-grouping queries, OFFSET/LIMIT was already applied before projection
-  if (select.distinct || useGrouping) {
-    const start = select.offset ?? 0
-    const end = select.limit ? start + select.limit : projected.length
-
-    // Step 7: Yield results
-    for (let i = start; i < end && i < projected.length; i++) {
-      yield projected[i]
-    }
-  } else {
-    // Already limited, yield all projected rows
-    for (const row of projected) {
-      yield row
+    if (rowsYielded >= limit) {
+      break
     }
   }
 }
