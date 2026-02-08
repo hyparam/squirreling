@@ -2,7 +2,7 @@ import { extractColumns } from '../execute/columns.js'
 import { findAggregate } from '../validation.js'
 
 /**
- * @import { BinaryNode, ExprNode, JoinClause, QueryHints, SelectStatement } from '../types.js'
+ * @import { BinaryNode, ExprNode, JoinClause, ScanOptions, SelectStatement } from '../types.js'
  * @import { QueryPlan, ScanNode, SubqueryScanNode } from './types.d.ts'
  */
 
@@ -13,7 +13,7 @@ import { findAggregate } from '../validation.js'
  * @param {SelectStatement} select - the SELECT statement AST
  * @returns {QueryPlan} the root of the query plan tree
  */
-export function buildPlan(select) {
+export function queryPlan(select) {
   // Build CTE plans in order (each CTE can reference preceding CTEs)
   /** @type {Map<string, QueryPlan>} */
   const ctePlans = new Map()
@@ -43,7 +43,7 @@ function buildSelectPlan(select, ctePlans) {
   const needsBuffering = useGrouping || select.orderBy.length > 0
 
   // Compute query hints for data source optimization
-  /** @type {QueryHints} */
+  /** @type {ScanOptions} */
   const hints = {
     columns: extractColumns(select),
     where: select.where,
@@ -130,7 +130,7 @@ function buildSelectPlan(select, ctePlans) {
  *
  * @param {SelectStatement} select
  * @param {Map<string, QueryPlan>} ctePlans
- * @param {QueryHints} [hints] - query hints to pass to data source
+ * @param {ScanOptions} [hints] - scan options to pass to data source
  * @returns {ScanNode | SubqueryScanNode}
  */
 function buildFromPlan(select, ctePlans, hints) {
@@ -152,7 +152,7 @@ function buildFromPlan(select, ctePlans, hints) {
   } else {
     return {
       type: 'SubqueryScan',
-      subquery: buildPlan(select.from.query),
+      subquery: queryPlan(select.from.query),
       alias: select.from.alias,
     }
   }

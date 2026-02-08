@@ -6,7 +6,6 @@ export type {
   ExecuteSqlOptions,
   ExprNode,
   ParseSqlOptions,
-  QueryHints,
   QueryPlan,
   ScanOptions,
   SelectStatement,

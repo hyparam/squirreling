@@ -95,6 +95,12 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `POSITIONAL JOIN`
 - `GROUP BY` and `HAVING` clauses
 
+### Quoting
+
+- Single quotes for string literals: `'hello world'`
+- Double quotes for identifiers with spaces or special characters: `"column name"`
+- Escape quotes by doubling: `'can''t'` or `"col""name"`
+
 ### Functions
 
 - Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`

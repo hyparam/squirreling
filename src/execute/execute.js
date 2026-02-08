@@ -3,7 +3,7 @@ import { tableNotFoundError } from '../executionErrors.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { missingClauseError } from '../parseErrors.js'
-import { buildPlan } from '../plan/plan.js'
+import { queryPlan } from '../plan/plan.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
@@ -56,7 +56,7 @@ export async function* executeSql({ tables, query, functions, signal }) {
  * @yields {AsyncRow}
  */
 export async function* executeSelect({ select, tables, functions, signal }) {
-  const plan = buildPlan(select)
+  const plan = queryPlan(select)
   yield* executePlan(plan, { tables, functions, signal })
 }
 
@@ -109,7 +109,7 @@ async function* executeScan(plan, context) {
     throw tableNotFoundError({ tableName: plan.table })
   }
 
-  yield* dataSource.scan({ hints: plan.hints, signal })
+  yield* dataSource.scan({ ...plan.hints, signal })
 }
 
 /**

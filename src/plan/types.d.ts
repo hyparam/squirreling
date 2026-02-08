@@ -1,4 +1,4 @@
-import { AsyncDataSource, ExprNode, JoinType, OrderByItem, QueryHints, SelectColumn, UserDefinedFunction } from '../types.js'
+import { AsyncDataSource, ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn, UserDefinedFunction } from '../types.js'
 
 export interface ExecuteContext {
   tables: Record<string, AsyncDataSource>
@@ -24,7 +24,7 @@ export interface ScanNode {
   type: 'Scan'
   table: string
   alias?: string
-  hints?: QueryHints
+  hints?: ScanOptions
 }
 
 export interface SubqueryScanNode {

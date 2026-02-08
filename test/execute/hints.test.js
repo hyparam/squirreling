@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
 /**
- * @import { AsyncDataSource, QueryHints } from '../../src/types.js'
+ * @import { AsyncDataSource, ScanOptions } from '../../src/types.js'
  */
 
 describe('query hints', () => {
@@ -62,15 +62,15 @@ describe('query hints', () => {
  * Executes a query and captures the hints passed to the data source.
  *
  * @param {string} query
- * @returns {Promise<QueryHints>}
+ * @returns {Promise<ScanOptions>}
  */
 async function captureHints(query) {
-  /** @type {QueryHints} */
+  /** @type {ScanOptions} */
   let capturedHints = {}
   /** @type {AsyncDataSource} */
   const capturingSource = {
     async *scan(options) {
-      capturedHints = options.hints ?? {}
+      capturedHints = options
       if (false) yield
     },
   }

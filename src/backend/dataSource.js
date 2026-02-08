@@ -3,23 +3,6 @@
  */
 
 /**
- * Wraps an async generator of plain objects into an AsyncDataSource
- *
- * @param {AsyncGenerator<AsyncRow>} gen
- * @returns {AsyncDataSource}
- */
-export function generatorSource(gen) {
-  return {
-    async *scan({ signal }) {
-      for await (const row of gen) {
-        if (signal?.aborted) break
-        yield row
-      }
-    },
-  }
-}
-
-/**
  * Creates an async row accessor that wraps a plain JavaScript object
  *
  * @param {Record<string, SqlPrimitive>} obj - the plain object

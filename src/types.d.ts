@@ -27,20 +27,16 @@ export type Row = Record<string, SqlPrimitive>[]
 
 /**
  * Async data source for streaming SQL execution.
- * Provides an async iterator over rows.
+ * Provides a scan() method that returns an async iterator of rows.
  */
 export interface AsyncDataSource {
   scan(options: ScanOptions): AsyncIterable<AsyncRow>
 }
-export interface ScanOptions {
-  hints?: QueryHints
-  signal?: AbortSignal
-}
 /**
- * Hints passed to data sources for query optimization.
+ * Scan options passed to data sources for query optimization.
  * All hints are optional and "best effort" - sources may ignore them.
  */
-export interface QueryHints {
+export interface ScanOptions {
   columns?: string[] // columns needed (undefined means all columns)
   where?: ExprNode // where clause
   // important: only apply limit/offset if where is fully applied by the data source
@@ -50,6 +46,7 @@ export interface QueryHints {
   // but doesn't need to resolve async rows before the offset
   limit?: number
   offset?: number
+  signal?: AbortSignal
 }
 
 export type SqlPrimitive =

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { parseSql } from '../../src/parse/parse.js'
-import { buildPlan } from '../../src/plan/plan.js'
+import { queryPlan } from '../../src/plan/plan.js'
 
-describe('buildPlan', () => {
+describe('queryPlan', () => {
   describe('basic queries', () => {
     it('should build plan for SELECT * FROM table', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -18,7 +18,7 @@ describe('buildPlan', () => {
     })
 
     it('should build plan for SELECT with columns', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT name, age FROM users' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT name, age FROM users' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [
@@ -52,7 +52,7 @@ describe('buildPlan', () => {
     })
 
     it('should build plan for SELECT from subquery', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM (SELECT * FROM users) AS u' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM (SELECT * FROM users) AS u' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -75,7 +75,7 @@ describe('buildPlan', () => {
 
   describe('WHERE clause', () => {
     it('should add FilterNode for WHERE clause', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users WHERE age > 21' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users WHERE age > 21' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -130,7 +130,7 @@ describe('buildPlan', () => {
 
   describe('ORDER BY', () => {
     it('should add SortNode for ORDER BY', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users ORDER BY name' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users ORDER BY name' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -157,7 +157,7 @@ describe('buildPlan', () => {
     })
 
     it('should place Sort before Project', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT name FROM users ORDER BY age' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT name FROM users ORDER BY age' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [
@@ -198,7 +198,7 @@ describe('buildPlan', () => {
 
   describe('DISTINCT', () => {
     it('should add DistinctNode for SELECT DISTINCT', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT DISTINCT name FROM users' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT DISTINCT name FROM users' }))
       expect(plan).toEqual({
         type: 'Distinct',
         child: {
@@ -228,7 +228,7 @@ describe('buildPlan', () => {
 
   describe('LIMIT/OFFSET', () => {
     it('should add LimitNode for LIMIT', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users LIMIT 10' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users LIMIT 10' }))
       expect(plan).toEqual({
         type: 'Limit',
         limit: 10,
@@ -247,7 +247,7 @@ describe('buildPlan', () => {
     })
 
     it('should add LimitNode for OFFSET', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET 5' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET 5' }))
       expect(plan).toEqual({
         type: 'Limit',
         limit: 10,
@@ -270,7 +270,7 @@ describe('buildPlan', () => {
 
   describe('GROUP BY', () => {
     it('should add HashAggregateNode for GROUP BY', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT department, COUNT(*) FROM users GROUP BY department' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT department, COUNT(*) FROM users GROUP BY department' }))
       expect(plan).toEqual({
         type: 'HashAggregate',
         groupBy: [
@@ -320,7 +320,7 @@ describe('buildPlan', () => {
     })
 
     it('should add ScalarAggregateNode for aggregate without GROUP BY', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT COUNT(*) FROM users' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT COUNT(*) FROM users' }))
       expect(plan).toEqual({
         type: 'ScalarAggregate',
         columns: [
@@ -355,7 +355,7 @@ describe('buildPlan', () => {
 
   describe('HAVING', () => {
     it('should integrate HAVING into HashAggregateNode', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT department, COUNT(*) FROM users GROUP BY department HAVING COUNT(*) > 5' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT department, COUNT(*) FROM users GROUP BY department HAVING COUNT(*) > 5' }))
       expect(plan).toEqual({
         type: 'HashAggregate',
         groupBy: [
@@ -433,7 +433,7 @@ describe('buildPlan', () => {
 
   describe('JOINs', () => {
     it('should build HashJoinNode for simple equality join', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -466,7 +466,7 @@ describe('buildPlan', () => {
     })
 
     it('should build PositionalJoinNode for POSITIONAL JOIN', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM a POSITIONAL JOIN b' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM a POSITIONAL JOIN b' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -486,7 +486,7 @@ describe('buildPlan', () => {
     })
 
     it('should build NestedLoopJoinNode for complex join conditions', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id > orders.user_id' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id > orders.user_id' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -525,7 +525,7 @@ describe('buildPlan', () => {
     })
 
     it('should handle LEFT JOIN', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -560,7 +560,7 @@ describe('buildPlan', () => {
 
   describe('CTE resolution', () => {
     it('should resolve CTE references to SubqueryScan plans', () => {
-      const plan = buildPlan(parseSql({ query: 'WITH active AS (SELECT id FROM users WHERE age > 21) SELECT * FROM active' }))
+      const plan = queryPlan(parseSql({ query: 'WITH active AS (SELECT id FROM users WHERE age > 21) SELECT * FROM active' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
@@ -634,7 +634,7 @@ describe('buildPlan', () => {
 
   describe('complex queries', () => {
     it('should build correct plan for query with WHERE, ORDER BY, LIMIT', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT name FROM users WHERE age > 21 ORDER BY name LIMIT 10' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT name FROM users WHERE age > 21 ORDER BY name LIMIT 10' }))
       expect(plan).toEqual({
         type: 'Limit',
         limit: 10,
@@ -716,7 +716,7 @@ describe('buildPlan', () => {
     })
 
     it('should build correct plan for grouped query with HAVING and ORDER BY', () => {
-      const plan = buildPlan(parseSql({ query: 'SELECT department, COUNT(*) as cnt FROM users GROUP BY department HAVING COUNT(*) > 5 ORDER BY cnt LIMIT 10' }))
+      const plan = queryPlan(parseSql({ query: 'SELECT department, COUNT(*) as cnt FROM users GROUP BY department HAVING COUNT(*) > 5 ORDER BY cnt LIMIT 10' }))
       expect(plan).toEqual({
         type: 'Limit',
         limit: 10,
