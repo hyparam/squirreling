@@ -27,14 +27,25 @@ export type Row = Record<string, SqlPrimitive>[]
 
 /**
  * Async data source for streaming SQL execution.
- * Provides a scan() method that returns an async iterator of rows.
  */
 export interface AsyncDataSource {
-  scan(options: ScanOptions): AsyncIterable<AsyncRow>
+  scan(options: ScanOptions): ScanResults
 }
+
+/**
+ * Result of a scan: streaming rows and flags indicating which hints were
+ * applied by the data source.
+ */
+export interface ScanResults {
+  rows: AsyncIterable<AsyncRow>
+  appliedWhere: boolean // WHERE filter applied at scan time?
+  appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?
+}
+
 /**
  * Scan options passed to data sources for query optimization.
- * All hints are optional and "best effort" - sources may ignore them.
+ * Sources may ignore these hints, but if they are applied, must set the applied
+ * flags in ScanResults to inform the engine.
  */
 export interface ScanOptions {
   columns?: string[] // columns needed (undefined means all columns)
@@ -42,8 +53,6 @@ export interface ScanOptions {
   // important: only apply limit/offset if where is fully applied by the data source
   // otherwise, the data source must return at least enough rows to ensure the engine
   // can apply limit/offset correctly after filtering
-  // even with offset, the datasource must return rows starting from offset 0
-  // but doesn't need to resolve async rows before the offset
   limit?: number
   offset?: number
   signal?: AbortSignal

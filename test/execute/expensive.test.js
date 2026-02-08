@@ -177,26 +177,33 @@ function countingDataSource(data, expensiveColumns) {
   return {
     /**
      * @param {ScanOptions} options
-     * @yields {AsyncRow}
+     * @returns {import('../../src/types.js').ScanResults}
      */
-    async *scan(options) {
-      for await (const row of source.scan(options)) {
-        if (options.signal?.aborted) break
-        /** @type {AsyncCells} */
-        const cells = {}
-        for (const key of row.columns) {
-          const cell = row.cells[key]
-          if (expensiveColumns.includes(key)) {
-            // Wrap the cell to count accesses
-            cells[key] = () => {
-              expensiveCallCount++
-              return cell()
+    scan(options) {
+      const { rows, appliedWhere, appliedLimitOffset } = source.scan(options)
+      return {
+        rows: (async function* () {
+          for await (const row of rows) {
+            if (options.signal?.aborted) break
+            /** @type {AsyncCells} */
+            const cells = {}
+            for (const key of row.columns) {
+              const cell = row.cells[key]
+              if (expensiveColumns.includes(key)) {
+                // Wrap the cell to count accesses
+                cells[key] = () => {
+                  expensiveCallCount++
+                  return cell()
+                }
+              } else {
+                cells[key] = cell
+              }
             }
-          } else {
-            cells[key] = cell
+            yield { columns: row.columns, cells }
           }
-        }
-        yield { columns: row.columns, cells }
+        })(),
+        appliedWhere,
+        appliedLimitOffset,
       }
     },
     getExpensiveCallCount() {

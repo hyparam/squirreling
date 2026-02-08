@@ -1,5 +1,5 @@
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ScanOptions, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ScanOptions, ScanResults, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -25,10 +25,19 @@ function asyncRow(obj) {
  */
 export function memorySource(data) {
   return {
-    async *scan({ signal }) {
-      for (const item of data) {
-        if (signal?.aborted) break
-        yield asyncRow(item)
+    scan({ where, limit, offset, signal }) {
+      // Only apply offset and limit if no where clause
+      const start = !where ? offset ?? 0 : 0
+      const end = !where && limit !== undefined ? start + limit : data.length
+      return {
+        rows: (async function* () {
+          for (let i = start; i < end && i < data.length; i++) {
+            if (signal?.aborted) break
+            yield asyncRow(data[i])
+          }
+        })(),
+        appliedWhere: false,
+        appliedLimitOffset: !where,
       }
     },
   }
@@ -43,33 +52,46 @@ export function cachedDataSource(source) {
   /** @type {Map<string, Promise<SqlPrimitive>>} */
   const cache = new Map()
   return {
-    /**
-     * @param {ScanOptions} options
-     * @yields {AsyncRow}
-     */
-    async *scan(options) {
-      const { signal } = options
-      let index = 0
-      for await (const row of source.scan(options)) {
-        if (signal?.aborted) break
-        const rowIndex = index
-        /** @type {AsyncCells} */
-        const cells = {}
-        for (const key of row.columns) {
-          const cell = row.cells[key]
-          // Wrap the cell to cache accesses
-          cells[key] = () => {
-            const cacheKey = `${rowIndex}:${key}`
-            let value = cache.get(cacheKey)
-            if (!value) {
-              value = cell()
-              cache.set(cacheKey, value)
+    scan(options) {
+      // Does re-run the scan, but cache avoids re-computing expensive async cells
+      // TODO: check cache first to avoid re-scanning when possible
+      const { rows, appliedWhere, appliedLimitOffset } = source.scan(options)
+
+      // Applied where clause changes which rows are returned so can't be cached
+      if (appliedWhere && options.where) {
+        return { rows, appliedWhere, appliedLimitOffset }
+      }
+
+      // Adjust index when source applied offset so cache keys match original rows
+      const indexOffset = appliedLimitOffset && options.offset ? options.offset : 0
+
+      return {
+        rows: (async function* () {
+          let index = 0
+          for await (const row of rows) {
+            if (options.signal?.aborted) break
+            const rowIndex = index + indexOffset
+            /** @type {AsyncCells} */
+            const cells = {}
+            for (const key of row.columns) {
+              const cell = row.cells[key]
+              // Wrap the cell to cache accesses
+              cells[key] = () => {
+                const cacheKey = `${rowIndex}:${key}`
+                let value = cache.get(cacheKey)
+                if (!value) {
+                  value = cell()
+                  cache.set(cacheKey, value)
+                }
+                return value
+              }
             }
-            return value
+            yield { columns: row.columns, cells }
+            index++
           }
-        }
-        yield { columns: row.columns, cells }
-        index++
+        })(),
+        appliedWhere,
+        appliedLimitOffset,
       }
     },
   }

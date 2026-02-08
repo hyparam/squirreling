@@ -206,15 +206,21 @@ describe('CTE execution', () => {
 
       // Create a custom data source that tracks execution
       const trackingSource = {
-        async *scan() {
+        scan() {
           executionCount++
-          for (const user of users) {
-            yield {
-              columns: Object.keys(user),
-              cells: Object.fromEntries(
-                Object.entries(user).map(([k, v]) => [k, () => Promise.resolve(v)])
-              ),
-            }
+          return {
+            rows: (async function* () {
+              for (const user of users) {
+                yield {
+                  columns: Object.keys(user),
+                  cells: Object.fromEntries(
+                    Object.entries(user).map(([k, v]) => [k, () => Promise.resolve(v)])
+                  ),
+                }
+              }
+            })(),
+            appliedWhere: false,
+            appliedLimitOffset: false,
           }
         },
       }
