@@ -8,7 +8,6 @@ export interface ExecuteContext {
 
 export type QueryPlan =
   | ScanNode
-  | SubqueryScanNode
   | FilterNode
   | ProjectNode
   | HashJoinNode
@@ -23,14 +22,7 @@ export type QueryPlan =
 export interface ScanNode {
   type: 'Scan'
   table: string
-  alias?: string
   hints?: ScanOptions
-}
-
-export interface SubqueryScanNode {
-  type: 'SubqueryScan'
-  subquery: QueryPlan
-  alias: string
 }
 
 export interface FilterNode {
@@ -48,6 +40,8 @@ export interface ProjectNode {
 export interface HashJoinNode {
   type: 'HashJoin'
   joinType: JoinType
+  leftAlias: string
+  rightAlias: string
   leftKey: ExprNode
   rightKey: ExprNode
   left: QueryPlan
@@ -57,6 +51,8 @@ export interface HashJoinNode {
 export interface NestedLoopJoinNode {
   type: 'NestedLoopJoin'
   joinType: JoinType
+  leftAlias: string
+  rightAlias: string
   condition: ExprNode
   left: QueryPlan
   right: QueryPlan
@@ -64,6 +60,8 @@ export interface NestedLoopJoinNode {
 
 export interface PositionalJoinNode {
   type: 'PositionalJoin'
+  leftAlias: string
+  rightAlias: string
   left: QueryPlan
   right: QueryPlan
 }

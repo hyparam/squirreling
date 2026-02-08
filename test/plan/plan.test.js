@@ -57,17 +57,13 @@ describe('queryPlan', () => {
         type: 'Project',
         columns: [{ kind: 'star' }],
         child: {
-          type: 'SubqueryScan',
-          subquery: {
-            type: 'Project',
-            columns: [{ kind: 'star' }],
-            child: {
-              type: 'Scan',
-              table: 'users',
-              hints: {},
-            },
+          type: 'Project',
+          columns: [{ kind: 'star' }],
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: {},
           },
-          alias: 'u',
         },
       })
     })
@@ -410,6 +406,8 @@ describe('queryPlan', () => {
         child: {
           type: 'HashJoin',
           joinType: 'INNER',
+          leftAlias: 'users',
+          rightAlias: 'orders',
           leftKey: {
             type: 'identifier',
             name: 'users.id',
@@ -442,6 +440,8 @@ describe('queryPlan', () => {
         columns: [{ kind: 'star' }],
         child: {
           type: 'PositionalJoin',
+          leftAlias: 'a',
+          rightAlias: 'b',
           left: {
             type: 'Scan',
             table: 'a',
@@ -463,6 +463,8 @@ describe('queryPlan', () => {
         child: {
           type: 'NestedLoopJoin',
           joinType: 'INNER',
+          leftAlias: 'users',
+          rightAlias: 'orders',
           condition: {
             type: 'binary',
             op: '>',
@@ -502,6 +504,8 @@ describe('queryPlan', () => {
         child: {
           type: 'HashJoin',
           joinType: 'LEFT',
+          leftAlias: 'users',
+          rightAlias: 'orders',
           leftKey: {
             type: 'identifier',
             name: 'users.id',
@@ -529,53 +533,49 @@ describe('queryPlan', () => {
   })
 
   describe('CTE resolution', () => {
-    it('should resolve CTE references to SubqueryScan plans', () => {
+    it('should resolve CTE references to inline plans', () => {
       const plan = queryPlan(parseSql({ query: 'WITH active AS (SELECT id FROM users WHERE age > 21) SELECT * FROM active' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
         child: {
-          type: 'SubqueryScan',
-          subquery: {
-            type: 'Project',
-            columns: [
-              {
-                kind: 'derived',
-                expr: {
-                  type: 'identifier',
-                  name: 'id',
-                  positionStart: 23,
-                  positionEnd: 25,
-                },
+          type: 'Project',
+          columns: [
+            {
+              kind: 'derived',
+              expr: {
+                type: 'identifier',
+                name: 'id',
+                positionStart: 23,
+                positionEnd: 25,
               },
-            ],
-            child: {
-              type: 'Scan',
-              table: 'users',
-              hints: {
-                columns: ['id', 'age'],
-                where: {
-                  type: 'binary',
-                  op: '>',
-                  left: {
-                    type: 'identifier',
-                    name: 'age',
-                    positionStart: 43,
-                    positionEnd: 46,
-                  },
-                  right: {
-                    type: 'literal',
-                    value: 21,
-                    positionStart: 49,
-                    positionEnd: 51,
-                  },
+            },
+          ],
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: {
+              columns: ['id', 'age'],
+              where: {
+                type: 'binary',
+                op: '>',
+                left: {
+                  type: 'identifier',
+                  name: 'age',
                   positionStart: 43,
+                  positionEnd: 46,
+                },
+                right: {
+                  type: 'literal',
+                  value: 21,
+                  positionStart: 49,
                   positionEnd: 51,
                 },
+                positionStart: 43,
+                positionEnd: 51,
               },
             },
           },
-          alias: 'active',
         },
       })
     })

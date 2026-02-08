@@ -70,8 +70,6 @@ export async function* executeSelect({ select, tables, functions, signal }) {
 export async function* executePlan(plan, context) {
   if (plan.type === 'Scan') {
     yield* executeScan(plan, context)
-  } else if (plan.type === 'SubqueryScan') {
-    yield* executePlan(plan.subquery, context)
   } else if (plan.type === 'Filter') {
     yield* executeFilter(plan, context)
   } else if (plan.type === 'Project') {

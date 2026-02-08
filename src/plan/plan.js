@@ -3,7 +3,7 @@ import { findAggregate } from '../validation.js'
 
 /**
  * @import { BinaryNode, ExprNode, JoinClause, ScanOptions, SelectStatement } from '../types.js'
- * @import { QueryPlan, ScanNode, SubqueryScanNode } from './types.d.ts'
+ * @import { QueryPlan, ScanNode } from './types.d.ts'
  */
 
 /**
@@ -140,30 +140,21 @@ function buildSelectPlan(select, ctePlans) {
  * @param {SelectStatement} select
  * @param {Map<string, QueryPlan>} ctePlans
  * @param {ScanOptions} hints - scan options to pass to data source
- * @returns {ScanNode | SubqueryScanNode}
+ * @returns {QueryPlan}
  */
 function buildFromPlan(select, ctePlans, hints) {
   if (select.from.kind === 'table') {
     const ctePlan = ctePlans.get(select.from.table.toLowerCase())
     if (ctePlan) {
-      return {
-        type: 'SubqueryScan',
-        subquery: ctePlan,
-        alias: select.from.alias ?? select.from.table,
-      }
+      return ctePlan
     }
     return {
       type: 'Scan',
       table: select.from.table,
-      alias: select.from.alias,
       hints,
     }
   } else {
-    return {
-      type: 'SubqueryScan',
-      subquery: queryPlan(select.from.query),
-      alias: select.from.alias,
-    }
+    return queryPlan(select.from.query)
   }
 }
 
@@ -184,18 +175,18 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
     const rightTable = join.alias ?? join.table
 
     const ctePlan = ctePlans.get(join.table.toLowerCase())
-    /** @type {ScanNode | SubqueryScanNode} */
-    const rightScan = ctePlan
-      ? { type: 'SubqueryScan', subquery: ctePlan, alias: join.alias ?? join.table }
-      : { type: 'Scan', table: join.table, alias: join.alias } // TODO: pass hints
+    /** @type {QueryPlan} */
+    const rightScan = ctePlan ?? { type: 'Scan', table: join.table } // TODO: pass hints
 
     if (join.joinType === 'POSITIONAL') {
-      plan = { type: 'PositionalJoin', left: plan, right: rightScan }
+      plan = { type: 'PositionalJoin', leftAlias: currentLeftTable, rightAlias: rightTable, left: plan, right: rightScan }
     } else if (join.on && canExtractEqualityKeys(join.on)) {
       const keys = extractJoinKeyPair(join.on, currentLeftTable, rightTable)
       plan = {
         type: 'HashJoin',
         joinType: join.joinType,
+        leftAlias: currentLeftTable,
+        rightAlias: rightTable,
         leftKey: keys.leftKey,
         rightKey: keys.rightKey,
         left: plan,
@@ -205,6 +196,8 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
       plan = {
         type: 'NestedLoopJoin',
         joinType: join.joinType,
+        leftAlias: currentLeftTable,
+        rightAlias: rightTable,
         condition: join.on,
         left: plan,
         right: rightScan,

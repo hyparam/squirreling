@@ -5,7 +5,7 @@ import { executePlan } from './execute.js'
 
 /**
  * @import { AsyncCells, AsyncRow } from '../types.js'
- * @import { ExecuteContext, HashJoinNode, NestedLoopJoinNode, PositionalJoinNode, QueryPlan } from '../plan/types.js'
+ * @import { ExecuteContext, HashJoinNode, NestedLoopJoinNode, PositionalJoinNode } from '../plan/types.js'
  */
 
 /**
@@ -17,8 +17,8 @@ import { executePlan } from './execute.js'
  */
 export async function* executeNestedLoopJoin(plan, context) {
   const { tables, functions, signal } = context
-  const leftTable = getPlanAlias(plan.left)
-  const rightTable = getPlanAlias(plan.right)
+  const leftTable = plan.leftAlias
+  const rightTable = plan.rightAlias
 
   if (!plan.condition) {
     throw missingClauseError({
@@ -95,8 +95,8 @@ export async function* executeNestedLoopJoin(plan, context) {
  */
 export async function* executePositionalJoin(plan, context) {
   const { signal } = context
-  const leftTable = getPlanAlias(plan.left)
-  const rightTable = getPlanAlias(plan.right)
+  const leftTable = plan.leftAlias
+  const rightTable = plan.rightAlias
 
   // Buffer both sides (required for positional join)
   /** @type {AsyncRow[]} */
@@ -136,8 +136,8 @@ export async function* executePositionalJoin(plan, context) {
  */
 export async function* executeHashJoin(plan, context) {
   const { tables, functions, signal } = context
-  const leftTable = getPlanAlias(plan.left)
-  const rightTable = getPlanAlias(plan.right)
+  const leftTable = plan.leftAlias
+  const rightTable = plan.rightAlias
 
   // Buffer right rows and build hash map
   /** @type {AsyncRow[]} */
@@ -270,29 +270,6 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
   }
 
   return { columns, cells }
-}
-
-/**
- * Gets the table alias for a plan node.
- * For join nodes, returns the combined name of all joined tables.
- *
- * @param {QueryPlan} plan
- * @returns {string}
- */
-function getPlanAlias(plan) {
-  if (plan.type === 'Scan') {
-    return plan.alias ?? plan.table
-  }
-  if (plan.type === 'SubqueryScan') {
-    return plan.alias
-  }
-  if (plan.type === 'HashJoin' || plan.type === 'NestedLoopJoin' || plan.type === 'PositionalJoin') {
-    const leftAlias = getPlanAlias(plan.left)
-    const rightAlias = getPlanAlias(plan.right)
-    return `${leftAlias}_${rightAlias}`
-  }
-  // All other node types have a child
-  return getPlanAlias(plan.child)
 }
 
 /**
