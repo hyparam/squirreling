@@ -10,7 +10,7 @@ import { executeSort } from './sort.js'
 import { defaultDerivedAlias, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, SelectStatement, UserDefinedFunction } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, ExprNode, SelectStatement, UserDefinedFunction } from '../types.js'
  * @import { DistinctNode, ExecuteContext, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
  */
 
@@ -109,7 +109,72 @@ async function* executeScan(plan, context) {
     throw tableNotFoundError({ tableName: plan.table })
   }
 
-  yield* dataSource.scan({ ...plan.hints, signal })
+  const { rows, appliedWhere, appliedLimitOffset } = dataSource.scan({ ...plan.hints, signal })
+
+  // Applied limit/offset without applied where is invalid
+  const hasLimitOffset = plan.hints?.limit !== undefined || plan.hints?.offset // 0 offset is noop
+  if (!appliedWhere && appliedLimitOffset && plan.hints?.where && hasLimitOffset) {
+    throw new Error(`Data source "${plan.table}" applied limit/offset without applying where`)
+  }
+
+  let result = rows
+
+  // Apply WHERE if data source did not
+  if (!appliedWhere && plan.hints?.where) {
+    result = filterRows(result, plan.hints.where, context)
+  }
+
+  // Apply LIMIT/OFFSET if data source did not
+  if (!appliedLimitOffset && hasLimitOffset) {
+    result = limitRows(result, plan.hints.limit, plan.hints.offset, signal)
+  }
+
+  yield* result
+}
+
+/**
+ * Filters rows by a condition
+ *
+ * @param {AsyncIterable<AsyncRow>} rows
+ * @param {ExprNode} condition
+ * @param {ExecuteContext} context
+ * @yields {AsyncRow}
+ */
+async function* filterRows(rows, condition, context) {
+  let rowIndex = 0
+  for await (const row of rows) {
+    if (context.signal?.aborted) return
+    rowIndex++
+    const pass = await evaluateExpr({ node: condition, row, rowIndex, ...context })
+    if (pass) yield row
+  }
+}
+
+/**
+ * Skips the first `offset` rows, then yields at most `limit` rows
+ *
+ * @param {AsyncIterable<AsyncRow>} rows
+ * @param {number} [limit]
+ * @param {number} [offset]
+ * @param {AbortSignal} [signal]
+ * @yields {AsyncRow}
+ */
+async function* limitRows(rows, limit, offset, signal) {
+  const skip = offset ?? 0
+  const max = limit ?? Infinity
+  if (max <= 0) return
+  let skipped = 0
+  let yielded = 0
+  for await (const row of rows) {
+    if (signal?.aborted) return
+    if (skipped < skip) {
+      skipped++
+      continue
+    }
+    yield row
+    yielded++
+    if (yielded >= max) return
+  }
 }
 
 /**
@@ -120,24 +185,7 @@ async function* executeScan(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeFilter(plan, context) {
-  const { tables, functions, signal } = context
-  let rowIndex = 0
-
-  for await (const row of executePlan(plan.child, context)) {
-    if (signal?.aborted) return
-    rowIndex++
-    const pass = await evaluateExpr({
-      node: plan.condition,
-      row,
-      tables,
-      functions,
-      rowIndex,
-      signal,
-    })
-    if (pass) {
-      yield row
-    }
-  }
+  yield* filterRows(executePlan(plan.child, context), plan.condition, context)
 }
 
 /**
@@ -217,28 +265,5 @@ async function* executeDistinct(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeLimit(plan, context) {
-  const { signal } = context
-
-  const offset = plan.offset ?? 0
-  const limit = plan.limit ?? Infinity
-  if (limit <= 0) return
-
-  let rowsSkipped = 0
-  let rowsYielded = 0
-
-  for await (const row of executePlan(plan.child, context)) {
-    if (signal?.aborted) return
-
-    if (rowsSkipped < offset) {
-      rowsSkipped++
-      continue
-    }
-
-    yield row
-    rowsYielded++
-
-    if (rowsYielded >= limit) {
-      break
-    }
-  }
+  yield* limitRows(executePlan(plan.child, context), plan.limit, plan.offset, context.signal)
 }

@@ -82,7 +82,7 @@ describe('abort signal', () => {
       controller.abort()
 
       const rows = []
-      for await (const row of source.scan({ signal: controller.signal })) {
+      for await (const row of source.scan({ signal: controller.signal }).rows) {
         rows.push(row)
       }
       expect(rows).toHaveLength(0)
@@ -94,7 +94,7 @@ describe('abort signal', () => {
       const controller = new AbortController()
 
       const rows = []
-      for await (const row of source.scan({ signal: controller.signal })) {
+      for await (const row of source.scan({ signal: controller.signal }).rows) {
         rows.push(await row.cells['name']())
         if (rows.length === 2) {
           controller.abort()
@@ -109,7 +109,7 @@ describe('abort signal', () => {
       const controller = new AbortController()
 
       const rows = []
-      for await (const row of source.scan({ signal: controller.signal })) {
+      for await (const row of source.scan({ signal: controller.signal }).rows) {
         rows.push(await row.cells['name']())
       }
       expect(rows).toHaveLength(5)
@@ -120,7 +120,7 @@ describe('abort signal', () => {
       const { source, getScannedCount } = trackingSource(users)
 
       const rows = []
-      for await (const row of source.scan({})) {
+      for await (const row of source.scan({}).rows) {
         rows.push(await row.cells['name']())
       }
       expect(rows).toHaveLength(5)
@@ -182,13 +182,20 @@ function trackingSource(data) {
     source: {
       /**
        * @param {ScanOptions} options
-       * @yields {AsyncRow}
+       * @returns {import('../../src/types.js').ScanResults}
        */
-      async *scan(options) {
-        for await (const row of inner.scan(options)) {
-          if (options.signal?.aborted) break
-          scannedCount++
-          yield row
+      scan(options) {
+        const { rows, appliedWhere, appliedLimitOffset } = inner.scan(options)
+        return {
+          rows: (async function* () {
+            for await (const row of rows) {
+              if (options.signal?.aborted) break
+              scannedCount++
+              yield row
+            }
+          })(),
+          appliedWhere,
+          appliedLimitOffset,
         }
       },
     },

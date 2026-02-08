@@ -84,6 +84,14 @@ describe('subqueries', () => {
       expect(result).toHaveLength(2)
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
     })
+
+    it('should apply OFFSET for derived table with LIMIT', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT id FROM (SELECT * FROM users ORDER BY id) AS u LIMIT 1 OFFSET 1',
+      }))
+      expect(result).toEqual([{ id: 2 }])
+    })
   })
 
   describe('IN subquery', () => {

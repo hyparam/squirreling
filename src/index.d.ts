@@ -8,6 +8,7 @@ export type {
   ParseSqlOptions,
   QueryPlan,
   ScanOptions,
+  ScanResults,
   SelectStatement,
   SqlPrimitive,
   Token,

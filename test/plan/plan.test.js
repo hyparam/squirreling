@@ -74,53 +74,32 @@ describe('queryPlan', () => {
   })
 
   describe('WHERE clause', () => {
-    it('should add FilterNode for WHERE clause', () => {
+    it('should pass WHERE as hint without Filter node', () => {
       const plan = queryPlan(parseSql({ query: 'SELECT * FROM users WHERE age > 21' }))
       expect(plan).toEqual({
         type: 'Project',
         columns: [{ kind: 'star' }],
         child: {
-          type: 'Filter',
-          condition: {
-            type: 'binary',
-            op: '>',
-            left: {
-              type: 'identifier',
-              name: 'age',
-              positionStart: 26,
-              positionEnd: 29,
-            },
-            right: {
-              type: 'literal',
-              value: 21,
-              positionStart: 32,
-              positionEnd: 34,
-            },
-            positionStart: 26,
-            positionEnd: 34,
-          },
-          child: {
-            type: 'Scan',
-            table: 'users',
-            hints: {
-              where: {
-                type: 'binary',
-                op: '>',
-                left: {
-                  type: 'identifier',
-                  name: 'age',
-                  positionStart: 26,
-                  positionEnd: 29,
-                },
-                right: {
-                  type: 'literal',
-                  value: 21,
-                  positionStart: 32,
-                  positionEnd: 34,
-                },
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            where: {
+              type: 'binary',
+              op: '>',
+              left: {
+                type: 'identifier',
+                name: 'age',
                 positionStart: 26,
+                positionEnd: 29,
+              },
+              right: {
+                type: 'literal',
+                value: 21,
+                positionStart: 32,
                 positionEnd: 34,
               },
+              positionStart: 26,
+              positionEnd: 34,
             },
           },
         },
@@ -227,41 +206,32 @@ describe('queryPlan', () => {
   })
 
   describe('LIMIT/OFFSET', () => {
-    it('should add LimitNode for LIMIT', () => {
+    it('should delegate LIMIT to scan hints without LimitNode', () => {
       const plan = queryPlan(parseSql({ query: 'SELECT * FROM users LIMIT 10' }))
       expect(plan).toEqual({
-        type: 'Limit',
-        limit: 10,
+        type: 'Project',
+        columns: [{ kind: 'star' }],
         child: {
-          type: 'Project',
-          columns: [{ kind: 'star' }],
-          child: {
-            type: 'Scan',
-            table: 'users',
-            hints: {
-              limit: 10,
-            },
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            limit: 10,
           },
         },
       })
     })
 
-    it('should add LimitNode for OFFSET', () => {
+    it('should delegate offset and limit to scan hints without LimitNode', () => {
       const plan = queryPlan(parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET 5' }))
       expect(plan).toEqual({
-        type: 'Limit',
-        limit: 10,
-        offset: 5,
+        type: 'Project',
+        columns: [{ kind: 'star' }],
         child: {
-          type: 'Project',
-          columns: [{ kind: 'star' }],
-          child: {
-            type: 'Scan',
-            table: 'users',
-            hints: {
-              limit: 10,
-              offset: 5,
-            },
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            limit: 10,
+            offset: 5,
           },
         },
       })
@@ -580,48 +550,27 @@ describe('queryPlan', () => {
               },
             ],
             child: {
-              type: 'Filter',
-              condition: {
-                type: 'binary',
-                op: '>',
-                left: {
-                  type: 'identifier',
-                  name: 'age',
-                  positionStart: 43,
-                  positionEnd: 46,
-                },
-                right: {
-                  type: 'literal',
-                  value: 21,
-                  positionStart: 49,
-                  positionEnd: 51,
-                },
-                positionStart: 43,
-                positionEnd: 51,
-              },
-              child: {
-                type: 'Scan',
-                table: 'users',
-                hints: {
-                  columns: ['id', 'age'],
-                  where: {
-                    type: 'binary',
-                    op: '>',
-                    left: {
-                      type: 'identifier',
-                      name: 'age',
-                      positionStart: 43,
-                      positionEnd: 46,
-                    },
-                    right: {
-                      type: 'literal',
-                      value: 21,
-                      positionStart: 49,
-                      positionEnd: 51,
-                    },
+              type: 'Scan',
+              table: 'users',
+              hints: {
+                columns: ['id', 'age'],
+                where: {
+                  type: 'binary',
+                  op: '>',
+                  left: {
+                    type: 'identifier',
+                    name: 'age',
                     positionStart: 43,
+                    positionEnd: 46,
+                  },
+                  right: {
+                    type: 'literal',
+                    value: 21,
+                    positionStart: 49,
                     positionEnd: 51,
                   },
+                  positionStart: 43,
+                  positionEnd: 51,
                 },
               },
             },
@@ -665,48 +614,27 @@ describe('queryPlan', () => {
               },
             ],
             child: {
-              type: 'Filter',
-              condition: {
-                type: 'binary',
-                op: '>',
-                left: {
-                  type: 'identifier',
-                  name: 'age',
-                  positionStart: 29,
-                  positionEnd: 32,
-                },
-                right: {
-                  type: 'literal',
-                  value: 21,
-                  positionStart: 35,
-                  positionEnd: 37,
-                },
-                positionStart: 29,
-                positionEnd: 37,
-              },
-              child: {
-                type: 'Scan',
-                table: 'users',
-                hints: {
-                  columns: ['name', 'age'],
-                  where: {
-                    type: 'binary',
-                    op: '>',
-                    left: {
-                      type: 'identifier',
-                      name: 'age',
-                      positionStart: 29,
-                      positionEnd: 32,
-                    },
-                    right: {
-                      type: 'literal',
-                      value: 21,
-                      positionStart: 35,
-                      positionEnd: 37,
-                    },
+              type: 'Scan',
+              table: 'users',
+              hints: {
+                columns: ['name', 'age'],
+                where: {
+                  type: 'binary',
+                  op: '>',
+                  left: {
+                    type: 'identifier',
+                    name: 'age',
                     positionStart: 29,
+                    positionEnd: 32,
+                  },
+                  right: {
+                    type: 'literal',
+                    value: 21,
+                    positionStart: 35,
                     positionEnd: 37,
                   },
+                  positionStart: 29,
+                  positionEnd: 37,
                 },
               },
             },

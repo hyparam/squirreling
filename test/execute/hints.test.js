@@ -56,6 +56,23 @@ describe('query hints', () => {
     const hints = await captureHints('SELECT * FROM data WHERE id = 1')
     expect(hints.where).toMatchObject({ type: 'binary', op: '=' })
   })
+
+  it('should throw if data source applies limit/offset without where', async () => {
+    /** @type {AsyncDataSource} */
+    const badSource = {
+      scan() {
+        return {
+          rows: (async function* () {})(),
+          appliedWhere: false,
+          appliedLimitOffset: true,
+        }
+      },
+    }
+    await expect(collect(executeSql({
+      tables: { data: badSource },
+      query: 'SELECT * FROM data WHERE id = 1 LIMIT 5 OFFSET 2',
+    }))).rejects.toThrow('Data source "data" applied limit/offset without applying where')
+  })
 })
 
 /**
@@ -69,9 +86,13 @@ async function captureHints(query) {
   let capturedHints = {}
   /** @type {AsyncDataSource} */
   const capturingSource = {
-    async *scan(options) {
+    scan(options) {
       capturedHints = options
-      if (false) yield
+      return {
+        rows: (async function* () {})(),
+        appliedWhere: false,
+        appliedLimitOffset: false,
+      }
     },
   }
   await collect(executeSql({

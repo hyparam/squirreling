@@ -41,15 +41,19 @@ function buildSelectPlan(select, ctePlans) {
   )
   const useGrouping = hasAggregate || select.groupBy.length > 0
   const needsBuffering = useGrouping || select.orderBy.length > 0
+  const hasJoins = select.joins.length > 0
+  // Only delegate offset/limit when no grouping, no joins, and simple FROM table (no CTE or subquery)
+  const fromIsBaseTable = select.from.kind === 'table' && !ctePlans.has(select.from.table.toLowerCase())
+  const canDelegateOffset = fromIsBaseTable && !needsBuffering && !select.distinct && !hasJoins
 
   // Compute query hints for data source optimization
   /** @type {ScanOptions} */
   const hints = {
     columns: extractColumns(select),
-    where: select.where,
+    where: hasJoins ? undefined : select.where,
   }
-  // Only pass limit/offset for streaming queries (no buffering required)
-  if (!needsBuffering) {
+  // Only pass limit/offset when safe to delegate to data source
+  if (canDelegateOffset) {
     hints.limit = select.limit
     hints.offset = select.offset
   }
@@ -57,6 +61,9 @@ function buildSelectPlan(select, ctePlans) {
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
   let plan = buildFromPlan(select, ctePlans, hints)
+
+  // Whether the WHERE can be handled by executeScan (direct table scan, no JOINs)
+  const scanHandlesWhere = plan.type === 'Scan' && !hasJoins
 
   // Add JOINs
   if (select.joins.length) {
@@ -66,8 +73,8 @@ function buildSelectPlan(select, ctePlans) {
     plan = buildJoinPlan(plan, select.joins, sourceAlias, ctePlans)
   }
 
-  // Add WHERE filter
-  if (select.where) {
+  // Add WHERE filter when executeScan can't handle it (JOINs, subqueries, CTEs)
+  if (select.where && !scanHandlesWhere) {
     plan = { type: 'Filter', condition: select.where, child: plan }
   }
 
@@ -117,8 +124,10 @@ function buildSelectPlan(select, ctePlans) {
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (select.limit !== undefined || select.offset !== undefined) {
-      plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
+    const effectiveOffset = canDelegateOffset ? undefined : select.offset
+    const effectiveLimit = canDelegateOffset ? undefined : select.limit
+    if (effectiveLimit !== undefined || effectiveOffset !== undefined) {
+      plan = { type: 'Limit', limit: effectiveLimit, offset: effectiveOffset, child: plan }
     }
   }
 
@@ -130,7 +139,7 @@ function buildSelectPlan(select, ctePlans) {
  *
  * @param {SelectStatement} select
  * @param {Map<string, QueryPlan>} ctePlans
- * @param {ScanOptions} [hints] - scan options to pass to data source
+ * @param {ScanOptions} hints - scan options to pass to data source
  * @returns {ScanNode | SubqueryScanNode}
  */
 function buildFromPlan(select, ctePlans, hints) {
@@ -178,7 +187,7 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
     /** @type {ScanNode | SubqueryScanNode} */
     const rightScan = ctePlan
       ? { type: 'SubqueryScan', subquery: ctePlan, alias: join.alias ?? join.table }
-      : { type: 'Scan', table: join.table, alias: join.alias }
+      : { type: 'Scan', table: join.table, alias: join.alias } // TODO: pass hints
 
     if (join.joinType === 'POSITIONAL') {
       plan = { type: 'PositionalJoin', left: plan, right: rightScan }

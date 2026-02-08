@@ -85,6 +85,45 @@ const rows = await collect(executeSql({
 
 Because Squirreling uses lazy cell evaluation, the `AI_SCORE` function only executes for cells that are actually materialized. Combined with `LIMIT` or `WHERE`, you can efficiently query expensive operations.
 
+### Custom Data Sources
+
+Squirreling can work with any data source that implements the `AsyncDataSource` interface.
+
+```typescript
+interface AsyncDataSource {
+  scan(options: ScanOptions): ScanResults
+}
+
+interface ScanOptions {
+  columns?: string[]
+  where?: ExprNode
+  limit?: number
+  offset?: number
+  signal?: AbortSignal
+}
+
+interface ScanResults {
+  rows: AsyncIterable<AsyncRow> // async iterable of rows
+  appliedWhere: boolean // WHERE filter applied at scan time?
+  appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?
+}
+```
+
+The `scan()` method returns a `ScanResults` object containing a row stream and flags indicating which query hints were applied by the data source. This allows optional push down optimizations like filtering, limiting, and offsetting at the data source level when possible. Set `appliedWhere` or `appliedLimitOffset` to `true` if the data source handled them, `false` if the engine should apply them.
+
+```typescript
+const customSource: AsyncDataSource = {
+  scan({ columns, where, limit, offset, signal }) {
+    // Use hints to optimize your scan, or ignore them
+    return {
+      rows: fetchAllRows({ columns, signal }),
+      appliedWhere: false, // source returned all rows, engine will filter
+      appliedLimitOffset: false, // source returned all rows, engine will limit/skip
+    }
+  },
+}
+```
+
 ## Supported SQL Syntax
 
 Squirreling mostly follows the SQL standard. The following features are supported:
