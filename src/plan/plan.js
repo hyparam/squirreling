@@ -2,7 +2,7 @@ import { extractColumns } from '../execute/columns.js'
 import { findAggregate } from '../validation.js'
 
 /**
- * @import { BinaryNode, ExprNode, JoinClause, ScanOptions, SelectStatement } from '../types.js'
+ * @import { ExprNode, JoinClause, ScanOptions, SelectStatement } from '../types.js'
  * @import { QueryPlan, ScanNode } from './types.d.ts'
  */
 
@@ -41,29 +41,12 @@ function buildSelectPlan(select, ctePlans) {
   )
   const useGrouping = hasAggregate || select.groupBy.length > 0
   const needsBuffering = useGrouping || select.orderBy.length > 0
-  const hasJoins = select.joins.length > 0
-  // Only delegate offset/limit when no grouping, no joins, and simple FROM table (no CTE or subquery)
-  const fromIsBaseTable = select.from.kind === 'table' && !ctePlans.has(select.from.table.toLowerCase())
-  const canDelegateOffset = fromIsBaseTable && !needsBuffering && !select.distinct && !hasJoins
-
-  // Compute query hints for data source optimization
-  /** @type {ScanOptions} */
-  const hints = {
-    columns: extractColumns(select),
-    where: hasJoins ? undefined : select.where,
-  }
-  // Only pass limit/offset when safe to delegate to data source
-  if (canDelegateOffset) {
-    hints.limit = select.limit
-    hints.offset = select.offset
-  }
 
   // Start with the data source (FROM clause)
+  /** @type {ScanOptions} */
+  const hints = { columns: extractColumns(select) }
   /** @type {QueryPlan} */
   let plan = buildFromPlan(select, ctePlans, hints)
-
-  // Whether the WHERE can be handled by executeScan (direct table scan, no JOINs)
-  const scanHandlesWhere = plan.type === 'Scan' && !hasJoins
 
   // Add JOINs
   if (select.joins.length) {
@@ -73,8 +56,18 @@ function buildSelectPlan(select, ctePlans) {
     plan = buildJoinPlan(plan, select.joins, sourceAlias, ctePlans)
   }
 
-  // Add WHERE filter when executeScan can't handle it (JOINs, subqueries, CTEs)
-  if (select.where && !scanHandlesWhere) {
+  // Delegate WHERE and LIMIT/OFFSET to scan when plan is a direct table scan
+  if (plan.type === 'Scan') {
+    plan.hints.where = select.where
+    if (!needsBuffering && !select.distinct) {
+      plan.hints.limit = select.limit
+      plan.hints.offset = select.offset
+    }
+  }
+
+  // Add WHERE filter when scan can't handle it (JOINs, subqueries, CTEs)
+  const isScan = plan.type === 'Scan'
+  if (select.where && !isScan) {
     plan = { type: 'Filter', condition: select.where, child: plan }
   }
 
@@ -124,10 +117,8 @@ function buildSelectPlan(select, ctePlans) {
       plan = { type: 'Distinct', child: plan }
     }
 
-    const effectiveOffset = canDelegateOffset ? undefined : select.offset
-    const effectiveLimit = canDelegateOffset ? undefined : select.limit
-    if (effectiveLimit !== undefined || effectiveOffset !== undefined) {
-      plan = { type: 'Limit', limit: effectiveLimit, offset: effectiveOffset, child: plan }
+    if (!(isScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset !== undefined)) {
+      plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   }
 
@@ -180,27 +171,29 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
 
     if (join.joinType === 'POSITIONAL') {
       plan = { type: 'PositionalJoin', leftAlias: currentLeftTable, rightAlias: rightTable, left: plan, right: rightScan }
-    } else if (join.on && canExtractEqualityKeys(join.on)) {
-      const keys = extractJoinKeyPair(join.on, currentLeftTable, rightTable)
-      plan = {
-        type: 'HashJoin',
-        joinType: join.joinType,
-        leftAlias: currentLeftTable,
-        rightAlias: rightTable,
-        leftKey: keys.leftKey,
-        rightKey: keys.rightKey,
-        left: plan,
-        right: rightScan,
-      }
     } else {
-      plan = {
-        type: 'NestedLoopJoin',
-        joinType: join.joinType,
-        leftAlias: currentLeftTable,
-        rightAlias: rightTable,
-        condition: join.on,
-        left: plan,
-        right: rightScan,
+      const keys = join.on && extractSimpleJoinKeys(join.on, currentLeftTable, rightTable)
+      if (keys) {
+        plan = {
+          type: 'HashJoin',
+          joinType: join.joinType,
+          leftAlias: currentLeftTable,
+          rightAlias: rightTable,
+          leftKey: keys.leftKey,
+          rightKey: keys.rightKey,
+          left: plan,
+          right: rightScan,
+        }
+      } else {
+        plan = {
+          type: 'NestedLoopJoin',
+          joinType: join.joinType,
+          leftAlias: currentLeftTable,
+          rightAlias: rightTable,
+          condition: join.on,
+          left: plan,
+          right: rightScan,
+        }
       }
     }
 
@@ -212,33 +205,26 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
 }
 
 /**
- * Checks if a join condition can be used for hash join (simple equality)
+ * Extracts left and right key expressions from a simple equality join condition.
+ * Returns undefined if the condition is not a simple equality between identifiers.
  *
  * @param {ExprNode} condition
- * @returns {condition is BinaryNode}
- */
-function canExtractEqualityKeys(condition) {
-  if (condition.type !== 'binary' || condition.op !== '=') {
-    return false
-  }
-  // Check that both sides are identifiers (potentially qualified)
-  return condition.left.type === 'identifier' && condition.right.type === 'identifier'
-}
-
-/**
- * Extracts left and right key expressions from an equality join condition
- *
- * @param {BinaryNode} condition
  * @param {string} leftTable
  * @param {string} rightTable
- * @returns {{ leftKey: ExprNode, rightKey: ExprNode }}
+ * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | undefined}
  */
-function extractJoinKeyPair(condition, leftTable, rightTable) {
+function extractSimpleJoinKeys(condition, leftTable, rightTable) {
+  if (condition.type !== 'binary' || condition.op !== '=') {
+    return undefined
+  }
   const { left, right } = condition
+  if (left.type !== 'identifier' || right.type !== 'identifier') {
+    return undefined
+  }
 
   // Check if keys are in swapped order (right table ref on left side)
-  const leftRefsRight = left.type === 'identifier' && left.name.startsWith(`${rightTable}.`)
-  const rightRefsLeft = right.type === 'identifier' && right.name.startsWith(`${leftTable}.`)
+  const leftRefsRight = left.name.startsWith(`${rightTable}.`)
+  const rightRefsLeft = right.name.startsWith(`${leftTable}.`)
 
   if (leftRefsRight && rightRefsLeft) {
     return { leftKey: right, rightKey: left }

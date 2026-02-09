@@ -5,7 +5,7 @@ import { collect, executeSql } from '../../src/index.js'
  * @import { AsyncDataSource, ScanOptions } from '../../src/types.js'
  */
 
-describe('query hints', () => {
+describe('scan hints', () => {
   it('should not pass * as a column hint for COUNT(*)', async () => {
     const hints = await captureHints('SELECT COUNT(*) FROM data')
     expect(hints.columns).not.toContain('*')
@@ -55,6 +55,22 @@ describe('query hints', () => {
   it('should pass where hint', async () => {
     const hints = await captureHints('SELECT * FROM data WHERE id = 1')
     expect(hints.where).toMatchObject({ type: 'binary', op: '=' })
+  })
+})
+
+describe('scan results', () => {
+  it('should throw if scan() does not return a ScanResults object', async () => {
+    // Test error handling when scan() returns AsyncGenerator (older api)
+    const badSource = {
+      scan() {
+        return (async function* () {})()
+      },
+    }
+    await expect(collect(executeSql({
+      // @ts-expect-error testing invalid scan() return type
+      tables: { data: badSource },
+      query: 'SELECT * FROM data',
+    }))).rejects.toThrow('scan() must return a ScanResults object')
   })
 
   it('should throw if data source applies limit/offset without where', async () => {

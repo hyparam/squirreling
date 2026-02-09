@@ -235,6 +235,18 @@ describe('parseSql error handling', () => {
     it('should throw error on invalid OFFSET after LIMIT', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET abc' })).toThrow('Expected numeric OFFSET')
     })
+
+    it('should throw error on negative LIMIT', () => {
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT -1' })).toThrow('Expected non-negative LIMIT value')
+    })
+
+    it('should throw error on negative OFFSET', () => {
+      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET -1' })).toThrow('Expected non-negative OFFSET value')
+    })
+
+    it('should throw error on negative OFFSET after LIMIT', () => {
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET -5' })).toThrow('Expected non-negative OFFSET value')
+    })
   })
 })
 

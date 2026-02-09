@@ -327,6 +327,9 @@ export function parseSelectInternal(state) {
     if (!Number.isFinite(n)) {
       throw parseError(state, 'valid LIMIT value')
     }
+    if (n < 0) {
+      throw parseError(state, 'non-negative LIMIT value')
+    }
     limit = n
 
     if (match(state, 'keyword', 'OFFSET')) {
@@ -339,6 +342,9 @@ export function parseSelectInternal(state) {
       if (!Number.isFinite(off)) {
         throw parseError(state, 'valid OFFSET value')
       }
+      if (off < 0) {
+        throw parseError(state, 'non-negative OFFSET value')
+      }
       offset = off
     }
   } else if (match(state, 'keyword', 'OFFSET')) {
@@ -350,6 +356,9 @@ export function parseSelectInternal(state) {
     const off = parseInt(oTok.value, 10)
     if (!Number.isFinite(off)) {
       throw parseError(state, 'valid OFFSET value')
+    }
+    if (off < 0) {
+      throw parseError(state, 'non-negative OFFSET value')
     }
     offset = off
   }

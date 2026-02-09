@@ -107,7 +107,11 @@ async function* executeScan(plan, context) {
     throw tableNotFoundError({ tableName: plan.table })
   }
 
-  const { rows, appliedWhere, appliedLimitOffset } = dataSource.scan({ ...plan.hints, signal })
+  const scanResult = dataSource.scan({ ...plan.hints, signal })
+  if (!scanResult.rows) {
+    throw new Error(`Data source "${plan.table}" scan() must return a ScanResults object with { rows, appliedWhere, appliedLimitOffset }`)
+  }
+  const { rows, appliedWhere, appliedLimitOffset } = scanResult
 
   // Applied limit/offset without applied where is invalid
   const hasLimitOffset = plan.hints?.limit !== undefined || plan.hints?.offset // 0 offset is noop
