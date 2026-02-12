@@ -1,57 +1,104 @@
 /**
- * @import { ExprNode, SelectStatement, SelectColumn } from '../types.js'
+ * @import { ExprNode, SelectStatement } from '../types.js'
  */
 
 /**
- * Extracts column names needed from a SELECT statement.
+ * Extracts per-table column names needed from a SELECT statement with joins.
+ * Returns a Map from table alias to column names, or undefined if all columns needed.
  *
  * @param {SelectStatement} select
- * @returns {string[] | undefined} array of column names, or undefined if all columns needed
+ * @returns {Map<string, string[] | undefined>}
  */
 export function extractColumns(select) {
-  // If any column is SELECT *, we need all columns
-  if (select.columns.some(col => col.kind === 'star')) {
-    return undefined
+  // Build alias list from FROM + JOINs
+  const fromAlias = select.from.kind === 'table'
+    ? select.from.alias ?? select.from.table
+    : select.from.alias
+  /** @type {string[]} */
+  const aliases = [fromAlias]
+  for (const join of select.joins) {
+    aliases.push(join.alias ?? join.table)
   }
 
+  // If any unqualified SELECT * exists, all tables need all columns
+  if (select.columns.some(col => col.kind === 'star' && !col.table)) {
+    /** @type {Map<string, string[] | undefined>} */
+    const result = new Map()
+    for (const alias of aliases) {
+      result.set(alias, undefined)
+    }
+    return result
+  }
+
+  // Track which tables need all columns (SELECT table.*)
   /** @type {Set<string>} */
-  const columns = new Set()
-
-  // Columns from SELECT list
+  const allColumnsNeeded = new Set()
   for (const col of select.columns) {
-    collectColumnsFromSelectColumn(col, columns)
+    if (col.kind === 'star' && col.table) {
+      allColumnsNeeded.add(col.table)
+    }
   }
 
-  // Columns from WHERE
-  collectColumnsFromExpr(select.where, columns)
-
-  // Columns from ORDER BY
+  // Collect all identifiers from all clauses
+  /** @type {Set<string>} */
+  const identifiers = new Set()
+  for (const col of select.columns) {
+    if (col.kind === 'derived') {
+      collectColumnsFromExpr(col.expr, identifiers)
+    }
+  }
+  collectColumnsFromExpr(select.where, identifiers)
   for (const item of select.orderBy) {
-    collectColumnsFromExpr(item.expr, columns)
+    collectColumnsFromExpr(item.expr, identifiers)
   }
-
-  // Columns from GROUP BY
   for (const expr of select.groupBy) {
-    collectColumnsFromExpr(expr, columns)
+    collectColumnsFromExpr(expr, identifiers)
+  }
+  collectColumnsFromExpr(select.having, identifiers)
+  for (const join of select.joins) {
+    collectColumnsFromExpr(join.on, identifiers)
   }
 
-  // Columns from HAVING
-  collectColumnsFromExpr(select.having, columns)
-
-  return [...columns]
-}
-
-/**
- * Collects column names from a SELECT column
- *
- * @param {SelectColumn} col
- * @param {Set<string>} columns
- */
-function collectColumnsFromSelectColumn(col, columns) {
-  if (col.kind === 'derived') {
-    collectColumnsFromExpr(col.expr, columns)
+  // Initialize per-table sets (skip tables needing all columns)
+  /** @type {Map<string, Set<string>>} */
+  const perTable = new Map()
+  for (const alias of aliases) {
+    if (!allColumnsNeeded.has(alias)) {
+      perTable.set(alias, new Set())
+    }
   }
-  // 'star' columns handled separately (returns undefined for all columns)
+
+  // Partition identifiers by table prefix
+  for (const name of identifiers) {
+    const dotIndex = name.indexOf('.')
+    if (dotIndex >= 0) {
+      // Qualified: add to matching table only
+      const tablePrefix = name.substring(0, dotIndex)
+      const columnName = name.substring(dotIndex + 1)
+      const set = perTable.get(tablePrefix)
+      if (set) {
+        set.add(columnName)
+      }
+    } else {
+      // Unqualified: add to all tables (ambiguous)
+      for (const [, set] of perTable) {
+        set.add(name)
+      }
+    }
+  }
+
+  // Build result map: convert Sets to arrays, undefined for all-columns tables
+  /** @type {Map<string, string[] | undefined>} */
+  const result = new Map()
+  for (const alias of aliases) {
+    if (allColumnsNeeded.has(alias)) {
+      result.set(alias, undefined)
+    } else {
+      const set = perTable.get(alias)
+      result.set(alias, set ? [...set] : undefined)
+    }
+  }
+  return result
 }
 
 /**

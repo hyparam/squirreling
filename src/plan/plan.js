@@ -3,7 +3,7 @@ import { findAggregate } from '../validation.js'
 
 /**
  * @import { ExprNode, JoinClause, ScanOptions, SelectStatement } from '../types.js'
- * @import { QueryPlan, ScanNode } from './types.d.ts'
+ * @import { QueryPlan } from './types.d.ts'
  */
 
 /**
@@ -19,22 +19,23 @@ export function queryPlan(select) {
   const ctePlans = new Map()
   if (select.with) {
     for (const cte of select.with.ctes) {
-      const ctePlan = buildSelectPlan(cte.query, ctePlans)
+      const ctePlan = buildSelectPlan({ select: cte.query, ctePlans })
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
     }
   }
 
-  return buildSelectPlan(select, ctePlans)
+  return buildSelectPlan({ select, ctePlans })
 }
 
 /**
  * Builds a plan for a SELECT statement with CTE resolution.
  *
- * @param {SelectStatement} select - the SELECT statement AST
- * @param {Map<string, QueryPlan>} ctePlans
- * @returns {QueryPlan} the root of the query plan tree
+ * @param {object} options
+ * @param {SelectStatement} options.select
+ * @param {Map<string, QueryPlan>} options.ctePlans
+ * @returns {QueryPlan}
  */
-function buildSelectPlan(select, ctePlans) {
+function buildSelectPlan({ select, ctePlans }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.kind === 'derived' && findAggregate(col.expr)
@@ -42,18 +43,24 @@ function buildSelectPlan(select, ctePlans) {
   const useGrouping = hasAggregate || select.groupBy.length > 0
   const needsBuffering = useGrouping || select.orderBy.length > 0
 
-  // Start with the data source (FROM clause)
+  // Source alias for FROM clause
+  const sourceAlias = select.from.kind === 'table'
+    ? select.from.alias ?? select.from.table
+    : select.from.alias
+
+  // Determine per-table column hints for pushdown
   /** @type {ScanOptions} */
-  const hints = { columns: extractColumns(select) }
+  const hints = {}
+  const perTableColumns = extractColumns(select)
+  hints.columns = perTableColumns.get(sourceAlias)
+
+  // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
-  let plan = buildFromPlan(select, ctePlans, hints)
+  let plan = buildFromPlan({ select, ctePlans, hints })
 
   // Add JOINs
   if (select.joins.length) {
-    const sourceAlias = select.from.kind === 'table'
-      ? select.from.alias ?? select.from.table
-      : select.from.alias
-    plan = buildJoinPlan(plan, select.joins, sourceAlias, ctePlans)
+    plan = buildJoinPlan({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns })
   }
 
   // Delegate WHERE and LIMIT/OFFSET to scan when plan is a direct table scan
@@ -128,12 +135,13 @@ function buildSelectPlan(select, ctePlans) {
 /**
  * Builds a plan for the FROM clause
  *
- * @param {SelectStatement} select
- * @param {Map<string, QueryPlan>} ctePlans
- * @param {ScanOptions} hints - scan options to pass to data source
+ * @param {object} options
+ * @param {SelectStatement} options.select
+ * @param {Map<string, QueryPlan>} options.ctePlans
+ * @param {ScanOptions} options.hints
  * @returns {QueryPlan}
  */
-function buildFromPlan(select, ctePlans, hints) {
+function buildFromPlan({ select, ctePlans, hints }) {
   if (select.from.kind === 'table') {
     const ctePlan = ctePlans.get(select.from.table.toLowerCase())
     if (ctePlan) {
@@ -152,13 +160,15 @@ function buildFromPlan(select, ctePlans, hints) {
 /**
  * Builds join plan nodes for all joins
  *
- * @param {QueryPlan} left - the left side of the join (FROM or previous joins)
- * @param {JoinClause[]} joins - array of join clauses
- * @param {string} leftTable - name/alias of the left table
- * @param {Map<string, QueryPlan>} ctePlans
+ * @param {object} options
+ * @param {QueryPlan} options.left - the left side of the join (FROM or previous joins)
+ * @param {JoinClause[]} options.joins - array of join clauses
+ * @param {string} options.leftTable - name/alias of the left table
+ * @param {Map<string, QueryPlan>} options.ctePlans
+ * @param {Map<string, string[] | undefined>} [options.perTableColumns]
  * @returns {QueryPlan}
  */
-function buildJoinPlan(left, joins, leftTable, ctePlans) {
+function buildJoinPlan({ left, joins, leftTable, ctePlans, perTableColumns }) {
   let plan = left
   let currentLeftTable = leftTable
 
@@ -166,13 +176,18 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
     const rightTable = join.alias ?? join.table
 
     const ctePlan = ctePlans.get(join.table.toLowerCase())
+    /** @type {ScanOptions} */
+    const rightHints = {}
+    if (!ctePlan) {
+      rightHints.columns = perTableColumns?.get(rightTable)
+    }
     /** @type {QueryPlan} */
-    const rightScan = ctePlan ?? { type: 'Scan', table: join.table } // TODO: pass hints
+    const rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }
 
     if (join.joinType === 'POSITIONAL') {
       plan = { type: 'PositionalJoin', leftAlias: currentLeftTable, rightAlias: rightTable, left: plan, right: rightScan }
     } else {
-      const keys = join.on && extractSimpleJoinKeys(join.on, currentLeftTable, rightTable)
+      const keys = join.on && extractSimpleJoinKeys({ condition: join.on, leftTable: currentLeftTable, rightTable })
       if (keys) {
         plan = {
           type: 'HashJoin',
@@ -208,12 +223,13 @@ function buildJoinPlan(left, joins, leftTable, ctePlans) {
  * Extracts left and right key expressions from a simple equality join condition.
  * Returns undefined if the condition is not a simple equality between identifiers.
  *
- * @param {ExprNode} condition
- * @param {string} leftTable
- * @param {string} rightTable
+ * @param {object} options
+ * @param {ExprNode} options.condition
+ * @param {string} options.leftTable
+ * @param {string} options.rightTable
  * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | undefined}
  */
-function extractSimpleJoinKeys(condition, leftTable, rightTable) {
+function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   if (condition.type !== 'binary' || condition.op !== '=') {
     return undefined
   }

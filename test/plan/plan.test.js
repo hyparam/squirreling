@@ -428,6 +428,7 @@ describe('queryPlan', () => {
           right: {
             type: 'Scan',
             table: 'orders',
+            hints: {},
           },
         },
       })
@@ -450,6 +451,7 @@ describe('queryPlan', () => {
           right: {
             type: 'Scan',
             table: 'b',
+            hints: {},
           },
         },
       })
@@ -491,6 +493,45 @@ describe('queryPlan', () => {
           right: {
             type: 'Scan',
             table: 'orders',
+            hints: {},
+          },
+        },
+      })
+    })
+
+    it('should push per-table column hints to join scans', () => {
+      const plan = queryPlan(parseSql({ query: 'SELECT users.name, orders.total FROM users JOIN orders ON users.id = orders.user_id' }))
+      expect(plan).toMatchObject({
+        child: {
+          type: 'HashJoin',
+          left: {
+            type: 'Scan',
+            table: 'users',
+            hints: { columns: ['name', 'id'] },
+          },
+          right: {
+            type: 'Scan',
+            table: 'orders',
+            hints: { columns: ['total', 'user_id'] },
+          },
+        },
+      })
+    })
+
+    it('should not add column hints for SELECT * join', () => {
+      const plan = queryPlan(parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' }))
+      expect(plan).toMatchObject({
+        child: {
+          type: 'HashJoin',
+          left: {
+            type: 'Scan',
+            table: 'users',
+            hints: {},
+          },
+          right: {
+            type: 'Scan',
+            table: 'orders',
+            hints: {},
           },
         },
       })
@@ -526,6 +567,7 @@ describe('queryPlan', () => {
           right: {
             type: 'Scan',
             table: 'orders',
+            hints: {},
           },
         },
       })

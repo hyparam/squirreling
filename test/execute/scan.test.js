@@ -27,9 +27,10 @@ describe('scan hints', () => {
     expect(hints.columns).toEqual(['a', 'b'])
   })
 
-  it('should pass column hints from WHERE clause', async () => {
+  it('should pass column and where hints from WHERE clause', async () => {
     const hints = await captureHints('SELECT id FROM data WHERE name = \'Alice\'')
     expect(hints.columns).toEqual(['id', 'name'])
+    expect(hints.where).toMatchObject({ type: 'binary', op: '=' })
   })
 
   it('should return undefined columns for SELECT *', async () => {
@@ -52,9 +53,59 @@ describe('scan hints', () => {
     expect(hints.offset).toBe(5)
   })
 
-  it('should pass where hint', async () => {
-    const hints = await captureHints('SELECT * FROM data WHERE id = 1')
-    expect(hints.where).toMatchObject({ type: 'binary', op: '=' })
+  it('should not pass limit/offset hints for ORDER BY queries', async () => {
+    const hints = await captureHints('SELECT id FROM data ORDER BY name LIMIT 10 OFFSET 5')
+    expect(hints.columns).toEqual(['id', 'name'])
+    expect(hints.limit).toBeUndefined()
+    expect(hints.offset).toBeUndefined()
+  })
+
+  it('should not pass limit/offset hints for DISTINCT queries', async () => {
+    const hints = await captureHints('SELECT DISTINCT id FROM data LIMIT 10 OFFSET 5')
+    expect(hints.columns).toEqual(['id'])
+    expect(hints.limit).toBeUndefined()
+    expect(hints.offset).toBeUndefined()
+  })
+})
+
+describe('join scan hints', () => {
+  it('should pass per-table column hints in join queries', async () => {
+    /** @type {ScanOptions} */
+    let usersHints = {}
+    /** @type {ScanOptions} */
+    let ordersHints = {}
+
+    /** @type {AsyncDataSource} */
+    const usersSource = {
+      scan(options) {
+        usersHints = options
+        return {
+          rows: (async function* () {})(),
+          appliedWhere: false,
+          appliedLimitOffset: false,
+        }
+      },
+    }
+
+    /** @type {AsyncDataSource} */
+    const ordersSource = {
+      scan(options) {
+        ordersHints = options
+        return {
+          rows: (async function* () {})(),
+          appliedWhere: false,
+          appliedLimitOffset: false,
+        }
+      },
+    }
+
+    await collect(executeSql({
+      tables: { users: usersSource, orders: ordersSource },
+      query: 'SELECT users.name, orders.total FROM users JOIN orders ON users.id = orders.user_id',
+    }))
+
+    expect(usersHints.columns).toEqual(['name', 'id'])
+    expect(ordersHints.columns).toEqual(['total', 'user_id'])
   })
 })
 
