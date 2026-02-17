@@ -2,34 +2,25 @@ import { memorySource } from '../backend/dataSource.js'
 import { tableNotFoundError } from '../executionErrors.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
-import { missingClauseError } from '../parseErrors.js'
-import { queryPlan } from '../plan/plan.js'
+import { planSql } from '../plan/plan.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { defaultDerivedAlias, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, SelectStatement, UserDefinedFunction } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, SelectStatement } from '../types.js'
  * @import { DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
  */
 
 /**
- * Executes a SQL SELECT query against named data sources
+ * Executes a SQL SELECT query against tables
  *
- * @param {ExecuteSqlOptions} options - the execution options
- * @yields {AsyncRow} async generator yielding result rows
+ * @param {ExecuteSqlOptions} options
+ * @yields {AsyncRow}
  */
 export async function* executeSql({ tables, query, functions, signal }) {
   const select = typeof query === 'string' ? parseSql({ query, functions }) : query
-
-  // Check for unsupported operations
-  if (!select.from) {
-    throw missingClauseError({
-      missing: 'FROM clause',
-      context: 'SELECT statement',
-    })
-  }
 
   // Normalize tables: convert arrays to AsyncDataSource
   /** @type {Record<string, AsyncDataSource>} */
@@ -42,7 +33,7 @@ export async function* executeSql({ tables, query, functions, signal }) {
     }
   }
 
-  yield* executeSelect({ select, tables: normalizedTables, functions, signal })
+  yield* executeSelect({ select, context: { tables: normalizedTables, functions, signal } })
 }
 
 /**
@@ -50,24 +41,23 @@ export async function* executeSql({ tables, query, functions, signal }) {
  *
  * @param {Object} options
  * @param {SelectStatement} options.select
- * @param {Record<string, AsyncDataSource>} options.tables
- * @param {Record<string, UserDefinedFunction>} [options.functions]
- * @param {AbortSignal} [options.signal]
+ * @param {ExecuteContext} options.context
  * @yields {AsyncRow}
  */
-export async function* executeSelect({ select, tables, functions, signal }) {
-  const plan = queryPlan(select)
-  yield* executePlan(plan, { tables, functions, signal })
+export async function* executeSelect({ select, context }) {
+  const plan = planSql({ query: select, functions: context.functions })
+  yield* executePlan({ plan, context })
 }
 
 /**
  * Executes a query plan and yields result rows
  *
- * @param {QueryPlan} plan - the query plan to execute
- * @param {ExecuteContext} context - execution context
+ * @param {Object} options
+ * @param {QueryPlan} options.plan - the query plan to execute
+ * @param {ExecuteContext} options.context - execution context
  * @returns {AsyncGenerator<AsyncRow>}
  */
-export async function* executePlan(plan, context) {
+export async function* executePlan({ plan, context }) {
   if (plan.type === 'Scan') {
     yield* executeScan(plan, context)
   } else if (plan.type === 'Filter') {
@@ -187,7 +177,7 @@ async function* limitRows(rows, limit, offset, signal) {
  * @yields {AsyncRow}
  */
 async function* executeFilter(plan, context) {
-  yield* filterRows(executePlan(plan.child, context), plan.condition, context)
+  yield* filterRows(executePlan({ plan: plan.child, context }), plan.condition, context)
 }
 
 /**
@@ -200,7 +190,7 @@ async function* executeFilter(plan, context) {
 async function* executeProject(plan, context) {
   let rowIndex = 0
 
-  for await (const row of executePlan(plan.child, context)) {
+  for await (const row of executePlan({ plan: plan.child, context })) {
     if (context.signal?.aborted) return
     rowIndex++
     const currentRowIndex = rowIndex
@@ -245,7 +235,7 @@ async function* executeDistinct(plan, context) {
   /** @type {Set<string>} */
   const seen = new Set()
 
-  for await (const row of executePlan(plan.child, context)) {
+  for await (const row of executePlan({ plan: plan.child, context })) {
     if (signal?.aborted) return
 
     const key = await stableRowKey(row.cells)
@@ -264,5 +254,5 @@ async function* executeDistinct(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeLimit(plan, context) {
-  yield* limitRows(executePlan(plan.child, context), plan.limit, plan.offset, context.signal)
+  yield* limitRows(executePlan({ plan: plan.child, context }), plan.limit, plan.offset, context.signal)
 }

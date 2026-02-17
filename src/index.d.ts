@@ -1,11 +1,13 @@
-import type { AsyncDataSource, AsyncRow, ExecuteSqlOptions, ParseSqlOptions, SelectStatement, SqlPrimitive, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
   AsyncRow,
+  ExecuteContext,
   ExecuteSqlOptions,
   ExprNode,
   ParseSqlOptions,
+  PlanSqlOptions,
   QueryPlan,
   ScanOptions,
   ScanResults,
@@ -16,7 +18,7 @@ export type {
 } from './types.js'
 
 /**
- * Executes a SQL SELECT query against an array of data rows
+ * Executes a SQL SELECT query against tables
  *
  * @param options
  * @param options.tables - source data as a list of objects or an AsyncDataSource
@@ -28,6 +30,16 @@ export type {
 export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
 
 /**
+ * Executes a query plan and yields result rows
+ *
+ * @param options
+ * @param options.plan - the query plan to execute
+ * @param options.context - execution context with tables, functions, and signal
+ * @returns async generator yielding result rows
+ */
+export function executePlan(options: { plan: QueryPlan, context: ExecuteContext }): AsyncGenerator<AsyncRow>
+
+/**
  * Parses a SQL query string into an abstract syntax tree
  *
  * @param options
@@ -36,6 +48,16 @@ export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
  * @returns parsed SQL select statement
  */
 export function parseSql(options: ParseSqlOptions): SelectStatement
+
+/**
+ * Builds a query plan from a SQL query string or AST
+ *
+ * @param options
+ * @param options.query - SQL query string or parsed SelectStatement
+ * @param options.functions - user-defined functions available in the SQL context
+ * @returns the root of the query plan tree
+ */
+export function planSql(options: PlanSqlOptions): QueryPlan
 
 /**
  * Tokenizes a SQL query string into an array of tokens

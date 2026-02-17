@@ -1,5 +1,4 @@
 import { evaluateExpr } from '../expression/evaluate.js'
-import { missingClauseError } from '../parseErrors.js'
 import { stringify } from './utils.js'
 import { executePlan } from './execute.js'
 
@@ -19,17 +18,10 @@ export async function* executeNestedLoopJoin(plan, context) {
   const leftTable = plan.leftAlias
   const rightTable = plan.rightAlias
 
-  if (!plan.condition) {
-    throw missingClauseError({
-      missing: 'ON condition',
-      context: 'JOIN',
-    })
-  }
-
   // Buffer right rows
   /** @type {AsyncRow[]} */
   const rightRows = []
-  for await (const row of executePlan(plan.right, context)) {
+  for await (const row of executePlan({ plan: plan.right, context })) {
     if (context.signal?.aborted) return
     rightRows.push(row)
   }
@@ -42,7 +34,7 @@ export async function* executeNestedLoopJoin(plan, context) {
   /** @type {Set<AsyncRow> | null} */
   const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : null
 
-  for await (const leftRow of executePlan(plan.left, context)) {
+  for await (const leftRow of executePlan({ plan: plan.left, context })) {
     if (context.signal?.aborted) break
 
     if (!leftPrefixedCols) {
@@ -98,14 +90,14 @@ export async function* executePositionalJoin(plan, context) {
   // Buffer both sides (required for positional join)
   /** @type {AsyncRow[]} */
   const leftRows = []
-  for await (const row of executePlan(plan.left, context)) {
+  for await (const row of executePlan({ plan: plan.left, context })) {
     if (signal?.aborted) return
     leftRows.push(row)
   }
 
   /** @type {AsyncRow[]} */
   const rightRows = []
-  for await (const row of executePlan(plan.right, context)) {
+  for await (const row of executePlan({ plan: plan.right, context })) {
     if (signal?.aborted) return
     rightRows.push(row)
   }
@@ -138,7 +130,7 @@ export async function* executeHashJoin(plan, context) {
   // Buffer right rows and build hash map
   /** @type {AsyncRow[]} */
   const rightRows = []
-  for await (const row of executePlan(plan.right, context)) {
+  for await (const row of executePlan({ plan: plan.right, context })) {
     if (context.signal?.aborted) return
     rightRows.push(row)
   }
@@ -171,7 +163,7 @@ export async function* executeHashJoin(plan, context) {
   const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : null
 
   // Probe phase: stream left rows
-  for await (const leftRow of executePlan(plan.left, context)) {
+  for await (const leftRow of executePlan({ plan: plan.left, context })) {
     if (context.signal?.aborted) break
 
     if (!leftPrefixedCols) {

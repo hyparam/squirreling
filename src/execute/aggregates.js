@@ -56,7 +56,7 @@ export async function* executeHashAggregate(plan, context) {
   // Collect all rows
   /** @type {AsyncRow[]} */
   const allRows = []
-  for await (const row of executePlan(plan.child, context)) {
+  for await (const row of executePlan({ plan: plan.child, context })) {
     if (context.signal?.aborted) return
     allRows.push(row)
   }
@@ -115,7 +115,7 @@ export async function* executeScalarAggregate(plan, context) {
   // Collect all rows into single group
   /** @type {AsyncRow[]} */
   const group = []
-  for await (const row of executePlan(plan.child, context)) {
+  for await (const row of executePlan({ plan: plan.child, context })) {
     if (context.signal?.aborted) return
     group.push(row)
   }

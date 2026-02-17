@@ -26,7 +26,6 @@ import { evaluateStringFunc } from './strings.js'
  * @returns {Promise<SqlPrimitive>} The result of the evaluation
  */
 export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
-  const { tables, functions, signal } = context
   if (node.type === 'literal') {
     return node.value
   }
@@ -55,7 +54,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const gen = executeSelect({ select: node.subquery, tables, functions, signal })
+    const gen = executeSelect({ select: node.subquery, context })
     const { value } = await gen.next() // Start the generator
     gen.return(undefined) // Stop further execution
     if (!value) return null
@@ -366,6 +365,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
 
     // Check user-defined functions (case-insensitive lookup)
+    const { functions } = context
     if (functions) {
       const udfName = Object.keys(functions).find(k => k.toUpperCase() === funcName)
       if (udfName) {
@@ -434,7 +434,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   // IN with subqueries
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
-    const results = executeSelect({ select: node.subquery, tables, functions, signal })
+    const results = executeSelect({ select: node.subquery, context })
     for await (const resRow of results) {
       const value = await resRow.cells[resRow.columns[0]]()
       if (exprVal == value) return true
@@ -444,11 +444,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // EXISTS and NOT EXISTS with subqueries
   if (node.type === 'exists') {
-    const results = await executeSelect({ select: node.subquery, tables, functions, signal }).next()
+    const results = await executeSelect({ select: node.subquery, context }).next()
     return results.done === false
   }
   if (node.type === 'not exists') {
-    const results = await executeSelect({ select: node.subquery, tables, functions, signal }).next()
+    const results = await executeSelect({ select: node.subquery, context }).next()
     return results.done === true
   }
 

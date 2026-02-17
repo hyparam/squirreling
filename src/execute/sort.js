@@ -18,7 +18,7 @@ export async function* executeSort(plan, context) {
   // Buffer all rows
   /** @type {AsyncRow[]} */
   const rows = []
-  for await (const row of executePlan(plan.child, context)) {
+  for await (const row of executePlan({ plan: plan.child, context })) {
     if (context.signal?.aborted) return
     rows.push(row)
   }

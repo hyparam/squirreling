@@ -253,6 +253,20 @@ describe('CTE execution', () => {
     })
   })
 
+  describe('CTE in FROM subquery', () => {
+    it('should resolve CTE reference inside a FROM subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          WITH cte AS (SELECT name FROM users WHERE age >= 30)
+          SELECT * FROM (SELECT * FROM cte) AS sub
+        `,
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+  })
+
   describe('CTE shadowing', () => {
     it('should use CTE when it shadows a real table name', async () => {
       const result = await collect(executeSql({

@@ -1,8 +1,9 @@
+import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation.js'
 import { extractColumns } from './columns.js'
 
 /**
- * @import { ExprNode, JoinClause, ScanOptions, SelectStatement } from '../types.js'
+ * @import { ExprNode, JoinClause, PlanSqlOptions, ScanOptions, SelectStatement } from '../types.js'
  * @import { QueryPlan } from './types.d.ts'
  */
 
@@ -10,32 +11,34 @@ import { extractColumns } from './columns.js'
  * Builds a query plan from a SELECT statement AST.
  * Resolves CTEs at plan time so no planning occurs during execution.
  *
- * @param {SelectStatement} select - the SELECT statement AST
+ * @param {PlanSqlOptions} options
  * @returns {QueryPlan} the root of the query plan tree
  */
-export function queryPlan(select) {
+export function planSql({ query, functions }) {
+  const select = typeof query === 'string' ? parseSql({ query, functions }) : query
+
   // Build CTE plans in order (each CTE can reference preceding CTEs)
   /** @type {Map<string, QueryPlan>} */
   const ctePlans = new Map()
   if (select.with) {
     for (const cte of select.with.ctes) {
-      const ctePlan = buildSelectPlan({ select: cte.query, ctePlans })
+      const ctePlan = planSelect({ select: cte.query, ctePlans })
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
     }
   }
 
-  return buildSelectPlan({ select, ctePlans })
+  return planSelect({ select, ctePlans })
 }
 
 /**
- * Builds a plan for a SELECT statement with CTE resolution.
+ * Builds a plan for a SELECT statement with CTEs pre-resolved.
  *
  * @param {object} options
  * @param {SelectStatement} options.select
  * @param {Map<string, QueryPlan>} options.ctePlans
  * @returns {QueryPlan}
  */
-function buildSelectPlan({ select, ctePlans }) {
+function planSelect({ select, ctePlans }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.kind === 'derived' && findAggregate(col.expr)
@@ -56,11 +59,11 @@ function buildSelectPlan({ select, ctePlans }) {
 
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
-  let plan = buildFromPlan({ select, ctePlans, hints })
+  let plan = planFrom({ select, ctePlans, hints })
 
   // Add JOINs
   if (select.joins.length) {
-    plan = buildJoinPlan({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns })
+    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns })
   }
 
   // Delegate WHERE and LIMIT/OFFSET to scan when plan is a direct table scan
@@ -136,42 +139,37 @@ function buildSelectPlan({ select, ctePlans }) {
 }
 
 /**
- * Builds a plan for the FROM clause
- *
  * @param {object} options
  * @param {SelectStatement} options.select
  * @param {Map<string, QueryPlan>} options.ctePlans
  * @param {ScanOptions} options.hints
  * @returns {QueryPlan}
  */
-function buildFromPlan({ select, ctePlans, hints }) {
+function planFrom({ select, ctePlans, hints }) {
   if (select.from.kind === 'table') {
     const ctePlan = ctePlans.get(select.from.table.toLowerCase())
     if (ctePlan) {
       return ctePlan
     }
-    return {
-      type: 'Scan',
-      table: select.from.table,
-      hints,
-    }
+    return { type: 'Scan', table: select.from.table, hints }
   } else {
-    return queryPlan(select.from.query)
+    if (select.from.query.with) {
+      throw new Error('WITH clause is not supported inside subqueries')
+    }
+    return planSelect({ select: select.from.query, ctePlans })
   }
 }
 
 /**
- * Builds join plan nodes for all joins
- *
  * @param {object} options
  * @param {QueryPlan} options.left - the left side of the join (FROM or previous joins)
  * @param {JoinClause[]} options.joins - array of join clauses
  * @param {string} options.leftTable - name/alias of the left table
  * @param {Map<string, QueryPlan>} options.ctePlans
- * @param {Map<string, string[] | undefined>} [options.perTableColumns]
+ * @param {Map<string, string[] | undefined>} options.perTableColumns
  * @returns {QueryPlan}
  */
-function buildJoinPlan({ left, joins, leftTable, ctePlans, perTableColumns }) {
+function planJoin({ left, joins, leftTable, ctePlans, perTableColumns }) {
   let plan = left
   let currentLeftTable = leftTable
 

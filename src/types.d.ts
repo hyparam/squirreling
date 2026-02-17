@@ -15,6 +15,19 @@ export interface ExecuteSqlOptions {
   signal?: AbortSignal
 }
 
+// planSql(options)
+export interface PlanSqlOptions {
+  query: string | SelectStatement
+  functions?: Record<string, UserDefinedFunction>
+}
+
+// executePlan(plan, context)
+export interface ExecuteContext {
+  tables: Record<string, AsyncDataSource>
+  functions?: Record<string, UserDefinedFunction>
+  signal?: AbortSignal
+}
+
 // AsyncRow represents a row with async cell values
 export interface AsyncRow {
   columns: string[]
