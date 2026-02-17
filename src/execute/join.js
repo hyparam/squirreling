@@ -4,8 +4,8 @@ import { stringify } from './utils.js'
 import { executePlan } from './execute.js'
 
 /**
- * @import { AsyncCells, AsyncRow } from '../types.js'
- * @import { ExecuteContext, HashJoinNode, NestedLoopJoinNode, PositionalJoinNode } from '../plan/types.js'
+ * @import { AsyncCells, AsyncRow, ExecuteContext } from '../types.js'
+ * @import { HashJoinNode, NestedLoopJoinNode, PositionalJoinNode } from '../plan/types.js'
  */
 
 /**
@@ -16,7 +16,6 @@ import { executePlan } from './execute.js'
  * @yields {AsyncRow}
  */
 export async function* executeNestedLoopJoin(plan, context) {
-  const { tables, functions, signal } = context
   const leftTable = plan.leftAlias
   const rightTable = plan.rightAlias
 
@@ -31,7 +30,7 @@ export async function* executeNestedLoopJoin(plan, context) {
   /** @type {AsyncRow[]} */
   const rightRows = []
   for await (const row of executePlan(plan.right, context)) {
-    if (signal?.aborted) return
+    if (context.signal?.aborted) return
     rightRows.push(row)
   }
 
@@ -44,7 +43,7 @@ export async function* executeNestedLoopJoin(plan, context) {
   const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : null
 
   for await (const leftRow of executePlan(plan.left, context)) {
-    if (signal?.aborted) break
+    if (context.signal?.aborted) break
 
     if (!leftPrefixedCols) {
       leftPrefixedCols = prefixColumns(leftRow.columns, leftTable)
@@ -57,9 +56,7 @@ export async function* executeNestedLoopJoin(plan, context) {
       const matches = await evaluateExpr({
         node: plan.condition,
         row: tempMerged,
-        tables,
-        functions,
-        signal,
+        context,
       })
 
       if (matches) {
@@ -135,7 +132,6 @@ export async function* executePositionalJoin(plan, context) {
  * @yields {AsyncRow}
  */
 export async function* executeHashJoin(plan, context) {
-  const { tables, functions, signal } = context
   const leftTable = plan.leftAlias
   const rightTable = plan.rightAlias
 
@@ -143,7 +139,7 @@ export async function* executeHashJoin(plan, context) {
   /** @type {AsyncRow[]} */
   const rightRows = []
   for await (const row of executePlan(plan.right, context)) {
-    if (signal?.aborted) return
+    if (context.signal?.aborted) return
     rightRows.push(row)
   }
 
@@ -153,9 +149,7 @@ export async function* executeHashJoin(plan, context) {
     const keyValue = await evaluateExpr({
       node: plan.rightKey,
       row: rightRow,
-      tables,
-      functions,
-      signal,
+      context,
     })
     if (keyValue == null) continue
     const keyStr = stringify(keyValue)
@@ -178,7 +172,7 @@ export async function* executeHashJoin(plan, context) {
 
   // Probe phase: stream left rows
   for await (const leftRow of executePlan(plan.left, context)) {
-    if (signal?.aborted) break
+    if (context.signal?.aborted) break
 
     if (!leftPrefixedCols) {
       leftPrefixedCols = prefixColumns(leftRow.columns, leftTable)
@@ -187,9 +181,7 @@ export async function* executeHashJoin(plan, context) {
     const keyValue = await evaluateExpr({
       node: plan.leftKey,
       row: leftRow,
-      tables,
-      functions,
-      signal,
+      context,
     })
     const keyStr = stringify(keyValue)
     const matchingRightRows = hashMap.get(keyStr)

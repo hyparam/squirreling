@@ -10,8 +10,8 @@ import { executeSort } from './sort.js'
 import { defaultDerivedAlias, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteSqlOptions, ExprNode, SelectStatement, UserDefinedFunction } from '../types.js'
- * @import { DistinctNode, ExecuteContext, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, SelectStatement, UserDefinedFunction } from '../types.js'
+ * @import { DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
  */
 
 /**
@@ -147,7 +147,7 @@ async function* filterRows(rows, condition, context) {
   for await (const row of rows) {
     if (context.signal?.aborted) return
     rowIndex++
-    const pass = await evaluateExpr({ node: condition, row, rowIndex, ...context })
+    const pass = await evaluateExpr({ node: condition, row, rowIndex, context })
     if (pass) yield row
   }
 }
@@ -198,11 +198,10 @@ async function* executeFilter(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeProject(plan, context) {
-  const { tables, functions, signal } = context
   let rowIndex = 0
 
   for await (const row of executePlan(plan.child, context)) {
-    if (signal?.aborted) return
+    if (context.signal?.aborted) return
     rowIndex++
     const currentRowIndex = rowIndex
 
@@ -223,10 +222,8 @@ async function* executeProject(plan, context) {
         cells[alias] = () => evaluateExpr({
           node: col.expr,
           row,
-          tables,
-          functions,
           rowIndex: currentRowIndex,
-          signal,
+          context,
         })
       }
     }

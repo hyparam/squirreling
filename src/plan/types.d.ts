@@ -1,10 +1,4 @@
-import { AsyncDataSource, ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn, UserDefinedFunction } from '../types.js'
-
-export interface ExecuteContext {
-  tables: Record<string, AsyncDataSource>
-  functions?: Record<string, UserDefinedFunction>
-  signal?: AbortSignal
-}
+import { ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn } from '../types.js'
 
 export type QueryPlan =
   | ScanNode

@@ -3,8 +3,8 @@ import { executePlan } from './execute.js'
 import { compareForTerm } from './utils.js'
 
 /**
- * @import { AsyncRow, SqlPrimitive } from '../types.js'
- * @import { ExecuteContext, SortNode } from '../plan/types.js'
+ * @import { AsyncRow, ExecuteContext, SqlPrimitive } from '../types.js'
+ * @import { SortNode } from '../plan/types.js'
  */
 
 /**
@@ -15,13 +15,11 @@ import { compareForTerm } from './utils.js'
  * @yields {AsyncRow}
  */
 export async function* executeSort(plan, context) {
-  const { tables, functions, signal } = context
-
   // Buffer all rows
   /** @type {AsyncRow[]} */
   const rows = []
   for await (const row of executePlan(plan.child, context)) {
-    if (signal?.aborted) return
+    if (context.signal?.aborted) return
     rows.push(row)
   }
 
@@ -51,10 +49,8 @@ export async function* executeSort(plan, context) {
           evaluatedValues[idx][orderByIdx] = await evaluateExpr({
             node: term.expr,
             row: rows[idx],
-            tables,
-            functions,
             aliases: plan.aliases,
-            signal,
+            context,
           })
         }
       }

@@ -3,8 +3,8 @@ import { defaultDerivedAlias, stringify } from './utils.js'
 import { executePlan } from './execute.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, SelectColumn, UserDefinedFunction } from '../types.js'
- * @import { ExecuteContext, HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
+ * @import { AsyncCells, AsyncRow, ExecuteContext, SelectColumn } from '../types.js'
+ * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  */
 
 /**
@@ -12,12 +12,10 @@ import { executePlan } from './execute.js'
  *
  * @param {SelectColumn[]} selectColumns
  * @param {AsyncRow[]} group
- * @param {Record<string, AsyncDataSource>} tables
- * @param {Record<string, UserDefinedFunction>} [functions]
- * @param {AbortSignal} [signal]
+ * @param {ExecuteContext} context
  * @returns {AsyncRow}
  */
-function projectAggregateColumns(selectColumns, group, tables, functions, signal) {
+function projectAggregateColumns(selectColumns, group, context) {
   /** @type {string[]} */
   const columns = []
   /** @type {AsyncCells} */
@@ -38,10 +36,8 @@ function projectAggregateColumns(selectColumns, group, tables, functions, signal
       cells[alias] = () => evaluateExpr({
         node: col.expr,
         row: group[0] ?? { columns: [], cells: {} },
-        tables,
-        functions,
         rows: group,
-        signal,
+        context,
       })
     }
   }
@@ -57,13 +53,11 @@ function projectAggregateColumns(selectColumns, group, tables, functions, signal
  * @yields {AsyncRow}
  */
 export async function* executeHashAggregate(plan, context) {
-  const { tables, functions, signal } = context
-
   // Collect all rows
   /** @type {AsyncRow[]} */
   const allRows = []
   for await (const row of executePlan(plan.child, context)) {
-    if (signal?.aborted) return
+    if (context.signal?.aborted) return
     allRows.push(row)
   }
 
@@ -77,7 +71,7 @@ export async function* executeHashAggregate(plan, context) {
     /** @type {string[]} */
     const keyParts = []
     for (const expr of plan.groupBy) {
-      const v = await evaluateExpr({ node: expr, row, tables, functions, signal })
+      const v = await evaluateExpr({ node: expr, row, context })
       keyParts.push(stringify(v))
     }
     const key = keyParts.join('|')
@@ -92,18 +86,16 @@ export async function* executeHashAggregate(plan, context) {
 
   // Yield one row per group
   for (const group of groups) {
-    const asyncRow = projectAggregateColumns(plan.columns, group, tables, functions, signal)
+    const asyncRow = projectAggregateColumns(plan.columns, group, context)
 
     // Apply HAVING filter
     if (plan.having) {
-      const context = { ...group[0], ...asyncRow }
+      const havingRow = { ...group[0], ...asyncRow }
       const passes = await evaluateExpr({
         node: plan.having,
-        row: context,
+        row: havingRow,
         rows: group,
-        tables,
-        functions,
-        signal,
+        context,
       })
       if (!passes) continue
     }
@@ -120,28 +112,24 @@ export async function* executeHashAggregate(plan, context) {
  * @yields {AsyncRow}
  */
 export async function* executeScalarAggregate(plan, context) {
-  const { tables, functions, signal } = context
-
   // Collect all rows into single group
   /** @type {AsyncRow[]} */
   const group = []
   for await (const row of executePlan(plan.child, context)) {
-    if (signal?.aborted) return
+    if (context.signal?.aborted) return
     group.push(row)
   }
 
-  const asyncRow = projectAggregateColumns(plan.columns, group, tables, functions, signal)
+  const asyncRow = projectAggregateColumns(plan.columns, group, context)
 
   // Apply HAVING filter
   if (plan.having) {
-    const context = { ...group[0], ...asyncRow }
+    const havingRow = { ...group[0], ...asyncRow }
     const passes = await evaluateExpr({
       node: plan.having,
-      row: context,
+      row: havingRow,
       rows: group,
-      tables,
-      functions,
-      signal,
+      context,
     })
     if (!passes) return
   }

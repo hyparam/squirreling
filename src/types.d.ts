@@ -285,3 +285,9 @@ export interface JoinClause {
   alias?: string
   on?: ExprNode
 }
+
+export interface ExecuteContext {
+  tables: Record<string, AsyncDataSource>
+  functions?: Record<string, UserDefinedFunction>
+  signal?: AbortSignal
+}
