@@ -154,32 +154,6 @@ describe('executeSql', () => {
     })
   })
 
-  describe('error cases', () => {
-    it('should throw error for SUM with star', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT SUM(*) FROM users' }))
-      }).rejects.toThrow('SUM(*) is not supported')
-    })
-
-    it('should throw error for AVG with star', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT AVG(*) FROM users' }))
-      }).rejects.toThrow('AVG(*) is not supported')
-    })
-
-    it('should throw error for MIN with star', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT MIN(*) FROM users' }))
-      }).rejects.toThrow('MIN(*) is not supported')
-    })
-
-    it('should throw error for MAX with star', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT MAX(*) FROM users' }))
-      }).rejects.toThrow('MAX(*) is not supported')
-    })
-  })
-
   describe('edge cases', () => {
     it('should handle negative select', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT -age as neg_age FROM users' }))

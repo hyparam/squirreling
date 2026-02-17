@@ -40,15 +40,6 @@ export function consume(state) {
 }
 
 /**
- * Gets the position after the last consumed token.
- * @param {ParserState} state
- * @returns {number}
- */
-export function lastPosition(state) {
-  return state.lastPos ?? 0
-}
-
-/**
  * @param {ParserState} state
  * @param {TokenType} type
  * @param {string} [value]

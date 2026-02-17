@@ -41,12 +41,13 @@ export function syntaxError({ expected, received, positionStart, positionEnd, af
 /**
  * Error for unterminated literals (strings, identifiers).
  *
- * @param {'string' | 'identifier'} type - Type of unterminated literal
- * @param {number} positionStart - Starting position
- * @param {number} positionEnd - End position
+ * @param {Object} options
+ * @param {'string' | 'identifier'} options.type - Type of unterminated literal
+ * @param {number} options.positionStart - Starting position
+ * @param {number} options.positionEnd - End position
  * @returns {ParseError}
  */
-export function unterminatedError(type, positionStart, positionEnd) {
+export function unterminatedError({ type, positionStart, positionEnd }) {
   const name = type === 'string' ? 'string literal' : 'identifier'
   return new ParseError({ message: `Unterminated ${name} starting at position ${positionStart}`, positionStart, positionEnd })
 }

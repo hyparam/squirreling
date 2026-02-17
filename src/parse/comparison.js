@@ -1,7 +1,7 @@
 import { syntaxError } from '../parseErrors.js'
 import { isBinaryOp } from '../validation.js'
 import { parseAdditive, parseExpression, parseSubquery } from './expression.js'
-import { consume, current, expect, lastPosition, match, peekToken } from './state.js'
+import { consume, current, expect, match, peekToken } from './state.js'
 
 /**
  * @import { ExprNode, ParserState } from '../types.js'
@@ -27,7 +27,7 @@ export function parseComparison(state) {
         op: 'IS NOT NULL',
         argument: left,
         positionStart: left.positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
     expect(state, 'keyword', 'NULL')
@@ -36,7 +36,7 @@ export function parseComparison(state) {
       op: 'IS NULL',
       argument: left,
       positionStart: left.positionStart,
-      positionEnd: lastPosition(state),
+      positionEnd: state.lastPos,
     }
   }
 
@@ -134,7 +134,7 @@ export function parseComparison(state) {
       if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
         // Subquery - let parseSubquery handle the parens
         const subquery = parseSubquery(state)
-        const positionEnd = lastPosition(state)
+        const positionEnd = state.lastPos
         return {
           type: 'unary',
           op: 'NOT',
@@ -158,7 +158,7 @@ export function parseComparison(state) {
           if (!match(state, 'comma')) break
         }
         expect(state, 'paren', ')')
-        const positionEnd = lastPosition(state)
+        const positionEnd = state.lastPos
         return {
           type: 'unary',
           op: 'NOT',
@@ -194,7 +194,7 @@ export function parseComparison(state) {
         expr: left,
         subquery,
         positionStart: left.positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     } else {
       // Parse list of values - we handle the parens
@@ -211,7 +211,7 @@ export function parseComparison(state) {
         expr: left,
         values,
         positionStart: left.positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
   }

@@ -91,12 +91,6 @@ describe('executeSql', () => {
       expect(result).toEqual([{ total: 30, avg: 15 }])
     })
 
-    it('should throw error for SUM/AVG/MIN/MAX with star', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT SUM(*) FROM users' }))
-      }).rejects.toThrow('SUM(*) is not supported')
-    })
-
     it('should handle aggregate without GROUP BY (single group)', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users' }))
       expect(result).toEqual([{ count_all: 5 }])
@@ -193,15 +187,6 @@ describe('executeSql', () => {
       expect(result).toEqual([{ active_status: [true, true, false, true, true] }])
     })
 
-    it('should throw error for JSON_ARRAYAGG(*)', async () => {
-      await expect(async () => {
-        await collect(executeSql({
-          tables: { users },
-          query: 'SELECT JSON_ARRAYAGG(*) FROM users',
-        }))
-      }).rejects.toThrow('JSON_ARRAYAGG(*) is not supported')
-    })
-
     it('should handle empty dataset for JSON_ARRAYAGG', async () => {
       const result = await collect(executeSql({
         tables: { users: [] },
@@ -294,11 +279,6 @@ describe('executeSql', () => {
       expect(result[1].stddev).toBe(0)
     })
 
-    it('should throw error for STDDEV(*)', async () => {
-      await expect(async () => {
-        await collect(executeSql({ tables: { users }, query: 'SELECT STDDEV_POP(*) FROM users' }))
-      }).rejects.toThrow('STDDEV_POP(*) is not supported')
-    })
   })
 
   describe('null handling in aggregates', () => {

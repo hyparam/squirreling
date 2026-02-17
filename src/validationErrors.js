@@ -89,15 +89,20 @@ export function argValueError({ funcName, message, positionStart, positionEnd, h
 }
 
 /**
- * Error for aggregate function misuse (e.g., SUM(*)).
+ * Error for aggregate function misuse.
  *
  * @param {Object} options
  * @param {string} options.funcName - The aggregate function
- * @param {string} options.issue - What's wrong (e.g., "(*) is not supported")
- * @returns {Error}
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
+ * @returns {ExecutionError}
  */
-export function aggregateError({ funcName, issue }) {
-  return new Error(`${funcName}${issue}`)
+export function aggregateError({ funcName, positionStart, positionEnd }) {
+  return new ExecutionError({
+    message: `Aggregate function ${funcName} must exist in a GROUP BY clause or be part of an aggregate SELECT list`,
+    positionStart,
+    positionEnd,
+  })
 }
 
 /**

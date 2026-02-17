@@ -1,7 +1,7 @@
-import { argCountParseError, syntaxError } from '../parseErrors.js'
+import { ParseError, argCountParseError, syntaxError } from '../parseErrors.js'
 import { isAggregateFunc, validateFunctionArgCount } from '../validation.js'
 import { parseExpression } from './expression.js'
-import { consume, current, expect, lastPosition, match } from './state.js'
+import { consume, current, expect, match } from './state.js'
 
 /**
  * @import { ExprNode, ParserState } from '../types.js'
@@ -41,7 +41,7 @@ export function parseFunctionCall(state, funcName, positionStart) {
           type: 'identifier',
           name: '*',
           positionStart: starTok.positionStart,
-          positionEnd: lastPosition(state),
+          positionEnd: state.lastPos,
         })
       } else {
         args.push(parseExpression(state))
@@ -72,8 +72,25 @@ export function parseFunctionCall(state, funcName, positionStart) {
     expect(state, 'paren', ')')
   }
 
-  // Validate argument count at parse time
+  // Validate star argument at parse time (only COUNT supports *)
   const funcNameUpper = funcName.toUpperCase()
+  const hasStar = args.length === 1 && args[0].type === 'identifier' && args[0].name === '*'
+  if (hasStar && isAggregateFunc(funcNameUpper) && funcNameUpper !== 'COUNT') {
+    throw new ParseError({
+      message: `${funcName} cannot be applied to "*"`,
+      positionStart,
+      positionEnd: state.lastPos,
+    })
+  }
+  if (hasStar && distinct) {
+    throw new ParseError({
+      message: 'COUNT(DISTINCT *) is not allowed',
+      positionStart,
+      positionEnd: state.lastPos,
+    })
+  }
+
+  // Validate argument count at parse time
   const validation = validateFunctionArgCount(funcNameUpper, args.length, state.functions)
   if (!validation.valid) {
     throw argCountParseError({
@@ -81,7 +98,7 @@ export function parseFunctionCall(state, funcName, positionStart) {
       expected: validation.expected,
       received: args.length,
       positionStart,
-      positionEnd: lastPosition(state),
+      positionEnd: state.lastPos,
     })
   }
 
@@ -92,6 +109,6 @@ export function parseFunctionCall(state, funcName, positionStart) {
     distinct: distinct || undefined,
     filter,
     positionStart,
-    positionEnd: lastPosition(state),
+    positionEnd: state.lastPos,
   }
 }

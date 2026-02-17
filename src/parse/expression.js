@@ -8,7 +8,7 @@ import { isIntervalUnit, isKnownFunction } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'
-import { consume, current, expect, expectIdentifier, lastPosition, match, peekToken } from './state.js'
+import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
 
 /**
  * @import { ExprNode, IntervalNode, ParserState, SelectStatement, WhenClause } from '../types.js'
@@ -40,7 +40,7 @@ export function parsePrimary(state) {
         type: 'subquery',
         subquery,
         positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
     // Regular grouped expression
@@ -66,7 +66,7 @@ export function parsePrimary(state) {
         expr,
         toType: typeTok.value,
         positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
 
@@ -96,7 +96,7 @@ export function parsePrimary(state) {
         name: tok.value,
         args: [],
         positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
 
@@ -114,7 +114,7 @@ export function parsePrimary(state) {
       type: 'identifier',
       name,
       positionStart,
-      positionEnd: lastPosition(state),
+      positionEnd: state.lastPos,
     }
   }
 
@@ -124,7 +124,7 @@ export function parsePrimary(state) {
       type: 'literal',
       value: tok.numericValue ?? null,
       positionStart,
-      positionEnd: lastPosition(state),
+      positionEnd: state.lastPos,
     }
   }
 
@@ -134,7 +134,7 @@ export function parsePrimary(state) {
       type: 'literal',
       value: tok.value,
       positionStart,
-      positionEnd: lastPosition(state),
+      positionEnd: state.lastPos,
     }
   }
 
@@ -148,15 +148,15 @@ export function parsePrimary(state) {
 
     if (tok.value === 'TRUE') {
       consume(state)
-      return { type: 'literal', value: true, positionStart, positionEnd: lastPosition(state) }
+      return { type: 'literal', value: true, positionStart, positionEnd: state.lastPos }
     }
     if (tok.value === 'FALSE') {
       consume(state)
-      return { type: 'literal', value: false, positionStart, positionEnd: lastPosition(state) }
+      return { type: 'literal', value: false, positionStart, positionEnd: state.lastPos }
     }
     if (tok.value === 'NULL') {
       consume(state)
-      return { type: 'literal', value: null, positionStart, positionEnd: lastPosition(state) }
+      return { type: 'literal', value: null, positionStart, positionEnd: state.lastPos }
     }
     if (tok.value === 'EXISTS') {
       consume(state) // EXISTS
@@ -165,7 +165,7 @@ export function parsePrimary(state) {
         type: 'exists',
         subquery,
         positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
     if (tok.value === 'CASE') {
@@ -212,7 +212,7 @@ export function parsePrimary(state) {
         whenClauses,
         elseResult,
         positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
     if (tok.value === 'INTERVAL') {
@@ -293,7 +293,7 @@ function parseNot(state) {
         type: 'not exists',
         subquery,
         positionStart,
-        positionEnd: lastPosition(state),
+        positionEnd: state.lastPos,
       }
     }
     const argument = parseNot(state)
@@ -412,5 +412,5 @@ function parseInterval(state) {
   }
   consume(state)
 
-  return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: lastPosition(state) }
+  return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: state.lastPos }
 }

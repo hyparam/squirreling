@@ -27,43 +27,6 @@ describe('executeSql error handling', () => {
     })
   })
 
-  describe('aggregate function errors', () => {
-    it('should throw error for SUM(*)', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT SUM(*) FROM users',
-      }))).rejects.toThrow('SUM(*) is not supported')
-    })
-
-    it('should throw error for AVG(*)', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT AVG(*) FROM users',
-      }))).rejects.toThrow('AVG(*) is not supported')
-    })
-
-    it('should throw error for MIN(*)', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT MIN(*) FROM users',
-      }))).rejects.toThrow('MIN(*) is not supported')
-    })
-
-    it('should throw error for MAX(*)', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT MAX(*) FROM users',
-      }))).rejects.toThrow('MAX(*) is not supported')
-    })
-
-    it('should throw error for JSON_ARRAYAGG(*)', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT JSON_ARRAYAGG(*) FROM users',
-      }))).rejects.toThrow('JSON_ARRAYAGG(*) is not supported')
-    })
-  })
-
   describe('function argument count errors', () => {
     it('should throw error for UPPER with wrong arg count', async () => {
       await expect(collect(executeSql({

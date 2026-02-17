@@ -3,61 +3,11 @@ import { parseJoins } from './joins.js'
 import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
 import { tokenizeSql } from './tokenize.js'
 import { duplicateCTEError } from '../parseErrors.js'
-import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, expectNoAggregate, isKnownFunction } from '../validation.js'
+import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE, expectNoAggregate, findAggregate } from '../validation.js'
 
 /**
  * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, SelectColumn, WithClause } from '../types.js'
  */
-
-/**
- * Parses a WITH clause containing one or more CTEs
- * @param {ParserState} state
- * @returns {WithClause}
- */
-function parseWithClause(state) {
-  /** @type {CTEDefinition[]} */
-  const ctes = []
-  /** @type {Set<string>} */
-  const seenNames = new Set()
-
-  while (true) {
-    // Parse CTE name
-    const nameTok = expectIdentifier(state)
-    const name = nameTok.value
-    const nameLower = name.toLowerCase()
-
-    // Check for duplicate CTE names
-    if (seenNames.has(nameLower)) {
-      throw duplicateCTEError({
-        cteName: name,
-        positionStart: nameTok.positionStart,
-        positionEnd: nameTok.positionEnd,
-      })
-    }
-    seenNames.add(nameLower)
-
-    // Expect AS keyword
-    expect(state, 'keyword', 'AS')
-
-    // Expect opening parenthesis
-    expect(state, 'paren', '(')
-
-    // Parse the CTE's SELECT statement
-    const query = parseSelectInternal(state)
-
-    // Expect closing parenthesis
-    expect(state, 'paren', ')')
-
-    ctes.push({ name, query })
-
-    // Check for comma (more CTEs) or end of WITH clause
-    if (!match(state, 'comma')) {
-      break
-    }
-  }
-
-  return { ctes }
-}
 
 /**
  * @param {ParseSqlOptions} options
@@ -66,7 +16,7 @@ function parseWithClause(state) {
 export function parseSql({ query, functions }) {
   const tokens = tokenizeSql(query)
   /** @type {ParserState} */
-  const state = { tokens, pos: 0, functions }
+  const state = { tokens, pos: 0, lastPos: 0, functions }
 
   // Check for WITH clause
   /** @type {WithClause | undefined} */
@@ -130,29 +80,59 @@ function parseSelectList(state) {
   return cols
 }
 
-// Keywords that can start a valid expression in SELECT
-const EXPRESSION_START_KEYWORDS = new Set([
-  'CASE', 'TRUE', 'FALSE', 'NULL', 'EXISTS', 'NOT', 'INTERVAL',
-])
+/**
+ * Parses a WITH clause containing one or more CTEs
+ *
+ * @param {ParserState} state
+ * @returns {WithClause}
+ */
+function parseWithClause(state) {
+  /** @type {CTEDefinition[]} */
+  const ctes = []
+  /** @type {Set<string>} */
+  const seenNames = new Set()
+
+  while (true) {
+    // Parse CTE name
+    const nameTok = expectIdentifier(state)
+    const name = nameTok.value
+    const nameLower = name.toLowerCase()
+
+    // Check for duplicate CTE names
+    if (seenNames.has(nameLower)) {
+      throw duplicateCTEError({
+        cteName: name,
+        positionStart: nameTok.positionStart,
+        positionEnd: nameTok.positionEnd,
+      })
+    }
+    seenNames.add(nameLower)
+
+    // Expect AS statement
+    expect(state, 'keyword', 'AS')
+    expect(state, 'paren', '(')
+
+    // Parse the CTE's SELECT statement
+    const query = parseSelectInternal(state)
+
+    expect(state, 'paren', ')')
+
+    ctes.push({ name, query })
+
+    // Check for comma (more CTEs) or end of WITH clause
+    if (!match(state, 'comma')) {
+      break
+    }
+  }
+
+  return { ctes }
+}
 
 /**
  * @param {ParserState} state
  * @returns {SelectColumn}
  */
 function parseSelectItem(state) {
-  const tok = current(state)
-
-  // Check if keyword followed by ( is a known function (e.g., LEFT, RIGHT)
-  const isKeywordFunction = tok.type === 'keyword' &&
-    peekToken(state, 1).type === 'paren' &&
-    peekToken(state, 1).value === '(' &&
-    isKnownFunction(tok.value, state.functions)
-
-  if (tok.type === 'keyword' && !EXPRESSION_START_KEYWORDS.has(tok.value) && !isKeywordFunction || tok.type === 'eof') {
-    throw parseError(state, 'column name or expression')
-  }
-
-  // Delegate to expression parser (handles all expressions including aggregates)
   const expr = parseExpression(state)
   const alias = parseAs(state)
   return { kind: 'derived', expr, alias }
@@ -283,10 +263,17 @@ export function parseSelectInternal(state) {
     having = parseExpression(state)
   }
 
+  const hasAggregate = groupBy.length > 0 || columns.some(col =>
+    col.kind === 'derived' && findAggregate(col.expr)
+  )
+
   if (match(state, 'keyword', 'ORDER')) {
     expect(state, 'keyword', 'BY')
     while (true) {
       const expr = parseExpression(state)
+      if (!hasAggregate) {
+        expectNoAggregate(expr, 'ORDER BY')
+      }
       /** @type {'ASC' | 'DESC'} */
       let direction = 'ASC'
       if (match(state, 'keyword', 'ASC')) {

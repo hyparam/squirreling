@@ -229,7 +229,7 @@ export function tokenizeSql(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw unterminatedError('string', pos, length)
+          throw unterminatedError({ type: 'string', positionStart: pos, positionEnd: length })
         }
         const c = nextChar()
         if (c === quote) {
@@ -258,7 +258,7 @@ export function tokenizeSql(sql) {
       let text = ''
       while (i <= length) {
         if (i === length) {
-          throw unterminatedError('identifier', pos, length)
+          throw unterminatedError({ type: 'identifier', positionStart: pos, positionEnd: length })
         }
         const c = nextChar()
         if (c === quote) {

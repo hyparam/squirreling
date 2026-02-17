@@ -177,11 +177,21 @@ describe('ORDER BY', () => {
       expect(result[0].cnt).toBe(3)
     })
 
-    // it('should sort by aggregate expression', async () => {
-    //   const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY COUNT(*) DESC' }))
-    //   expect(result[0].city).toBe('NYC')
-    //   expect(result[0].cnt).toBe(3)
-    // })
+    it('should sort by aggregate expression without alias', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) FROM users GROUP BY city ORDER BY COUNT(*)' }))
+      expect(result[0].city).toBe('LA')
+      expect(result[0].count_all).toBe(2)
+    })
+
+    it('should sort by aggregate expression without alias or group by', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users ORDER BY COUNT(*)' }))
+      expect(result[0].count_all).toBe(5)
+    })
+
+    it('throws on aggregate expression without alias', async () => {
+      await expect(() => collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY COUNT(*)' })))
+        .rejects.toThrow('Aggregate function COUNT must exist in a GROUP BY clause or be part of an aggregate SELECT list')
+    })
   })
 
   describe('NULLS FIRST and NULLS LAST', () => {

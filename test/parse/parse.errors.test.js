@@ -29,13 +29,13 @@ describe('parseSql error handling', () => {
     })
 
     it('should throw error on dangling comma', () => {
-      expect(() => parseSql({ query: 'SELECT name,' })).toThrow('Expected column name or expression after "," but found end of query at position 12')
-      expect(() => parseSql({ query: 'SELECT name, FROM users' })).toThrow('Expected column name or expression after "," but found "FROM" at position 13')
+      expect(() => parseSql({ query: 'SELECT name,' })).toThrow('Expected expression but found end of query at position 12')
+      expect(() => parseSql({ query: 'SELECT name, FROM users' })).toThrow('Expected expression but found "FROM" at position 13')
     })
 
     it('should throw error on illegal keywords after SELECT', () => {
-      expect(() => parseSql({ query: 'SELECT WHERE * FROM users' })).toThrow('Expected column name or expression after "SELECT" but found "WHERE" at position 7')
-      expect(() => parseSql({ query: 'SELECT JOIN * FROM users' })).toThrow('Expected column name or expression after "SELECT" but found "JOIN" at position 7')
+      expect(() => parseSql({ query: 'SELECT WHERE * FROM users' })).toThrow('Expected expression but found "WHERE" at position 7')
+      expect(() => parseSql({ query: 'SELECT JOIN * FROM users' })).toThrow('Expected expression but found "JOIN" at position 7')
     })
 
     it('should throw error on empty query', () => {
@@ -58,12 +58,12 @@ describe('parseSql error handling', () => {
   describe('SELECT list errors', () => {
     it('should throw error on invalid column name', () => {
       expect(() => parseSql({ query: 'SELECT FROM users' }))
-        .toThrow('Expected column name or expression after "SELECT" but found "FROM" at position 7')
+        .toThrow('Expected expression but found "FROM" at position 7')
     })
 
     it('should throw error on missing column after comma', () => {
       expect(() => parseSql({ query: 'SELECT name, FROM users' }))
-        .toThrow('Expected column name or expression after "," but found "FROM" at position 13')
+        .toThrow('Expected expression but found "FROM" at position 13')
     })
 
     it('should throw error on missing alias after AS', () => {
@@ -101,6 +101,41 @@ describe('parseSql error handling', () => {
     it('should throw error when expecting closing paren in aggregate', () => {
       expect(() => parseSql({ query: 'SELECT COUNT(name( FROM users' }))
         .toThrow('Unknown function "name" at position 13')
+    })
+
+    it('should throw error for SUM(*)', () => {
+      expect(() => parseSql({ query: 'SELECT SUM(*) FROM users' }))
+        .toThrow('SUM cannot be applied to "*"')
+    })
+
+    it('should throw error for AVG(*)', () => {
+      expect(() => parseSql({ query: 'SELECT AVG(*) FROM users' }))
+        .toThrow('AVG cannot be applied to "*"')
+    })
+
+    it('should throw error for MIN(*)', () => {
+      expect(() => parseSql({ query: 'SELECT MIN(*) FROM users' }))
+        .toThrow('MIN cannot be applied to "*"')
+    })
+
+    it('should throw error for MAX(*)', () => {
+      expect(() => parseSql({ query: 'SELECT MAX(*) FROM users' }))
+        .toThrow('MAX cannot be applied to "*"')
+    })
+
+    it('should throw error for JSON_ARRAYAGG(*)', () => {
+      expect(() => parseSql({ query: 'SELECT JSON_ARRAYAGG(*) FROM users' }))
+        .toThrow('JSON_ARRAYAGG cannot be applied to "*"')
+    })
+
+    it('should throw error for STDDEV_POP(*)', () => {
+      expect(() => parseSql({ query: 'SELECT STDDEV_POP(*) FROM users' }))
+        .toThrow('STDDEV_POP cannot be applied to "*"')
+    })
+
+    it('should throw error for COUNT(DISTINCT *)', () => {
+      expect(() => parseSql({ query: 'SELECT COUNT(DISTINCT *) FROM users' }))
+        .toThrow('COUNT(DISTINCT *) is not allowed')
     })
   })
 
@@ -212,6 +247,11 @@ describe('parseSql error handling', () => {
 
     it('should throw error on missing column after comma in ORDER BY', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY age,' })).toThrow('Expected expression but found end of query at position 33')
+    })
+
+    it('should throw error for aggregate function in ORDER BY without aggregate context', () => {
+      expect(() => parseSql({ query: 'SELECT name FROM users ORDER BY COUNT(name)' }))
+        .toThrow('Aggregate function COUNT is not allowed in ORDER BY clause')
     })
   })
 

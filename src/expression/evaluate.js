@@ -1,5 +1,5 @@
 import { executeSelect } from '../execute/execute.js'
-import { stringify } from '../execute/utils.js'
+import { defaultDerivedAlias, stringify } from '../execute/utils.js'
 import { columnNotFoundError, invalidContextError } from '../executionErrors.js'
 import { unknownFunctionError } from '../parseErrors.js'
 import { aggregateError, argValueError, castError } from '../validationErrors.js'
@@ -109,10 +109,18 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
     // Handle aggregate functions
     if (isAggregateFunc(funcName)) {
       if (!rows) {
-        throw aggregateError({
-          funcName,
-          issue: ' is not allowed outside of aggregate context',
-        })
+        // Aggregate function used outside of aggregate context
+        // This is only allowed if same aggregate was in the SELECT list
+        const derivedAlias = defaultDerivedAlias(node)
+        if (row.columns.includes(derivedAlias)) {
+          return row.cells[derivedAlias]()
+        } else {
+          throw aggregateError({
+            funcName,
+            positionStart: node.positionStart,
+            positionEnd: node.positionEnd,
+          })
+        }
       }
 
       // Apply FILTER clause if present
@@ -125,15 +133,9 @@ export async function evaluateExpr({ node, row, tables, functions, rowIndex, row
         }
       }
 
-      // Check for star argument (COUNT(*))
-      if (node.args.length === 1 && node.args[0].type === 'identifier' && node.args[0].name === '*') {
-        if (funcName === 'COUNT') {
-          return filteredRows.length
-        }
-        throw aggregateError({
-          funcName,
-          issue: '(*) is not supported. Only COUNT supports *.',
-        })
+      // Handle COUNT(*) special case
+      if (node.args.length === 1 && node.args[0].type === 'identifier' && funcName === 'COUNT' && node.args[0].name === '*') {
+        return filteredRows.length
       }
 
       const argNode = node.args[0]

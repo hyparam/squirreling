@@ -3,7 +3,7 @@ import { UserDefinedFunction } from '../types.js'
 export interface ParserState {
   tokens: Token[]
   pos: number
-  lastPos?: number
+  lastPos: number
   functions?: Record<string, UserDefinedFunction>
 }
 
