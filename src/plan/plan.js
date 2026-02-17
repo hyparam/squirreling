@@ -180,7 +180,7 @@ function planJoin({ left, joins, leftTable, ctePlans, perTableColumns }) {
     /** @type {ScanOptions} */
     const rightHints = {}
     if (!ctePlan) {
-      rightHints.columns = perTableColumns?.get(rightTable)
+      rightHints.columns = perTableColumns.get(rightTable)
     }
     /** @type {QueryPlan} */
     const rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }

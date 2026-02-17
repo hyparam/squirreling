@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.0]
+ - Export `planSql()` and `executePlan()` for separate plan and execute phases
+ - Pushdown columns to join tables
+ - Fix `ORDER BY COUNT(*)`
+ - Parse error when non-count aggregate is applied to star
+
 ## [0.8.0]
  - Breaking: Scan **must** return whether filters and offsets were applied (#9)
  - Breaking: Refactor `QueryHints` into `ScanOptions`
