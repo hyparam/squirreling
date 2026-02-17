@@ -22,11 +22,10 @@ import { evaluateStringFunc } from './strings.js'
  * @param {AsyncRow} options.row - The data row to evaluate against
  * @param {number} [options.rowIndex] - 1-based row index for error reporting
  * @param {AsyncRow[]} [options.rows] - Group of rows for aggregate functions (undefined if not in aggregate context)
- * @param {Map<string, ExprNode>} [options.aliases] - SELECT column aliases for ORDER BY resolution
  * @param {ExecuteContext} options.context - execution context (tables, functions, signal)
  * @returns {Promise<SqlPrimitive>} The result of the evaluation
  */
-export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context }) {
+export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   const { tables, functions, signal } = context
   if (node.type === 'literal') {
     return node.value
@@ -43,10 +42,6 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
       if (colName && colName in row.cells) {
         return row.cells[colName]()
       }
-    }
-    // Check if it's a SELECT alias (for ORDER BY)
-    if (aliases?.has(node.name)) {
-      return evaluateExpr({ node: aliases.get(node.name), row, rowIndex, rows, aliases, context })
     }
     // Unknown identifier
     throw columnNotFoundError({
@@ -69,7 +64,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
 
   // Unary operators
   if (node.type === 'unary') {
-    const val = await evaluateExpr({ node: node.argument, row, rowIndex, rows, aliases, context })
+    const val = await evaluateExpr({ node: node.argument, row, rowIndex, rows, context })
     if (node.op === '-') {
       if (val == null) return null
       return -val
@@ -83,21 +78,21 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
   if (node.type === 'binary') {
     // Handle date +/- interval
     if ((node.op === '+' || node.op === '-') && node.right.type === 'interval') {
-      const dateVal = await evaluateExpr({ node: node.left, row, rowIndex, rows, aliases, context })
+      const dateVal = await evaluateExpr({ node: node.left, row, rowIndex, rows, context })
       return applyIntervalToDate(dateVal, node.right.value, node.right.unit, node.op)
     }
     if (node.op === '+' && node.left.type === 'interval') {
-      const dateVal = await evaluateExpr({ node: node.right, row, rowIndex, rows, aliases, context })
+      const dateVal = await evaluateExpr({ node: node.right, row, rowIndex, rows, context })
       return applyIntervalToDate(dateVal, node.left.value, node.left.unit, '+')
     }
 
-    const left = await evaluateExpr({ node: node.left, row, rowIndex, rows, aliases, context })
+    const left = await evaluateExpr({ node: node.left, row, rowIndex, rows, context })
 
     // Short-circuit evaluation for AND and OR
     if (node.op === 'AND' && !left) return false
     if (node.op === 'OR' && left) return true
 
-    const right = await evaluateExpr({ node: node.right, row, rowIndex, rows, aliases, context })
+    const right = await evaluateExpr({ node: node.right, row, rowIndex, rows, context })
     return applyBinaryOp(node.op, left, right)
   }
 
@@ -230,7 +225,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
     }
 
     /** @type {SqlPrimitive[]} */
-    const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, rowIndex, rows, aliases, context })))
+    const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, rowIndex, rows, context })))
 
     if (isStringFunc(funcName)) {
       return evaluateStringFunc({
@@ -259,7 +254,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
     if (funcName === 'COALESCE') {
       // Short-circuit: evaluate args one at a time, return first non-null
       for (const arg of node.args) {
-        const val = await evaluateExpr({ node: arg, row, rowIndex, rows, aliases, context })
+        const val = await evaluateExpr({ node: arg, row, rowIndex, rows, context })
         if (val != null) return val
       }
       return null
@@ -267,8 +262,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
 
     if (funcName === 'NULLIF') {
       // NULLIF(a, b) returns null if a = b, otherwise returns a
-      const val1 = await evaluateExpr({ node: node.args[0], row, rowIndex, rows, aliases, context })
-      const val2 = await evaluateExpr({ node: node.args[1], row, rowIndex, rows, aliases, context })
+      const val1 = await evaluateExpr({ node: node.args[0], row, rowIndex, rows, context })
+      const val2 = await evaluateExpr({ node: node.args[1], row, rowIndex, rows, context })
       return val1 == val2 ? null : val1
     }
 
@@ -386,7 +381,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
   }
 
   if (node.type === 'cast') {
-    const val = await evaluateExpr({ node: node.expr, row, rowIndex, rows, aliases, context })
+    const val = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     if (val == null) return null
     const toType = node.toType.toUpperCase()
     if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
@@ -429,16 +424,16 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
 
   // IN and NOT IN with value lists
   if (node.type === 'in valuelist') {
-    const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, aliases, context })
+    const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     for (const valueNode of node.values) {
-      const val = await evaluateExpr({ node: valueNode, row, rowIndex, rows, aliases, context })
+      const val = await evaluateExpr({ node: valueNode, row, rowIndex, rows, context })
       if (exprVal == val) return true
     }
     return false
   }
   // IN with subqueries
   if (node.type === 'in') {
-    const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, aliases, context })
+    const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     const results = executeSelect({ select: node.subquery, tables, functions, signal })
     for await (const resRow of results) {
       const value = await resRow.cells[resRow.columns[0]]()
@@ -460,28 +455,28 @@ export async function evaluateExpr({ node, row, rowIndex, rows, aliases, context
   // CASE expressions
   if (node.type === 'case') {
     // For simple CASE: evaluate the case expression once
-    const caseValue = node.caseExpr && await evaluateExpr({ node: node.caseExpr, row, rowIndex, rows, aliases, context })
+    const caseValue = node.caseExpr && await evaluateExpr({ node: node.caseExpr, row, rowIndex, rows, context })
 
     // Iterate through WHEN clauses
     for (const whenClause of node.whenClauses) {
       let conditionResult
       if (caseValue !== undefined) {
         // Simple CASE: compare caseValue with condition
-        const whenValue = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, aliases, context })
+        const whenValue = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, context })
         conditionResult = caseValue == whenValue
       } else {
         // Searched CASE: evaluate condition as boolean
-        conditionResult = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, aliases, context })
+        conditionResult = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, context })
       }
 
       if (conditionResult) {
-        return evaluateExpr({ node: whenClause.result, row, rowIndex, rows, aliases, context })
+        return evaluateExpr({ node: whenClause.result, row, rowIndex, rows, context })
       }
     }
 
     // No WHEN clause matched, return ELSE result or NULL
     if (node.elseResult) {
-      return evaluateExpr({ node: node.elseResult, row, rowIndex, rows, aliases, context })
+      return evaluateExpr({ node: node.elseResult, row, rowIndex, rows, context })
     }
     return null
   }

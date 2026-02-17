@@ -49,7 +49,6 @@ export async function* executeSort(plan, context) {
           evaluatedValues[idx][orderByIdx] = await evaluateExpr({
             node: term.expr,
             row: rows[idx],
-            aliases: plan.aliases,
             context,
           })
         }

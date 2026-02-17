@@ -36,7 +36,6 @@ export interface ProjectNode {
 export interface SortNode {
   type: 'Sort'
   orderBy: OrderByItem[]
-  aliases?: Map<string, ExprNode>
   child: QueryPlan
 }
 
