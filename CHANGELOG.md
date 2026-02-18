@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.9.1]
+ - Export `derivedAlias` to construct column aliases
+
 ## [0.9.0]
  - Export `planSql()` and `executePlan()` for separate plan and execute phases
  - Pushdown columns to join tables
