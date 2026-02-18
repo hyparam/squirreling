@@ -1,6 +1,7 @@
+import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
-import { defaultDerivedAlias, stringify } from './utils.js'
 import { executePlan } from './execute.js'
+import { stringify } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncRow, ExecuteContext, SelectColumn } from '../types.js'
@@ -31,7 +32,7 @@ function projectAggregateColumns(selectColumns, group, context) {
         }
       }
     } else if (col.kind === 'derived') {
-      const alias = col.alias ?? defaultDerivedAlias(col.expr)
+      const alias = col.alias ?? derivedAlias(col.expr)
       columns.push(alias)
       cells[alias] = () => evaluateExpr({
         node: col.expr,

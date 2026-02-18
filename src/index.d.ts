@@ -1,4 +1,4 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
@@ -76,3 +76,12 @@ export function tokenizeSql(sql: string): Token[]
 export function collect<T>(asyncGen: AsyncGenerator<AsyncRow>): Promise<Record<string, SqlPrimitive>[]>
 
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
+
+/**
+ * Generates a default alias for a derived column expression.
+ * Useful for generating column names pre-execution.
+ *
+ * @param expr - the expression node
+ * @returns the generated alias
+ */
+export function derivedAlias(expr: ExprNode): string

@@ -228,12 +228,6 @@ export type ExprNode =
   | SubqueryNode
   | IntervalNode
 
-export interface StarColumn {
-  kind: 'star'
-  table?: string
-  alias?: string
-}
-
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP'
 
 export type MathFunc =
@@ -275,6 +269,11 @@ export type StringFunc =
   | 'LEFT'
   | 'RIGHT'
   | 'INSTR'
+
+export interface StarColumn {
+  kind: 'star'
+  table?: string
+}
 
 export interface DerivedColumn {
   kind: 'derived'

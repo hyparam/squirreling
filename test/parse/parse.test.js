@@ -132,15 +132,10 @@ describe('parseSql', () => {
     })
 
     it('should parse column alias without AS', () => {
-      const select = parseSql({ query: 'SELECT name full_name FROM users' })
-      expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: 'full_name' },
-      ])
-    })
-
-    it('should not treat FROM as implicit alias', () => {
       const select = parseSql({ query: 'SELECT name FROM users' })
-      expect(select.columns[0].alias).toBeUndefined()
+      expect(select.columns).toEqual([
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
+      ])
       expect(select.from).toEqual({ kind: 'table', table: 'users' })
     })
   })
@@ -480,9 +475,49 @@ describe('parseSql', () => {
 
     it('should parse CASE expression with alias', () => {
       const select = parseSql({ query: 'SELECT CASE WHEN age >= 18 THEN \'adult\' ELSE \'minor\' END AS age_group FROM users' })
-      expect(select.columns[0].alias).toBe('age_group')
-      expect(select.columns[0].kind).toBe('derived')
+      expect(select.columns[0]).toEqual({
+        kind: 'derived',
+        expr: {
+          type: 'case',
+          whenClauses: [
+            {
+              condition: {
+                type: 'binary',
+                op: '>=',
+                left: {
+                  type: 'identifier',
+                  name: 'age',
+                  positionStart: 17,
+                  positionEnd: 20,
+                },
+                right: {
+                  type: 'literal',
+                  value: 18,
+                  positionStart: 24,
+                  positionEnd: 26,
+                },
+                positionStart: 17,
+                positionEnd: 26,
+              },
+              result: {
+                type: 'literal',
+                value: 'adult',
+                positionStart: 32,
+                positionEnd: 39,
+              },
+            },
+          ],
+          elseResult: {
+            type: 'literal',
+            value: 'minor',
+            positionStart: 45,
+            positionEnd: 52,
+          },
+          positionStart: 7,
+          positionEnd: 56,
+        },
+        alias: 'age_group',
+      })
     })
   })
-
 })

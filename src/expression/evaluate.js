@@ -1,9 +1,10 @@
 import { executeSelect } from '../execute/execute.js'
-import { defaultDerivedAlias, stringify } from '../execute/utils.js'
+import { stringify } from '../execute/utils.js'
 import { columnNotFoundError, invalidContextError } from '../executionErrors.js'
 import { unknownFunctionError } from '../parseErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isStringFunc } from '../validation.js'
 import { aggregateError, argValueError, castError } from '../validationErrors.js'
+import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
 import { applyIntervalToDate } from './date.js'
 import { evaluateMathFunc } from './math.js'
@@ -104,9 +105,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (!rows) {
         // Aggregate function used outside of aggregate context
         // This is only allowed if same aggregate was in the SELECT list
-        const derivedAlias = defaultDerivedAlias(node)
-        if (row.columns.includes(derivedAlias)) {
-          return row.cells[derivedAlias]()
+        const alias = derivedAlias(node)
+        if (row.columns.includes(alias)) {
+          return row.cells[alias]()
         } else {
           throw aggregateError({
             funcName,

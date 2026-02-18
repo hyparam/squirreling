@@ -1,12 +1,13 @@
 import { memorySource } from '../backend/dataSource.js'
 import { tableNotFoundError } from '../executionErrors.js'
+import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { planSql } from '../plan/plan.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
-import { defaultDerivedAlias, stableRowKey } from './utils.js'
+import { stableRowKey } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, SelectStatement } from '../types.js'
@@ -207,7 +208,7 @@ async function* executeProject(plan, context) {
           cells[key] = row.cells[key]
         }
       } else if (col.kind === 'derived') {
-        const alias = col.alias ?? defaultDerivedAlias(col.expr)
+        const alias = col.alias ?? derivedAlias(col.expr)
         columns.push(alias)
         cells[alias] = () => evaluateExpr({
           node: col.expr,
