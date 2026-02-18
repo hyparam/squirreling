@@ -3,7 +3,7 @@ import { findAggregate } from '../validation.js'
 import { extractColumns } from './columns.js'
 
 /**
- * @import { ExprNode, JoinClause, PlanSqlOptions, ScanOptions, SelectStatement } from '../types.js'
+ * @import { ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement } from '../types.js'
  * @import { QueryPlan } from './types.d.ts'
  */
 
@@ -84,9 +84,13 @@ function planSelect({ select, ctePlans }) {
   if (useGrouping) {
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
-    plan = select.groupBy.length
-      ? { type: 'HashAggregate', groupBy: select.groupBy, columns: select.columns, having: select.having, child: plan }
-      : { type: 'ScalarAggregate', columns: select.columns, having: select.having, child: plan }
+    if (select.groupBy.length) {
+      plan = { type: 'HashAggregate', groupBy: select.groupBy, columns: select.columns, having: select.having, child: plan }
+    } else if (!select.having && !select.where && plan.type === 'Scan' && isAllCountStar(select.columns)) {
+      plan = { type: 'Count', table: plan.table, columns: select.columns }
+    } else {
+      plan = { type: 'ScalarAggregate', columns: select.columns, having: select.having, child: plan }
+    }
 
     // ORDER BY (after aggregation)
     if (select.orderBy.length) {
@@ -301,4 +305,24 @@ function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   }
 
   return { leftKey: left, rightKey: right }
+}
+
+/**
+ * Checks if every SELECT column is a plain COUNT(*).
+ *
+ * @param {SelectColumn[]} columns
+ * @returns {columns is DerivedColumn[]}
+ */
+function isAllCountStar(columns) {
+  if (columns.length === 0) return false
+  return columns.every(col =>
+    col.kind === 'derived' &&
+    col.expr.type === 'function' &&
+    col.expr.name.toUpperCase() === 'COUNT' &&
+    col.expr.args.length === 1 &&
+    col.expr.args[0].type === 'identifier' &&
+    col.expr.args[0].name === '*' &&
+    !col.expr.distinct &&
+    !col.expr.filter
+  )
 }

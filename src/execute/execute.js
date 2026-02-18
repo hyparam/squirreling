@@ -11,7 +11,7 @@ import { stableRowKey } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, SelectStatement } from '../types.js'
- * @import { DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
+ * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
  */
 
 /**
@@ -61,6 +61,8 @@ export async function* executeSelect({ select, context }) {
 export async function* executePlan({ plan, context }) {
   if (plan.type === 'Scan') {
     yield* executeScan(plan, context)
+  } else if (plan.type === 'Count') {
+    yield* executeCount(plan, context)
   } else if (plan.type === 'Filter') {
     yield* executeFilter(plan, context)
   } else if (plan.type === 'Project') {
@@ -105,15 +107,15 @@ async function* executeScan(plan, context) {
   const { rows, appliedWhere, appliedLimitOffset } = scanResult
 
   // Applied limit/offset without applied where is invalid
-  const hasLimitOffset = plan.hints?.limit !== undefined || plan.hints?.offset // 0 offset is noop
-  if (!appliedWhere && appliedLimitOffset && plan.hints?.where && hasLimitOffset) {
+  const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
+  if (!appliedWhere && appliedLimitOffset && plan.hints.where && hasLimitOffset) {
     throw new Error(`Data source "${plan.table}" applied limit/offset without applying where`)
   }
 
   let result = rows
 
   // Apply WHERE if data source did not
-  if (!appliedWhere && plan.hints?.where) {
+  if (!appliedWhere && plan.hints.where) {
     result = filterRows(result, plan.hints.where, context)
   }
 
@@ -123,6 +125,45 @@ async function* executeScan(plan, context) {
   }
 
   yield* result
+}
+
+/**
+ * Executes a Count node using numRows when available, falling back to scan
+ *
+ * @param {CountNode} plan
+ * @param {ExecuteContext} context
+ * @yields {AsyncRow}
+ */
+async function* executeCount(plan, { tables, signal }) {
+  const dataSource = tables[plan.table]
+  if (dataSource === undefined) {
+    throw tableNotFoundError({ tableName: plan.table })
+  }
+
+  // Use source numRows if available
+  let count = dataSource.numRows
+  if (dataSource.numRows === undefined) {
+    // Fall back to counting rows via scan
+    let n = 0
+    const { rows } = dataSource.scan({ signal })
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of rows) {
+      if (signal?.aborted) return
+      n++
+    }
+    count = n
+  }
+
+  /** @type {string[]} */
+  const columns = []
+  /** @type {AsyncCells} */
+  const cells = {}
+  for (const col of plan.columns) {
+    const alias = col.alias ?? derivedAlias(col.expr)
+    columns.push(alias)
+    cells[alias] = () => Promise.resolve(count)
+  }
+  yield { columns, cells }
 }
 
 /**

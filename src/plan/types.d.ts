@@ -1,7 +1,8 @@
-import { ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn } from '../types.js'
+import { DerivedColumn, ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn } from '../types.js'
 
 export type QueryPlan =
   | ScanNode
+  | CountNode
   | FilterNode
   | ProjectNode
   | SortNode
@@ -18,6 +19,13 @@ export interface ScanNode {
   type: 'Scan'
   table: string
   hints: ScanOptions
+}
+
+// Count node for COUNT(*) optimization
+export interface CountNode {
+  type: 'Count'
+  table: string
+  columns: DerivedColumn[]
 }
 
 // Single-child nodes

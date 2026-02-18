@@ -6,10 +6,10 @@ import { collect, executeSql } from '../../src/index.js'
  */
 
 describe('scan hints', () => {
-  it('should not pass * as a column hint for COUNT(*)', async () => {
-    const hints = await captureHints('SELECT COUNT(*) FROM data')
+  it('should not pass * as a column hint for SUM(*)', async () => {
+    const hints = await captureHints('SELECT SUM(amount) FROM data')
     expect(hints.columns).not.toContain('*')
-    expect(hints.columns).toEqual([])
+    expect(hints.columns).toEqual(['amount'])
   })
 
   it('should pass column hints for COUNT(column)', async () => {

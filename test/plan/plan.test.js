@@ -284,10 +284,11 @@ describe('planSql', () => {
       })
     })
 
-    it('should add ScalarAggregateNode for aggregate without GROUP BY', () => {
+    it('should add CountNode for COUNT(*) without GROUP BY', () => {
       const plan = planSql({ query: 'SELECT COUNT(*) FROM users' })
       expect(plan).toEqual({
-        type: 'ScalarAggregate',
+        type: 'Count',
+        table: 'users',
         columns: [
           {
             kind: 'derived',
@@ -307,14 +308,17 @@ describe('planSql', () => {
             },
           },
         ],
-        child: {
-          type: 'Scan',
-          table: 'users',
-          hints: {
-            columns: [],
-          },
-        },
       })
+    })
+
+    it('should add ScalarAggregateNode for COUNT(*) with WHERE', () => {
+      const plan = planSql({ query: 'SELECT COUNT(*) FROM users WHERE age > 30' })
+      expect(plan.type).toBe('ScalarAggregate')
+    })
+
+    it('should add ScalarAggregateNode for non-COUNT(*) aggregate', () => {
+      const plan = planSql({ query: 'SELECT SUM(age) FROM users' })
+      expect(plan.type).toBe('ScalarAggregate')
     })
   })
 
