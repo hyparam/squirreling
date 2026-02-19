@@ -10,11 +10,13 @@
  * @returns {Map<string, string[] | undefined>}
  */
 export function extractColumns(select) {
+  /** @type {Map<string, string[] | undefined>} */
+  const result = new Map()
+
   // Build alias list from FROM + JOINs
   const fromAlias = select.from.kind === 'table'
     ? select.from.alias ?? select.from.table
     : select.from.alias
-  /** @type {string[]} */
   const aliases = [fromAlias]
   for (const join of select.joins) {
     aliases.push(join.alias ?? join.table)
@@ -30,20 +32,18 @@ export function extractColumns(select) {
     return result
   }
 
-  // Track which tables need all columns (SELECT table.*)
-  /** @type {Set<string>} */
-  const allColumnsNeeded = new Set()
-  for (const col of select.columns) {
-    if (col.kind === 'star' && col.table) {
-      allColumnsNeeded.add(col.table)
-    }
-  }
+  // Track per-table columns needed; undefined means all columns (table.*)
+  /** @type {Map<string, Set<string> | undefined>} */
+  const perTable = new Map(aliases.map(alias => [alias, new Set()]))
 
   // Collect all identifiers from all clauses
   /** @type {Set<string>} */
   const identifiers = new Set()
   for (const col of select.columns) {
-    if (col.kind === 'derived') {
+    if (col.kind === 'star' && col.table) {
+      // SELECT table.* means all columns needed
+      perTable.set(col.table, undefined)
+    } else if (col.kind === 'derived') {
       collectColumnsFromExpr(col.expr, identifiers)
     }
   }
@@ -59,15 +59,6 @@ export function extractColumns(select) {
     collectColumnsFromExpr(join.on, identifiers)
   }
 
-  // Initialize per-table sets (skip tables needing all columns)
-  /** @type {Map<string, Set<string>>} */
-  const perTable = new Map()
-  for (const alias of aliases) {
-    if (!allColumnsNeeded.has(alias)) {
-      perTable.set(alias, new Set())
-    }
-  }
-
   // Partition identifiers by table prefix
   for (const name of identifiers) {
     const dotIndex = name.indexOf('.')
@@ -76,27 +67,19 @@ export function extractColumns(select) {
       const tablePrefix = name.substring(0, dotIndex)
       const columnName = name.substring(dotIndex + 1)
       const set = perTable.get(tablePrefix)
-      if (set) {
-        set.add(columnName)
-      }
+      if (set) set.add(columnName)
     } else {
       // Unqualified: add to all tables (ambiguous)
       for (const [, set] of perTable) {
-        set.add(name)
+        if (set) set.add(name)
       }
     }
   }
 
   // Build result map: convert Sets to arrays, undefined for all-columns tables
-  /** @type {Map<string, string[] | undefined>} */
-  const result = new Map()
   for (const alias of aliases) {
-    if (allColumnsNeeded.has(alias)) {
-      result.set(alias, undefined)
-    } else {
-      const set = perTable.get(alias)
-      result.set(alias, set ? [...set] : undefined)
-    }
+    const set = perTable.get(alias)
+    result.set(alias, set ? [...set] : undefined)
   }
   return result
 }
@@ -104,15 +87,13 @@ export function extractColumns(select) {
 /**
  * Recursively collects column names (identifiers) from an expression
  *
- * @param {ExprNode | undefined} expr
+ * @param {ExprNode} expr
  * @param {Set<string>} columns
  */
 function collectColumnsFromExpr(expr, columns) {
   if (!expr) return
   if (expr.type === 'identifier' && expr.name !== '*') {
     columns.add(expr.name)
-  } else if (expr.type === 'literal') {
-    // No columns
   } else if (expr.type === 'binary') {
     collectColumnsFromExpr(expr.left, columns)
     collectColumnsFromExpr(expr.right, columns)
@@ -122,6 +103,7 @@ function collectColumnsFromExpr(expr, columns) {
     for (const arg of expr.args) {
       collectColumnsFromExpr(arg, columns)
     }
+    collectColumnsFromExpr(expr.filter, columns)
   } else if (expr.type === 'cast') {
     collectColumnsFromExpr(expr.expr, columns)
   } else if (expr.type === 'in valuelist') {
@@ -131,9 +113,6 @@ function collectColumnsFromExpr(expr, columns) {
     }
   } else if (expr.type === 'in') {
     collectColumnsFromExpr(expr.expr, columns)
-    // Subquery columns are from a different scope, don't collect
-  } else if (expr.type === 'exists' || expr.type === 'not exists') {
-    // Subquery columns are from a different scope, don't collect
   } else if (expr.type === 'case') {
     if (expr.caseExpr) {
       collectColumnsFromExpr(expr.caseExpr, columns)
@@ -146,4 +125,5 @@ function collectColumnsFromExpr(expr, columns) {
       collectColumnsFromExpr(expr.elseResult, columns)
     }
   }
+  // No columns: count(*), literal, interval, exists, not exists, subquery
 }

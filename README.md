@@ -47,8 +47,8 @@ const asyncRows: AsyncIterable<AsyncRow> = executeSql({
 })
 
 // Process rows as they arrive (streaming)
-for await (const { id, name } of asyncRows) {
-  console.log(`User id=${await id()}, name=${await name()}`)
+for await (const { cells } of asyncRows) {
+  console.log(`User id=${await cells.id()}, name=${await cells.name()}`)
 }
 ```
 
@@ -95,7 +95,7 @@ interface AsyncDataSource {
 }
 
 interface ScanOptions {
-  columns?: string[]
+  columns?: string[] // columns to scan (undefined means all)
   where?: ExprNode
   limit?: number
   offset?: number
@@ -128,11 +128,12 @@ const customSource: AsyncDataSource = {
 
 Squirreling mostly follows the SQL standard. The following features are supported:
 
-- `SELECT` statements with `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
+- `SELECT` statements with `DISTINCT`, `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
 - `WITH` clause for Common Table Expressions (CTEs)
 - Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
-- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `POSITIONAL JOIN`
+- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN`, `POSITIONAL JOIN`
 - `GROUP BY` and `HAVING` clauses
+- Expressions: `CASE`, `CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`
 
 ### Quoting
 
@@ -142,7 +143,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 
 ### Functions
 
-- Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JSON_ARRAYAGG`
+- Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `STDDEV_POP`, `STDDEV_SAMP`, `JSON_ARRAYAGG`
 - String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`
 - Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
