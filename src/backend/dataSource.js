@@ -25,6 +25,7 @@ function asyncRow(obj) {
  */
 export function memorySource(data) {
   return {
+    numRows: data.length,
     scan({ where, limit, offset, signal }) {
       // Only apply offset and limit if no where clause
       const start = !where ? offset ?? 0 : 0

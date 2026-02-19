@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
+/**
+ * @import { AsyncDataSource } from '../../src/types.js'
+ */
+
 describe('executeSql', () => {
   const users = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
@@ -520,6 +524,90 @@ describe('executeSql', () => {
         FROM orders`,
       }))
       expect(result).toEqual([{ large_complete: 350 }]) // 200 + 150
+    })
+  })
+
+  describe('COUNT(*) optimization with numRows', () => {
+    /** @type {AsyncDataSource} */
+    const errorSource = {
+      numRows: 42,
+      scan() {
+        throw new Error('scan should not be called')
+      },
+    }
+
+    it('should use numRows and skip scan', async () => {
+      const result = await collect(executeSql({
+        tables: { t: errorSource },
+        query: 'SELECT COUNT(*) FROM t',
+      }))
+      expect(result).toEqual([{ count_all: 42 }])
+    })
+
+    it('should use numRows with multiple aliased COUNT(*) columns', async () => {
+      const result = await collect(executeSql({
+        tables: { t: errorSource },
+        query: 'SELECT COUNT(*) AS a, COUNT(*) AS b FROM t',
+      }))
+      expect(result).toEqual([{ a: 42, b: 42 }])
+    })
+
+    it('should fall back to scan when numRows is not available', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNT(*) FROM users',
+      }))
+      expect(result).toEqual([{ count_all: 5 }])
+    })
+
+    it('should not optimize COUNT(column) with numRows', async () => {
+      const data = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: null },
+        { id: 3, name: 'Charlie' },
+      ]
+      const result = await collect(executeSql({
+        tables: { t: data },
+        query: 'SELECT COUNT(name) FROM t',
+      }))
+      expect(result).toEqual([{ count_name: 2 }])
+    })
+
+    it('should not optimize COUNT(*) with WHERE clause', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNT(*) FROM users WHERE city = \'NYC\'',
+      }))
+      expect(result).toEqual([{ count_all: 3 }])
+    })
+
+    it('should not optimize COUNT(*) with HAVING clause', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNT(*) AS cnt FROM users HAVING COUNT(*) > 1',
+      }))
+      expect(result).toEqual([{ cnt: 5 }])
+    })
+
+    it('should not optimize COUNT(DISTINCT column)', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNT(DISTINCT city) FROM users',
+      }))
+      expect(result).toEqual([{ count_city: 2 }])
+    })
+
+    it('should not optimize COUNT(*) FILTER', async () => {
+      const orders = [
+        { status: 'complete', amount: 100 },
+        { status: 'pending', amount: 200 },
+        { status: 'complete', amount: 300 },
+      ]
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: 'SELECT COUNT(*) FILTER (WHERE status = \'complete\') AS cnt FROM orders',
+      }))
+      expect(result).toEqual([{ cnt: 2 }])
     })
   })
 })

@@ -42,6 +42,7 @@ export type Row = Record<string, SqlPrimitive>[]
  * Async data source for streaming SQL execution.
  */
 export interface AsyncDataSource {
+  numRows?: number
   scan(options: ScanOptions): ScanResults
 }
 
