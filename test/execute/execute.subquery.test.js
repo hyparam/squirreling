@@ -85,6 +85,90 @@ describe('subqueries', () => {
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
     })
 
+    it('should preserve inner WHERE with SELECT * passthrough', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users WHERE age > 25) AS u',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('should apply outer WHERE on passthrough subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users) AS u WHERE age > 25',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('should apply both inner and outer WHERE', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users WHERE age > 25) AS u WHERE name = \'Alice\'',
+      }))
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('Alice')
+    })
+
+    it('should handle nested passthrough subqueries', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM (SELECT * FROM users WHERE age > 25) AS a) AS b',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('should preserve inner LIMIT with SELECT * passthrough', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users ORDER BY id LIMIT 2) AS u',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.id)).toEqual([1, 2])
+    })
+
+    it('should preserve inner LIMIT and OFFSET with passthrough', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users ORDER BY id LIMIT 2 OFFSET 1) AS u',
+      }))
+      expect(result).toHaveLength(2)
+      expect(result.map(r => r.id)).toEqual([2, 3])
+    })
+
+    it('should apply outer WHERE after inner LIMIT', async () => {
+      // inner LIMIT 2 returns first 2 rows, outer WHERE filters those
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users ORDER BY id LIMIT 2) AS u WHERE age > 28',
+      }))
+      // users by id: Alice(30), Bob(25) — only Alice passes age > 28
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('Alice')
+    })
+
+    it('should apply outer LIMIT on passthrough subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users ORDER BY id) AS u LIMIT 1',
+      }))
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(1)
+    })
+
+    it('should apply inner and outer OFFSET independently', async () => {
+      // inner OFFSET 1 skips Alice → Bob, Charlie; outer OFFSET 1 skips Bob → Charlie
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT * FROM (SELECT * FROM users ORDER BY id OFFSET 1) AS u OFFSET 1',
+      }))
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('Charlie')
+    })
+
     it('should apply OFFSET for derived table with LIMIT', async () => {
       const result = await collect(executeSql({
         tables: { users },

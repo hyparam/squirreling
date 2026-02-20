@@ -51,11 +51,19 @@ function planSelect({ select, ctePlans }) {
     ? select.from.alias ?? select.from.table
     : select.from.alias
 
-  // Determine per-table column hints for pushdown
+  // Determine scan hints for direct table scans (WHERE and LIMIT/OFFSET are
+  // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */
   const hints = {}
   const perTableColumns = extractColumns(select)
   hints.columns = perTableColumns.get(sourceAlias)
+  if (!select.joins.length) {
+    hints.where = select.where
+    if (!needsBuffering && !select.distinct) {
+      hints.limit = select.limit
+      hints.offset = select.offset
+    }
+  }
 
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
@@ -66,18 +74,11 @@ function planSelect({ select, ctePlans }) {
     plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns })
   }
 
-  // Delegate WHERE and LIMIT/OFFSET to scan when plan is a direct table scan
-  if (plan.type === 'Scan') {
-    plan.hints.where = select.where
-    if (!needsBuffering && !select.distinct) {
-      plan.hints.limit = select.limit
-      plan.hints.offset = select.offset
-    }
-  }
+  // Whether FROM resolved to our own direct table scan
+  const isOwnScan = plan.type === 'Scan' && plan.hints === hints
 
-  // Add WHERE filter when scan can't handle it (JOINs, subqueries, CTEs)
-  const isScan = plan.type === 'Scan'
-  if (select.where && !isScan) {
+  // Add WHERE filter when the scan didn't receive it
+  if (select.where && !isOwnScan) {
     plan = { type: 'Filter', condition: select.where, child: plan }
   }
 
@@ -86,7 +87,7 @@ function planSelect({ select, ctePlans }) {
     // HAVING is integrated into aggregate nodes for access to group context
     if (select.groupBy.length) {
       plan = { type: 'HashAggregate', groupBy: select.groupBy, columns: select.columns, having: select.having, child: plan }
-    } else if (!select.having && !select.where && plan.type === 'Scan' && isAllCountStar(select.columns)) {
+    } else if (!select.having && !select.where && plan.type === 'Scan' && isOwnScan && isAllCountStar(select.columns)) {
       plan = { type: 'Count', table: plan.table, columns: select.columns }
     } else {
       plan = { type: 'ScalarAggregate', columns: select.columns, having: select.having, child: plan }
@@ -128,13 +129,18 @@ function planSelect({ select, ctePlans }) {
     // DISTINCT needs to come after projection but before LIMIT
     // However, for streaming distinct we need to project first
     // So the order is: Sort -> Project -> Distinct -> Limit
-    plan = { type: 'Project', columns: select.columns, child: plan }
+
+    // Fast path for SELECT *
+    const isPassthrough = select.columns.length === 1 && select.columns[0].kind === 'star'
+    if (!isPassthrough) {
+      plan = { type: 'Project', columns: select.columns, child: plan }
+    }
 
     if (select.distinct) {
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset)) {
+    if (!(isOwnScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset)) {
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   }

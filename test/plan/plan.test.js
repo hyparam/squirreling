@@ -6,13 +6,9 @@ describe('planSql', () => {
     it('plan for SELECT * FROM table', () => {
       const plan = planSql({ query: 'SELECT * FROM users' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Scan',
-          table: 'users',
-          hints: {},
-        },
+        type: 'Scan',
+        table: 'users',
+        hints: {},
       })
     })
 
@@ -78,17 +74,9 @@ describe('planSql', () => {
     it('plan FROM subquery', () => {
       const plan = planSql({ query: 'SELECT * FROM (SELECT * FROM users) AS u' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Project',
-          columns: [{ kind: 'star' }],
-          child: {
-            type: 'Scan',
-            table: 'users',
-            hints: {},
-          },
-        },
+        type: 'Scan',
+        table: 'users',
+        hints: {},
       })
     })
   })
@@ -97,30 +85,26 @@ describe('planSql', () => {
     it('should pass WHERE as hint without Filter node', () => {
       const plan = planSql({ query: 'SELECT * FROM users WHERE age > 21' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Scan',
-          table: 'users',
-          hints: {
-            where: {
-              type: 'binary',
-              op: '>',
-              left: {
-                type: 'identifier',
-                name: 'age',
-                positionStart: 26,
-                positionEnd: 29,
-              },
-              right: {
-                type: 'literal',
-                value: 21,
-                positionStart: 32,
-                positionEnd: 34,
-              },
+        type: 'Scan',
+        table: 'users',
+        hints: {
+          where: {
+            type: 'binary',
+            op: '>',
+            left: {
+              type: 'identifier',
+              name: 'age',
               positionStart: 26,
+              positionEnd: 29,
+            },
+            right: {
+              type: 'literal',
+              value: 21,
+              positionStart: 32,
               positionEnd: 34,
             },
+            positionStart: 26,
+            positionEnd: 34,
           },
         },
       })
@@ -131,26 +115,22 @@ describe('planSql', () => {
     it('should add SortNode for ORDER BY', () => {
       const plan = planSql({ query: 'SELECT * FROM users ORDER BY name' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Sort',
-          orderBy: [
-            {
-              expr: {
-                type: 'identifier',
-                name: 'name',
-                positionStart: 29,
-                positionEnd: 33,
-              },
-              direction: 'ASC',
+        type: 'Sort',
+        orderBy: [
+          {
+            expr: {
+              type: 'identifier',
+              name: 'name',
+              positionStart: 29,
+              positionEnd: 33,
             },
-          ],
-          child: {
-            type: 'Scan',
-            table: 'users',
-            hints: {},
+            direction: 'ASC',
           },
+        ],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
         },
       })
     })
@@ -229,14 +209,10 @@ describe('planSql', () => {
     it('should delegate LIMIT to scan hints without LimitNode', () => {
       const plan = planSql({ query: 'SELECT * FROM users LIMIT 10' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Scan',
-          table: 'users',
-          hints: {
-            limit: 10,
-          },
+        type: 'Scan',
+        table: 'users',
+        hints: {
+          limit: 10,
         },
       })
     })
@@ -244,15 +220,11 @@ describe('planSql', () => {
     it('should delegate offset and limit to scan hints without LimitNode', () => {
       const plan = planSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET 5' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Scan',
-          table: 'users',
-          hints: {
-            limit: 10,
-            offset: 5,
-          },
+        type: 'Scan',
+        table: 'users',
+        hints: {
+          limit: 10,
+          offset: 5,
         },
       })
     })
@@ -430,35 +402,31 @@ describe('planSql', () => {
     it('plan HashJoinNode for simple equality join', () => {
       const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'HashJoin',
-          joinType: 'INNER',
-          leftAlias: 'users',
-          rightAlias: 'orders',
-          leftKey: {
-            type: 'identifier',
-            name: 'users.id',
-            positionStart: 35,
-            positionEnd: 43,
-          },
-          rightKey: {
-            type: 'identifier',
-            name: 'orders.user_id',
-            positionStart: 46,
-            positionEnd: 60,
-          },
-          left: {
-            type: 'Scan',
-            table: 'users',
-            hints: {},
-          },
-          right: {
-            type: 'Scan',
-            table: 'orders',
-            hints: {},
-          },
+        type: 'HashJoin',
+        joinType: 'INNER',
+        leftAlias: 'users',
+        rightAlias: 'orders',
+        leftKey: {
+          type: 'identifier',
+          name: 'users.id',
+          positionStart: 35,
+          positionEnd: 43,
+        },
+        rightKey: {
+          type: 'identifier',
+          name: 'orders.user_id',
+          positionStart: 46,
+          positionEnd: 60,
+        },
+        left: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
+        },
+        right: {
+          type: 'Scan',
+          table: 'orders',
+          hints: {},
         },
       })
     })
@@ -466,22 +434,18 @@ describe('planSql', () => {
     it('plan PositionalJoinNode for POSITIONAL JOIN', () => {
       const plan = planSql({ query: 'SELECT * FROM a POSITIONAL JOIN b' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'PositionalJoin',
-          leftAlias: 'a',
-          rightAlias: 'b',
-          left: {
-            type: 'Scan',
-            table: 'a',
-            hints: {},
-          },
-          right: {
-            type: 'Scan',
-            table: 'b',
-            hints: {},
-          },
+        type: 'PositionalJoin',
+        leftAlias: 'a',
+        rightAlias: 'b',
+        left: {
+          type: 'Scan',
+          table: 'a',
+          hints: {},
+        },
+        right: {
+          type: 'Scan',
+          table: 'b',
+          hints: {},
         },
       })
     })
@@ -489,41 +453,37 @@ describe('planSql', () => {
     it('plan NestedLoopJoinNode for complex join conditions', () => {
       const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id > orders.user_id' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'NestedLoopJoin',
-          joinType: 'INNER',
-          leftAlias: 'users',
-          rightAlias: 'orders',
-          condition: {
-            type: 'binary',
-            op: '>',
-            left: {
-              type: 'identifier',
-              name: 'users.id',
-              positionStart: 35,
-              positionEnd: 43,
-            },
-            right: {
-              type: 'identifier',
-              name: 'orders.user_id',
-              positionStart: 46,
-              positionEnd: 60,
-            },
-            positionStart: 35,
-            positionEnd: 60,
-          },
+        type: 'NestedLoopJoin',
+        joinType: 'INNER',
+        leftAlias: 'users',
+        rightAlias: 'orders',
+        condition: {
+          type: 'binary',
+          op: '>',
           left: {
-            type: 'Scan',
-            table: 'users',
-            hints: {},
+            type: 'identifier',
+            name: 'users.id',
+            positionStart: 35,
+            positionEnd: 43,
           },
           right: {
-            type: 'Scan',
-            table: 'orders',
-            hints: {},
+            type: 'identifier',
+            name: 'orders.user_id',
+            positionStart: 46,
+            positionEnd: 60,
           },
+          positionStart: 35,
+          positionEnd: 60,
+        },
+        left: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
+        },
+        right: {
+          type: 'Scan',
+          table: 'orders',
+          hints: {},
         },
       })
     })
@@ -550,18 +510,16 @@ describe('planSql', () => {
     it('should not add column hints for SELECT * join', () => {
       const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
       expect(plan).toMatchObject({
-        child: {
-          type: 'HashJoin',
-          left: {
-            type: 'Scan',
-            table: 'users',
-            hints: {},
-          },
-          right: {
-            type: 'Scan',
-            table: 'orders',
-            hints: {},
-          },
+        type: 'HashJoin',
+        left: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
+        },
+        right: {
+          type: 'Scan',
+          table: 'orders',
+          hints: {},
         },
       })
     })
@@ -569,35 +527,31 @@ describe('planSql', () => {
     it('should handle LEFT JOIN', () => {
       const plan = planSql({ query: 'SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id' })
       expect(plan).toEqual({
-        type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'HashJoin',
-          joinType: 'LEFT',
-          leftAlias: 'users',
-          rightAlias: 'orders',
-          leftKey: {
-            type: 'identifier',
-            name: 'users.id',
-            positionStart: 40,
-            positionEnd: 48,
-          },
-          rightKey: {
-            type: 'identifier',
-            name: 'orders.user_id',
-            positionStart: 51,
-            positionEnd: 65,
-          },
-          left: {
-            type: 'Scan',
-            table: 'users',
-            hints: {},
-          },
-          right: {
-            type: 'Scan',
-            table: 'orders',
-            hints: {},
-          },
+        type: 'HashJoin',
+        joinType: 'LEFT',
+        leftAlias: 'users',
+        rightAlias: 'orders',
+        leftKey: {
+          type: 'identifier',
+          name: 'users.id',
+          positionStart: 40,
+          positionEnd: 48,
+        },
+        rightKey: {
+          type: 'identifier',
+          name: 'orders.user_id',
+          positionStart: 51,
+          positionEnd: 65,
+        },
+        left: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
+        },
+        right: {
+          type: 'Scan',
+          table: 'orders',
+          hints: {},
         },
       })
     })
@@ -608,43 +562,39 @@ describe('planSql', () => {
       const plan = planSql({ query: 'WITH active AS (SELECT id FROM users WHERE age > 21) SELECT * FROM active' })
       expect(plan).toEqual({
         type: 'Project',
-        columns: [{ kind: 'star' }],
-        child: {
-          type: 'Project',
-          columns: [
-            {
-              kind: 'derived',
-              expr: {
-                type: 'identifier',
-                name: 'id',
-                positionStart: 23,
-                positionEnd: 25,
-              },
+        columns: [
+          {
+            kind: 'derived',
+            expr: {
+              type: 'identifier',
+              name: 'id',
+              positionStart: 23,
+              positionEnd: 25,
             },
-          ],
-          child: {
-            type: 'Scan',
-            table: 'users',
-            hints: {
-              columns: ['id', 'age'],
-              where: {
-                type: 'binary',
-                op: '>',
-                left: {
-                  type: 'identifier',
-                  name: 'age',
-                  positionStart: 43,
-                  positionEnd: 46,
-                },
-                right: {
-                  type: 'literal',
-                  value: 21,
-                  positionStart: 49,
-                  positionEnd: 51,
-                },
+          },
+        ],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            columns: ['id', 'age'],
+            where: {
+              type: 'binary',
+              op: '>',
+              left: {
+                type: 'identifier',
+                name: 'age',
                 positionStart: 43,
+                positionEnd: 46,
+              },
+              right: {
+                type: 'literal',
+                value: 21,
+                positionStart: 49,
                 positionEnd: 51,
               },
+              positionStart: 43,
+              positionEnd: 51,
             },
           },
         },
