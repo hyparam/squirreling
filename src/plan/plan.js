@@ -320,8 +320,7 @@ function isAllCountStar(columns) {
     col.expr.type === 'function' &&
     col.expr.name.toUpperCase() === 'COUNT' &&
     col.expr.args.length === 1 &&
-    col.expr.args[0].type === 'identifier' &&
-    col.expr.args[0].name === '*' &&
+    col.expr.args[0].type === 'star' &&
     !col.expr.distinct &&
     !col.expr.filter
   )

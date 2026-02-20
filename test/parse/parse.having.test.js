@@ -12,8 +12,7 @@ describe('parseSql - HAVING clause', () => {
         name: 'COUNT',
         args: [
           {
-            type: 'identifier',
-            name: '*',
+            type: 'star',
             positionStart: 60,
             positionEnd: 61,
           },
@@ -70,8 +69,7 @@ describe('parseSql - HAVING clause', () => {
           name: 'COUNT',
           args: [
             {
-              type: 'identifier',
-              name: '*',
+              type: 'star',
               positionStart: 60,
               positionEnd: 61,
             },
@@ -179,8 +177,7 @@ describe('parseSql - HAVING clause', () => {
           name: 'COUNT',
           args: [
             {
-              type: 'identifier',
-              name: '*',
+              type: 'star',
               positionStart: 134,
               positionEnd: 135,
             },

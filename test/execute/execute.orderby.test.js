@@ -190,7 +190,7 @@ describe('ORDER BY', () => {
 
     it('throws on aggregate expression without alias', async () => {
       await expect(() => collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY COUNT(*)' })))
-        .rejects.toThrow('Aggregate function COUNT must exist in a GROUP BY clause or be part of an aggregate SELECT list')
+        .rejects.toThrow('Aggregate function COUNT is not available in this context')
     })
   })
 

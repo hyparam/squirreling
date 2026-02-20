@@ -230,7 +230,7 @@ describe('parseSql', () => {
             expr: {
               type: 'function',
               name: 'COUNT',
-              args: [{ type: 'identifier', name: '*', positionStart: 37, positionEnd: 38 }],
+              args: [{ type: 'star', positionStart: 37, positionEnd: 38 }],
               positionStart: 31,
               positionEnd: 39,
             },

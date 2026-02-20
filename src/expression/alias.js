@@ -30,7 +30,7 @@ export function derivedAlias(expr) {
   }
   if (expr.type === 'function') {
     // Handle aggregate functions with star (COUNT(*) -> count_all)
-    if (expr.args.length === 1 && expr.args[0].type === 'identifier' && expr.args[0].name === '*') {
+    if (expr.args.length === 1 && expr.args[0].type === 'star') {
       return expr.name.toLowerCase() + '_all'
     }
     return expr.name.toLowerCase() + '_' + expr.args.map(derivedAlias).join('_')

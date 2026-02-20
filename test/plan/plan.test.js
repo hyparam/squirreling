@@ -293,8 +293,7 @@ describe('planSql', () => {
               name: 'COUNT',
               args: [
                 {
-                  type: 'identifier',
-                  name: '*',
+                  type: 'star',
                   positionStart: 25,
                   positionEnd: 26,
                 },
@@ -327,8 +326,7 @@ describe('planSql', () => {
               name: 'COUNT',
               args: [
                 {
-                  type: 'identifier',
-                  name: '*',
+                  type: 'star',
                   positionStart: 13,
                   positionEnd: 14,
                 },
@@ -382,8 +380,7 @@ describe('planSql', () => {
               name: 'COUNT',
               args: [
                 {
-                  type: 'identifier',
-                  name: '*',
+                  type: 'star',
                   positionStart: 25,
                   positionEnd: 26,
                 },
@@ -401,8 +398,7 @@ describe('planSql', () => {
             name: 'COUNT',
             args: [
               {
-                type: 'identifier',
-                name: '*',
+                type: 'star',
                 positionStart: 72,
                 positionEnd: 73,
               },
@@ -763,8 +759,7 @@ describe('planSql', () => {
                   name: 'COUNT',
                   args: [
                     {
-                      type: 'identifier',
-                      name: '*',
+                      type: 'star',
                       positionStart: 25,
                       positionEnd: 26,
                     },
@@ -783,8 +778,7 @@ describe('planSql', () => {
                 name: 'COUNT',
                 args: [
                   {
-                    type: 'identifier',
-                    name: '*',
+                    type: 'star',
                     positionStart: 79,
                     positionEnd: 80,
                   },

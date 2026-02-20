@@ -215,6 +215,10 @@ export interface IntervalNode extends ExprNodeBase {
   unit: IntervalUnit
 }
 
+export interface StarNode extends ExprNodeBase {
+  type: 'star'
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -228,6 +232,7 @@ export type ExprNode =
   | CaseNode
   | SubqueryNode
   | IntervalNode
+  | StarNode
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP'
 

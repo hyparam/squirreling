@@ -127,14 +127,13 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         }
       }
 
-      // Handle COUNT(*) special case
-      if (node.args.length === 1 && node.args[0].type === 'identifier' && funcName === 'COUNT' && node.args[0].name === '*') {
-        return filteredRows.length
-      }
-
       const argNode = node.args[0]
-
       if (funcName === 'COUNT') {
+        // COUNT(*) special case
+        if (argNode.type === 'star') {
+          return filteredRows.length
+        }
+
         if (node.distinct) {
           const seen = new Set()
           for (const row of filteredRows) {

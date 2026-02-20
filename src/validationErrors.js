@@ -99,7 +99,7 @@ export function argValueError({ funcName, message, positionStart, positionEnd, h
  */
 export function aggregateError({ funcName, positionStart, positionEnd }) {
   return new ExecutionError({
-    message: `Aggregate function ${funcName} must exist in a GROUP BY clause or be part of an aggregate SELECT list`,
+    message: `Aggregate function ${funcName} is not available in this context`,
     positionStart,
     positionEnd,
   })

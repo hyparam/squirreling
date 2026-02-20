@@ -38,8 +38,7 @@ export function parseFunctionCall(state, funcName, positionStart) {
         const starTok = current(state)
         consume(state)
         args.push({
-          type: 'identifier',
-          name: '*',
+          type: 'star',
           positionStart: starTok.positionStart,
           positionEnd: state.lastPos,
         })
@@ -74,7 +73,7 @@ export function parseFunctionCall(state, funcName, positionStart) {
 
   // Validate star argument at parse time (only COUNT supports *)
   const funcNameUpper = funcName.toUpperCase()
-  const hasStar = args.length === 1 && args[0].type === 'identifier' && args[0].name === '*'
+  const hasStar = args.length === 1 && args[0].type === 'star'
   if (hasStar && isAggregateFunc(funcNameUpper) && funcNameUpper !== 'COUNT') {
     throw new ParseError({
       message: `${funcName} cannot be applied to "*"`,

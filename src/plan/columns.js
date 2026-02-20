@@ -92,7 +92,7 @@ export function extractColumns(select) {
  */
 function collectColumnsFromExpr(expr, columns) {
   if (!expr) return
-  if (expr.type === 'identifier' && expr.name !== '*') {
+  if (expr.type === 'identifier') {
     columns.add(expr.name)
   } else if (expr.type === 'binary') {
     collectColumnsFromExpr(expr.left, columns)
