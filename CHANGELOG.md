@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.9.2]
+ - Add `AsyncDataSource.numRows` for fast row count when available
+
 ## [0.9.1]
  - Export `derivedAlias` to construct column aliases
 
