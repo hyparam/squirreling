@@ -194,6 +194,8 @@ export function parsePrimary(state) {
         throw missingClauseError({
           missing: 'at least one WHEN clause',
           context: 'CASE expression',
+          positionStart,
+          positionEnd: state.lastPos,
         })
       }
 

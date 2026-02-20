@@ -8,9 +8,9 @@ describe('parseSql - CTE (WITH clause)', () => {
         query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte',
       })
       expect(select.with).toBeDefined()
-      expect(select.with.ctes).toHaveLength(1)
-      expect(select.with.ctes[0].name).toBe('cte')
-      expect(select.with.ctes[0].query.from).toEqual({ kind: 'table', table: 'users' })
+      expect(select.with?.ctes).toHaveLength(1)
+      expect(select.with?.ctes[0].name).toBe('cte')
+      expect(select.with?.ctes[0].query.from).toEqual({ kind: 'table', table: 'users' })
       expect(select.from).toEqual({ kind: 'table', table: 'cte' })
     })
 
@@ -18,10 +18,10 @@ describe('parseSql - CTE (WITH clause)', () => {
       const select = parseSql({
         query: 'WITH active AS (SELECT id, name FROM users WHERE active = TRUE) SELECT name FROM active',
       })
-      expect(select.with.ctes).toHaveLength(1)
-      expect(select.with.ctes[0].name).toBe('active')
-      expect(select.with.ctes[0].query.columns).toHaveLength(2)
-      expect(select.with.ctes[0].query.where).toBeDefined()
+      expect(select.with?.ctes).toHaveLength(1)
+      expect(select.with?.ctes[0].name).toBe('active')
+      expect(select.with?.ctes[0].query.columns).toHaveLength(2)
+      expect(select.with?.ctes[0].query.where).toBeDefined()
     })
 
     it('should parse CTE with alias', () => {
@@ -42,12 +42,12 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM cte1
         `,
       })
-      expect(select.with.ctes).toHaveLength(2)
-      expect(select.with.ctes[0].name).toBe('cte1')
-      expect(select.with.ctes[1].name).toBe('cte2')
-      expect(select.with.ctes[0].query.from.kind).toBe('table')
-      expect(select.with.ctes[0].query.from.kind === 'table' && select.with.ctes[0].query.from.table).toBe('users')
-      expect(select.with.ctes[1].query.from.kind === 'table' && select.with.ctes[1].query.from.table).toBe('orders')
+      expect(select.with?.ctes).toHaveLength(2)
+      expect(select.with?.ctes[0].name).toBe('cte1')
+      expect(select.with?.ctes[1].name).toBe('cte2')
+      expect(select.with?.ctes[0].query.from.kind).toBe('table')
+      expect(select.with?.ctes[0].query.from.kind === 'table' && select.with?.ctes[0].query.from.table).toBe('users')
+      expect(select.with?.ctes[1].query.from.kind === 'table' && select.with?.ctes[1].query.from.table).toBe('orders')
     })
 
     it('should parse CTE referencing another CTE', () => {
@@ -59,11 +59,11 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM filtered
         `,
       })
-      expect(select.with.ctes).toHaveLength(2)
-      expect(select.with.ctes[0].name).toBe('base')
-      expect(select.with.ctes[1].name).toBe('filtered')
-      expect(select.with.ctes[1].query.from.kind).toBe('table')
-      expect(select.with.ctes[1].query.from.kind === 'table' && select.with.ctes[1].query.from.table).toBe('base')
+      expect(select.with?.ctes).toHaveLength(2)
+      expect(select.with?.ctes[0].name).toBe('base')
+      expect(select.with?.ctes[1].name).toBe('filtered')
+      expect(select.with?.ctes[1].query.from.kind).toBe('table')
+      expect(select.with?.ctes[1].query.from.kind === 'table' && select.with?.ctes[1].query.from.table).toBe('base')
     })
   })
 
@@ -79,7 +79,7 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM totals
         `,
       })
-      expect(select.with.ctes[0].query.groupBy).toHaveLength(1)
+      expect(select.with?.ctes[0].query.groupBy).toHaveLength(1)
     })
 
     it('should parse CTE with HAVING', () => {
@@ -94,7 +94,7 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM big_spenders
         `,
       })
-      expect(select.with.ctes[0].query.having).toBeDefined()
+      expect(select.with?.ctes[0].query.having).toBeDefined()
     })
 
     it('should parse CTE with ORDER BY and LIMIT', () => {
@@ -108,8 +108,8 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM top_users
         `,
       })
-      expect(select.with.ctes[0].query.orderBy).toHaveLength(1)
-      expect(select.with.ctes[0].query.limit).toBe(10)
+      expect(select.with?.ctes[0].query.orderBy).toHaveLength(1)
+      expect(select.with?.ctes[0].query.limit).toBe(10)
     })
 
     it('should parse CTE with JOIN in main query', () => {
@@ -158,7 +158,7 @@ describe('parseSql - CTE (WITH clause)', () => {
       const select = parseSql({
         query: 'WITH MyTable AS (SELECT * FROM users) SELECT * FROM MyTable',
       })
-      expect(select.with.ctes[0].name).toBe('MyTable')
+      expect(select.with?.ctes[0].name).toBe('MyTable')
     })
   })
 })

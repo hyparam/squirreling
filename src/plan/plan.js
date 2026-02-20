@@ -103,7 +103,7 @@ function planSelect({ select, ctePlans }) {
     }
 
     // LIMIT/OFFSET
-    if (select.limit !== undefined || select.offset !== undefined) {
+    if (select.limit !== undefined || select.offset) {
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   } else {
@@ -134,7 +134,7 @@ function planSelect({ select, ctePlans }) {
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset !== undefined)) {
+    if (!(isScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset)) {
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   }

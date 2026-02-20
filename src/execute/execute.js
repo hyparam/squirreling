@@ -144,14 +144,13 @@ async function* executeCount(plan, { tables, signal }) {
   let count = dataSource.numRows
   if (dataSource.numRows === undefined) {
     // Fall back to counting rows via scan
-    let n = 0
+    count = 0
     const { rows } = dataSource.scan({ signal })
     // eslint-disable-next-line no-unused-vars
     for await (const _ of rows) {
       if (signal?.aborted) return
-      n++
+      count++
     }
-    count = n
   }
 
   /** @type {string[]} */

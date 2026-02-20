@@ -139,8 +139,8 @@ export function argCountParseError({ funcName, expected, received, positionStart
  * @param {Object} options
  * @param {string} options.missing - What is missing (e.g., 'WHEN clause', 'FROM clause', 'ON condition')
  * @param {string} options.context - Where it's missing from (e.g., 'CASE expression', 'SELECT statement', 'JOIN')
- * @param {number} [options.positionStart] - Start position in query
- * @param {number} [options.positionEnd] - End position in query
+ * @param {number} options.positionStart - Start position in query
+ * @param {number} options.positionEnd - End position in query
  * @returns {ParseError}
  */
 export function missingClauseError({ missing, context, positionStart, positionEnd }) {

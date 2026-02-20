@@ -10,8 +10,8 @@ import { argValueError } from '../validationErrors.js'
  * @param {Object} options
  * @param {string} options.funcName - Uppercase function name
  * @param {SqlPrimitive[]} options.args - Function arguments
- * @param {number} [options.positionStart] - Start position in SQL string for error reporting
- * @param {number} [options.positionEnd] - End position in SQL string for error reporting
+ * @param {number} options.positionStart - Start position in SQL string for error reporting
+ * @param {number} options.positionEnd - End position in SQL string for error reporting
  * @param {number} [options.rowIndex] - Row number for error reporting
  * @returns {SqlPrimitive}
  */

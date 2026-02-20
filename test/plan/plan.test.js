@@ -16,6 +16,31 @@ describe('planSql', () => {
       })
     })
 
+    it('plan for SELECT name FROM table', () => {
+      const plan = planSql({ query: 'SELECT name FROM users' })
+      expect(plan).toEqual({
+        type: 'Project',
+        columns: [
+          {
+            kind: 'derived',
+            expr: {
+              type: 'identifier',
+              name: 'name',
+              positionStart: 7,
+              positionEnd: 11,
+            },
+          },
+        ],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            columns: ['name'],
+          },
+        },
+      })
+    })
+
     it('plan for SELECT with columns', () => {
       const plan = planSql({ query: 'SELECT name, age FROM users' })
       expect(plan).toEqual({
@@ -230,6 +255,11 @@ describe('planSql', () => {
           },
         },
       })
+    })
+
+    it('should not add Limit node for OFFSET 0', () => {
+      const plan = planSql({ query: 'SELECT * FROM users ORDER BY name OFFSET 0' })
+      expect(plan.type).not.toBe('Limit')
     })
   })
 

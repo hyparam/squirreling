@@ -67,7 +67,7 @@ describe('CTE execution', () => {
       }))
       expect(result).toHaveLength(2)
       const user1 = result.find(r => r.user_id === 1)
-      expect(user1.total).toBe(250)
+      expect(user1?.total).toBe(250)
     })
 
     it('should execute CTE with HAVING', async () => {
@@ -166,7 +166,7 @@ describe('CTE execution', () => {
       }))
       expect(result).toHaveLength(2)
       const alice = result.find(r => r.name === 'Alice')
-      expect(alice.total).toBe(250)
+      expect(alice?.total).toBe(250)
     })
 
     it('should JOIN CTE with regular table', async () => {
