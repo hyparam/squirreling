@@ -149,6 +149,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
 - Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `INTERVAL`
 - Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
+- Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_SORT`, `CARDINALITY`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_REPLACE`
 - Conditional: `COALESCE`, `NULLIF`
 - User-defined functions (UDFs)

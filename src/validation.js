@@ -178,6 +178,12 @@ export const FUNCTION_ARG_COUNTS = {
   JSON_OBJECT: { min: 0 },
   JSON_ARRAYAGG: { min: 1, max: 1 },
 
+  // Array functions
+  ARRAY_LENGTH: { min: 1, max: 1 },
+  ARRAY_POSITION: { min: 2, max: 2 },
+  ARRAY_SORT: { min: 1, max: 1 },
+  CARDINALITY: { min: 1, max: 1 },
+
   // Conditional functions
   COALESCE: { min: 1 },
   NULLIF: { min: 2, max: 2 },
@@ -258,6 +264,7 @@ export function isKnownFunction(funcName, functions) {
   if ([
     'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
     'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
+    'ARRAY_LENGTH', 'ARRAY_POSITION', 'ARRAY_SORT', 'CARDINALITY',
     'COALESCE', 'NULLIF', 'CAST',
   ].includes(funcName)) {
     return true

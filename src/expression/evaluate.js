@@ -308,6 +308,32 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return result
     }
 
+    if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY') {
+      const arr = args[0]
+      if (!Array.isArray(arr)) return null
+      return arr.length
+    }
+
+    if (funcName === 'ARRAY_POSITION') {
+      const [arr, target] = args
+      if (!Array.isArray(arr)) return null
+      const index = arr.indexOf(target)
+      return index === -1 ? null : index + 1
+    }
+
+    if (funcName === 'ARRAY_SORT') {
+      const arr = args[0]
+      if (!Array.isArray(arr)) return null
+      return [...arr].sort((a, b) => {
+        if (a == null && b == null) return 0
+        if (a == null) return 1
+        if (b == null) return -1
+        if (a < b) return -1
+        if (a > b) return 1
+        return 0
+      })
+    }
+
     if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
       let jsonArg = args[0]
       const pathArg = args[1]
