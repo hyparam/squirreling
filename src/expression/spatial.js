@@ -34,20 +34,20 @@ export function evaluateSpatialFunc({ funcName, args }) {
     }
   }
 
+  const geomA = toGeometry(args[0])
   if (funcName === 'ST_ASTEXT') {
-    const geom = toGeometry(args[0])
-    if (geom == null) return null
-    return geomToWkt(geom)
+    if (geomA == null) return null
+    return geomToWkt(geomA)
   }
 
   // Predicate functions (require two geometries)
-  const a = toGeometry(args[0])
-  const b = toGeometry(args[1])
-
-  if (a == null || b == null) return null
+  const geomB = toGeometry(args[1])
+  if (geomA == null || geomB == null) return null
+  const a = decompose(geomA)
+  const b = decompose(geomB)
 
   switch (funcName) {
-  case 'ST_INTERSECTS': return stIntersects(a, b)
+  case 'ST_INTERSECTS': return simpleIntersects(a, b)
   case 'ST_CONTAINS': return stContains(a, b)
   case 'ST_CONTAINSPROPERLY': return stContainsProperly(a, b)
   case 'ST_WITHIN': return stContains(b, a) // inverse of contains
@@ -62,8 +62,7 @@ export function evaluateSpatialFunc({ funcName, args }) {
     const dist = Number(args[2])
     return stDWithin(a, b, dist)
   }
-  default:
-    return null
+  default: return null
   }
 }
 
@@ -129,20 +128,18 @@ function getSegments(geoms) {
  * Intersecting geometries have distance 0. For non-intersecting geometries,
  * the minimum distance is always at an endpoint, so point-to-segment suffices.
  *
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @param {number} distance
  * @returns {boolean}
  */
 function stDWithin(a, b, distance) {
   if (distance < 0) return false
-  const partsA = decompose(a)
-  const partsB = decompose(b)
-  if (simpleIntersects(partsA, partsB)) return true
+  if (simpleIntersects(a, b)) return true
 
   const distanceSq = distance * distance
-  const { points: ptsA, segments: segsA } = getSegments(partsA)
-  const { points: ptsB, segments: segsB } = getSegments(partsB)
+  const { points: ptsA, segments: segsA } = getSegments(a)
+  const { points: ptsB, segments: segsB } = getSegments(b)
 
   // Point-to-point
   for (const pa of ptsA) {
@@ -192,32 +189,17 @@ function decompose(geom) {
 }
 
 // ============================================================================
-// ST_Intersects
-// ============================================================================
-
-/**
- * @param {Geometry} a
- * @param {Geometry} b
- * @returns {boolean}
- */
-function stIntersects(a, b) {
-  return simpleIntersects(decompose(a), decompose(b))
-}
-
-// ============================================================================
 // ST_Contains
 // ============================================================================
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @returns {boolean}
  */
 function stContains(a, b) {
-  const partsA = decompose(a)
-  const partsB = decompose(b)
   // Every part of b must be inside some part of a
-  return partsB.every(pb => partsA.some(pa => simplePairContainment(pa, pb) !== 'OUTSIDE'))
+  return b.every(pb => a.some(pa => simplePairContainment(pa, pb) !== 'OUTSIDE'))
 }
 
 // ============================================================================
@@ -225,15 +207,13 @@ function stContains(a, b) {
 // ============================================================================
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @returns {boolean}
  */
 function stContainsProperly(a, b) {
-  const partsA = decompose(a)
-  const partsB = decompose(b)
   // Every part of b must be strictly inside some part of a
-  return partsB.every(pb => partsA.some(pa => simplePairContainment(pa, pb) === 'INSIDE'))
+  return b.every(pb => a.some(pa => simplePairContainment(pa, pb) === 'INSIDE'))
 }
 
 // ============================================================================
@@ -241,16 +221,14 @@ function stContainsProperly(a, b) {
 // ============================================================================
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @returns {boolean}
  */
 function stTouches(a, b) {
-  const partsA = decompose(a)
-  const partsB = decompose(b)
   let intersects = false
-  for (const pa of partsA) {
-    for (const pb of partsB) {
+  for (const pa of a) {
+    for (const pb of b) {
       const rel = simplePairRelation(pa, pb)
       if (rel === 'INSIDE') return false
       if (rel === 'BOUNDARY') intersects = true
@@ -264,8 +242,8 @@ function stTouches(a, b) {
 // ============================================================================
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @returns {boolean}
  */
 function stOverlaps(a, b) {
@@ -274,7 +252,7 @@ function stOverlaps(a, b) {
   const dimA = geometryDimension(a)
   const dimB = geometryDimension(b)
   if (dimA !== dimB) return false
-  if (!stIntersects(a, b)) return false
+  if (!simpleIntersects(a, b)) return false
   if (stEquals(a, b)) return false
   // Must not be containment
   if (stContains(a, b) || stContains(b, a)) return false
@@ -282,30 +260,23 @@ function stOverlaps(a, b) {
 }
 
 /**
- * @param {Geometry} geom
+ * @param {SimpleGeometry[]} parts
  * @returns {number}
  */
-function geometryDimension(geom) {
-  switch (geom.type) {
-  case 'Point':
-  case 'MultiPoint':
-    return 0
-  case 'LineString':
-  case 'MultiLineString':
-    return 1
-  case 'Polygon':
-  case 'MultiPolygon':
-    return 2
-  case 'GeometryCollection': {
-    let max = 0
-    for (const g of geom.geometries) {
-      max = Math.max(max, geometryDimension(g))
+function geometryDimension(parts) {
+  let max = 0
+  for (const geom of parts) {
+    switch (geom.type) {
+    case 'Point':
+      break
+    case 'LineString':
+      if (max < 1) max = 1
+      break
+    case 'Polygon':
+      return 2
     }
-    return max
   }
-  default:
-    return 0
-  }
+  return max
 }
 
 // ============================================================================
@@ -313,23 +284,20 @@ function geometryDimension(geom) {
 // ============================================================================
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @returns {boolean}
  */
 function stEquals(a, b) {
-  const partsA = decompose(a)
-  const partsB = decompose(b)
+  if (a.length !== b.length) return false
 
-  if (partsA.length !== partsB.length) return false
-
-  // For each simple geometry in A, find a matching one in B
+  // For each simple geometry in a, find a matching one in b
   const used = new Set()
-  for (const pa of partsA) {
+  for (const pa of a) {
     let found = false
-    for (let i = 0; i < partsB.length; i++) {
+    for (let i = 0; i < b.length; i++) {
       if (used.has(i)) continue
-      if (simpleGeomEqual(pa, partsB[i])) {
+      if (simpleGeomEqual(pa, b[i])) {
         used.add(i)
         found = true
         break
@@ -345,8 +313,8 @@ function stEquals(a, b) {
 // ============================================================================
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry[]} a
+ * @param {SimpleGeometry[]} b
  * @returns {boolean}
  */
 function stCrosses(a, b) {
@@ -355,7 +323,7 @@ function stCrosses(a, b) {
   const dimA = geometryDimension(a)
   const dimB = geometryDimension(b)
 
-  if (!stIntersects(a, b)) return false
+  if (!simpleIntersects(a, b)) return false
 
   // Point/Point or Polygon/Polygon cannot cross
   if (dimA === dimB && dimA !== 1) return false
@@ -369,16 +337,15 @@ function stCrosses(a, b) {
 
   // Point/Line, Point/Polygon: point "in interior"
   if (dimA === 0 && dimB >= 1) {
-    // eslint-disable-next-line no-extra-parens
-    const partsA = /** @type {Point[]} */ (decompose(a))
-    const partsB = decompose(b)
-    for (const pa of partsA) {
-      for (const pb of partsB) {
+    for (const pa of a) {
+      // eslint-disable-next-line no-extra-parens
+      const point = /** @type {Point} */ (pa)
+      for (const pb of b) {
         if (pb.type === 'LineString') {
-          if (pointLineRelation(pa.coordinates, pb.coordinates) === 'INSIDE') return true
+          if (pointLineRelation(point.coordinates, pb.coordinates) === 'INSIDE') return true
         }
         if (pb.type === 'Polygon') {
-          if (pointInPolygon(pa.coordinates, pb.coordinates) === 'INSIDE') return true
+          if (pointInPolygon(point.coordinates, pb.coordinates) === 'INSIDE') return true
         }
       }
     }
