@@ -68,6 +68,22 @@ export const FUNCTION_SIGNATURES = {
   MAX: 'expression',
   STDDEV_SAMP: 'expression',
   STDDEV_POP: 'expression',
+
+  // Spatial predicate functions
+  ST_INTERSECTS: 'geometry, geometry',
+  ST_CONTAINS: 'geometry, geometry',
+  ST_CONTAINSPROPERLY: 'geometry, geometry',
+  ST_WITHIN: 'geometry, geometry',
+  ST_OVERLAPS: 'geometry, geometry',
+  ST_TOUCHES: 'geometry, geometry',
+  ST_EQUALS: 'geometry, geometry',
+  ST_CROSSES: 'geometry, geometry',
+  ST_COVERS: 'geometry, geometry',
+  ST_COVEREDBY: 'geometry, geometry',
+  ST_DWITHIN: 'geometry, geometry, distance',
+  ST_GEOMFROMTEXT: 'wkt',
+  ST_MAKEENVELOPE: 'xmin, ymin, xmax, ymax',
+  ST_ASTEXT: 'geometry',
 }
 
 /**

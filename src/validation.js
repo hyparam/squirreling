@@ -1,7 +1,7 @@
 import { ParseError } from './parseErrors.js'
 
 /**
- * @import { AggregateFunc, BinaryOp, ExprNode, FunctionNode, IntervalUnit, MathFunc, StringFunc, UserDefinedFunction } from './types.js'
+ * @import { AggregateFunc, BinaryOp, ExprNode, FunctionNode, IntervalUnit, MathFunc, SpatialFunc, StringFunc, UserDefinedFunction } from './types.js'
  * @param {string} name
  * @returns {name is AggregateFunc}
  */
@@ -77,6 +77,19 @@ export function expectNoAggregate(expr, clause) {
  */
 export function isRegexpFunc(name) {
   return ['REGEXP_SUBSTR', 'REGEXP_REPLACE'].includes(name)
+}
+
+/**
+ * @param {string} name
+ * @returns {name is SpatialFunc}
+ */
+export function isSpatialFunc(name) {
+  return [
+    'ST_INTERSECTS', 'ST_CONTAINS', 'ST_CONTAINSPROPERLY', 'ST_WITHIN',
+    'ST_OVERLAPS', 'ST_TOUCHES', 'ST_EQUALS', 'ST_CROSSES',
+    'ST_COVERS', 'ST_COVEREDBY', 'ST_DWITHIN',
+    'ST_GEOMFROMTEXT', 'ST_MAKEENVELOPE', 'ST_ASTEXT',
+  ].includes(name)
 }
 
 /**
@@ -190,6 +203,22 @@ export const FUNCTION_ARG_COUNTS = {
   MAX: { min: 1, max: 1 },
   STDDEV_SAMP: { min: 1, max: 1 },
   STDDEV_POP: { min: 1, max: 1 },
+
+  // Spatial predicate functions
+  ST_INTERSECTS: { min: 2, max: 2 },
+  ST_CONTAINS: { min: 2, max: 2 },
+  ST_CONTAINSPROPERLY: { min: 2, max: 2 },
+  ST_WITHIN: { min: 2, max: 2 },
+  ST_OVERLAPS: { min: 2, max: 2 },
+  ST_TOUCHES: { min: 2, max: 2 },
+  ST_EQUALS: { min: 2, max: 2 },
+  ST_CROSSES: { min: 2, max: 2 },
+  ST_COVERS: { min: 2, max: 2 },
+  ST_COVEREDBY: { min: 2, max: 2 },
+  ST_DWITHIN: { min: 3, max: 3 },
+  ST_GEOMFROMTEXT: { min: 1, max: 1 },
+  ST_MAKEENVELOPE: { min: 4, max: 4 },
+  ST_ASTEXT: { min: 1, max: 1 },
 }
 
 /**
@@ -249,7 +278,8 @@ export function isKnownFunction(funcName, functions) {
     isAggregateFunc(funcName) ||
     isMathFunc(funcName) ||
     isStringFunc(funcName) ||
-    isRegexpFunc(funcName)
+    isRegexpFunc(funcName) ||
+    isSpatialFunc(funcName)
   ) {
     return true
   }
