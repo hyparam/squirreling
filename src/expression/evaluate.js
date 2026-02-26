@@ -252,10 +252,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
 
     if (isSpatialFunc(funcName)) {
-      return evaluateSpatialFunc({
-        funcName,
-        args,
-      })
+      return evaluateSpatialFunc({ funcName, args })
     }
 
     if (funcName === 'COALESCE') {
