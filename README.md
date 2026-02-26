@@ -151,5 +151,6 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_OBJECT`
 - Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_SORT`, `CARDINALITY`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_REPLACE`
+- Spatial: `ST_GeomFromText`, `ST_MakeEnvelope`, `ST_AsText`, `ST_Intersects`, `ST_Contains`, `ST_ContainsProperly`, `ST_Within`, `ST_Overlaps`, `ST_Touches`, `ST_Equals`, `ST_Crosses`, `ST_Covers`, `ST_CoveredBy`, `ST_DWithin`
 - Conditional: `COALESCE`, `NULLIF`
 - User-defined functions (UDFs)

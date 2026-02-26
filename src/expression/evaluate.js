@@ -2,13 +2,14 @@ import { executeSelect } from '../execute/execute.js'
 import { stringify } from '../execute/utils.js'
 import { columnNotFoundError, invalidContextError } from '../executionErrors.js'
 import { unknownFunctionError } from '../parseErrors.js'
-import { isAggregateFunc, isMathFunc, isRegexpFunc, isStringFunc } from '../validation.js'
+import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation.js'
 import { aggregateError, argValueError, castError } from '../validationErrors.js'
 import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
 import { applyIntervalToDate } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
+import { evaluateSpatialFunc } from './spatial.js'
 import { evaluateStringFunc } from './strings.js'
 
 /**
@@ -248,6 +249,13 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     if (isMathFunc(funcName)) {
       return evaluateMathFunc({ funcName, args })
+    }
+
+    if (isSpatialFunc(funcName)) {
+      return evaluateSpatialFunc({
+        funcName,
+        args,
+      })
     }
 
     if (funcName === 'COALESCE') {

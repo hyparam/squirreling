@@ -276,6 +276,22 @@ export type StringFunc =
   | 'RIGHT'
   | 'INSTR'
 
+export type SpatialFunc =
+  | 'ST_INTERSECTS'
+  | 'ST_CONTAINS'
+  | 'ST_CONTAINSPROPERLY'
+  | 'ST_WITHIN'
+  | 'ST_OVERLAPS'
+  | 'ST_TOUCHES'
+  | 'ST_EQUALS'
+  | 'ST_CROSSES'
+  | 'ST_COVERS'
+  | 'ST_COVEREDBY'
+  | 'ST_DWITHIN'
+  | 'ST_GEOMFROMTEXT'
+  | 'ST_MAKEENVELOPE'
+  | 'ST_ASTEXT'
+
 export interface StarColumn {
   kind: 'star'
   table?: string
