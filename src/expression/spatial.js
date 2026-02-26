@@ -2,7 +2,7 @@ import { geomToWkt, parseWkt } from './wkt.js'
 
 /**
  * @import { SpatialFunc, SqlPrimitive } from '../types.js'
- * @import { Geometry, Point, SimpleGeometry } from './geometry.js'
+ * @import { Geometry, Point, Relation, SimpleGeometry } from './geometry.js'
  */
 
 const EPSILON = 1e-10
@@ -177,78 +177,53 @@ function cross(a, b, c) {
  * @returns {boolean}
  */
 function onSegment(a, b, c) {
-  return Math.min(a[0], b[0]) - EPSILON <= c[0] && c[0] <= Math.max(a[0], b[0]) + EPSILON &&
-         Math.min(a[1], b[1]) - EPSILON <= c[1] && c[1] <= Math.max(a[1], b[1]) + EPSILON
+  return Math.min(a[0], b[0]) - c[0] <= EPSILON && c[0] - Math.max(a[0], b[0]) <= EPSILON &&
+         Math.min(a[1], b[1]) - c[1] <= EPSILON && c[1] - Math.max(a[1], b[1]) <= EPSILON
 }
 
 /**
- * Point-in-polygon test using ray casting.
+ * Classify a point relative to a ring: 'OUTSIDE', 'BOUNDARY', or 'INSIDE'.
+ * Combines ray casting with boundary distance check in a single pass.
  * ring is an array of [x, y] coords (closed ring, first = last).
  *
  * @param {number[]} point
  * @param {number[][]} ring
- * @returns {boolean}
+ * @returns {Relation}
  */
 function pointInRing(point, ring) {
   const [px, py] = point
   let inside = false
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    if (pointToSegmentDistSq(point, ring[j], ring[i]) < EPSILON_SQ) {
+      return 'BOUNDARY'
+    }
     const [xi, yi] = ring[i]
     const [xj, yj] = ring[j]
     if (yi > py !== yj > py && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
       inside = !inside
     }
   }
-  return inside
+  return inside ? 'INSIDE' : 'OUTSIDE'
 }
 
 /**
- * Test if point is on the boundary of a ring.
- *
- * @param {number[]} point
- * @param {number[][]} ring
- * @returns {boolean}
- */
-function pointOnRingBoundary(point, ring) {
-  for (let i = 0; i < ring.length - 1; i++) {
-    if (pointToSegmentDistSq(point, ring[i], ring[i + 1]) < EPSILON_SQ) {
-      return true
-    }
-  }
-  return false
-}
-
-/**
- * Test if point is inside a polygon (array of rings).
+ * Classify a point relative to a polygon: 'OUTSIDE', 'BOUNDARY', or 'INSIDE'.
  * First ring is exterior, rest are holes.
  *
  * @param {number[]} point
  * @param {number[][][]} rings
- * @returns {boolean}
+ * @returns {Relation}
  */
 function pointInPolygon(point, rings) {
-  if (!pointInRing(point, rings[0]) && !pointOnRingBoundary(point, rings[0])) return false
+  const rel = pointInRing(point, rings[0])
+  if (rel === 'OUTSIDE') return 'OUTSIDE'
+  if (rel === 'BOUNDARY') return 'BOUNDARY'
   for (let i = 1; i < rings.length; i++) {
-    // Point must not be inside a hole (but can be on hole boundary)
-    if (pointInRing(point, rings[i]) && !pointOnRingBoundary(point, rings[i])) return false
+    const holeRel = pointInRing(point, rings[i])
+    if (holeRel === 'INSIDE') return 'OUTSIDE'
+    if (holeRel === 'BOUNDARY') return 'BOUNDARY'
   }
-  return true
-}
-
-/**
- * Test if point is strictly inside a polygon (not on boundary).
- *
- * @param {number[]} point
- * @param {number[][][]} rings
- * @returns {boolean}
- */
-function pointInPolygonInterior(point, rings) {
-  if (!pointInRing(point, rings[0])) return false
-  if (pointOnRingBoundary(point, rings[0])) return false
-  for (let i = 1; i < rings.length; i++) {
-    if (pointInRing(point, rings[i])) return false
-  }
-  return true
+  return 'INSIDE'
 }
 
 /**
@@ -276,7 +251,7 @@ function segmentIntersectsRing(a, b, ring) {
 function lineIntersectsPolygon(line, rings) {
   // Check if any point of the line is inside the polygon
   for (const pt of line) {
-    if (pointInPolygon(pt, rings)) return true
+    if (pointInPolygon(pt, rings) !== 'OUTSIDE') return true
   }
   // Check if any segment of the line intersects any ring edge
   for (let i = 0; i < line.length - 1; i++) {
@@ -304,103 +279,55 @@ function linesIntersect(line1, line2) {
 }
 
 /**
- * Test if two polygons share any space.
- *
- * @param {number[][][]} rings1
- * @param {number[][][]} rings2
- * @returns {boolean}
- */
-function polygonsIntersect(rings1, rings2) {
-  // Check if any vertex of polygon1 is inside polygon2
-  for (const pt of rings1[0]) {
-    if (pointInPolygon(pt, rings2)) return true
-  }
-  // Check if any vertex of polygon2 is inside polygon1
-  for (const pt of rings2[0]) {
-    if (pointInPolygon(pt, rings1)) return true
-  }
-  // Check if any edge of polygon1 intersects any edge of polygon2
-  for (let i = 0; i < rings1[0].length - 1; i++) {
-    for (let j = 0; j < rings2[0].length - 1; j++) {
-      if (segmentsIntersect(rings1[0][i], rings1[0][i + 1], rings2[0][j], rings2[0][j + 1])) return true
-    }
-  }
-  return false
-}
-
-/**
- * Test if all points of a linestring are inside a polygon.
+ * Classify containment of a linestring within a polygon.
+ * Returns 'INSIDE' if entirely in interior, 'BOUNDARY' if inside but
+ * touches boundary, 'OUTSIDE' if any part is outside.
  *
  * @param {number[][]} line
  * @param {number[][][]} rings
- * @returns {boolean}
+ * @returns {Relation}
  */
-function lineInsidePolygon(line, rings) {
+function polygonContainsLine(line, rings) {
+  /** @type {Relation} */
+  let result = 'INSIDE'
   for (const pt of line) {
-    if (!pointInPolygon(pt, rings)) return false
-  }
-  // Also check that no segment crosses a hole boundary from inside to outside
-  for (let i = 0; i < line.length - 1; i++) {
-    const mid = [(line[i][0] + line[i + 1][0]) / 2, (line[i][1] + line[i + 1][1]) / 2]
-    if (!pointInPolygon(mid, rings)) return false
-  }
-  return true
-}
-
-/**
- * Test if all points of a linestring are strictly in the polygon interior.
- *
- * @param {number[][]} line
- * @param {number[][][]} rings
- * @returns {boolean}
- */
-function lineInPolygonInterior(line, rings) {
-  for (const pt of line) {
-    if (!pointInPolygonInterior(pt, rings)) return false
+    const rel = pointInPolygon(pt, rings)
+    if (rel === 'OUTSIDE') return 'OUTSIDE'
+    if (rel === 'BOUNDARY') result = 'BOUNDARY'
   }
   for (let i = 0; i < line.length - 1; i++) {
     const mid = [(line[i][0] + line[i + 1][0]) / 2, (line[i][1] + line[i + 1][1]) / 2]
-    if (!pointInPolygonInterior(mid, rings)) return false
+    const rel = pointInPolygon(mid, rings)
+    if (rel === 'OUTSIDE') return 'OUTSIDE'
+    if (rel === 'BOUNDARY') result = 'BOUNDARY'
   }
-  return true
+  return result
 }
 
 /**
- * Test if polygon A contains polygon B (all of B is inside A).
+ * Classify containment of polygon B within polygon A.
+ * Returns 'INSIDE' if entirely in interior, 'BOUNDARY' if inside but
+ * touches boundary, 'OUTSIDE' if any part is outside.
  *
  * @param {number[][][]} ringsA
  * @param {number[][][]} ringsB
- * @returns {boolean}
+ * @returns {Relation}
  */
 function polygonContainsPolygon(ringsA, ringsB) {
-  // Every vertex of B's exterior must be inside A
+  /** @type {Relation} */
+  let result = 'INSIDE'
   for (const pt of ringsB[0]) {
-    if (!pointInPolygon(pt, ringsA)) return false
-  }
-  // Check that edges of B don't cross outside A
-  for (let i = 0; i < ringsB[0].length - 1; i++) {
-    const mid = [(ringsB[0][i][0] + ringsB[0][i + 1][0]) / 2, (ringsB[0][i][1] + ringsB[0][i + 1][1]) / 2]
-    if (!pointInPolygon(mid, ringsA)) return false
-  }
-  return true
-}
-
-/**
- * Test if polygon A contains polygon B properly (no boundary contact).
- *
- * @param {number[][][]} ringsA
- * @param {number[][][]} ringsB
- * @returns {boolean}
- */
-function polygonContainsPolygonProperly(ringsA, ringsB) {
-  for (const pt of ringsB[0]) {
-    if (!pointInPolygonInterior(pt, ringsA)) return false
+    const rel = pointInPolygon(pt, ringsA)
+    if (rel === 'OUTSIDE') return 'OUTSIDE'
+    if (rel === 'BOUNDARY') result = 'BOUNDARY'
   }
   for (let i = 0; i < ringsB[0].length - 1; i++) {
     const mid = [(ringsB[0][i][0] + ringsB[0][i + 1][0]) / 2, (ringsB[0][i][1] + ringsB[0][i + 1][1]) / 2]
-    if (!pointInPolygonInterior(mid, ringsA)) return false
+    const rel = pointInPolygon(mid, ringsA)
+    if (rel === 'OUTSIDE') return 'OUTSIDE'
+    if (rel === 'BOUNDARY') result = 'BOUNDARY'
   }
-  return true
+  return result
 }
 
 /**
@@ -526,10 +453,10 @@ function stDWithin(a, b, distance) {
   if (a.type === 'Polygon' || a.type === 'MultiPolygon') {
     const pts = getPoints(b)
     for (const pt of pts) {
-      if (a.type === 'Polygon' && pointInPolygon(pt, a.coordinates)) return true
+      if (a.type === 'Polygon' && pointInPolygon(pt, a.coordinates) !== 'OUTSIDE') return true
       if (a.type === 'MultiPolygon') {
         for (const poly of a.coordinates) {
-          if (pointInPolygon(pt, poly)) return true
+          if (pointInPolygon(pt, poly) !== 'OUTSIDE') return true
         }
       }
     }
@@ -537,21 +464,18 @@ function stDWithin(a, b, distance) {
   if (b.type === 'Polygon' || b.type === 'MultiPolygon') {
     const pts = getPoints(a)
     for (const pt of pts) {
-      if (b.type === 'Polygon' && pointInPolygon(pt, b.coordinates)) return true
+      if (b.type === 'Polygon' && pointInPolygon(pt, b.coordinates) !== 'OUTSIDE') return true
       if (b.type === 'MultiPolygon') {
         for (const poly of b.coordinates) {
-          if (pointInPolygon(pt, poly)) return true
+          if (pointInPolygon(pt, poly) !== 'OUTSIDE') return true
         }
       }
     }
   }
 
+  // Segment-to-segment
   const segsA = getSegments(a)
   const segsB = getSegments(b)
-  const ptsA = getPoints(a)
-  const ptsB = getPoints(b)
-
-  // Segment-to-segment
   for (const [a1, a2] of segsA) {
     for (const [b1, b2] of segsB) {
       if (segmentToSegmentDistSq(a1, a2, b1, b2) <= distanceSq) return true
@@ -559,6 +483,8 @@ function stDWithin(a, b, distance) {
   }
 
   // Point-to-segment
+  const ptsA = getPoints(a)
+  const ptsB = getPoints(b)
   if (segsB.length) {
     for (const pt of ptsA) {
       for (const [b1, b2] of segsB) {
@@ -651,10 +577,10 @@ function simplePairIntersects(a, b) {
     return pointOnLine(b.coordinates, a.coordinates)
   }
   if (ta === 'Point' && tb === 'Polygon') {
-    return pointInPolygon(a.coordinates, b.coordinates)
+    return pointInPolygon(a.coordinates, b.coordinates) !== 'OUTSIDE'
   }
   if (ta === 'Polygon' && tb === 'Point') {
-    return pointInPolygon(b.coordinates, a.coordinates)
+    return pointInPolygon(b.coordinates, a.coordinates) !== 'OUTSIDE'
   }
   if (ta === 'LineString' && tb === 'LineString') {
     return linesIntersect(a.coordinates, b.coordinates)
@@ -666,7 +592,7 @@ function simplePairIntersects(a, b) {
     return lineIntersectsPolygon(b.coordinates, a.coordinates)
   }
   if (ta === 'Polygon' && tb === 'Polygon') {
-    return polygonsIntersect(a.coordinates, b.coordinates)
+    return polygonPolygonRelation(a.coordinates, b.coordinates) !== 'OUTSIDE'
   }
   return false
 }
@@ -685,6 +611,209 @@ function pointOnLine(point, line) {
   return false
 }
 
+/**
+ * Classify the relationship between two simple geometries.
+ * Returns 'INSIDE' if interiors intersect, 'BOUNDARY' if they
+ * intersect only at boundaries, or 'OUTSIDE' if they don't intersect.
+ *
+ * @param {SimpleGeometry} a
+ * @param {SimpleGeometry} b
+ * @returns {Relation}
+ */
+function simplePairRelation(a, b) {
+  const ta = a.type
+  const tb = b.type
+
+  // Point / Point
+  if (ta === 'Point' && tb === 'Point') {
+    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ ? 'INSIDE' : 'OUTSIDE'
+  }
+
+  // Point / LineString
+  if (ta === 'Point' && tb === 'LineString') {
+    return pointLineRelation(a.coordinates, b.coordinates)
+  }
+  if (ta === 'LineString' && tb === 'Point') {
+    return pointLineRelation(b.coordinates, a.coordinates)
+  }
+
+  // Point / Polygon
+  if (ta === 'Point' && tb === 'Polygon') {
+    return pointInPolygon(a.coordinates, b.coordinates)
+  }
+  if (ta === 'Polygon' && tb === 'Point') {
+    return pointInPolygon(b.coordinates, a.coordinates)
+  }
+
+  // LineString / LineString
+  if (ta === 'LineString' && tb === 'LineString') {
+    return lineLineRelation(a.coordinates, b.coordinates)
+  }
+
+  // LineString / Polygon
+  if (ta === 'LineString' && tb === 'Polygon') {
+    return linePolygonRelation(a.coordinates, b.coordinates)
+  }
+  if (ta === 'Polygon' && tb === 'LineString') {
+    return linePolygonRelation(b.coordinates, a.coordinates)
+  }
+
+  // Polygon / Polygon
+  if (ta === 'Polygon' && tb === 'Polygon') {
+    return polygonPolygonRelation(a.coordinates, b.coordinates)
+  }
+
+  return 'OUTSIDE'
+}
+
+/**
+ * Classify a point relative to a linestring.
+ *
+ * @param {number[]} point
+ * @param {number[][]} line
+ * @returns {Relation}
+ */
+function pointLineRelation(point, line) {
+  // Check endpoints first
+  if (distSq(point, line[0]) < EPSILON_SQ) return 'BOUNDARY'
+  if (distSq(point, line[line.length - 1]) < EPSILON_SQ) return 'BOUNDARY'
+  // Check if on any segment
+  for (let i = 0; i < line.length - 1; i++) {
+    if (pointToSegmentDistSq(point, line[i], line[i + 1]) < EPSILON_SQ) return 'INSIDE'
+  }
+  return 'OUTSIDE'
+}
+
+/**
+ * Classify the relationship between two linestrings.
+ * Returns INSIDE if interiors share a point, BOUNDARY if they only meet
+ * at endpoints, OUTSIDE if disjoint.
+ *
+ * @param {number[][]} line1
+ * @param {number[][]} line2
+ * @returns {Relation}
+ */
+function lineLineRelation(line1, line2) {
+  let boundary = false
+  for (let i = 0; i < line1.length - 1; i++) {
+    for (let j = 0; j < line2.length - 1; j++) {
+      if (!segmentsIntersect(line1[i], line1[i + 1], line2[j], line2[j + 1])) continue
+      // Segments intersect, check if the intersection is interior to both lines
+      // Check segment midpoints
+      const mid1 = [(line1[i][0] + line1[i + 1][0]) / 2, (line1[i][1] + line1[i + 1][1]) / 2]
+      if (pointLineRelation(mid1, line1) === 'INSIDE' && pointLineRelation(mid1, line2) === 'INSIDE') {
+        return 'INSIDE'
+      }
+      const mid2 = [(line2[j][0] + line2[j + 1][0]) / 2, (line2[j][1] + line2[j + 1][1]) / 2]
+      if (pointLineRelation(mid2, line1) === 'INSIDE' && pointLineRelation(mid2, line2) === 'INSIDE') {
+        return 'INSIDE'
+      }
+      // Check actual intersection point
+      const ip = segmentIntersectionPoint(line1[i], line1[i + 1], line2[j], line2[j + 1])
+      if (ip) {
+        if (pointLineRelation(ip, line1) === 'INSIDE' && pointLineRelation(ip, line2) === 'INSIDE') {
+          return 'INSIDE'
+        }
+      }
+      boundary = true
+    }
+  }
+  return boundary ? 'BOUNDARY' : 'OUTSIDE'
+}
+
+/**
+ * Classify the relationship between a linestring and a polygon.
+ * Returns INSIDE if line interior enters polygon interior, BOUNDARY if
+ * they only share boundary points, OUTSIDE if disjoint.
+ *
+ * @param {number[][]} line
+ * @param {number[][][]} rings
+ * @returns {Relation}
+ */
+function linePolygonRelation(line, rings) {
+  let boundary = false
+  // Check segment midpoints and interior vertices
+  for (let i = 0; i < line.length - 1; i++) {
+    const mid = [(line[i][0] + line[i + 1][0]) / 2, (line[i][1] + line[i + 1][1]) / 2]
+    const midRel = pointInPolygon(mid, rings)
+    if (midRel === 'INSIDE') return 'INSIDE'
+    if (midRel === 'BOUNDARY') boundary = true
+  }
+  // Check interior vertices of the line
+  for (let i = 1; i < line.length - 1; i++) {
+    const rel = pointInPolygon(line[i], rings)
+    if (rel === 'INSIDE') return 'INSIDE'
+    if (rel === 'BOUNDARY') boundary = true
+  }
+  // Check line endpoints
+  for (const pt of [line[0], line[line.length - 1]]) {
+    const rel = pointInPolygon(pt, rings)
+    if (rel === 'INSIDE') return 'INSIDE'
+    if (rel === 'BOUNDARY') boundary = true
+  }
+  // Check if any edge of the polygon rings intersects the line
+  if (!boundary) {
+    for (let i = 0; i < line.length - 1; i++) {
+      for (const ring of rings) {
+        if (segmentIntersectsRing(line[i], line[i + 1], ring)) {
+          boundary = true
+        }
+      }
+    }
+  }
+  return boundary ? 'BOUNDARY' : 'OUTSIDE'
+}
+
+/**
+ * Classify the relationship between two polygons.
+ * Returns INSIDE if interiors share area, BOUNDARY if they only share
+ * boundary points/edges, OUTSIDE if disjoint.
+ *
+ * @param {number[][][]} rings1
+ * @param {number[][][]} rings2
+ * @returns {Relation}
+ */
+function polygonPolygonRelation(rings1, rings2) {
+  let boundary = false
+  // Check vertices of polygon1 against polygon2
+  for (const pt of rings1[0]) {
+    const rel = pointInPolygon(pt, rings2)
+    if (rel === 'INSIDE') return 'INSIDE'
+    if (rel === 'BOUNDARY') boundary = true
+  }
+  // Check vertices of polygon2 against polygon1
+  for (const pt of rings2[0]) {
+    const rel = pointInPolygon(pt, rings1)
+    if (rel === 'INSIDE') return 'INSIDE'
+    if (rel === 'BOUNDARY') boundary = true
+  }
+  // Check edge midpoints of polygon1 against polygon2
+  for (let i = 0; i < rings1[0].length - 1; i++) {
+    const mid = [(rings1[0][i][0] + rings1[0][i + 1][0]) / 2, (rings1[0][i][1] + rings1[0][i + 1][1]) / 2]
+    const rel = pointInPolygon(mid, rings2)
+    if (rel === 'INSIDE') return 'INSIDE'
+    if (rel === 'BOUNDARY') boundary = true
+  }
+  // Check edge midpoints of polygon2 against polygon1
+  for (let i = 0; i < rings2[0].length - 1; i++) {
+    const mid = [(rings2[0][i][0] + rings2[0][i + 1][0]) / 2, (rings2[0][i][1] + rings2[0][i + 1][1]) / 2]
+    const rel = pointInPolygon(mid, rings1)
+    if (rel === 'INSIDE') return 'INSIDE'
+    if (rel === 'BOUNDARY') boundary = true
+  }
+  // Check edge-edge intersections
+  if (!boundary) {
+    for (let i = 0; i < rings1[0].length - 1; i++) {
+      for (let j = 0; j < rings2[0].length - 1; j++) {
+        if (segmentsIntersect(rings1[0][i], rings1[0][i + 1], rings2[0][j], rings2[0][j + 1])) {
+          boundary = true
+        }
+      }
+    }
+  }
+  return boundary ? 'BOUNDARY' : 'OUTSIDE'
+}
+
 // ============================================================================
 // ST_Contains
 // ============================================================================
@@ -698,29 +827,33 @@ function stContains(a, b) {
   const partsA = decompose(a)
   const partsB = decompose(b)
   // Every part of b must be inside some part of a
-  return partsB.every(pb => partsA.some(pa => simplePairContains(pa, pb)))
+  return partsB.every(pb => partsA.some(pa => simplePairContainment(pa, pb) !== 'OUTSIDE'))
 }
 
 /**
+ * Classify containment of b within a.
+ * Returns 'INSIDE' if b is strictly in a's interior, 'BOUNDARY' if b is
+ * inside a but touches a's boundary, 'OUTSIDE' if any part of b is outside a.
+ *
  * @param {SimpleGeometry} a
  * @param {SimpleGeometry} b
- * @returns {boolean}
+ * @returns {Relation}
  */
-function simplePairContains(a, b) {
+function simplePairContainment(a, b) {
   const ta = a.type
   const tb = b.type
 
   if (ta === 'Point' && tb === 'Point') {
-    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
+    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ ? 'BOUNDARY' : 'OUTSIDE'
   }
   if (ta === 'LineString' && tb === 'Point') {
-    return pointOnLine(b.coordinates, a.coordinates)
+    return pointLineRelation(b.coordinates, a.coordinates)
   }
   if (ta === 'Polygon' && tb === 'Point') {
     return pointInPolygon(b.coordinates, a.coordinates)
   }
   if (ta === 'Polygon' && tb === 'LineString') {
-    return lineInsidePolygon(b.coordinates, a.coordinates)
+    return polygonContainsLine(b.coordinates, a.coordinates)
   }
   if (ta === 'Polygon' && tb === 'Polygon') {
     return polygonContainsPolygon(a.coordinates, b.coordinates)
@@ -728,11 +861,11 @@ function simplePairContains(a, b) {
   if (ta === 'LineString' && tb === 'LineString') {
     // Line A contains line B if every point of B is on A
     for (const pt of b.coordinates) {
-      if (!pointOnLine(pt, a.coordinates)) return false
+      if (!pointOnLine(pt, a.coordinates)) return 'OUTSIDE'
     }
-    return true
+    return 'BOUNDARY'
   }
-  return false
+  return 'OUTSIDE'
 }
 
 // ============================================================================
@@ -748,29 +881,7 @@ function stContainsProperly(a, b) {
   const partsA = decompose(a)
   const partsB = decompose(b)
   // Every part of b must be strictly inside some part of a
-  return partsB.every(pb => partsA.some(pa => simplePairContainsProperly(pa, pb)))
-}
-
-/**
- * @param {SimpleGeometry} a
- * @param {SimpleGeometry} b
- * @returns {boolean}
- */
-function simplePairContainsProperly(a, b) {
-  const ta = a.type
-  const tb = b.type
-
-  if (ta === 'Polygon' && tb === 'Point') {
-    return pointInPolygonInterior(b.coordinates, a.coordinates)
-  }
-  if (ta === 'Polygon' && tb === 'LineString') {
-    return lineInPolygonInterior(b.coordinates, a.coordinates)
-  }
-  if (ta === 'Polygon' && tb === 'Polygon') {
-    return polygonContainsPolygonProperly(a.coordinates, b.coordinates)
-  }
-  // Points and lines have no interior in the topological sense for "contains properly"
-  return false
+  return partsB.every(pb => partsA.some(pa => simplePairContainment(pa, pb) === 'INSIDE'))
 }
 
 // ============================================================================
@@ -783,105 +894,17 @@ function simplePairContainsProperly(a, b) {
  * @returns {boolean}
  */
 function stTouches(a, b) {
-  // Geometries touch if they intersect but their interiors do not
   const partsA = decompose(a)
   const partsB = decompose(b)
   let intersects = false
   for (const pa of partsA) {
     for (const pb of partsB) {
-      if (simplePairInteriorsIntersect(pa, pb)) return false
-      if (simplePairIntersects(pa, pb)) intersects = true
+      const rel = simplePairRelation(pa, pb)
+      if (rel === 'INSIDE') return false
+      if (rel === 'BOUNDARY') intersects = true
     }
   }
   return intersects
-}
-
-/**
- * Test if interiors of two simple geometries share any point.
- *
- * @param {SimpleGeometry} a
- * @param {SimpleGeometry} b
- * @returns {boolean}
- */
-function simplePairInteriorsIntersect(a, b) {
-  const ta = a.type
-  const tb = b.type
-
-  if (ta === 'Point' && tb === 'Point') {
-    // A point's interior is the point itself, so equal points have
-    // intersecting interiors.
-    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
-  }
-  if (ta === 'Point' && tb === 'LineString') {
-    // Interior of a linestring excludes endpoints
-    return pointInLineInterior(a.coordinates, b.coordinates)
-  }
-  if (ta === 'LineString' && tb === 'Point') {
-    return pointInLineInterior(b.coordinates, a.coordinates)
-  }
-  if (ta === 'Point' && tb === 'Polygon') {
-    return pointInPolygonInterior(a.coordinates, b.coordinates)
-  }
-  if (ta === 'Polygon' && tb === 'Point') {
-    return pointInPolygonInterior(b.coordinates, a.coordinates)
-  }
-  if (ta === 'LineString' && tb === 'LineString') {
-    // Check if lines share interior points (not just endpoints)
-    return linesShareInterior(a.coordinates, b.coordinates)
-  }
-  if (ta === 'LineString' && tb === 'Polygon') {
-    return lineInteriorIntersectsPolygonInterior(a.coordinates, b.coordinates)
-  }
-  if (ta === 'Polygon' && tb === 'LineString') {
-    return lineInteriorIntersectsPolygonInterior(b.coordinates, a.coordinates)
-  }
-  if (ta === 'Polygon' && tb === 'Polygon') {
-    return polygonInteriorsIntersect(a.coordinates, b.coordinates)
-  }
-  return false
-}
-
-/**
- * @param {number[]} point
- * @param {number[][]} line
- * @returns {boolean}
- */
-function pointInLineInterior(point, line) {
-  // Interior of line excludes endpoints
-  if (distSq(point, line[0]) < EPSILON_SQ) return false
-  if (distSq(point, line[line.length - 1]) < EPSILON_SQ) return false
-  return pointOnLine(point, line)
-}
-
-/**
- * @param {number[][]} line1
- * @param {number[][]} line2
- * @returns {boolean}
- */
-function linesShareInterior(line1, line2) {
-  // Check if any interior point of one line lies on the other line's interior
-  for (let i = 0; i < line1.length - 1; i++) {
-    for (let j = 0; j < line2.length - 1; j++) {
-      if (segmentsIntersect(line1[i], line1[i + 1], line2[j], line2[j + 1])) {
-        // Find the intersection point and check if it's interior to both
-        // For simplicity, check segment midpoints
-        const mid1 = [(line1[i][0] + line1[i + 1][0]) / 2, (line1[i][1] + line1[i + 1][1]) / 2]
-        if (pointOnLine(mid1, line2) && pointInLineInterior(mid1, line1) && pointInLineInterior(mid1, line2)) {
-          return true
-        }
-        const mid2 = [(line2[j][0] + line2[j + 1][0]) / 2, (line2[j][1] + line2[j + 1][1]) / 2]
-        if (pointOnLine(mid2, line1) && pointInLineInterior(mid2, line1) && pointInLineInterior(mid2, line2)) {
-          return true
-        }
-        // Also check the actual intersection point
-        const ip = segmentIntersectionPoint(line1[i], line1[i + 1], line2[j], line2[j + 1])
-        if (ip && pointInLineInterior(ip, line1) && pointInLineInterior(ip, line2)) {
-          return true
-        }
-      }
-    }
-  }
-  return false
 }
 
 /**
@@ -900,50 +923,6 @@ function segmentIntersectionPoint(p1, p2, p3, p4) {
   if (Math.abs(denom) < EPSILON) return null // parallel
   const t = ((p3[0] - p1[0]) * d2y - (p3[1] - p1[1]) * d2x) / denom
   return [p1[0] + t * d1x, p1[1] + t * d1y]
-}
-
-/**
- * @param {number[][]} line
- * @param {number[][][]} rings
- * @returns {boolean}
- */
-function lineInteriorIntersectsPolygonInterior(line, rings) {
-  // Check if any interior point of the line is inside the polygon interior
-  for (let i = 0; i < line.length - 1; i++) {
-    const mid = [(line[i][0] + line[i + 1][0]) / 2, (line[i][1] + line[i + 1][1]) / 2]
-    if (pointInPolygonInterior(mid, rings)) return true
-  }
-  // Also check interior points of the line
-  for (let i = 1; i < line.length - 1; i++) {
-    if (pointInPolygonInterior(line[i], rings)) return true
-  }
-  return false
-}
-
-/**
- * @param {number[][][]} rings1
- * @param {number[][][]} rings2
- * @returns {boolean}
- */
-function polygonInteriorsIntersect(rings1, rings2) {
-  // Check if any vertex of polygon1 is inside polygon2's interior
-  for (const pt of rings1[0]) {
-    if (pointInPolygonInterior(pt, rings2)) return true
-  }
-  // Check if any vertex of polygon2 is inside polygon1's interior
-  for (const pt of rings2[0]) {
-    if (pointInPolygonInterior(pt, rings1)) return true
-  }
-  // Check if any edge midpoints are inside the other polygon's interior
-  for (let i = 0; i < rings1[0].length - 1; i++) {
-    const mid = [(rings1[0][i][0] + rings1[0][i + 1][0]) / 2, (rings1[0][i][1] + rings1[0][i + 1][1]) / 2]
-    if (pointInPolygonInterior(mid, rings2)) return true
-  }
-  for (let i = 0; i < rings2[0].length - 1; i++) {
-    const mid = [(rings2[0][i][0] + rings2[0][i + 1][0]) / 2, (rings2[0][i][1] + rings2[0][i + 1][1]) / 2]
-    if (pointInPolygonInterior(mid, rings1)) return true
-  }
-  return false
 }
 
 // ============================================================================
@@ -1112,14 +1091,14 @@ function stCrosses(a, b) {
   if (dimA === 0 && dimB >= 1) {
     // eslint-disable-next-line no-extra-parens
     const partsA = /** @type {Point[]} */ (decompose(a))
+    const partsB = decompose(b)
     for (const pa of partsA) {
-      const partsB = decompose(b)
       for (const pb of partsB) {
         if (pb.type === 'LineString') {
-          if (pointInLineInterior(pa.coordinates, pb.coordinates)) return true
+          if (pointLineRelation(pa.coordinates, pb.coordinates) === 'INSIDE') return true
         }
         if (pb.type === 'Polygon') {
-          if (pointInPolygonInterior(pa.coordinates, pb.coordinates)) return true
+          if (pointInPolygon(pa.coordinates, pb.coordinates) === 'INSIDE') return true
         }
       }
     }
