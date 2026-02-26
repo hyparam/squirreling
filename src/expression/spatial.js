@@ -1,29 +1,84 @@
+import { geomToWkt, parseWkt } from './wkt.js'
+
 /**
  * @import { SpatialFunc, SqlPrimitive } from '../types.js'
- */
-
-// ============================================================================
-// GeoJSON geometry helpers
-// ============================================================================
-
-/**
- * @typedef {{ type: string, coordinates: any, geometries?: GeoJsonGeometry[] }} GeoJsonGeometry
+ * @typedef {{ type: string, coordinates: any[], geometries?: Geometry[] }} Geometry
  */
 
 const EPSILON = 1e-10
+
+/**
+ * Evaluate a spatial predicate function.
+ *
+ * @param {Object} options
+ * @param {SpatialFunc} options.funcName
+ * @param {SqlPrimitive[]} options.args
+ * @returns {SqlPrimitive}
+ */
+export function evaluateSpatialFunc({ funcName, args }) {
+  // Constructor / accessor functions (don't require two geometries)
+  if (funcName === 'ST_GEOMFROMTEXT') {
+    if (args[0] == null) return null
+    return parseWkt(String(args[0]))
+  }
+
+  if (funcName === 'ST_MAKEENVELOPE') {
+    if (args[0] == null || args[1] == null || args[2] == null || args[3] == null) return null
+    const xmin = Number(args[0])
+    const ymin = Number(args[1])
+    const xmax = Number(args[2])
+    const ymax = Number(args[3])
+    return {
+      type: 'Polygon',
+      coordinates: [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax], [xmin, ymin]]],
+    }
+  }
+
+  if (funcName === 'ST_ASTEXT') {
+    const geom = toGeometry(args[0])
+    if (geom == null) return null
+    return geomToWkt(geom)
+  }
+
+  // Predicate functions (require two geometries)
+  const a = toGeometry(args[0])
+  const b = toGeometry(args[1])
+
+  if (a == null || b == null) return null
+
+  switch (funcName) {
+  case 'ST_INTERSECTS': return stIntersects(a, b)
+  case 'ST_CONTAINS': return stContains(a, b)
+  case 'ST_CONTAINSPROPERLY': return stContainsProperly(a, b)
+  case 'ST_WITHIN': return stWithin(a, b)
+  case 'ST_OVERLAPS': return stOverlaps(a, b)
+  case 'ST_TOUCHES': return stTouches(a, b)
+  case 'ST_EQUALS': return stEquals(a, b)
+  case 'ST_CROSSES': return stCrosses(a, b)
+  case 'ST_COVERS': return stCovers(a, b)
+  case 'ST_COVEREDBY': return stCoveredBy(a, b)
+  case 'ST_DWITHIN': {
+    if (args[2] == null) return null
+    const dist = Number(args[2])
+    return stDWithin(a, b, dist)
+  }
+  default:
+    return null
+  }
+}
 
 /**
  * Normalize a geometry value. Accepts GeoJSON objects.
  * Returns null if the value is not a valid geometry.
  *
  * @param {SqlPrimitive} val
- * @returns {GeoJsonGeometry | null}
+ * @returns {Geometry | null}
  */
 function toGeometry(val) {
   if (val == null) return null
   if (typeof val === 'object' && !(val instanceof Date) && !Array.isArray(val)) {
     // eslint-disable-next-line no-extra-parens
-    const geom = /** @type {GeoJsonGeometry} */ (val)
+    const geom = /** @type {Geometry} */ (val)
     if (typeof geom.type === 'string' && geom.coordinates !== undefined) {
       return geom
     }
@@ -404,7 +459,7 @@ function ringsEqual(ring1, ring2) {
 /**
  * Get all coordinates from a geometry as a flat list of [x, y] points.
  *
- * @param {GeoJsonGeometry} geom
+ * @param {Geometry} geom
  * @returns {number[][]}
  */
 function getPoints(geom) {
@@ -415,7 +470,7 @@ function getPoints(geom) {
   case 'MultiLineString': return geom.coordinates.flat()
   case 'Polygon': return geom.coordinates[0]
   case 'MultiPolygon': return geom.coordinates.flatMap((/** @type {number[][][]} */ p) => p[0])
-  case 'GeometryCollection': return geom.geometries.flatMap((/** @type {GeoJsonGeometry} */ g) => getPoints(g))
+  case 'GeometryCollection': return geom.geometries.flatMap((/** @type {Geometry} */ g) => getPoints(g))
   default: return []
   }
 }
@@ -423,7 +478,7 @@ function getPoints(geom) {
 /**
  * Get all line segments from a geometry.
  *
- * @param {GeoJsonGeometry} geom
+ * @param {Geometry} geom
  * @returns {Array<[number[], number[]]>}
  */
 function getSegments(geom) {
@@ -442,7 +497,7 @@ function getSegments(geom) {
   case 'MultiLineString': geom.coordinates.forEach((/** @type {number[][]} */ l) => addLine(l)); break
   case 'Polygon': geom.coordinates.forEach((/** @type {number[][]} */ r) => addLine(r)); break
   case 'MultiPolygon': geom.coordinates.forEach((/** @type {number[][][]} */ p) => p.forEach((/** @type {number[][]} */ r) => addLine(r))); break
-  case 'GeometryCollection': geom.geometries.forEach((/** @type {GeoJsonGeometry} */ g) => segments.push(...getSegments(g))); break
+  case 'GeometryCollection': geom.geometries.forEach((/** @type {Geometry} */ g) => segments.push(...getSegments(g))); break
   }
   return segments
 }
@@ -469,8 +524,8 @@ function segmentToSegmentDist(a1, a2, b1, b2) {
 /**
  * Compute the minimum distance between two geometries.
  *
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {number}
  */
 function geometryDistance(a, b) {
@@ -547,8 +602,8 @@ function geometryDistance(a, b) {
 /**
  * Decompose Multi* and GeometryCollection into simple geometries.
  *
- * @param {GeoJsonGeometry} geom
- * @returns {GeoJsonGeometry[]}
+ * @param {Geometry} geom
+ * @returns {Geometry[]}
  */
 function decompose(geom) {
   switch (geom.type) {
@@ -559,7 +614,7 @@ function decompose(geom) {
   case 'MultiPolygon':
     return geom.coordinates.map((/** @type {number[][][]} */ c) => ({ type: 'Polygon', coordinates: c }))
   case 'GeometryCollection':
-    return geom.geometries.flatMap((/** @type {GeoJsonGeometry} */ g) => decompose(g))
+    return geom.geometries.flatMap((/** @type {Geometry} */ g) => decompose(g))
   default:
     return [geom]
   }
@@ -570,8 +625,8 @@ function decompose(geom) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stIntersects(a, b) {
@@ -586,8 +641,8 @@ function stIntersects(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function simplePairIntersects(a, b) {
@@ -643,8 +698,8 @@ function pointOnLine(point, line) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stContains(a, b) {
@@ -657,8 +712,8 @@ function stContains(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b - simple geometry
+ * @param {Geometry} a
+ * @param {Geometry} b - simple geometry
  * @returns {boolean}
  */
 function simpleContainedByAny(a, b) {
@@ -670,8 +725,8 @@ function simpleContainedByAny(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function simplePairContains(a, b) {
@@ -708,8 +763,8 @@ function simplePairContains(a, b) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stContainsProperly(a, b) {
@@ -721,8 +776,8 @@ function stContainsProperly(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function simpleContainedByAnyProperly(a, b) {
@@ -734,8 +789,8 @@ function simpleContainedByAnyProperly(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function simplePairContainsProperly(a, b) {
@@ -760,8 +815,8 @@ function simplePairContainsProperly(a, b) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stWithin(a, b) {
@@ -773,8 +828,8 @@ function stWithin(a, b) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stTouches(a, b) {
@@ -794,8 +849,8 @@ function stTouches(a, b) {
 /**
  * Test if interiors of two simple geometries share any point.
  *
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function simplePairInteriorsIntersect(a, b) {
@@ -946,8 +1001,8 @@ function polygonInteriorsIntersect(rings1, rings2) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stOverlaps(a, b) {
@@ -964,7 +1019,7 @@ function stOverlaps(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} geom
+ * @param {Geometry} geom
  * @returns {number}
  */
 function geometryDimension(geom) {
@@ -995,8 +1050,8 @@ function geometryDimension(geom) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stEquals(a, b) {
@@ -1023,8 +1078,8 @@ function stEquals(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function simpleGeomEqual(a, b) {
@@ -1084,8 +1139,8 @@ function polygonEqual(a, b) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stCrosses(a, b) {
@@ -1146,8 +1201,8 @@ function stCrosses(a, b) {
  * ST_Covers: a covers b if no point of b is outside a.
  * Similar to ST_Contains but allows b to be on boundary.
  *
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stCovers(a, b) {
@@ -1157,8 +1212,8 @@ function stCovers(a, b) {
 }
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @returns {boolean}
  */
 function stCoveredBy(a, b) {
@@ -1170,302 +1225,11 @@ function stCoveredBy(a, b) {
 // ============================================================================
 
 /**
- * @param {GeoJsonGeometry} a
- * @param {GeoJsonGeometry} b
+ * @param {Geometry} a
+ * @param {Geometry} b
  * @param {number} distance
  * @returns {boolean}
  */
 function stDWithin(a, b, distance) {
   return geometryDistance(a, b) <= distance
-}
-
-// ============================================================================
-// WKT parsing (ST_GeomFromText)
-// ============================================================================
-
-/**
- * Parse a WKT string into a GeoJSON geometry.
- *
- * @param {string} wkt
- * @returns {GeoJsonGeometry | null}
- */
-function parseWkt(wkt) {
-  const s = wkt.trim()
-  const upper = s.toUpperCase()
-
-  if (upper.startsWith('POINT')) {
-    const coords = parseWktCoordinate(s.slice(5).trim())
-    if (!coords) return null
-    return { type: 'Point', coordinates: coords }
-  }
-
-  if (upper.startsWith('MULTIPOINT')) {
-    const inner = extractParens(s.slice(10).trim())
-    if (inner == null) return null
-    const coords = parseWktCoordinateList(inner)
-    if (!coords) return null
-    return { type: 'MultiPoint', coordinates: coords }
-  }
-
-  if (upper.startsWith('MULTILINESTRING')) {
-    const inner = extractParens(s.slice(15).trim())
-    if (inner == null) return null
-    const rings = parseWktRingList(inner)
-    if (!rings) return null
-    return { type: 'MultiLineString', coordinates: rings }
-  }
-
-  if (upper.startsWith('MULTIPOLYGON')) {
-    const inner = extractParens(s.slice(12).trim())
-    if (inner == null) return null
-    const polys = parseWktPolygonList(inner)
-    if (!polys) return null
-    return { type: 'MultiPolygon', coordinates: polys }
-  }
-
-  if (upper.startsWith('LINESTRING')) {
-    const inner = extractParens(s.slice(10).trim())
-    if (inner == null) return null
-    const coords = parseWktCoordinateList(inner)
-    if (!coords) return null
-    return { type: 'LineString', coordinates: coords }
-  }
-
-  if (upper.startsWith('POLYGON')) {
-    const inner = extractParens(s.slice(7).trim())
-    if (inner == null) return null
-    const rings = parseWktRingList(inner)
-    if (!rings) return null
-    return { type: 'Polygon', coordinates: rings }
-  }
-
-  return null
-}
-
-/**
- * Extract content inside outer parentheses.
- *
- * @param {string} s
- * @returns {string | null}
- */
-function extractParens(s) {
-  const trimmed = s.trim()
-  if (!trimmed.startsWith('(') || !trimmed.endsWith(')')) return null
-  return trimmed.slice(1, -1).trim()
-}
-
-/**
- * Parse a single coordinate like "(1 2)" or "1 2".
- *
- * @param {string} s
- * @returns {number[] | null}
- */
-function parseWktCoordinate(s) {
-  const inner = s.trim().replace(/^\(/, '').replace(/\)$/, '').trim()
-  const parts = inner.split(/\s+/)
-  if (parts.length < 2) return null
-  const x = Number(parts[0])
-  const y = Number(parts[1])
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-  return [x, y]
-}
-
-/**
- * Parse a comma-separated list of coordinates like "1 2, 3 4, 5 6".
- *
- * @param {string} s
- * @returns {number[][] | null}
- */
-function parseWktCoordinateList(s) {
-  const parts = s.split(',')
-  /** @type {number[][]} */
-  const coords = []
-  for (const part of parts) {
-    const trimmed = part.trim().replace(/^\(/, '').replace(/\)$/, '').trim()
-    const nums = trimmed.split(/\s+/)
-    if (nums.length < 2) return null
-    const x = Number(nums[0])
-    const y = Number(nums[1])
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-    coords.push([x, y])
-  }
-  return coords.length > 0 ? coords : null
-}
-
-/**
- * Parse a list of rings like "(1 2, 3 4), (5 6, 7 8)".
- *
- * @param {string} s
- * @returns {number[][][] | null}
- */
-function parseWktRingList(s) {
-  /** @type {number[][][]} */
-  const rings = []
-  const ringStrs = splitTopLevel(s)
-  for (const ringStr of ringStrs) {
-    const inner = extractParens(ringStr.trim())
-    if (inner == null) return null
-    const coords = parseWktCoordinateList(inner)
-    if (!coords) return null
-    rings.push(coords)
-  }
-  return rings.length > 0 ? rings : null
-}
-
-/**
- * Parse a list of polygons like "((ring1), (ring2)), ((ring3))".
- *
- * @param {string} s
- * @returns {number[][][][] | null}
- */
-function parseWktPolygonList(s) {
-  /** @type {number[][][][]} */
-  const polys = []
-  const polyStrs = splitTopLevel(s)
-  for (const polyStr of polyStrs) {
-    const inner = extractParens(polyStr.trim())
-    if (inner == null) return null
-    const rings = parseWktRingList(inner)
-    if (!rings) return null
-    polys.push(rings)
-  }
-  return polys.length > 0 ? polys : null
-}
-
-/**
- * Split a string by commas at the top-level (not inside parentheses).
- *
- * @param {string} s
- * @returns {string[]}
- */
-function splitTopLevel(s) {
-  /** @type {string[]} */
-  const parts = []
-  let depth = 0
-  let start = 0
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '(') depth++
-    else if (s[i] === ')') depth--
-    else if (s[i] === ',' && depth === 0) {
-      parts.push(s.slice(start, i))
-      start = i + 1
-    }
-  }
-  parts.push(s.slice(start))
-  return parts
-}
-
-// ============================================================================
-// WKT serialization (ST_AsText)
-// ============================================================================
-
-/**
- * Convert a GeoJSON geometry to WKT.
- *
- * @param {GeoJsonGeometry} geom
- * @returns {string}
- */
-function geomToWkt(geom) {
-  switch (geom.type) {
-  case 'Point':
-    return `POINT (${coordToWkt(geom.coordinates)})`
-  case 'MultiPoint':
-    return `MULTIPOINT (${geom.coordinates.map((/** @type {number[]} */ c) => `(${coordToWkt(c)})`).join(', ')})`
-  case 'LineString':
-    return `LINESTRING (${coordListToWkt(geom.coordinates)})`
-  case 'MultiLineString':
-    return `MULTILINESTRING (${geom.coordinates.map((/** @type {number[][]} */ l) => `(${coordListToWkt(l)})`).join(', ')})`
-  case 'Polygon':
-    return `POLYGON (${geom.coordinates.map((/** @type {number[][]} */ r) => `(${coordListToWkt(r)})`).join(', ')})`
-  case 'MultiPolygon':
-    return `MULTIPOLYGON (${geom.coordinates.map((/** @type {number[][][]} */ p) => `(${p.map((/** @type {number[][]} */ r) => `(${coordListToWkt(r)})`).join(', ')})`).join(', ')})`
-  case 'GeometryCollection':
-    return `GEOMETRYCOLLECTION (${(geom.geometries || []).map((/** @type {GeoJsonGeometry} */ g) => geomToWkt(g)).join(', ')})`
-  default:
-    return ''
-  }
-}
-
-/**
- * Format a single coordinate to WKT.
- *
- * @param {number[]} coord
- * @returns {string}
- */
-function coordToWkt(coord) {
-  return `${coord[0]} ${coord[1]}`
-}
-
-/**
- * Format a coordinate list to WKT.
- *
- * @param {number[][]} coords
- * @returns {string}
- */
-function coordListToWkt(coords) {
-  return coords.map(c => `${c[0]} ${c[1]}`).join(', ')
-}
-
-// ============================================================================
-// Public API
-// ============================================================================
-
-/**
- * Evaluate a spatial predicate function.
- *
- * @param {Object} options
- * @param {SpatialFunc} options.funcName
- * @param {SqlPrimitive[]} options.args
- * @returns {SqlPrimitive}
- */
-export function evaluateSpatialFunc({ funcName, args }) {
-  // Constructor / accessor functions (don't require two geometries)
-  if (funcName === 'ST_GEOMFROMTEXT') {
-    if (args[0] == null) return null
-    return parseWkt(String(args[0]))
-  }
-
-  if (funcName === 'ST_MAKEENVELOPE') {
-    if (args[0] == null || args[1] == null || args[2] == null || args[3] == null) return null
-    const xmin = Number(args[0])
-    const ymin = Number(args[1])
-    const xmax = Number(args[2])
-    const ymax = Number(args[3])
-    return {
-      type: 'Polygon',
-      coordinates: [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax], [xmin, ymin]]],
-    }
-  }
-
-  if (funcName === 'ST_ASTEXT') {
-    const geom = toGeometry(args[0])
-    if (geom == null) return null
-    return geomToWkt(geom)
-  }
-
-  // Predicate functions (require two geometries)
-  const a = toGeometry(args[0])
-  const b = toGeometry(args[1])
-
-  if (a == null || b == null) return null
-
-  switch (funcName) {
-  case 'ST_INTERSECTS': return stIntersects(a, b)
-  case 'ST_CONTAINS': return stContains(a, b)
-  case 'ST_CONTAINSPROPERLY': return stContainsProperly(a, b)
-  case 'ST_WITHIN': return stWithin(a, b)
-  case 'ST_OVERLAPS': return stOverlaps(a, b)
-  case 'ST_TOUCHES': return stTouches(a, b)
-  case 'ST_EQUALS': return stEquals(a, b)
-  case 'ST_CROSSES': return stCrosses(a, b)
-  case 'ST_COVERS': return stCovers(a, b)
-  case 'ST_COVEREDBY': return stCoveredBy(a, b)
-  case 'ST_DWITHIN': {
-    if (args[2] == null) return null
-    const dist = Number(args[2])
-    return stDWithin(a, b, dist)
-  }
-  default:
-    return null
-  }
 }
