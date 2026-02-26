@@ -6,6 +6,55 @@ export const EPSILON = 1e-10
 export const EPSILON_SQ = EPSILON * EPSILON
 
 /**
+ * @typedef {{ minX: number, minY: number, maxX: number, maxY: number }} BBox
+ */
+
+/** @type {WeakMap<SimpleGeometry, BBox>} */
+const bboxCache = new WeakMap()
+
+/**
+ * Compute the axis-aligned bounding box of a simple geometry.
+ * Results are cached per geometry object.
+ *
+ * @param {SimpleGeometry} geom
+ * @returns {BBox}
+ */
+export function bbox(geom) {
+  let b = bboxCache.get(geom)
+  if (b) return b
+  if (geom.type === 'Point') {
+    const [x, y] = geom.coordinates
+    b = { minX: x, minY: y, maxX: x, maxY: y }
+  } else {
+    /** @type {number[][]} */
+    const points = geom.type === 'LineString'
+      ? geom.coordinates
+      : geom.coordinates[0] // outer ring
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const p of points) {
+      if (p[0] < minX) minX = p[0]
+      if (p[1] < minY) minY = p[1]
+      if (p[0] > maxX) maxX = p[0]
+      if (p[1] > maxY) maxY = p[1]
+    }
+    b = { minX, minY, maxX, maxY }
+  }
+  bboxCache.set(geom, b)
+  return b
+}
+
+/**
+ * Test whether two bounding boxes overlap.
+ *
+ * @param {BBox} a
+ * @param {BBox} b
+ * @returns {boolean}
+ */
+export function bboxOverlap(a, b) {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY
+}
+
+/**
  * Compute the squared distance between two 2D points.
  *
  * @param {number[]} a
@@ -441,6 +490,7 @@ export function simpleIntersects(partsA, partsB) {
  * @returns {boolean}
  */
 function simplePairIntersects(a, b) {
+  if (!bboxOverlap(bbox(a), bbox(b))) return false
   const ta = a.type
   const tb = b.type
 
@@ -484,6 +534,7 @@ function simplePairIntersects(a, b) {
  * @returns {Relation}
  */
 export function simplePairRelation(a, b) {
+  if (!bboxOverlap(bbox(a), bbox(b))) return 'OUTSIDE'
   const ta = a.type
   const tb = b.type
 
@@ -539,6 +590,7 @@ export function simplePairRelation(a, b) {
  * @returns {Relation}
  */
 export function simplePairContainment(a, b) {
+  if (!bboxOverlap(bbox(a), bbox(b))) return 'OUTSIDE'
   const ta = a.type
   const tb = b.type
 
