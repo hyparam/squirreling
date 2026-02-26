@@ -6,6 +6,7 @@ import { geomToWkt, parseWkt } from './wkt.js'
  */
 
 const EPSILON = 1e-10
+const EPSILON_SQ = EPSILON * EPSILON
 
 /**
  * Evaluate a spatial predicate function.
@@ -60,7 +61,7 @@ export function evaluateSpatialFunc({ funcName, args }) {
   case 'ST_DWITHIN': {
     if (args[2] == null) return null
     const dist = Number(args[2])
-    return geometryDistance(a, b) <= dist
+    return stDWithin(a, b, dist)
   }
   default:
     return null
@@ -107,32 +108,23 @@ function distSq(a, b) {
 }
 
 /**
- * Compute the Euclidean distance between two 2D points.
- *
- * @param {number[]} a
- * @param {number[]} b
- * @returns {number}
- */
-function pointDist(a, b) {
-  return Math.sqrt(distSq(a, b))
-}
-
-/**
- * Minimum distance from point p to line segment [a, b].
+ * Squared minimum distance from point p to line segment [a, b].
  *
  * @param {number[]} p
  * @param {number[]} a
  * @param {number[]} b
  * @returns {number}
  */
-function pointToSegmentDist(p, a, b) {
+function pointToSegmentDistSq(p, a, b) {
   const dx = b[0] - a[0]
   const dy = b[1] - a[1]
   const lenSq = dx * dx + dy * dy
-  if (lenSq === 0) return pointDist(p, a)
+  if (lenSq === 0) return distSq(p, a)
   let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq
   t = Math.max(0, Math.min(1, t))
-  return pointDist(p, [a[0] + t * dx, a[1] + t * dy])
+  const ddx = p[0] - a[0] - t * dx
+  const ddy = p[1] - a[1] - t * dy
+  return ddx * ddx + ddy * ddy
 }
 
 /**
@@ -219,7 +211,7 @@ function pointInRing(point, ring) {
  */
 function pointOnRingBoundary(point, ring) {
   for (let i = 0; i < ring.length - 1; i++) {
-    if (pointToSegmentDist(point, ring[i], ring[i + 1]) < EPSILON) {
+    if (pointToSegmentDistSq(point, ring[i], ring[i + 1]) < EPSILON_SQ) {
       return true
     }
   }
@@ -509,32 +501,35 @@ function getSegments(geom) {
  * @param {number[]} b2
  * @returns {number}
  */
-function segmentToSegmentDist(a1, a2, b1, b2) {
+function segmentToSegmentDistSq(a1, a2, b1, b2) {
   if (segmentsIntersect(a1, a2, b1, b2)) return 0
   return Math.min(
-    pointToSegmentDist(a1, b1, b2),
-    pointToSegmentDist(a2, b1, b2),
-    pointToSegmentDist(b1, a1, a2),
-    pointToSegmentDist(b2, a1, a2)
+    pointToSegmentDistSq(a1, b1, b2),
+    pointToSegmentDistSq(a2, b1, b2),
+    pointToSegmentDistSq(b1, a1, a2),
+    pointToSegmentDistSq(b2, a1, a2)
   )
 }
 
 /**
- * Compute the minimum distance between two geometries.
+ * Test whether two geometries are within a given distance of each other.
+ * Exits early as soon as any pair of elements is within range.
  *
  * @param {Geometry} a
  * @param {Geometry} b
- * @returns {number}
+ * @param {number} distance
+ * @returns {boolean}
  */
-function geometryDistance(a, b) {
+function stDWithin(a, b, distance) {
+  const distanceSq = distance * distance
   // Handle geometries that contain each other
   if (a.type === 'Polygon' || a.type === 'MultiPolygon') {
     const pts = getPoints(b)
     for (const pt of pts) {
-      if (a.type === 'Polygon' && pointInPolygon(pt, a.coordinates)) return 0
+      if (a.type === 'Polygon' && pointInPolygon(pt, a.coordinates)) return true
       if (a.type === 'MultiPolygon') {
         for (const poly of a.coordinates) {
-          if (pointInPolygon(pt, poly)) return 0
+          if (pointInPolygon(pt, poly)) return true
         }
       }
     }
@@ -542,10 +537,10 @@ function geometryDistance(a, b) {
   if (b.type === 'Polygon' || b.type === 'MultiPolygon') {
     const pts = getPoints(a)
     for (const pt of pts) {
-      if (b.type === 'Polygon' && pointInPolygon(pt, b.coordinates)) return 0
+      if (b.type === 'Polygon' && pointInPolygon(pt, b.coordinates)) return true
       if (b.type === 'MultiPolygon') {
         for (const poly of b.coordinates) {
-          if (pointInPolygon(pt, poly)) return 0
+          if (pointInPolygon(pt, poly)) return true
         }
       }
     }
@@ -556,12 +551,10 @@ function geometryDistance(a, b) {
   const ptsA = getPoints(a)
   const ptsB = getPoints(b)
 
-  let min = Infinity
-
   // Segment-to-segment
   for (const [a1, a2] of segsA) {
     for (const [b1, b2] of segsB) {
-      min = Math.min(min, segmentToSegmentDist(a1, a2, b1, b2))
+      if (segmentToSegmentDistSq(a1, a2, b1, b2) <= distanceSq) return true
     }
   }
 
@@ -569,14 +562,14 @@ function geometryDistance(a, b) {
   if (segsB.length) {
     for (const pt of ptsA) {
       for (const [b1, b2] of segsB) {
-        min = Math.min(min, pointToSegmentDist(pt, b1, b2))
+        if (pointToSegmentDistSq(pt, b1, b2) <= distanceSq) return true
       }
     }
   }
   if (segsA.length) {
     for (const pt of ptsB) {
       for (const [a1, a2] of segsA) {
-        min = Math.min(min, pointToSegmentDist(pt, a1, a2))
+        if (pointToSegmentDistSq(pt, a1, a2) <= distanceSq) return true
       }
     }
   }
@@ -585,12 +578,12 @@ function geometryDistance(a, b) {
   if (segsA.length === 0 && segsB.length === 0) {
     for (const pa of ptsA) {
       for (const pb of ptsB) {
-        min = Math.min(min, pointDist(pa, pb))
+        if (distSq(pa, pb) <= distanceSq) return true
       }
     }
   }
 
-  return min
+  return false
 }
 
 // ============================================================================
@@ -649,7 +642,7 @@ function simplePairIntersects(a, b) {
   const tb = b.type
 
   if (ta === 'Point' && tb === 'Point') {
-    return pointDist(a.coordinates, b.coordinates) < EPSILON
+    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
   }
   if (ta === 'Point' && tb === 'LineString') {
     return pointOnLine(a.coordinates, b.coordinates)
@@ -687,7 +680,7 @@ function simplePairIntersects(a, b) {
  */
 function pointOnLine(point, line) {
   for (let i = 0; i < line.length - 1; i++) {
-    if (pointToSegmentDist(point, line[i], line[i + 1]) < EPSILON) return true
+    if (pointToSegmentDistSq(point, line[i], line[i + 1]) < EPSILON_SQ) return true
   }
   return false
 }
@@ -718,7 +711,7 @@ function simplePairContains(a, b) {
   const tb = b.type
 
   if (ta === 'Point' && tb === 'Point') {
-    return pointDist(a.coordinates, b.coordinates) < EPSILON
+    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
   }
   if (ta === 'LineString' && tb === 'Point') {
     return pointOnLine(b.coordinates, a.coordinates)
@@ -791,16 +784,16 @@ function simplePairContainsProperly(a, b) {
  */
 function stTouches(a, b) {
   // Geometries touch if they intersect but their interiors do not
-  if (!stIntersects(a, b)) return false
-
   const partsA = decompose(a)
   const partsB = decompose(b)
+  let intersects = false
   for (const pa of partsA) {
     for (const pb of partsB) {
       if (simplePairInteriorsIntersect(pa, pb)) return false
+      if (simplePairIntersects(pa, pb)) intersects = true
     }
   }
-  return true
+  return intersects
 }
 
 /**
@@ -817,7 +810,7 @@ function simplePairInteriorsIntersect(a, b) {
   if (ta === 'Point' && tb === 'Point') {
     // A point's interior is the point itself, so equal points have
     // intersecting interiors.
-    return pointDist(a.coordinates, b.coordinates) < EPSILON
+    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
   }
   if (ta === 'Point' && tb === 'LineString') {
     // Interior of a linestring excludes endpoints
@@ -855,8 +848,8 @@ function simplePairInteriorsIntersect(a, b) {
  */
 function pointInLineInterior(point, line) {
   // Interior of line excludes endpoints
-  if (pointDist(point, line[0]) < EPSILON) return false
-  if (pointDist(point, line[line.length - 1]) < EPSILON) return false
+  if (distSq(point, line[0]) < EPSILON_SQ) return false
+  if (distSq(point, line[line.length - 1]) < EPSILON_SQ) return false
   return pointOnLine(point, line)
 }
 
@@ -1041,7 +1034,7 @@ function stEquals(a, b) {
  */
 function simpleGeomEqual(a, b) {
   if (a.type === 'Point' && b.type === 'Point') {
-    return pointDist(a.coordinates, b.coordinates) < EPSILON
+    return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
   } else if (a.type === 'LineString' && b.type === 'LineString') {
     return lineEqual(a.coordinates, b.coordinates)
   } else if (a.type === 'Polygon' && b.type === 'Polygon') {
@@ -1135,7 +1128,7 @@ function stCrosses(a, b) {
 
   // Line/Polygon: line crosses polygon if part of line is inside and part is outside
   if (dimA === 1 && dimB === 2) {
-    return stIntersects(a, b) && !stContains(b, a)
+    return !stContains(b, a)
   }
 
   // Symmetric cases
