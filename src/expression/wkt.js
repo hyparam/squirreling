@@ -1,5 +1,5 @@
 /**
- * @import { Geometry } from './spatial.js'
+ * @import { Geometry } from './geometry.js'
  */
 
 /**
@@ -80,7 +80,7 @@ export function geomToWkt(geom) {
   case 'Polygon':
     return `POLYGON (${geom.coordinates.map(r => `(${coordListToWkt(r)})`).join(', ')})`
   case 'MultiPolygon':
-    return `MULTIPOLYGON (${geom.coordinates.map(p => `(${p.map((/** @type {number[][]} */ r) => `(${coordListToWkt(r)})`).join(', ')})`).join(', ')})`
+    return `MULTIPOLYGON (${geom.coordinates.map(p => `(${p.map(r => `(${coordListToWkt(r)})`).join(', ')})`).join(', ')})`
   case 'GeometryCollection':
     return `GEOMETRYCOLLECTION (${(geom.geometries || []).map(g => geomToWkt(g)).join(', ')})`
   default:

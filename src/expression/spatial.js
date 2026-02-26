@@ -2,7 +2,7 @@ import { geomToWkt, parseWkt } from './wkt.js'
 
 /**
  * @import { SpatialFunc, SqlPrimitive } from '../types.js'
- * @typedef {{ type: string, coordinates: any[], geometries?: Geometry[] }} Geometry
+ * @import { Geometry, Point, SimpleGeometry } from './geometry.js'
  */
 
 const EPSILON = 1e-10
@@ -50,17 +50,17 @@ export function evaluateSpatialFunc({ funcName, args }) {
   case 'ST_INTERSECTS': return stIntersects(a, b)
   case 'ST_CONTAINS': return stContains(a, b)
   case 'ST_CONTAINSPROPERLY': return stContainsProperly(a, b)
-  case 'ST_WITHIN': return stWithin(a, b)
+  case 'ST_WITHIN': return stContains(b, a) // inverse of contains
   case 'ST_OVERLAPS': return stOverlaps(a, b)
   case 'ST_TOUCHES': return stTouches(a, b)
   case 'ST_EQUALS': return stEquals(a, b)
   case 'ST_CROSSES': return stCrosses(a, b)
-  case 'ST_COVERS': return stCovers(a, b)
-  case 'ST_COVEREDBY': return stCoveredBy(a, b)
+  case 'ST_COVERS': return stContains(a, b) // TODO: handle boundary
+  case 'ST_COVEREDBY': return stContains(b, a) // inverse of covers
   case 'ST_DWITHIN': {
     if (args[2] == null) return null
     const dist = Number(args[2])
-    return stDWithin(a, b, dist)
+    return geometryDistance(a, b) <= dist
   }
   default:
     return null
@@ -75,16 +75,15 @@ export function evaluateSpatialFunc({ funcName, args }) {
  * @returns {Geometry | null}
  */
 function toGeometry(val) {
-  if (val == null) return null
-  if (typeof val === 'object' && !(val instanceof Date) && !Array.isArray(val)) {
-    // eslint-disable-next-line no-extra-parens
-    const geom = /** @type {Geometry} */ (val)
-    if (typeof geom.type === 'string' && geom.coordinates !== undefined) {
-      return geom
+  if (typeof val === 'object' && val != null && 'type' in val) {
+    if (val.type === 'GeometryCollection' && Array.isArray(val.geometries)) {
+      // eslint-disable-next-line no-extra-parens
+      return /** @type {Geometry} */ (val)
     }
-    // GeometryCollection has geometries instead of coordinates
-    if (geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
-      return geom
+    const geometryTypes = ['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon']
+    if (geometryTypes.includes(val.type) && Array.isArray(val.coordinates)) {
+      // eslint-disable-next-line no-extra-parens
+      return /** @type {Geometry} */ (val)
     }
   }
   return null
@@ -202,10 +201,9 @@ function pointInRing(point, ring) {
   const [px, py] = point
   let inside = false
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1]
-    const xj = ring[j][0], yj = ring[j][1]
-    if (yi > py !== yj > py &&
-        px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if (yi > py !== yj > py && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
       inside = !inside
     }
   }
@@ -468,9 +466,9 @@ function getPoints(geom) {
   case 'MultiPoint': return geom.coordinates
   case 'LineString': return geom.coordinates
   case 'MultiLineString': return geom.coordinates.flat()
-  case 'Polygon': return geom.coordinates[0]
-  case 'MultiPolygon': return geom.coordinates.flatMap((/** @type {number[][][]} */ p) => p[0])
-  case 'GeometryCollection': return geom.geometries.flatMap((/** @type {Geometry} */ g) => getPoints(g))
+  case 'Polygon': return geom.coordinates.flat()
+  case 'MultiPolygon': return geom.coordinates.flatMap(p => p.flat())
+  case 'GeometryCollection': return geom.geometries.flatMap(getPoints)
   default: return []
   }
 }
@@ -494,10 +492,10 @@ function getSegments(geom) {
   }
   switch (geom.type) {
   case 'LineString': addLine(geom.coordinates); break
-  case 'MultiLineString': geom.coordinates.forEach((/** @type {number[][]} */ l) => addLine(l)); break
-  case 'Polygon': geom.coordinates.forEach((/** @type {number[][]} */ r) => addLine(r)); break
-  case 'MultiPolygon': geom.coordinates.forEach((/** @type {number[][][]} */ p) => p.forEach((/** @type {number[][]} */ r) => addLine(r))); break
-  case 'GeometryCollection': geom.geometries.forEach((/** @type {Geometry} */ g) => segments.push(...getSegments(g))); break
+  case 'MultiLineString': geom.coordinates.forEach(l => addLine(l)); break
+  case 'Polygon': geom.coordinates.forEach(r => addLine(r)); break
+  case 'MultiPolygon': geom.coordinates.forEach(p => p.forEach(r => addLine(r))); break
+  case 'GeometryCollection': geom.geometries.forEach(g => segments.push(...getSegments(g))); break
   }
   return segments
 }
@@ -568,14 +566,14 @@ function geometryDistance(a, b) {
   }
 
   // Point-to-segment
-  if (segsB.length > 0) {
+  if (segsB.length) {
     for (const pt of ptsA) {
       for (const [b1, b2] of segsB) {
         min = Math.min(min, pointToSegmentDist(pt, b1, b2))
       }
     }
   }
-  if (segsA.length > 0) {
+  if (segsA.length) {
     for (const pt of ptsB) {
       for (const [a1, a2] of segsA) {
         min = Math.min(min, pointToSegmentDist(pt, a1, a2))
@@ -603,18 +601,18 @@ function geometryDistance(a, b) {
  * Decompose Multi* and GeometryCollection into simple geometries.
  *
  * @param {Geometry} geom
- * @returns {Geometry[]}
+ * @returns {SimpleGeometry[]}
  */
 function decompose(geom) {
   switch (geom.type) {
   case 'MultiPoint':
-    return geom.coordinates.map((/** @type {number[]} */ c) => ({ type: 'Point', coordinates: c }))
+    return geom.coordinates.map(c => ({ type: 'Point', coordinates: c }))
   case 'MultiLineString':
-    return geom.coordinates.map((/** @type {number[][]} */ c) => ({ type: 'LineString', coordinates: c }))
+    return geom.coordinates.map(c => ({ type: 'LineString', coordinates: c }))
   case 'MultiPolygon':
-    return geom.coordinates.map((/** @type {number[][][]} */ c) => ({ type: 'Polygon', coordinates: c }))
+    return geom.coordinates.map(c => ({ type: 'Polygon', coordinates: c }))
   case 'GeometryCollection':
-    return geom.geometries.flatMap((/** @type {Geometry} */ g) => decompose(g))
+    return geom.geometries.flatMap(decompose)
   default:
     return [geom]
   }
@@ -632,6 +630,7 @@ function decompose(geom) {
 function stIntersects(a, b) {
   const partsA = decompose(a)
   const partsB = decompose(b)
+  // Some part of A must intersect some part of B
   for (const pa of partsA) {
     for (const pb of partsB) {
       if (simplePairIntersects(pa, pb)) return true
@@ -641,8 +640,8 @@ function stIntersects(a, b) {
 }
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry} a
+ * @param {SimpleGeometry} b
  * @returns {boolean}
  */
 function simplePairIntersects(a, b) {
@@ -703,30 +702,15 @@ function pointOnLine(point, line) {
  * @returns {boolean}
  */
 function stContains(a, b) {
-  // Every part of b must be inside some part of a
-  const partsB = decompose(b)
-  for (const pb of partsB) {
-    if (!simpleContainedByAny(a, pb)) return false
-  }
-  return true
-}
-
-/**
- * @param {Geometry} a
- * @param {Geometry} b - simple geometry
- * @returns {boolean}
- */
-function simpleContainedByAny(a, b) {
   const partsA = decompose(a)
-  for (const pa of partsA) {
-    if (simplePairContains(pa, b)) return true
-  }
-  return false
+  const partsB = decompose(b)
+  // Every part of b must be inside some part of a
+  return partsB.every(pb => partsA.some(pa => simplePairContains(pa, pb)))
 }
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry} a
+ * @param {SimpleGeometry} b
  * @returns {boolean}
  */
 function simplePairContains(a, b) {
@@ -768,29 +752,15 @@ function simplePairContains(a, b) {
  * @returns {boolean}
  */
 function stContainsProperly(a, b) {
-  const partsB = decompose(b)
-  for (const pb of partsB) {
-    if (!simpleContainedByAnyProperly(a, pb)) return false
-  }
-  return true
-}
-
-/**
- * @param {Geometry} a
- * @param {Geometry} b
- * @returns {boolean}
- */
-function simpleContainedByAnyProperly(a, b) {
   const partsA = decompose(a)
-  for (const pa of partsA) {
-    if (simplePairContainsProperly(pa, b)) return true
-  }
-  return false
+  const partsB = decompose(b)
+  // Every part of b must be strictly inside some part of a
+  return partsB.every(pb => partsA.some(pa => simplePairContainsProperly(pa, pb)))
 }
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry} a
+ * @param {SimpleGeometry} b
  * @returns {boolean}
  */
 function simplePairContainsProperly(a, b) {
@@ -808,19 +778,6 @@ function simplePairContainsProperly(a, b) {
   }
   // Points and lines have no interior in the topological sense for "contains properly"
   return false
-}
-
-// ============================================================================
-// ST_Within (inverse of ST_Contains)
-// ============================================================================
-
-/**
- * @param {Geometry} a
- * @param {Geometry} b
- * @returns {boolean}
- */
-function stWithin(a, b) {
-  return stContains(b, a)
 }
 
 // ============================================================================
@@ -849,8 +806,8 @@ function stTouches(a, b) {
 /**
  * Test if interiors of two simple geometries share any point.
  *
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry} a
+ * @param {SimpleGeometry} b
  * @returns {boolean}
  */
 function simplePairInteriorsIntersect(a, b) {
@@ -858,9 +815,9 @@ function simplePairInteriorsIntersect(a, b) {
   const tb = b.type
 
   if (ta === 'Point' && tb === 'Point') {
-    // Points have no interior dimension per se, but two equal points "touch" is not
-    // standard. By definition, ST_Touches returns false for Point/Point.
-    return true // If they intersect at all, their "interiors" intersect
+    // A point's interior is the point itself, so equal points have
+    // intersecting interiors.
+    return pointDist(a.coordinates, b.coordinates) < EPSILON
   }
   if (ta === 'Point' && tb === 'LineString') {
     // Interior of a linestring excludes endpoints
@@ -1078,22 +1035,19 @@ function stEquals(a, b) {
 }
 
 /**
- * @param {Geometry} a
- * @param {Geometry} b
+ * @param {SimpleGeometry} a
+ * @param {SimpleGeometry} b
  * @returns {boolean}
  */
 function simpleGeomEqual(a, b) {
-  if (a.type !== b.type) return false
-  switch (a.type) {
-  case 'Point':
+  if (a.type === 'Point' && b.type === 'Point') {
     return pointDist(a.coordinates, b.coordinates) < EPSILON
-  case 'LineString':
-    return lineStringEqual(a.coordinates, b.coordinates)
-  case 'Polygon':
+  } else if (a.type === 'LineString' && b.type === 'LineString') {
+    return lineEqual(a.coordinates, b.coordinates)
+  } else if (a.type === 'Polygon' && b.type === 'Polygon') {
     return polygonEqual(a.coordinates, b.coordinates)
-  default:
-    return false
   }
+  return false
 }
 
 /**
@@ -1101,7 +1055,7 @@ function simpleGeomEqual(a, b) {
  * @param {number[][]} b
  * @returns {boolean}
  */
-function lineStringEqual(a, b) {
+function lineEqual(a, b) {
   if (a.length !== b.length) return false
   // Forward
   let forward = true
@@ -1158,22 +1112,20 @@ function stCrosses(a, b) {
   if (dimA === 1 && dimB === 1) {
     // They cross if they intersect but neither contains the other
     // and the intersection is a set of points (not line segments)
-    return stIntersects(a, b) && !stContains(a, b) && !stContains(b, a) && !stTouches(a, b)
+    return !stContains(a, b) && !stContains(b, a) && !stTouches(a, b)
   }
 
   // Point/Line, Point/Polygon: point "in interior"
   if (dimA === 0 && dimB >= 1) {
-    const partsA = decompose(a)
+    // eslint-disable-next-line no-extra-parens
+    const partsA = /** @type {Point[]} */ (decompose(a))
     for (const pa of partsA) {
-      if (b.type === 'LineString' || b.type === 'MultiLineString') {
-        const partsB = decompose(b)
-        for (const pb of partsB) {
+      const partsB = decompose(b)
+      for (const pb of partsB) {
+        if (pb.type === 'LineString') {
           if (pointInLineInterior(pa.coordinates, pb.coordinates)) return true
         }
-      }
-      if (b.type === 'Polygon' || b.type === 'MultiPolygon') {
-        const partsB = decompose(b)
-        for (const pb of partsB) {
+        if (pb.type === 'Polygon') {
           if (pointInPolygonInterior(pa.coordinates, pb.coordinates)) return true
         }
       }
@@ -1191,45 +1143,4 @@ function stCrosses(a, b) {
   if (dimA === 2 && dimB === 1) return stCrosses(b, a)
 
   return false
-}
-
-// ============================================================================
-// ST_Covers / ST_CoveredBy
-// ============================================================================
-
-/**
- * ST_Covers: a covers b if no point of b is outside a.
- * Similar to ST_Contains but allows b to be on boundary.
- *
- * @param {Geometry} a
- * @param {Geometry} b
- * @returns {boolean}
- */
-function stCovers(a, b) {
-  // ST_Covers is the same as ST_Contains for most purposes
-  // The difference is subtle in edge cases with boundaries
-  return stContains(a, b)
-}
-
-/**
- * @param {Geometry} a
- * @param {Geometry} b
- * @returns {boolean}
- */
-function stCoveredBy(a, b) {
-  return stCovers(b, a)
-}
-
-// ============================================================================
-// ST_DWithin
-// ============================================================================
-
-/**
- * @param {Geometry} a
- * @param {Geometry} b
- * @param {number} distance
- * @returns {boolean}
- */
-function stDWithin(a, b, distance) {
-  return geometryDistance(a, b) <= distance
 }
