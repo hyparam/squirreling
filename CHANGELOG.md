@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.9.4]
+ - Huge performance improvements for spatial functions (#13)
+
 ## [0.9.3]
  - Array functions: `CARDINALITY`, `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_SORT`
  - Spatial functions: `ST_GEOMFROMTEXT`, `ST_MAKEENVELOPE`, `ST_ASTEXT`, `ST_INTERSECTS`, `ST_CONTAINS`, `ST_CONTAINSPROPERLY`, `ST_WITHIN`, `ST_OVERLAPS`, `ST_TOUCHES`, `ST_EQUALS`, `ST_CROSSES`, `ST_COVERS`, `ST_COVEREDBY`, `ST_DWITHIN`
