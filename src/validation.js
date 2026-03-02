@@ -114,6 +114,14 @@ export function isIntervalUnit(name) {
 
 /**
  * @param {string} name
+ * @returns {boolean}
+ */
+export function isExtractField(name) {
+  return ['YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND', 'DOW', 'EPOCH'].includes(name)
+}
+
+/**
+ * @param {string} name
  * @returns {name is StringFunc}
  */
 export function isStringFunc(name) {
@@ -160,6 +168,7 @@ export const FUNCTION_ARG_COUNTS = {
   CURRENT_TIME: { min: 0, max: 0 },
   CURRENT_TIMESTAMP: { min: 0, max: 0 },
   DATE_TRUNC: { min: 2, max: 2 },
+  EXTRACT: { min: 2, max: 2 },
 
   // Math functions
   FLOOR: { min: 1, max: 1 },
@@ -293,7 +302,7 @@ export function isKnownFunction(funcName, functions) {
 
   // Date/time, JSON, conditional, and CAST functions
   if ([
-    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'DATE_TRUNC',
+    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'DATE_TRUNC', 'EXTRACT',
     'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
     'ARRAY_LENGTH', 'ARRAY_POSITION', 'ARRAY_SORT', 'CARDINALITY',
     'COALESCE', 'NULLIF', 'CAST',

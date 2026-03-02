@@ -4,7 +4,7 @@ import {
   syntaxError,
   unknownFunctionError,
 } from '../parseErrors.js'
-import { RESERVED_KEYWORDS, isIntervalUnit, isKnownFunction } from '../validation.js'
+import { RESERVED_KEYWORDS, isExtractField, isIntervalUnit, isKnownFunction } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'
@@ -65,6 +65,36 @@ export function parsePrimary(state) {
         type: 'cast',
         expr,
         toType: typeTok.value,
+        positionStart,
+        positionEnd: state.lastPos,
+      }
+    }
+
+    // EXTRACT(field FROM expr)
+    if (tok.value === 'EXTRACT' && next.type === 'paren' && next.value === '(') {
+      consume(state) // EXTRACT
+      consume(state) // '('
+      const fieldTok = current(state)
+      const isValidType = fieldTok.type === 'keyword' || fieldTok.type === 'identifier'
+      if (!isValidType || !isExtractField(fieldTok.value)) {
+        throw syntaxError({
+          expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
+          received: `"${fieldTok.value}"`,
+          positionStart: fieldTok.positionStart,
+          positionEnd: fieldTok.positionEnd,
+        })
+      }
+      consume(state) // field
+      expect(state, 'keyword', 'FROM')
+      const expr = parseExpression(state)
+      expect(state, 'paren', ')')
+      return {
+        type: 'function',
+        name: 'EXTRACT',
+        args: [
+          { type: 'literal', value: fieldTok.value, positionStart: fieldTok.positionStart, positionEnd: fieldTok.positionEnd },
+          expr,
+        ],
         positionStart,
         positionEnd: state.lastPos,
       }

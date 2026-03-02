@@ -61,6 +61,116 @@ describe('date/time functions', () => {
     })
   })
 
+  describe('EXTRACT', () => {
+    const events = [
+      { ts: '2024-07-15T14:30:45.123Z' },
+    ]
+
+    it('should extract year', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(YEAR FROM ts) AS y FROM events',
+      }))
+      expect(result[0].y).toBe(2024)
+    })
+
+    it('should extract month', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(MONTH FROM ts) AS m FROM events',
+      }))
+      expect(result[0].m).toBe(7)
+    })
+
+    it('should extract day', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(DAY FROM ts) AS d FROM events',
+      }))
+      expect(result[0].d).toBe(15)
+    })
+
+    it('should extract hour', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(HOUR FROM ts) AS h FROM events',
+      }))
+      expect(result[0].h).toBe(14)
+    })
+
+    it('should extract minute', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(MINUTE FROM ts) AS m FROM events',
+      }))
+      expect(result[0].m).toBe(30)
+    })
+
+    it('should extract second', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(SECOND FROM ts) AS s FROM events',
+      }))
+      expect(result[0].s).toBe(45)
+    })
+
+    it('should extract dow (day of week)', async () => {
+      // 2024-07-15 is a Monday = 1
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(DOW FROM ts) AS dow FROM events',
+      }))
+      expect(result[0].dow).toBe(1)
+    })
+
+    it('should extract epoch', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(EPOCH FROM ts) AS e FROM events',
+      }))
+      expect(result[0].e).toBe(new Date('2024-07-15T14:30:45.123Z').getTime() / 1000)
+    })
+
+    it('should work with date-only input', async () => {
+      const dates = [{ d: '2024-07-15' }]
+      const result = await collect(executeSql({
+        tables: { dates },
+        query: 'SELECT EXTRACT(MONTH FROM d) AS m FROM dates',
+      }))
+      expect(result[0].m).toBe(7)
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ ts: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT EXTRACT(YEAR FROM ts) AS y FROM data',
+      }))
+      expect(result[0].y).toBe(null)
+    })
+
+    it('should work in expressions', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EXTRACT(YEAR FROM ts) * 100 + EXTRACT(MONTH FROM ts) AS ym FROM events',
+      }))
+      expect(result[0].ym).toBe(202407)
+    })
+
+    it('should work in WHERE clause', async () => {
+      const logs = [
+        { ts: '2024-01-15T00:00:00.000Z', val: 1 },
+        { ts: '2024-07-15T00:00:00.000Z', val: 2 },
+        { ts: '2024-12-15T00:00:00.000Z', val: 3 },
+      ]
+      const result = await collect(executeSql({
+        tables: { logs },
+        query: 'SELECT val FROM logs WHERE EXTRACT(MONTH FROM ts) = 7',
+      }))
+      expect(result).toEqual([{ val: 2 }])
+    })
+  })
+
   describe('DATE_TRUNC', () => {
     const events = [
       { ts: '2024-07-15T14:30:45.123Z' },

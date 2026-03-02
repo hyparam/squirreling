@@ -6,7 +6,7 @@ import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc 
 import { aggregateError, argValueError, castError } from '../validationErrors.js'
 import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
-import { applyIntervalToDate, dateTrunc } from './date.js'
+import { applyIntervalToDate, dateTrunc, extractField } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
 import { evaluateSpatialFunc } from './spatial.js'
@@ -273,6 +273,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     if (funcName === 'DATE_TRUNC') {
       return dateTrunc(args[0], args[1])
+    }
+
+    if (funcName === 'EXTRACT') {
+      return extractField(args[0], args[1])
     }
 
     if (funcName === 'CURRENT_DATE') {

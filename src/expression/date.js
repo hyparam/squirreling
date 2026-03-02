@@ -78,6 +78,29 @@ export function dateTrunc(precision, dateVal) {
 }
 
 /**
+ * Extract a field from a date value
+ * @param {SqlPrimitive} field - the field to extract (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)
+ * @param {SqlPrimitive} dateVal - the date value to extract from
+ * @returns {number | null}
+ */
+export function extractField(field, dateVal) {
+  if (field == null || dateVal == null) return null
+  const date = toDate(dateVal)
+  if (date == null) return null
+
+  const unit = String(field).toUpperCase()
+  if (unit === 'YEAR') return date.getUTCFullYear()
+  if (unit === 'MONTH') return date.getUTCMonth() + 1
+  if (unit === 'DAY') return date.getUTCDate()
+  if (unit === 'HOUR') return date.getUTCHours()
+  if (unit === 'MINUTE') return date.getUTCMinutes()
+  if (unit === 'SECOND') return date.getUTCSeconds()
+  if (unit === 'DOW') return date.getUTCDay()
+  if (unit === 'EPOCH') return date.getTime() / 1000
+  return null
+}
+
+/**
  * @param {SqlPrimitive} val
  * @returns {Date | null}
  */
