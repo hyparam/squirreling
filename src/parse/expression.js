@@ -4,7 +4,7 @@ import {
   syntaxError,
   unknownFunctionError,
 } from '../parseErrors.js'
-import { isIntervalUnit, isKnownFunction } from '../validation.js'
+import { RESERVED_KEYWORDS, isIntervalUnit, isKnownFunction } from '../validation.js'
 import { parseComparison } from './comparison.js'
 import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'
@@ -219,6 +219,17 @@ export function parsePrimary(state) {
     }
     if (tok.value === 'INTERVAL') {
       return parseInterval(state)
+    }
+
+    // Non-reserved keywords can be used as identifiers (e.g. column aliases)
+    if (!RESERVED_KEYWORDS.has(tok.value)) {
+      consume(state)
+      return {
+        type: 'identifier',
+        name: tok.originalValue ?? tok.value,
+        positionStart,
+        positionEnd: state.lastPos,
+      }
     }
   }
 

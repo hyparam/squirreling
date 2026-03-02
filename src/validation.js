@@ -159,6 +159,7 @@ export const FUNCTION_ARG_COUNTS = {
   CURRENT_DATE: { min: 0, max: 0 },
   CURRENT_TIME: { min: 0, max: 0 },
   CURRENT_TIMESTAMP: { min: 0, max: 0 },
+  DATE_TRUNC: { min: 2, max: 2 },
 
   // Math functions
   FLOOR: { min: 1, max: 1 },
@@ -292,7 +293,7 @@ export function isKnownFunction(funcName, functions) {
 
   // Date/time, JSON, conditional, and CAST functions
   if ([
-    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
+    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'DATE_TRUNC',
     'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
     'ARRAY_LENGTH', 'ARRAY_POSITION', 'ARRAY_SORT', 'CARDINALITY',
     'COALESCE', 'NULLIF', 'CAST',
@@ -307,6 +308,18 @@ export function isKnownFunction(funcName, functions) {
 
   return false
 }
+
+// Reserved keywords that cannot be used as identifiers in expressions.
+// Non-reserved keywords (e.g. DAY, MONTH, FILTER, ASC) can be used as column alias references.
+export const RESERVED_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'WITH',
+  'AND', 'OR', 'NOT', 'IS', 'LIKE', 'IN', 'BETWEEN',
+  'TRUE', 'FALSE', 'NULL',
+  'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'INTERVAL',
+  'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
+  'AS', 'ALL', 'DISTINCT',
+  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'ON',
+])
 
 // Keywords that cannot be used as implicit aliases after a column
 export const RESERVED_AFTER_COLUMN = new Set([

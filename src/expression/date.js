@@ -41,6 +41,43 @@ export function applyIntervalToDate(dateVal, value, unit, op) {
 }
 
 /**
+ * Truncate a date to the given precision
+ * @param {SqlPrimitive} precision - the unit to truncate to (year, month, day, hour, minute, second)
+ * @param {SqlPrimitive} dateVal - the date value to truncate
+ * @returns {Date | string | null}
+ */
+export function dateTrunc(precision, dateVal) {
+  if (precision == null || dateVal == null) return null
+  const date = toDate(dateVal)
+  if (date == null) return null
+
+  const unit = String(precision).toUpperCase()
+  if (unit === 'YEAR') {
+    date.setUTCMonth(0, 1)
+    date.setUTCHours(0, 0, 0, 0)
+  } else if (unit === 'MONTH') {
+    date.setUTCDate(1)
+    date.setUTCHours(0, 0, 0, 0)
+  } else if (unit === 'DAY') {
+    date.setUTCHours(0, 0, 0, 0)
+  } else if (unit === 'HOUR') {
+    date.setUTCMinutes(0, 0, 0)
+  } else if (unit === 'MINUTE') {
+    date.setUTCSeconds(0, 0)
+  } else if (unit === 'SECOND') {
+    date.setUTCMilliseconds(0)
+  }
+
+  // Return in same format as input
+  if (dateVal instanceof Date) return date
+  if (String(dateVal).includes('T')) {
+    return date.toISOString()
+  } else {
+    return date.toISOString().split('T')[0]
+  }
+}
+
+/**
  * @param {SqlPrimitive} val
  * @returns {Date | null}
  */
