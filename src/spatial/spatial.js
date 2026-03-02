@@ -1,6 +1,6 @@
+import { simpleGeomEqual } from './equality.js'
+import { distSq, pointInPolygon, pointLineRelation, pointToSegmentDistSq, simpleIntersects, simplePairContainment, simplePairRelation } from './operations.js'
 import { geomToWkt, parseWkt } from './wkt.js'
-import { distSq, pointInPolygon, pointLineRelation, pointToSegmentDistSq, simpleIntersects, simplePairContainment, simplePairRelation } from './spatial.geometry.js'
-import { simpleGeomEqual } from './spatial.equality.js'
 
 /**
  * @import { SpatialFunc, SqlPrimitive } from '../types.js'

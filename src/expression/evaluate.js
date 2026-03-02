@@ -9,7 +9,7 @@ import { applyBinaryOp } from './binary.js'
 import { applyIntervalToDate, dateTrunc, extractField } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
-import { evaluateSpatialFunc } from './spatial.js'
+import { evaluateSpatialFunc } from '../spatial/spatial.js'
 import { evaluateStringFunc } from './strings.js'
 
 /**
