@@ -275,7 +275,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return dateTrunc(args[0], args[1])
     }
 
-    if (funcName === 'EXTRACT') {
+    if (funcName === 'EXTRACT' || funcName === 'DATE_PART') {
       return extractField(args[0], args[1])
     }
 

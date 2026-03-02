@@ -168,6 +168,7 @@ export const FUNCTION_ARG_COUNTS = {
   CURRENT_TIME: { min: 0, max: 0 },
   CURRENT_TIMESTAMP: { min: 0, max: 0 },
   DATE_TRUNC: { min: 2, max: 2 },
+  DATE_PART: { min: 2, max: 2 },
   EXTRACT: { min: 2, max: 2 },
 
   // Math functions
@@ -302,7 +303,7 @@ export function isKnownFunction(funcName, functions) {
 
   // Date/time, JSON, conditional, and CAST functions
   if ([
-    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'DATE_TRUNC', 'EXTRACT',
+    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'DATE_TRUNC', 'DATE_PART', 'EXTRACT',
     'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
     'ARRAY_LENGTH', 'ARRAY_POSITION', 'ARRAY_SORT', 'CARDINALITY',
     'COALESCE', 'NULLIF', 'CAST',

@@ -171,6 +171,52 @@ describe('date/time functions', () => {
     })
   })
 
+  describe('DATE_PART', () => {
+    const events = [
+      { ts: '2024-07-15T14:30:45.123Z' },
+    ]
+
+    it('should extract year', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATE_PART(\'year\', ts) AS y FROM events',
+      }))
+      expect(result[0].y).toBe(2024)
+    })
+
+    it('should extract month', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATE_PART(\'month\', ts) AS m FROM events',
+      }))
+      expect(result[0].m).toBe(7)
+    })
+
+    it('should extract dow', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATE_PART(\'dow\', ts) AS dow FROM events',
+      }))
+      expect(result[0].dow).toBe(1)
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ ts: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_PART(\'year\', ts) AS y FROM data',
+      }))
+      expect(result[0].y).toBe(null)
+    })
+
+    it('should throw for wrong argument count', async () => {
+      await expect(collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATE_PART(\'year\') AS y FROM events',
+      }))).rejects.toThrow()
+    })
+  })
+
   describe('DATE_TRUNC', () => {
     const events = [
       { ts: '2024-07-15T14:30:45.123Z' },
