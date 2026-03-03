@@ -1,5 +1,6 @@
 import { geometryEqual } from './equality.js'
-import { distSq, pointInPolygon, pointLineRelation, pointToSegmentDistSq, simpleIntersects, simplePairContainment, simplePairRelation } from './operations.js'
+import { distSq, intersects, pairContainment, pairRelation } from './operations.js'
+import { pointInPolygon, pointLineRelation, pointToSegmentDistSq } from './pointRelations.js'
 import { geomToWkt, parseWkt } from './wkt.js'
 
 /**
@@ -47,7 +48,7 @@ export function evaluateSpatialFunc({ funcName, args }) {
   const b = decompose(geomB)
 
   switch (funcName) {
-  case 'ST_INTERSECTS': return simpleIntersects(a, b)
+  case 'ST_INTERSECTS': return intersects(a, b)
   case 'ST_CONTAINS': return stContains(a, b)
   case 'ST_CONTAINSPROPERLY': return stContainsProperly(a, b)
   case 'ST_WITHIN': return stContains(b, a) // inverse of contains
@@ -135,7 +136,7 @@ function getSegments(geoms) {
  */
 function stDWithin(a, b, distance) {
   if (distance < 0) return false
-  if (simpleIntersects(a, b)) return true
+  if (intersects(a, b)) return true
 
   const distanceSq = distance * distance
   const { points: ptsA, segments: segsA } = getSegments(a)
@@ -199,7 +200,7 @@ function decompose(geom) {
  */
 function stContains(a, b) {
   // Every part of b must be inside some part of a
-  return b.every(pb => a.some(pa => simplePairContainment(pa, pb) !== 'OUTSIDE'))
+  return b.every(pb => a.some(pa => pairContainment(pa, pb) !== 'OUTSIDE'))
 }
 
 // ============================================================================
@@ -213,7 +214,7 @@ function stContains(a, b) {
  */
 function stContainsProperly(a, b) {
   // Every part of b must be strictly inside some part of a
-  return b.every(pb => a.some(pa => simplePairContainment(pa, pb) === 'INSIDE'))
+  return b.every(pb => a.some(pa => pairContainment(pa, pb) === 'INSIDE'))
 }
 
 // ============================================================================
@@ -229,7 +230,7 @@ function stTouches(a, b) {
   let intersects = false
   for (const pa of a) {
     for (const pb of b) {
-      const rel = simplePairRelation(pa, pb)
+      const rel = pairRelation(pa, pb)
       if (rel === 'INSIDE') return false
       if (rel === 'BOUNDARY') intersects = true
     }
@@ -252,7 +253,7 @@ function stOverlaps(a, b) {
   const dimA = geometryDimension(a)
   const dimB = geometryDimension(b)
   if (dimA !== dimB) return false
-  if (!simpleIntersects(a, b)) return false
+  if (!intersects(a, b)) return false
   if (stEquals(a, b)) return false
   // Must not be containment
   if (stContains(a, b) || stContains(b, a)) return false
@@ -323,7 +324,7 @@ function stCrosses(a, b) {
   const dimA = geometryDimension(a)
   const dimB = geometryDimension(b)
 
-  if (!simpleIntersects(a, b)) return false
+  if (!intersects(a, b)) return false
 
   // Point/Point or Polygon/Polygon cannot cross
   if (dimA === dimB && dimA !== 1) return false

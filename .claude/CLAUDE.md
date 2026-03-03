@@ -54,6 +54,14 @@ SQL string → parse → SelectStatement → plan → QueryPlan → execute → 
 - `binary.js` - binary operator evaluation
 - `strings.js`, `math.js`, `regexp.js`, `date.js` - built-in function implementations
 
+**Spatial** (`src/spatial/`):
+- `geometry.d.ts` - geometry type definitions
+- `bbox.js` - bounding box calculations
+- `equality.js` - geometry equality comparisons
+- `operations.js` - spatial relationship operations (intersects, contains, etc.)
+- `spatial.js` - spatial function implementations (ST_Intersects, ST_Distance, etc.)
+- `wkt.js` - WKT parsing and serialization
+
 **Backend** (`src/backend/`):
 - `dataSource.js` - `cachedDataSource()` wrapper for caching async cell evaluations
 

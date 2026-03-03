@@ -1,4 +1,5 @@
 import { bboxOverlap } from './bbox.js'
+import { pointInPolygon, pointLineRelation, pointOnLine } from './pointRelations.js'
 
 /**
  * @import { Relation, SimpleGeometry } from './geometry.js'
@@ -18,26 +19,6 @@ export function distSq(a, b) {
   const dx = a[0] - b[0]
   const dy = a[1] - b[1]
   return dx * dx + dy * dy
-}
-
-/**
- * Squared minimum distance from point p to line segment [a, b].
- *
- * @param {number[]} p
- * @param {number[]} a
- * @param {number[]} b
- * @returns {number}
- */
-export function pointToSegmentDistSq(p, a, b) {
-  const dx = b[0] - a[0]
-  const dy = b[1] - a[1]
-  const lenSq = dx * dx + dy * dy
-  if (lenSq === 0) return distSq(p, a)
-  let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq
-  t = Math.max(0, Math.min(1, t))
-  const ddx = p[0] - a[0] - t * dx
-  const ddy = p[1] - a[1] - t * dy
-  return ddx * ddx + ddy * ddy
 }
 
 /**
@@ -92,51 +73,6 @@ function cross(a, b, c) {
 function onSegment(a, b, c) {
   return Math.min(a[0], b[0]) - c[0] <= EPSILON && c[0] - Math.max(a[0], b[0]) <= EPSILON &&
          Math.min(a[1], b[1]) - c[1] <= EPSILON && c[1] - Math.max(a[1], b[1]) <= EPSILON
-}
-
-/**
- * Classify a point relative to a ring: 'OUTSIDE', 'BOUNDARY', or 'INSIDE'.
- * Combines ray casting with boundary distance check in a single pass.
- * ring is an array of [x, y] coords (closed ring, first = last).
- *
- * @param {number[]} point
- * @param {number[][]} ring
- * @returns {Relation}
- */
-function pointInRing(point, ring) {
-  const [px, py] = point
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    if (pointToSegmentDistSq(point, ring[j], ring[i]) < EPSILON_SQ) {
-      return 'BOUNDARY'
-    }
-    const [xi, yi] = ring[i]
-    const [xj, yj] = ring[j]
-    if (yi > py !== yj > py && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
-      inside = !inside
-    }
-  }
-  return inside ? 'INSIDE' : 'OUTSIDE'
-}
-
-/**
- * Classify a point relative to a polygon: 'OUTSIDE', 'BOUNDARY', or 'INSIDE'.
- * First ring is exterior, rest are holes.
- *
- * @param {number[]} point
- * @param {number[][][]} rings
- * @returns {Relation}
- */
-export function pointInPolygon(point, rings) {
-  const rel = pointInRing(point, rings[0])
-  if (rel === 'OUTSIDE') return 'OUTSIDE'
-  if (rel === 'BOUNDARY') return 'BOUNDARY'
-  for (let i = 1; i < rings.length; i++) {
-    const holeRel = pointInRing(point, rings[i])
-    if (holeRel === 'INSIDE') return 'OUTSIDE'
-    if (holeRel === 'BOUNDARY') return 'BOUNDARY'
-  }
-  return 'INSIDE'
 }
 
 /**
@@ -244,20 +180,6 @@ function polygonContainsPolygon(ringsA, ringsB) {
 }
 
 /**
- * Test if point is on a linestring.
- *
- * @param {number[]} point
- * @param {number[][]} line
- * @returns {boolean}
- */
-function pointOnLine(point, line) {
-  for (let i = 0; i < line.length - 1; i++) {
-    if (pointToSegmentDistSq(point, line[i], line[i + 1]) < EPSILON_SQ) return true
-  }
-  return false
-}
-
-/**
  * Compute intersection point of two segments (if they intersect at a single point).
  *
  * @param {number[]} p1
@@ -273,24 +195,6 @@ function segmentIntersectionPoint(p1, p2, p3, p4) {
   if (Math.abs(denom) < EPSILON) return null // parallel
   const t = ((p3[0] - p1[0]) * d2y - (p3[1] - p1[1]) * d2x) / denom
   return [p1[0] + t * d1x, p1[1] + t * d1y]
-}
-
-/**
- * Classify a point relative to a linestring.
- *
- * @param {number[]} point
- * @param {number[][]} line
- * @returns {Relation}
- */
-export function pointLineRelation(point, line) {
-  // Check endpoints first
-  if (distSq(point, line[0]) < EPSILON_SQ) return 'BOUNDARY'
-  if (distSq(point, line[line.length - 1]) < EPSILON_SQ) return 'BOUNDARY'
-  // Check if on any segment
-  for (let i = 0; i < line.length - 1; i++) {
-    if (pointToSegmentDistSq(point, line[i], line[i + 1]) < EPSILON_SQ) return 'INSIDE'
-  }
-  return 'OUTSIDE'
 }
 
 /**
@@ -428,10 +332,10 @@ function polygonPolygonRelation(rings1, rings2) {
  * @param {SimpleGeometry[]} partsB
  * @returns {boolean}
  */
-export function simpleIntersects(partsA, partsB) {
+export function intersects(partsA, partsB) {
   for (const pa of partsA) {
     for (const pb of partsB) {
-      if (simplePairIntersects(pa, pb)) return true
+      if (pairIntersects(pa, pb)) return true
     }
   }
   return false
@@ -442,7 +346,7 @@ export function simpleIntersects(partsA, partsB) {
  * @param {SimpleGeometry} b
  * @returns {boolean}
  */
-function simplePairIntersects(a, b) {
+function pairIntersects(a, b) {
   if (!bboxOverlap(a, b)) return false
   const ta = a.type
   const tb = b.type
@@ -486,7 +390,7 @@ function simplePairIntersects(a, b) {
  * @param {SimpleGeometry} b
  * @returns {Relation}
  */
-export function simplePairRelation(a, b) {
+export function pairRelation(a, b) {
   if (!bboxOverlap(a, b)) return 'OUTSIDE'
   const ta = a.type
   const tb = b.type
@@ -542,7 +446,7 @@ export function simplePairRelation(a, b) {
  * @param {SimpleGeometry} b
  * @returns {Relation}
  */
-export function simplePairContainment(a, b) {
+export function pairContainment(a, b) {
   if (!bboxOverlap(a, b)) return 'OUTSIDE'
   const ta = a.type
   const tb = b.type
