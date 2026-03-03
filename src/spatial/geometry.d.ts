@@ -15,6 +15,13 @@ export type Geometry =
  */
 export type SimpleGeometry = Point | LineString | Polygon
 
+export interface BBox {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
 /**
  * Boundary relationship between two geometries.
  */
