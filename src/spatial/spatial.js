@@ -1,4 +1,4 @@
-import { simpleGeomEqual } from './equality.js'
+import { geometryEqual } from './equality.js'
 import { distSq, pointInPolygon, pointLineRelation, pointToSegmentDistSq, simpleIntersects, simplePairContainment, simplePairRelation } from './operations.js'
 import { geomToWkt, parseWkt } from './wkt.js'
 
@@ -297,7 +297,7 @@ function stEquals(a, b) {
     let found = false
     for (let i = 0; i < b.length; i++) {
       if (used.has(i)) continue
-      if (simpleGeomEqual(pa, b[i])) {
+      if (geometryEqual(pa, b[i])) {
         used.add(i)
         found = true
         break

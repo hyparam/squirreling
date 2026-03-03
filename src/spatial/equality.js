@@ -9,7 +9,7 @@ import { EPSILON, EPSILON_SQ, distSq } from './operations.js'
  * @param {SimpleGeometry} b
  * @returns {boolean}
  */
-export function simpleGeomEqual(a, b) {
+export function geometryEqual(a, b) {
   if (a.type === 'Point' && b.type === 'Point') {
     return distSq(a.coordinates, b.coordinates) < EPSILON_SQ
   } else if (a.type === 'LineString' && b.type === 'LineString') {
@@ -25,7 +25,7 @@ export function simpleGeomEqual(a, b) {
  * @param {number[][]} b
  * @returns {boolean}
  */
-export function lineEqual(a, b) {
+function lineEqual(a, b) {
   if (a.length !== b.length) return false
   // Forward
   let forward = true
@@ -50,7 +50,7 @@ export function lineEqual(a, b) {
  * @param {number[][][]} b
  * @returns {boolean}
  */
-export function polygonEqual(a, b) {
+function polygonEqual(a, b) {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
     if (!ringsEqual(a[i], b[i])) return false
@@ -65,7 +65,7 @@ export function polygonEqual(a, b) {
  * @param {number[][]} ring2
  * @returns {boolean}
  */
-export function ringsEqual(ring1, ring2) {
+function ringsEqual(ring1, ring2) {
   if (ring1.length !== ring2.length) return false
   // Try every rotation
   const n = ring1.length - 1 // closed ring, last = first
