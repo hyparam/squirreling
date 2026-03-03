@@ -2,7 +2,7 @@
  * @import { Relation } from './geometry.js'
  */
 
-import { EPSILON_SQ, distSq } from './operations.js'
+import { EPSILON_SQ, distSq } from './primitives.js'
 
 /**
  * Classify a point relative to a ring: 'OUTSIDE', 'BOUNDARY', or 'INSIDE'.

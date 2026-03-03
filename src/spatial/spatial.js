@@ -1,6 +1,7 @@
 import { geometryEqual } from './equality.js'
-import { distSq, intersects, pairContainment, pairRelation } from './operations.js'
+import { intersects, pairContainment, pairRelation } from './operations.js'
 import { pointInPolygon, pointLineRelation, pointToSegmentDistSq } from './pointRelations.js'
+import { distSq } from './primitives.js'
 import { geomToWkt, parseWkt } from './wkt.js'
 
 /**

@@ -2,7 +2,7 @@
  * @import { SimpleGeometry } from './geometry.js'
  */
 
-import { EPSILON, EPSILON_SQ, distSq } from './operations.js'
+import { EPSILON, EPSILON_SQ, distSq } from './primitives.js'
 
 /**
  * @param {SimpleGeometry} a
