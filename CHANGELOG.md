@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.9.5]
+ - Date functions: `DATE_PART`, `DATE_TRUNC`, `EXTRACT`
+ - More spatial performance improvements
+
 ## [0.9.4]
  - Huge performance improvements for spatial functions (#13)
 
