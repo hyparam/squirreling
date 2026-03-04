@@ -13,3 +13,15 @@ export function distSq(a, b) {
   const dy = a[1] - b[1]
   return dx * dx + dy * dy
 }
+
+/**
+ * Cross product of vectors (b-a) and (c-a).
+ *
+ * @param {number[]} a
+ * @param {number[]} b
+ * @param {number[]} c
+ * @returns {number}
+ */
+export function cross(a, b, c) {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+}

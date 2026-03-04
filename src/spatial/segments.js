@@ -1,4 +1,4 @@
-import { EPSILON } from './primitives.js'
+import { EPSILON, EPSILON_SQ, cross, distSq } from './primitives.js'
 
 /**
  * Test whether two line segments [p1,p2] and [p3,p4] intersect.
@@ -63,15 +63,66 @@ export function segmentIntersectionPoint(p1, p2, p3, p4) {
 }
 
 /**
- * Cross product of vectors (b-a) and (c-a).
+ * Check if point p lies on segment [a, b].
  *
  * @param {number[]} a
  * @param {number[]} b
- * @param {number[]} c
- * @returns {number}
+ * @param {number[]} p
+ * @returns {boolean}
  */
-function cross(a, b, c) {
-  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+export function pointOnSegment(a, b, p) {
+  if (Math.abs(cross(a, b, p)) > EPSILON) return false
+  return p[0] >= Math.min(a[0], b[0]) - EPSILON &&
+    p[0] <= Math.max(a[0], b[0]) + EPSILON &&
+    p[1] >= Math.min(a[1], b[1]) - EPSILON &&
+    p[1] <= Math.max(a[1], b[1]) + EPSILON
+}
+
+/**
+ * Returns the single endpoint touch point for two segments, 'INSIDE' when
+ * they intersect at a non-endpoint/proper crossing or overlap by length,
+ * and 'OUTSIDE' when they do not intersect.
+ *
+ * @param {number[]} a1
+ * @param {number[]} a2
+ * @param {number[]} b1
+ * @param {number[]} b2
+ * @returns {'INSIDE' | 'OUTSIDE' | number[]}
+ */
+export function segmentTouchPoint(a1, a2, b1, b2) {
+  const d1 = cross(b1, b2, a1)
+  const d2 = cross(b1, b2, a2)
+  const d3 = cross(a1, a2, b1)
+  const d4 = cross(a1, a2, b2)
+
+  if ((d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) &&
+      (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0)) {
+    return 'INSIDE'
+  }
+
+  /** @type {number[] | undefined} */
+  let point
+  let hasSecondPoint = false
+
+  /**
+   * @param {number[]} candidate
+   */
+  function addPoint(candidate) {
+    if (!point) {
+      point = candidate
+      return
+    }
+    if (distSq(point, candidate) >= EPSILON_SQ) hasSecondPoint = true
+  }
+
+  if (Math.abs(d1) < EPSILON && onSegment(b1, b2, a1)) addPoint(a1)
+  if (Math.abs(d2) < EPSILON && onSegment(b1, b2, a2)) addPoint(a2)
+  if (Math.abs(d3) < EPSILON && onSegment(a1, a2, b1)) addPoint(b1)
+  if (Math.abs(d4) < EPSILON && onSegment(a1, a2, b2)) addPoint(b2)
+
+  if (!point) return 'OUTSIDE'
+
+  return hasSecondPoint ? 'INSIDE' : point
 }
 
 /**

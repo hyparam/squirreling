@@ -1,7 +1,7 @@
 import { bboxOverlap } from './bbox.js'
 import { pointInPolygon, pointLineRelation, pointOnLine } from './pointRelations.js'
 import { EPSILON_SQ, distSq } from './primitives.js'
-import { segmentIntersectionPoint, segmentIntersectsRing, segmentsIntersect } from './segments.js'
+import { segmentIntersectsRing, segmentTouchPoint, segmentsIntersect } from './segments.js'
 
 /**
  * @import { Relation, SimpleGeometry } from './geometry.js'
@@ -42,6 +42,15 @@ function linesIntersect(line1, line2) {
     }
   }
   return false
+}
+
+/**
+ * @param {number[]} point
+ * @param {number[][]} line
+ * @returns {boolean}
+ */
+function isLineEndpoint(point, line) {
+  return distSq(point, line[0]) < EPSILON_SQ || distSq(point, line[line.length - 1]) < EPSILON_SQ
 }
 
 /**
@@ -109,24 +118,10 @@ function lineLineRelation(line1, line2) {
   let boundary = false
   for (let i = 0; i < line1.length - 1; i++) {
     for (let j = 0; j < line2.length - 1; j++) {
-      if (!segmentsIntersect(line1[i], line1[i + 1], line2[j], line2[j + 1])) continue
-      // Segments intersect, check if the intersection is interior to both lines
-      // Check segment midpoints
-      const mid1 = [(line1[i][0] + line1[i + 1][0]) / 2, (line1[i][1] + line1[i + 1][1]) / 2]
-      if (pointLineRelation(mid1, line1) === 'INSIDE' && pointLineRelation(mid1, line2) === 'INSIDE') {
-        return 'INSIDE'
-      }
-      const mid2 = [(line2[j][0] + line2[j + 1][0]) / 2, (line2[j][1] + line2[j + 1][1]) / 2]
-      if (pointLineRelation(mid2, line1) === 'INSIDE' && pointLineRelation(mid2, line2) === 'INSIDE') {
-        return 'INSIDE'
-      }
-      // Check actual intersection point
-      const ip = segmentIntersectionPoint(line1[i], line1[i + 1], line2[j], line2[j + 1])
-      if (ip) {
-        if (pointLineRelation(ip, line1) === 'INSIDE' && pointLineRelation(ip, line2) === 'INSIDE') {
-          return 'INSIDE'
-        }
-      }
+      const touchPoint = segmentTouchPoint(line1[i], line1[i + 1], line2[j], line2[j + 1])
+      if (touchPoint === 'OUTSIDE') continue
+      if (touchPoint === 'INSIDE') return 'INSIDE'
+      if (!isLineEndpoint(touchPoint, line1) && !isLineEndpoint(touchPoint, line2)) return 'INSIDE'
       boundary = true
     }
   }
