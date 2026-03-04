@@ -15,11 +15,11 @@ import { segmentIntersectsRing, segmentTouchPoint, segmentsIntersect } from './s
  * @returns {boolean}
  */
 function lineIntersectsPolygon(line, rings) {
-  // Check if any point of the line is inside the polygon
-  for (const pt of line) {
-    if (pointInPolygon(pt, rings) !== 'OUTSIDE') return true
-  }
-  // Check if any segment of the line intersects any ring edge
+  // Fast path for common containment queries: if one point is inside or on
+  // boundary, the line intersects.
+  if (pointInPolygon(line[0], rings) !== 'OUTSIDE') return true
+
+  // Otherwise, detect crossings/touches against polygon boundaries.
   for (let i = 0; i < line.length - 1; i++) {
     for (const ring of rings) {
       if (segmentIntersectsRing(line[i], line[i + 1], ring)) return true
