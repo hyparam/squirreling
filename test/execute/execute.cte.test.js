@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { trackingSource } from './trackingSource.js'
 
 describe('CTE execution', () => {
   const users = [
@@ -202,31 +203,10 @@ describe('CTE execution', () => {
     it('should re-execute CTE when referenced multiple times', async () => {
       // This test verifies that CTEs stream (re-execute) rather than materialize
       // Each reference to the CTE should trigger a fresh execution
-      let executionCount = 0
-
-      // Create a custom data source that tracks execution
-      const trackingSource = {
-        scan() {
-          executionCount++
-          return {
-            rows: (async function* () {
-              for (const user of users) {
-                yield {
-                  columns: Object.keys(user),
-                  cells: Object.fromEntries(
-                    Object.entries(user).map(([k, v]) => [k, () => Promise.resolve(v)])
-                  ),
-                }
-              }
-            })(),
-            appliedWhere: false,
-            appliedLimitOffset: false,
-          }
-        },
-      }
+      const { source, getScanCount } = trackingSource(users)
 
       const result = await collect(executeSql({
-        tables: { users: trackingSource },
+        tables: { users: source },
         query: `
           WITH cte AS (SELECT * FROM users)
           SELECT a.name AS name1, b.name AS name2
@@ -236,8 +216,8 @@ describe('CTE execution', () => {
       }))
 
       // CTE referenced twice (FROM and JOIN), so should execute twice
-      expect(executionCount).toBe(2)
-      expect(result.length).toBeGreaterThan(0)
+      expect(getScanCount()).toBe(2)
+      expect(result).toHaveLength(3) // Alice-Bob, Alice-Charlie, Bob-Charlie
     })
 
     it('should stream CTE results without materializing', async () => {

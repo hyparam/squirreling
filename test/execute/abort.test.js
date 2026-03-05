@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { memorySource } from '../../src/backend/dataSource.js'
 import { collect, executeSql } from '../../src/index.js'
-
-/**
- * @import { AsyncDataSource, AsyncRow, ScanOptions, SqlPrimitive } from '../../src/types.js'
- */
+import { trackingSource } from './trackingSource.js'
 
 const users = [
   { id: 1, name: 'Alice' },
@@ -25,7 +21,7 @@ const orders = [
 describe('abort signal', () => {
   describe('executeSql with signal', () => {
     it('should stop execution when signal is aborted before query starts', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
       controller.abort()
 
@@ -38,11 +34,12 @@ describe('abort signal', () => {
         rows.push(row)
       }
       expect(rows).toHaveLength(0)
-      expect(getScannedCount()).toBe(0)
+      expect(getScanCount()).toBe(1)
+      expect(getRowCount()).toBe(0)
     })
 
     it('should stop execution when signal is aborted during query', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
 
       const rows = []
@@ -57,11 +54,12 @@ describe('abort signal', () => {
         }
       }
       expect(rows).toEqual(['Alice', 'Bob'])
-      expect(getScannedCount()).toBe(2)
+      expect(getScanCount()).toBe(1) // scan is started but should stop early
+      expect(getRowCount()).toBe(2)
     })
 
     it('should complete query when signal is not aborted', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
 
       const result = await collect(executeSql({
@@ -71,13 +69,14 @@ describe('abort signal', () => {
       }))
 
       expect(result).toHaveLength(5)
-      expect(getScannedCount()).toBe(5)
+      expect(getScanCount()).toBe(1)
+      expect(getRowCount()).toBe(5)
     })
   })
 
   describe('data source scan', () => {
     it('should stop scan when signal is aborted before iteration', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
       controller.abort()
 
@@ -86,11 +85,12 @@ describe('abort signal', () => {
         rows.push(row)
       }
       expect(rows).toHaveLength(0)
-      expect(getScannedCount()).toBe(0)
+      expect(getScanCount()).toBe(1)
+      expect(getRowCount()).toBe(0)
     })
 
     it('should stop scan when signal is aborted during iteration', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
 
       const rows = []
@@ -101,11 +101,12 @@ describe('abort signal', () => {
         }
       }
       expect(rows).toEqual(['Alice', 'Bob'])
-      expect(getScannedCount()).toBe(2)
+      expect(getScanCount()).toBe(1)
+      expect(getRowCount()).toBe(2)
     })
 
     it('should scan all rows when signal is not aborted', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
 
       const rows = []
@@ -113,25 +114,27 @@ describe('abort signal', () => {
         rows.push(await row.cells['name']())
       }
       expect(rows).toHaveLength(5)
-      expect(getScannedCount()).toBe(5)
+      expect(getScanCount()).toBe(1)
+      expect(getRowCount()).toBe(5)
     })
 
     it('should scan all rows when no signal provided', async () => {
-      const { source, getScannedCount } = trackingSource(users)
+      const { source, getScanCount, getRowCount } = trackingSource(users)
 
       const rows = []
       for await (const row of source.scan({}).rows) {
         rows.push(await row.cells['name']())
       }
       expect(rows).toHaveLength(5)
-      expect(getScannedCount()).toBe(5)
+      expect(getScanCount()).toBe(1)
+      expect(getRowCount()).toBe(5)
     })
   })
 
   describe('join queries', () => {
     it('should scan all rows in a join query', async () => {
-      const { source: usersSource, getScannedCount: getUsersScanned } = trackingSource(users)
-      const { source: ordersSource, getScannedCount: getOrdersScanned } = trackingSource(orders)
+      const { source: usersSource, getScanCount: getUsersScanCount, getRowCount: getUsersRowCount } = trackingSource(users)
+      const { source: ordersSource, getScanCount: getOrdersScanCount, getRowCount: getOrdersRowCount } = trackingSource(orders)
 
       const result = await collect(executeSql({
         tables: { users: usersSource, orders: ordersSource },
@@ -139,13 +142,15 @@ describe('abort signal', () => {
       }))
 
       expect(result).toHaveLength(5)
-      expect(getUsersScanned()).toBe(5)
-      expect(getOrdersScanned()).toBe(5)
+      expect(getUsersScanCount()).toBe(1)
+      expect(getOrdersScanCount()).toBe(1)
+      expect(getUsersRowCount()).toBe(5)
+      expect(getOrdersRowCount()).toBe(5)
     })
 
     it('should stop scanning when consumer breaks early from join', async () => {
-      const { source: usersSource, getScannedCount: getUsersScanned } = trackingSource(users)
-      const { source: ordersSource, getScannedCount: getOrdersScanned } = trackingSource(orders)
+      const { source: usersSource, getScanCount: getUsersScanCount, getRowCount: getUsersRowCount } = trackingSource(users)
+      const { source: ordersSource, getScanCount: getOrdersScanCount, getRowCount: getOrdersRowCount } = trackingSource(orders)
 
       const rows = []
       for await (const row of executeSql({
@@ -161,44 +166,10 @@ describe('abort signal', () => {
 
       expect(rows).toHaveLength(2)
       // Orders are buffered for hash join, but users stream
-      expect(getOrdersScanned()).toBe(5) // right side is always buffered
-      expect(getUsersScanned()).toBeLessThanOrEqual(2) // left side should stop early
+      expect(getOrdersScanCount()).toBe(1)
+      expect(getUsersScanCount()).toBe(1)
+      expect(getOrdersRowCount()).toBe(5) // right side is always buffered
+      expect(getUsersRowCount()).toBe(1) // left side should stop early
     })
   })
 })
-
-/**
- * Creates a data source that tracks how many rows were scanned.
- * The source respects the abort signal.
- *
- * @param {Record<string, SqlPrimitive>[]} data
- * @returns {{ source: AsyncDataSource, getScannedCount: () => number }}
- */
-function trackingSource(data) {
-  const inner = memorySource(data)
-  let scannedCount = 0
-
-  return {
-    source: {
-      /**
-       * @param {ScanOptions} options
-       * @returns {import('../../src/types.js').ScanResults}
-       */
-      scan(options) {
-        const { rows, appliedWhere, appliedLimitOffset } = inner.scan(options)
-        return {
-          rows: (async function* () {
-            for await (const row of rows) {
-              if (options.signal?.aborted) break
-              scannedCount++
-              yield row
-            }
-          })(),
-          appliedWhere,
-          appliedLimitOffset,
-        }
-      },
-    },
-    getScannedCount: () => scannedCount,
-  }
-}

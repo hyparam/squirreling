@@ -97,13 +97,19 @@ describe('ORDER BY', () => {
   })
 
   it('should sort by alias used inside ORDER BY expression', async () => {
-    const result = await collect(executeSql({ tables: { users }, query: 'SELECT id AS uid, name FROM users ORDER BY uid * -1 DESC' }))
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT id AS uid, name FROM users ORDER BY uid * -1 DESC',
+    }))
     // uid * -1 DESC means smallest uid first
     expect(result.map(r => r.uid)).toEqual([1, 2, 3, 4, 5])
   })
 
   it('should sort by alias used inside ORDER BY function', async () => {
-    const result = await collect(executeSql({ tables: { users }, query: 'SELECT id AS uid, name FROM users ORDER BY ABS(uid - 3)' }))
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT id AS uid, name FROM users ORDER BY ABS(uid - 3)',
+    }))
     // Distance from 3: id=3 (0), id=2,4 (1), id=1,5 (2)
     expect(result[0].uid).toBe(3)
   })

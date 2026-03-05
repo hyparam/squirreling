@@ -53,6 +53,7 @@ export function cachedDataSource(source) {
   /** @type {Map<string, Promise<SqlPrimitive>>} */
   const cache = new Map()
   return {
+    ...source,
     scan(options) {
       // Does re-run the scan, but cache avoids re-computing expensive async cells
       // TODO: check cache first to avoid re-scanning when possible

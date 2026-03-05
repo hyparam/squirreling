@@ -21,7 +21,7 @@ describe('executeSql - GROUP BY', () => {
 
   it('should group by multiple columns', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, age, COUNT(*) AS count FROM users GROUP BY city, age' }))
-    expect(result.length).toBeGreaterThan(2)
+    expect(result).toHaveLength(4)
     const nycAge30 = result.find(r => r.city === 'NYC' && r.age === 30)
     expect(nycAge30?.count).toBe(2)
   })
@@ -56,7 +56,7 @@ describe('executeSql - GROUP BY', () => {
       GROUP BY city, active
       ORDER BY city, active DESC
     ` }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(3)
     expect(result.every(r => r.count)).toBe(true)
   })
 

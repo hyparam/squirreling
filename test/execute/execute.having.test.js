@@ -25,10 +25,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city HAVING AVG(age) > 28',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    for (const row of result) {
-      expect(row.avg_age).toBeGreaterThan(28)
-    }
+    expect(result).toHaveLength(1)
+    expect(result[0].avg_age).toBeGreaterThan(28)
   })
 
   it('should filter groups with HAVING using column reference', async () => {
@@ -45,7 +43,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt, AVG(age) AS avg_age FROM users GROUP BY city HAVING COUNT(*) >= 2 AND AVG(age) > 25',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     for (const row of result) {
       expect(row.cnt).toBeGreaterThanOrEqual(2)
       expect(row.avg_age).toBeGreaterThan(25)
@@ -57,7 +55,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) > 2 OR city = \'Chicago\'',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     const cities = result.map(r => r.city)
     expect(cities).toContain('NYC')
     expect(cities).toContain('Chicago')
@@ -68,10 +66,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users WHERE age > 25 GROUP BY city HAVING COUNT(*) >= 2',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    for (const row of result) {
-      expect(row.cnt).toBeGreaterThanOrEqual(2)
-    }
+    expect(result).toHaveLength(1)
+    expect(result[0].cnt).toBeGreaterThanOrEqual(2)
   })
 
   it('should handle HAVING with SUM aggregate', async () => {
@@ -94,10 +90,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, MIN(age) AS min_age, MAX(age) AS max_age FROM users GROUP BY city HAVING MAX(age) > 30',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    for (const row of result) {
-      expect(row.max_age).toBeGreaterThan(30)
-    }
+    expect(result).toHaveLength(1)
+    expect(result[0].max_age).toBeGreaterThan(30)
   })
 
   it('should handle complex query with WHERE, GROUP BY, HAVING, ORDER BY, and LIMIT', async () => {
@@ -111,8 +105,7 @@ describe('executeSql - HAVING clause', () => {
        ORDER BY cnt DESC
        LIMIT 2`,
     }))
-    expect(result.length).toBeLessThanOrEqual(2)
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     for (const row of result) {
       expect(row.cnt).toBeGreaterThanOrEqual(2)
     }
@@ -131,13 +124,13 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) <= 2',
     }))
-    expect(result1.length).toBeGreaterThan(0)
+    expect(result1).toHaveLength(2)
 
     const result2 = await collect(executeSql({
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) != 3',
     }))
-    expect(result2.length).toBeGreaterThan(0)
+    expect(result2).toHaveLength(2)
   })
 
   it('should handle HAVING with COUNT on specific column', async () => {
@@ -160,10 +153,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city HAVING AVG(age) >= 30',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    for (const row of result) {
-      expect(row.avg_age).toBeGreaterThanOrEqual(30)
-    }
+    expect(result).toHaveLength(1)
+    expect(result[0].avg_age).toBeGreaterThan(30)
   })
 
   it('should handle HAVING with LIKE operator', async () => {
@@ -180,8 +171,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING city LIKE \'%A\'',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    expect(result.some(r => r.city === 'LA')).toBe(true)
+    expect(result).toHaveLength(1)
+    expect(result[0].city).toBe('LA')
   })
 
   it('should handle HAVING with BETWEEN operator', async () => {
@@ -189,11 +180,9 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, AVG(age) AS avg_age FROM users GROUP BY city HAVING AVG(age) BETWEEN 25 AND 30',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    for (const row of result) {
-      expect(row.avg_age).toBeGreaterThanOrEqual(25)
-      expect(row.avg_age).toBeLessThanOrEqual(30)
-    }
+    expect(result).toHaveLength(1)
+    expect(result[0].avg_age).toBeGreaterThanOrEqual(25)
+    expect(result[0].avg_age).toBeLessThanOrEqual(30)
   })
 
   it('should handle HAVING with NOT BETWEEN operator', async () => {
@@ -201,7 +190,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING COUNT(*) NOT BETWEEN 2 AND 2',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     for (const row of result) {
       expect(row.cnt).not.toBe(2)
     }
@@ -218,7 +207,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { data },
       query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) BETWEEN 5 AND 10',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
   })
 
   it('should handle HAVING with MIN aggregate function', async () => {
@@ -226,7 +215,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, MIN(age) AS min_age FROM users GROUP BY city HAVING MIN(age) > 23',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     for (const row of result) {
       expect(row.min_age).toBeGreaterThan(23)
     }
@@ -243,8 +232,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { data },
       query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) IS NULL',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    expect(result.some(r => r.min_val === null)).toBe(true)
+    expect(result).toHaveLength(1)
+    expect(result[0].min_val).toBeNull()
   })
 
   it('should handle HAVING with IS NOT NULL', async () => {
@@ -258,10 +247,8 @@ describe('executeSql - HAVING clause', () => {
       tables: { data },
       query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) IS NOT NULL',
     }))
-    expect(result.length).toBeGreaterThan(0)
-    for (const row of result) {
-      expect(row.min_val).not.toBeNull()
-    }
+    expect(result).toHaveLength(1)
+    expect(result[0].min_val).not.toBeNull()
   })
 
   it('should handle HAVING with NOT operator', async () => {
@@ -269,7 +256,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING NOT (COUNT(*) > 2)',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     for (const row of result) {
       expect(row.cnt).toBeLessThanOrEqual(2)
     }
@@ -287,7 +274,8 @@ describe('executeSql - HAVING clause', () => {
       query: 'SELECT category, MIN(value) AS min_val FROM data GROUP BY category HAVING MIN(value) < 20',
     }))
     // NULL values should be excluded from < comparison
-    expect(result.some(r => r.min_val !== null)).toBe(true)
+    expect(result).toHaveLength(1)
+    expect(result[0].min_val).not.toBeNull()
   })
 
   it('should handle NULL equality comparisons in HAVING', async () => {
@@ -318,9 +306,9 @@ describe('executeSql - HAVING clause', () => {
       tables: { data },
       query: 'SELECT category, MAX(value) AS max_val FROM data GROUP BY category HAVING MAX(value) BETWEEN 10 AND 25',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(1)
     // Category C with NULL should be excluded
-    expect(result.every(r => r.max_val !== null)).toBe(true)
+    expect(result[0].max_val).not.toBeNull()
   })
 
   it('should handle aggregate function as direct boolean in HAVING', async () => {
@@ -333,7 +321,7 @@ describe('executeSql - HAVING clause', () => {
       query: 'SELECT category, COUNT(*) AS cnt FROM data GROUP BY category HAVING COUNT(*)',
     }))
     // All groups with non-zero count should pass
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
   })
 
   it('should handle IN operator in HAVING', async () => {
@@ -341,7 +329,7 @@ describe('executeSql - HAVING clause', () => {
       tables: { users },
       query: 'SELECT city, COUNT(*) AS cnt FROM users GROUP BY city HAVING city IN (\'NYC\', \'LA\')',
     }))
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toHaveLength(2)
     for (const row of result) {
       expect(['NYC', 'LA']).toContain(row.city)
     }

@@ -203,16 +203,16 @@ export async function* executeHashJoin(plan, context) {
 /**
  * Creates a NULL-filled row with the given column names
  *
- * @param {string[]} columnNames
+ * @param {string[]} columns
  * @returns {AsyncRow}
  */
-function createNullRow(columnNames) {
+function createNullRow(columns) {
   /** @type {AsyncCells} */
   const cells = {}
-  for (const col of columnNames) {
+  for (const col of columns) {
     cells[col] = () => Promise.resolve(null)
   }
-  return { columns: columnNames, cells }
+  return { columns, cells }
 }
 
 /**
@@ -234,6 +234,7 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
     // Skip already-prefixed keys (from previous joins)
     if (!key.includes('.')) {
       const alias = `${leftTable}.${key}`
+      columns.push(alias)
       cells[alias] = cell
     }
     // Also keep unqualified name for convenience
@@ -244,9 +245,9 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
   // Add right table columns with prefix
   for (const [key, cell] of Object.entries(rightRow.cells)) {
     if (!key.includes('.')) {
-      cells[`${rightTable}.${key}`] = cell
-    } else {
-      cells[key] = cell
+      const alias = `${rightTable}.${key}`
+      columns.push(alias)
+      cells[alias] = cell
     }
     // Unqualified name (overwrites if same name exists in left table)
     columns.push(key)

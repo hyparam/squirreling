@@ -91,7 +91,11 @@ export async function* executeHashAggregate(plan, context) {
 
     // Apply HAVING filter
     if (plan.having) {
-      const havingRow = { ...group[0], ...asyncRow }
+      /** @type {AsyncRow} */
+      const havingRow = {
+        columns: [...group[0].columns, ...asyncRow.columns],
+        cells: { ...group[0].cells, ...asyncRow.cells },
+      }
       const passes = await evaluateExpr({
         node: plan.having,
         row: havingRow,
@@ -125,7 +129,11 @@ export async function* executeScalarAggregate(plan, context) {
 
   // Apply HAVING filter
   if (plan.having) {
-    const havingRow = { ...group[0], ...asyncRow }
+    /** @type {AsyncRow} */
+    const havingRow = {
+      columns: [...group[0].columns, ...asyncRow.columns],
+      cells: { ...group[0].cells, ...asyncRow.cells },
+    }
     const passes = await evaluateExpr({
       node: plan.having,
       row: havingRow,

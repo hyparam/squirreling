@@ -3,7 +3,7 @@ import { collect, executeSql } from '../../src/index.js'
 import { cachedDataSource, memorySource } from '../../src/backend/dataSource.js'
 
 /**
- * @import { AsyncDataSource, SqlPrimitive, AsyncCells, ScanOptions } from '../../src/types.js'
+ * @import { AsyncDataSource, SqlPrimitive, AsyncCells, ScanOptions, ScanResults } from '../../src/types.js'
  */
 
 const data = [
@@ -175,9 +175,10 @@ function countingDataSource(data, expensiveColumns) {
   let expensiveCallCount = 0
 
   return {
+    ...source,
     /**
      * @param {ScanOptions} options
-     * @returns {import('../../src/types.js').ScanResults}
+     * @returns {ScanResults}
      */
     scan(options) {
       const { rows, appliedWhere, appliedLimitOffset } = source.scan(options)

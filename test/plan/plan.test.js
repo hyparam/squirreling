@@ -749,7 +749,7 @@ describe('planSql', () => {
               type: 'Scan',
               table: 'users',
               hints: {
-                columns: ['department', 'cnt'],
+                columns: ['department'],
               },
             },
           },
