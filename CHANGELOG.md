@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.10.0]
+ - Breaking: `AsyncDataSource` requires `columns` property
+ - Breaking: `memorySource` takes `columns` option otherwise infers from data
+
 ## [0.9.5]
  - Date functions: `DATE_PART`, `DATE_TRUNC`, `EXTRACT`
  - More spatial performance improvements

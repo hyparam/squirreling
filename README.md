@@ -91,6 +91,8 @@ Squirreling can work with any data source that implements the `AsyncDataSource` 
 
 ```typescript
 interface AsyncDataSource {
+  numRows?: number
+  columns: string[]
   scan(options: ScanOptions): ScanResults
 }
 
@@ -113,6 +115,8 @@ The `scan()` method returns a `ScanResults` object containing a row stream and f
 
 ```typescript
 const customSource: AsyncDataSource = {
+  numRows: 1000000, // optional total row count for planning
+  columns: ['id', 'name', 'active'], // columns available in this source
   scan({ columns, where, limit, offset, signal }) {
     // Use hints to optimize your scan, or ignore them
     return {

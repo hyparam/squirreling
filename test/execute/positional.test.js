@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 
 describe('POSITIONAL JOIN', () => {
   const tableA = [
@@ -7,12 +8,12 @@ describe('POSITIONAL JOIN', () => {
     { id: 2, name: 'Bob' },
     { id: 3, name: 'Charlie' },
   ]
-
   const tableB = [
     { code: 'A', value: 100 },
     { code: 'B', value: 200 },
     { code: 'C', value: 300 },
   ]
+  const empty = memorySource({ data: [], columns: ['id', 'name', 'age'] })
 
   // Tables with null values for testing NULL padding
   /** @type {typeof tableA} */
@@ -69,7 +70,7 @@ describe('POSITIONAL JOIN', () => {
 
   it('should return empty result when both tables are empty', async () => {
     const result = await collect(executeSql({
-      tables: { tableA: [], tableB: [] },
+      tables: { tableA: empty, tableB: empty },
       query: 'SELECT * FROM tableA POSITIONAL JOIN tableB',
     }))
     expect(result).toHaveLength(0)
@@ -99,7 +100,7 @@ describe('POSITIONAL JOIN', () => {
     await expect(collect(executeSql({
       tables: { tableA, tableB },
       query: 'SELECT tableA.nonexistent FROM tableA POSITIONAL JOIN tableB',
-    }))).rejects.toThrow('Column "tableA.nonexistent" not found')
+    }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name')
   })
 
   it('should work with table aliases', async () => {

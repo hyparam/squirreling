@@ -26,11 +26,11 @@ export async function* executeSql({ tables, query, functions, signal }) {
   // Normalize tables: convert arrays to AsyncDataSource
   /** @type {Record<string, AsyncDataSource>} */
   const normalizedTables = {}
-  for (const [name, source] of Object.entries(tables)) {
-    if (Array.isArray(source)) {
-      normalizedTables[name] = memorySource(source)
+  for (const [name, data] of Object.entries(tables)) {
+    if (Array.isArray(data)) {
+      normalizedTables[name] = memorySource({ data })
     } else {
-      normalizedTables[name] = source
+      normalizedTables[name] = data
     }
   }
 
@@ -95,16 +95,19 @@ export async function* executePlan({ plan, context }) {
  */
 async function* executeScan(plan, context) {
   const { tables, signal } = context
-  const dataSource = tables[plan.table]
-  if (dataSource === undefined) {
+  // check table
+  const table = tables[plan.table]
+  if (!table) {
     throw tableNotFoundError({ tableName: plan.table })
   }
-
-  const scanResult = dataSource.scan({ ...plan.hints, signal })
-  if (!scanResult.rows) {
-    throw new Error(`Data source "${plan.table}" scan() must return a ScanResults object with { rows, appliedWhere, appliedLimitOffset }`)
+  // check columns
+  const missingColumn = plan.hints.columns?.find(col => !table.columns.includes(col))
+  if (missingColumn) {
+    throw new Error(`Column "${missingColumn}" not found. Available columns: ${table.columns.join(', ') || '[]'}`)
   }
-  const { rows, appliedWhere, appliedLimitOffset } = scanResult
+
+  // do the scan
+  const { rows, appliedWhere, appliedLimitOffset } = table.scan({ ...plan.hints, signal })
 
   // Applied limit/offset without applied where is invalid
   const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
@@ -135,17 +138,17 @@ async function* executeScan(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeCount(plan, { tables, signal }) {
-  const dataSource = tables[plan.table]
-  if (dataSource === undefined) {
+  const table = tables[plan.table]
+  if (!table) {
     throw tableNotFoundError({ tableName: plan.table })
   }
 
   // Use source numRows if available
-  let count = dataSource.numRows
-  if (dataSource.numRows === undefined) {
+  let count = table.numRows
+  if (table.numRows === undefined) {
     // Fall back to counting rows via scan
     count = 0
-    const { rows } = dataSource.scan({ signal })
+    const { rows } = table.scan({ signal })
     // eslint-disable-next-line no-unused-vars
     for await (const _ of rows) {
       if (signal?.aborted) return
