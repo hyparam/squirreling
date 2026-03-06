@@ -47,7 +47,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     // Unknown identifier
     throw columnNotFoundError({
       columnName: node.name,
-      availableColumns: Object.keys(row.cells),
+      availableColumns: row.columns,
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
       rowIndex,
@@ -225,7 +225,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
 
     /** @type {SqlPrimitive[]} */
-    const args = await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, rowIndex, rows, context })))
+    const args = node.args.length === 1
+      ? [await evaluateExpr({ node: node.args[0], row, rowIndex, rows, context })]
+      : await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, rowIndex, rows, context })))
 
     if (isStringFunc(funcName)) {
       return evaluateStringFunc({
