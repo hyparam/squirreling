@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 
 /**
  * @import { AsyncDataSource } from '../../src/types.js'
@@ -13,6 +14,7 @@ describe('executeSql', () => {
     { id: 4, name: 'Diana', age: 28, city: 'LA', active: true },
     { id: 5, name: 'Eve', age: 30, city: 'NYC', active: true },
   ]
+  const empty = memorySource({ data: [], columns: ['id', 'name', 'age', 'value'] })
 
   describe('aggregate functions', () => {
     it('should count all rows with COUNT(*)', async () => {
@@ -66,16 +68,16 @@ describe('executeSql', () => {
 
     it('should return null for AVG of empty set', async () => {
       const result = await collect(executeSql({
-        tables: { users: [] },
-        query: 'SELECT AVG(age) FROM users',
+        tables: { empty },
+        query: 'SELECT AVG(age) FROM empty',
       }))
       expect(result).toEqual([{ avg_age: null }])
     })
 
     it('should return null for SUM of empty set', async () => {
       const result = await collect(executeSql({
-        tables: { users: [] },
-        query: 'SELECT SUM(age) FROM users',
+        tables: { empty },
+        query: 'SELECT SUM(age) FROM empty',
       }))
       // SQL standard: SUM of empty set should be NULL, not 0
       expect(result).toEqual([{ sum_age: null }])
@@ -193,8 +195,8 @@ describe('executeSql', () => {
 
     it('should handle empty dataset for JSON_ARRAYAGG', async () => {
       const result = await collect(executeSql({
-        tables: { users: [] },
-        query: 'SELECT JSON_ARRAYAGG(name) AS names FROM users',
+        tables: { empty },
+        query: 'SELECT JSON_ARRAYAGG(name) AS names FROM empty',
       }))
       expect(result).toEqual([{ names: [] }])
     })
@@ -227,8 +229,8 @@ describe('executeSql', () => {
 
     it('should return null for STDDEV of empty set', async () => {
       const result = await collect(executeSql({
-        tables: { data: [] },
-        query: 'SELECT STDDEV_POP(value) AS pop, STDDEV_SAMP(value) AS samp FROM data',
+        tables: { empty },
+        query: 'SELECT STDDEV_POP(value) AS pop, STDDEV_SAMP(value) AS samp FROM empty',
       }))
       expect(result).toEqual([{ pop: null, samp: null }])
     })
@@ -531,6 +533,7 @@ describe('executeSql', () => {
     /** @type {AsyncDataSource} */
     const errorSource = {
       numRows: 42,
+      columns: ['id', 'name'],
       scan() {
         throw new Error('scan should not be called')
       },

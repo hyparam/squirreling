@@ -171,7 +171,7 @@ async function countExpensiveCalls(query) {
  * @returns {AsyncDataSource & { getExpensiveCallCount: () => number }}
  */
 function countingDataSource(data, expensiveColumns) {
-  const source = memorySource(data)
+  const source = memorySource({ data })
   let expensiveCallCount = 0
 
   return {

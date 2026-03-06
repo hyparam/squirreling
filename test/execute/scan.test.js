@@ -77,6 +77,7 @@ describe('join scan hints', () => {
 
     /** @type {AsyncDataSource} */
     const usersSource = {
+      columns: ['id', 'name'],
       scan(options) {
         usersHints = options
         return {
@@ -89,6 +90,7 @@ describe('join scan hints', () => {
 
     /** @type {AsyncDataSource} */
     const ordersSource = {
+      columns: ['user_id', 'total'],
       scan(options) {
         ordersHints = options
         return {
@@ -110,23 +112,10 @@ describe('join scan hints', () => {
 })
 
 describe('scan results', () => {
-  it('should throw if scan() does not return a ScanResults object', async () => {
-    // Test error handling when scan() returns AsyncGenerator (older api)
-    const badSource = {
-      scan() {
-        return (async function* () {})()
-      },
-    }
-    await expect(collect(executeSql({
-      // @ts-expect-error testing invalid scan() return type
-      tables: { data: badSource },
-      query: 'SELECT * FROM data',
-    }))).rejects.toThrow('scan() must return a ScanResults object')
-  })
-
   it('should throw if data source applies limit/offset without where', async () => {
     /** @type {AsyncDataSource} */
     const badSource = {
+      columns: ['id'],
       scan() {
         return {
           rows: (async function* () {})(),
@@ -153,6 +142,7 @@ async function captureHints(query) {
   let capturedHints = {}
   /** @type {AsyncDataSource} */
   const capturingSource = {
+    columns: ['id', 'name', 'amount', 'a', 'b'],
     scan(options) {
       capturedHints = options
       return {

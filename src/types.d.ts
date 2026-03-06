@@ -43,6 +43,7 @@ export type Row = Record<string, SqlPrimitive>[]
  */
 export interface AsyncDataSource {
   numRows?: number
+  columns: string[]
   scan(options: ScanOptions): ScanResults
 }
 

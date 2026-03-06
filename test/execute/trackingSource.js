@@ -12,7 +12,7 @@ import { memorySource } from '../../src/backend/dataSource.js'
  * @returns {{ source: AsyncDataSource, getScanCount: () => number, getRowCount: () => number }}
  */
 export function trackingSource(data) {
-  const inner = memorySource(data)
+  const inner = memorySource({ data })
   let scanCount = 0
   let rowCount = 0
 

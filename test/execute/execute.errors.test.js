@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { executeSql } from '../../src/execute/execute.js'
 import { collect } from '../../src/index.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 
 const users = [
   { id: 1, name: 'Alice', age: 30 },
@@ -227,28 +228,40 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT nonexistent FROM users',
-      }))).rejects.toThrow('Column "nonexistent" not found')
+      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age')
     })
 
     it('should throw error for non-existent column in WHERE', async () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT * FROM users WHERE nonexistent = 1',
-      }))).rejects.toThrow('Column "nonexistent" not found')
+      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age (row 1)')
+    })
+  })
+
+  describe('memorySource consistency errors', () => {
+    it('should throw error for inconsistent missing keys (no columns)', () => {
+      expect(() => {
+        memorySource({
+          data: [
+            { id: 1, name: 'Alice' },
+            { id: 2, email: 'bob@example.com' },
+            { id: 3, name: 'Charlie', email: 'charlie@example.com' },
+          ],
+        })
+      }).toThrow('Inconsistent data, column "name" not found in row 1')
     })
 
-    it('should include available columns in error message', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT bad FROM users',
-      }))).rejects.toThrow(/Available columns:.*id.*name.*age/)
-    })
-
-    it('should include row number in column not found error', async () => {
-      await expect(collect(executeSql({
-        tables: { users },
-        query: 'SELECT missing FROM users',
-      }))).rejects.toThrow('(row 1)')
+    it('should throw error for inconsistent extra keys (no columns)', () => {
+      expect(() => {
+        memorySource({
+          data: [
+            { id: 1, name: 'Alice' },
+            { id: 2, name: 'Bob', email: 'bob@example.com' },
+            { id: 3, name: 'Charlie', email: 'charlie@example.com' },
+          ],
+        })
+      }).toThrow('Inconsistent data, unexpected column "email" found in row 1')
     })
   })
 })

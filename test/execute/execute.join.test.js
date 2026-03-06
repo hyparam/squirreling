@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 
 describe('JOIN queries', () => {
   const users = [
@@ -9,13 +10,14 @@ describe('JOIN queries', () => {
     { id: 4, name: 'Diana', age: 28, city: 'LA', active: true },
     { id: 5, name: 'Eve', age: 30, city: 'NYC', active: true },
   ]
-
   const orders = [
     { id: 1, user_id: 1, product: 'Laptop', amount: 1000 },
     { id: 2, user_id: 1, product: 'Mouse', amount: 50 },
     { id: 3, user_id: 2, product: 'Keyboard', amount: 100 },
     { id: 4, user_id: 4, product: 'Monitor', amount: 500 },
   ]
+  const emptyUsers = memorySource({ data: [], columns: ['id', 'name', 'age', 'city', 'active'] })
+  const emptyOrders = memorySource({ data: [], columns: ['id', 'user_id', 'product', 'amount'] })
 
   // Tables with null values for testing JOIN NULL padding behavior
   /** @type {typeof users} */
@@ -134,7 +136,7 @@ describe('JOIN queries', () => {
   describe('empty table edge cases', () => {
     it('should return empty result when INNER JOIN with empty left table', async () => {
       const result = await collect(executeSql({
-        tables: { users: [], orders },
+        tables: { users: emptyUsers, orders },
         query: 'SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(0)
@@ -142,7 +144,7 @@ describe('JOIN queries', () => {
 
     it('should return empty result when INNER JOIN with empty right table', async () => {
       const result = await collect(executeSql({
-        tables: { users, orders: [] },
+        tables: { users, orders: emptyOrders },
         query: 'SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(0)
@@ -150,7 +152,7 @@ describe('JOIN queries', () => {
 
     it('should return empty result when INNER JOIN with both tables empty', async () => {
       const result = await collect(executeSql({
-        tables: { users: [], orders: [] },
+        tables: { users: emptyUsers, orders: emptyOrders },
         query: 'SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(0)
@@ -158,7 +160,7 @@ describe('JOIN queries', () => {
 
     it('should return 0 rows for LEFT JOIN when left table is empty', async () => {
       const result = await collect(executeSql({
-        tables: { users: [], orders },
+        tables: { users: emptyUsers, orders },
         query: 'SELECT users.name, orders.product FROM users LEFT JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(0)
@@ -184,7 +186,7 @@ describe('JOIN queries', () => {
 
     it('should return 0 rows for RIGHT JOIN when right table is empty', async () => {
       const result = await collect(executeSql({
-        tables: { users, orders: [] },
+        tables: { users, orders: emptyOrders },
         query: 'SELECT * FROM users RIGHT JOIN orders ON users.id = orders.user_id',
       }))
       expect(result).toHaveLength(0)
@@ -212,21 +214,21 @@ describe('JOIN queries', () => {
       await expect(collect(executeSql({
         tables: { users, orders },
         query: 'SELECT users.nonexistent FROM users LEFT JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Column "users.nonexistent" not found')
+      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age, city, active')
     })
 
     it('should throw error for non-existent column in RIGHT JOIN', async () => {
       await expect(collect(executeSql({
         tables: { users, orders },
         query: 'SELECT orders.nonexistent FROM users RIGHT JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Column "orders.nonexistent" not found')
+      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, user_id, product, amount')
     })
 
     it('should throw error for non-existent column in FULL JOIN', async () => {
       await expect(collect(executeSql({
         tables: { users, orders },
         query: 'SELECT users.nonexistent FROM users FULL JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Column "users.nonexistent" not found')
+      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age, city, active')
     })
   })
 

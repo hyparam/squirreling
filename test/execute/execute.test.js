@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 
 /** @type {null} */
 const NULL = null
@@ -54,7 +55,7 @@ describe('executeSql', () => {
 
     it('should handle empty dataset', async () => {
       const result = await collect(executeSql({
-        tables: { users: [] },
+        tables: { users: memorySource({ data: [], columns: [] }) },
         query: 'SELECT * FROM users',
       }))
       expect(result).toEqual([])
@@ -189,16 +190,6 @@ describe('executeSql', () => {
       }).next()
       expect(value.columns).toEqual(['name', 'name'])
       await expect(value.cells['name']()).resolves.toBe('Alice')
-    })
-
-    it('should handle rows with different keys', async () => {
-      const users = [
-        { id: 1, name: 'Alice' },
-        { id: 2, email: 'bob@example.com' },
-        { id: 3, name: 'Charlie', email: 'charlie@example.com' },
-      ]
-      const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users' }))
-      expect(result).toEqual(users)
     })
 
     it('should handle string comparisons lexicographically', async () => {
