@@ -1,10 +1,11 @@
 import { parquetMetadataAsync, parquetReadObjects, parquetSchema } from 'hyparquet'
-import { whereToParquetFilter } from './parquetFilter.js'
 import { asyncRow } from './dataSource.js'
+import { whereToParquetFilter } from './parquetFilter.js'
+import { extractSpatialFilter, rowGroupOverlaps } from './parquetSpatial.js'
 
 /**
  * @import { AsyncBuffer, Compressors, FileMetaData, ParquetQueryFilter } from 'hyparquet'
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ScanOptions, ScanResults, SqlPrimitive } from '../types.js'
+ * @import { AsyncDataSource, ScanOptions, ScanResults } from '../types.js'
  */
 
 /**
@@ -32,6 +33,9 @@ export function parquetDataSource(file, metadata, compressors) {
       const appliedWhere = Boolean(filter && whereFilter)
       const appliedLimitOffset = !hints.where || appliedWhere
 
+      // Extract spatial filter for row group pruning
+      const spatialFilter = extractSpatialFilter(hints.where)
+
       return {
         rows: (async function* () {
           metadata ??= await parquetMetadataAsync(file)
@@ -42,6 +46,12 @@ export function parquetDataSource(file, metadata, compressors) {
           for (const rowGroup of metadata.row_groups) {
             if (hints.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
             const rowCount = Number(rowGroup.num_rows)
+
+            // Skip row groups using geospatial statistics
+            if (spatialFilter && !rowGroupOverlaps(rowGroup, spatialFilter)) {
+              groupStart += rowCount
+              continue
+            }
 
             // Skip row groups by offset if where is fully applied
             let safeOffset = 0

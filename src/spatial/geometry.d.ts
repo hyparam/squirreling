@@ -15,7 +15,7 @@ export type Geometry =
  */
 export type SimpleGeometry = Point | LineString | Polygon
 
-export interface BBox {
+export interface BoundingBox {
   minX: number
   minY: number
   maxX: number

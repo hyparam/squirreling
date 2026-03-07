@@ -1,11 +1,11 @@
 /**
- * @import { BBox, SimpleGeometry } from './geometry.js'
+ * @import { BoundingBox, SimpleGeometry } from './geometry.js'
  */
 
 export const EPSILON = 1e-10
 export const EPSILON_SQ = EPSILON * EPSILON
 
-/** @type {WeakMap<SimpleGeometry, BBox>} */
+/** @type {WeakMap<SimpleGeometry, BoundingBox>} */
 const bboxCache = new WeakMap()
 
 /**
@@ -26,9 +26,9 @@ export function bboxOverlap(a, b) {
  * Results are cached per geometry object.
  *
  * @param {SimpleGeometry} geom
- * @returns {BBox}
+ * @returns {BoundingBox}
  */
-function bbox(geom) {
+export function bbox(geom) {
   let b = bboxCache.get(geom)
   if (b) return b
   if (geom.type === 'Point') {

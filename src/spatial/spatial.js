@@ -175,19 +175,17 @@ function stDWithin(a, b, distance) {
  * @param {Geometry} geom
  * @returns {SimpleGeometry[]}
  */
-function decompose(geom) {
-  switch (geom.type) {
-  case 'MultiPoint':
+export function decompose(geom) {
+  if (geom.type === 'MultiPoint') {
     return geom.coordinates.map(c => ({ type: 'Point', coordinates: c }))
-  case 'MultiLineString':
+  } else if (geom.type === 'MultiLineString') {
     return geom.coordinates.map(c => ({ type: 'LineString', coordinates: c }))
-  case 'MultiPolygon':
+  } else if (geom.type === 'MultiPolygon') {
     return geom.coordinates.map(c => ({ type: 'Polygon', coordinates: c }))
-  case 'GeometryCollection':
+  } else if (geom.type === 'GeometryCollection') {
     return geom.geometries.flatMap(decompose)
-  default:
-    return [geom]
   }
+  return [geom]
 }
 
 // ============================================================================
