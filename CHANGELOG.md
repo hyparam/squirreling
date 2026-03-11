@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.10.1]
+ - Plan-time table validation
+
 ## [0.10.0]
  - Breaking: `AsyncDataSource` requires `columns` property
  - Breaking: `memorySource` takes `columns` option otherwise infers from data

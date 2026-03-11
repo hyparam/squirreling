@@ -1,6 +1,6 @@
 {
   "name": "squirreling",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Squirreling Async SQL Engine",
   "author": "Hyperparam",
   "homepage": "https://hyperparam.app",
@@ -10,7 +10,9 @@
     "dataset",
     "hyperparam",
     "hyparquet",
-    "parquet"
+    "parquet",
+    "query",
+    "relational"
   ],
   "license": "MIT",
   "repository": {
