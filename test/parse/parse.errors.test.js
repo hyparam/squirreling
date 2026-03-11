@@ -141,15 +141,18 @@ describe('parseSql error handling', () => {
 
   describe('string function errors', () => {
     it('should throw error on missing opening paren in string function', () => {
-      expect(() => parseSql({ query: 'SELECT UPPER name myalias FROM users' })).toThrow('Expected FROM after "name" but found "myalias" at position 18')
+      expect(() => parseSql({ query: 'SELECT UPPER name myalias FROM users' }))
+        .toThrow('Expected FROM after "name" but found "myalias" at position 18')
     })
 
     it('should throw error on missing closing paren in string function', () => {
-      expect(() => parseSql({ query: 'SELECT UPPER(name FROM users' })).toThrow('Expected ) after "name" but found "FROM" at position 18')
+      expect(() => parseSql({ query: 'SELECT UPPER(name FROM users' }))
+        .toThrow('Expected ) after "name" but found "FROM" at position 18')
     })
 
     it('should throw error on invalid string function name', () => {
-      expect(() => parseSql({ query: 'SELECT FOOBAR(name) FROM users' })).toThrow('Unknown function "FOOBAR" at position 7')
+      expect(() => parseSql({ query: 'SELECT FOOBAR(name) FROM users' }))
+        .toThrow('Unknown function "FOOBAR" at position 7')
     })
 
     it('should allow unknown function names when functions parameter provided', () => {
@@ -167,21 +170,32 @@ describe('parseSql error handling', () => {
     })
   })
 
+  describe('CAST errors', () => {
+    it('should throw error for unsupported CAST type', () => {
+      expect(() => parseSql({ query: 'SELECT CAST(x AS BINARY) FROM t' }))
+        .toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) but found "BINARY" at position 17')
+    })
+  })
+
   describe('WHERE clause errors', () => {
     it('should throw error on incomplete WHERE clause', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users WHERE' })).toThrow('Expected expression but found end of query at position 25')
+      expect(() => parseSql({ query: 'SELECT * FROM users WHERE' }))
+        .toThrow('Expected expression but found end of query at position 25')
     })
 
     it('should throw error on missing closing paren in WHERE', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users WHERE (age > 18' })).toThrow('Expected ) after "18" but found end of query at position 35')
+      expect(() => parseSql({ query: 'SELECT * FROM users WHERE (age > 18' }))
+        .toThrow('Expected ) after "18" but found end of query at position 35')
     })
 
     it('should throw error on incomplete comparison in WHERE', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users WHERE age >' })).toThrow('Expected expression but found end of query at position 31')
+      expect(() => parseSql({ query: 'SELECT * FROM users WHERE age >' }))
+        .toThrow('Expected expression but found end of query at position 31')
     })
 
     it('should throw error when expecting closing paren in WHERE', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users WHERE (age > 18(' })).toThrow('Expected ) after "18" but found "(" at position 35')
+      expect(() => parseSql({ query: 'SELECT * FROM users WHERE (age > 18(' }))
+        .toThrow('Expected ) after "18" but found "(" at position 35')
     })
 
     it('should throw error for aggregate function in WHERE clause', () => {
@@ -192,23 +206,28 @@ describe('parseSql error handling', () => {
 
   describe('JOIN errors', () => {
     it('should throw error on missing table name after JOIN', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users JOIN' })).toThrow('Expected identifier after "JOIN" but found end of query at position 24')
+      expect(() => parseSql({ query: 'SELECT * FROM users JOIN' }))
+        .toThrow('Expected identifier after "JOIN" but found end of query at position 24')
     })
 
     it('should throw error on missing ON keyword in JOIN', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users JOIN orders' })).toThrow('Expected ON after "orders" but found end of query at position 31')
+      expect(() => parseSql({ query: 'SELECT * FROM users JOIN orders' }))
+        .toThrow('Expected ON after "orders" but found end of query at position 31')
     })
 
     it('should throw error on missing JOIN condition', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users JOIN orders ON' })).toThrow('Expected expression but found end of query at position 34')
+      expect(() => parseSql({ query: 'SELECT * FROM users JOIN orders ON' }))
+        .toThrow('Expected expression but found end of query at position 34')
     })
 
     it('should throw error on missing JOIN keyword after LEFT', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users LEFT orders' })).toThrow('Expected JOIN after "LEFT" but found "orders" at position 25')
+      expect(() => parseSql({ query: 'SELECT * FROM users LEFT orders' }))
+        .toThrow('Expected JOIN after "LEFT" but found "orders" at position 25')
     })
 
     it('should throw error on missing JOIN keyword after INNER', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users INNER orders' })).toThrow('Expected JOIN after "INNER" but found "orders" at position 26')
+      expect(() => parseSql({ query: 'SELECT * FROM users INNER orders' }))
+        .toThrow('Expected JOIN after "INNER" but found "orders" at position 26')
     })
 
     it('should throw error for aggregate function in JOIN ON', () => {
@@ -219,15 +238,18 @@ describe('parseSql error handling', () => {
 
   describe('GROUP BY errors', () => {
     it('should throw error on missing BY after GROUP', () => {
-      expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP' })).toThrow('Expected BY after "GROUP" but found end of query at position 32')
+      expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP' }))
+        .toThrow('Expected BY after "GROUP" but found end of query at position 32')
     })
 
     it('should throw error on missing column after GROUP BY', () => {
-      expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY' })).toThrow('Expected expression but found end of query at position 35')
+      expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY' }))
+        .toThrow('Expected expression but found end of query at position 35')
     })
 
     it('should throw error on missing column after comma in GROUP BY', () => {
-      expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY age,' })).toThrow('Expected expression but found end of query at position 40')
+      expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY age,' }))
+        .toThrow('Expected expression but found end of query at position 40')
     })
 
     it('should throw error for aggregate function in GROUP BY', () => {
@@ -238,15 +260,18 @@ describe('parseSql error handling', () => {
 
   describe('ORDER BY errors', () => {
     it('should throw error on missing BY after ORDER', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users ORDER' })).toThrow('Expected BY after "ORDER" but found end of query at position 25')
+      expect(() => parseSql({ query: 'SELECT * FROM users ORDER' }))
+        .toThrow('Expected BY after "ORDER" but found end of query at position 25')
     })
 
     it('should throw error on missing column after ORDER BY', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY' })).toThrow('Expected expression but found end of query at position 28')
+      expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY' }))
+        .toThrow('Expected expression but found end of query at position 28')
     })
 
     it('should throw error on missing column after comma in ORDER BY', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY age,' })).toThrow('Expected expression but found end of query at position 33')
+      expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY age,' }))
+        .toThrow('Expected expression but found end of query at position 33')
     })
 
     it('should throw error for aggregate function in ORDER BY without aggregate context', () => {

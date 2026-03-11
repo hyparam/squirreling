@@ -55,6 +55,7 @@ export function parseSql(options: ParseSqlOptions): SelectStatement
  * @param options
  * @param options.query - SQL query string or parsed SelectStatement
  * @param options.functions - user-defined functions available in the SQL context
+ * @param options.tables - optional table metadata for planning
  * @returns the root of the query plan tree
  */
 export function planSql(options: PlanSqlOptions): QueryPlan

@@ -154,7 +154,7 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT CAST(age AS BINARY) FROM users',
-      }))).rejects.toThrow('Unsupported CAST to type BINARY. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN')
+      }))).rejects.toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) but found "BINARY"')
     })
 
     it('should throw error when casting object to non-string type', async () => {
@@ -162,7 +162,7 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT CAST(obj AS INTEGER) FROM data',
-      }))).rejects.toThrow('Cannot CAST object to INTEGER. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN')
+      }))).rejects.toThrow('Cannot CAST object to INTEGER. Supported types: STRING, INT, BIGINT, FLOAT, BOOL')
     })
   })
 

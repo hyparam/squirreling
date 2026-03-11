@@ -53,5 +53,5 @@ export function castError({ toType, positionStart, positionEnd, fromType, rowInd
     ? `Cannot CAST ${fromType} to ${toType}`
     : `Unsupported CAST to type ${toType}`
 
-  return new ExecutionError({ message: `${message}. Supported types: TEXT, VARCHAR, INTEGER, INT, BIGINT, FLOAT, REAL, DOUBLE, BOOLEAN`, positionStart, positionEnd, rowIndex })
+  return new ExecutionError({ message: `${message}. Supported types: STRING, INT, BIGINT, FLOAT, BOOL`, positionStart, positionEnd, rowIndex })
 }

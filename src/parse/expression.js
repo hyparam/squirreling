@@ -4,7 +4,7 @@ import {
   syntaxError,
   unknownFunctionError,
 } from '../validation/parseErrors.js'
-import { RESERVED_KEYWORDS, isExtractField, isIntervalUnit, isKnownFunction } from '../validation/functions.js'
+import { RESERVED_KEYWORDS, isCastType, isExtractField, isIntervalUnit, isKnownFunction } from '../validation/functions.js'
 import { parseComparison } from './comparison.js'
 import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'
@@ -60,12 +60,19 @@ export function parsePrimary(state) {
       const expr = parseExpression(state)
       expect(state, 'keyword', 'AS')
       const typeTok = expectIdentifier(state)
-      // TODO: check cast type
+      const toType = typeTok.value.toUpperCase()
+      if (!isCastType(toType)) {
+        throw syntaxError({
+          ...typeTok,
+          expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL)',
+          received: `"${typeTok.value}"`,
+        })
+      }
       expect(state, 'paren', ')')
       return {
         type: 'cast',
         expr,
-        toType: typeTok.value,
+        toType,
         positionStart,
         positionEnd: state.lastPos,
       }

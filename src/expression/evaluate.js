@@ -397,7 +397,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   if (node.type === 'cast') {
     const val = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     if (val == null) return null
-    const toType = node.toType.toUpperCase()
+    const { toType } = node
     if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
       if (typeof val === 'object') return stringify(val)
       return String(val)

@@ -80,10 +80,12 @@ export interface FunctionNode extends AstBase {
   filter?: ExprNode
 }
 
+export type CastType = 'TEXT' | 'STRING' | 'VARCHAR' | 'INTEGER' | 'INT' | 'BIGINT' | 'FLOAT' | 'REAL' | 'DOUBLE' | 'BOOLEAN' | 'BOOL'
+
 export interface CastNode extends AstBase {
   type: 'cast'
   expr: ExprNode
-  toType: string // TODO: cast types
+  toType: CastType
 }
 
 export interface InSubqueryNode extends AstBase {

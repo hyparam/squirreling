@@ -1,5 +1,5 @@
 /**
- * @import { AggregateFunc, BinaryOp, FunctionSignature, IntervalUnit, MathFunc, RegExpFunction, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
+ * @import { AggregateFunc, BinaryOp, CastType, FunctionSignature, IntervalUnit, MathFunc, RegExpFunction, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
  */
 import { ParseError } from '../validation/parseErrors.js'
 
@@ -58,6 +58,14 @@ export function isIntervalUnit(name) {
  */
 export function isExtractField(name) {
   return ['YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND', 'DOW', 'EPOCH'].includes(name)
+}
+
+/**
+ * @param {string} name
+ * @returns {name is CastType}
+ */
+export function isCastType(name) {
+  return ['TEXT', 'STRING', 'VARCHAR', 'INTEGER', 'INT', 'BIGINT', 'FLOAT', 'REAL', 'DOUBLE', 'BOOLEAN', 'BOOL'].includes(name)
 }
 
 /**
