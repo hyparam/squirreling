@@ -1,6 +1,7 @@
 import { executeSelect } from '../execute/execute.js'
 import { stringify } from '../execute/utils.js'
-import { columnNotFoundError, invalidContextError } from '../executionErrors.js'
+import { invalidContextError } from '../executionErrors.js'
+import { columnNotFoundError } from '../planErrors.js'
 import { unknownFunctionError } from '../parseErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation.js'
 import { aggregateError, argValueError, castError } from '../validationErrors.js'

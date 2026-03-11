@@ -657,7 +657,7 @@ describe('parseSql - WHERE clause', () => {
             },
           },
         ],
-        from: { kind: 'table', table: 'users' },
+        from: { kind: 'table', table: 'users', positionStart: 54, positionEnd: 59 },
         joins: [],
         where: {
           type: 'binary',
@@ -727,7 +727,7 @@ describe('parseSql - WHERE clause', () => {
       subquery: {
         distinct: false,
         columns: [{ kind: 'star' }],
-        from: { kind: 'table', table: 'users' },
+        from: { kind: 'table', table: 'users', positionStart: 49, positionEnd: 54 },
         joins: [],
         where: {
           type: 'binary',
@@ -762,7 +762,7 @@ describe('parseSql - WHERE clause', () => {
       subquery: {
         distinct: false,
         columns: [{ kind: 'star' }],
-        from: { kind: 'table', table: 'users' },
+        from: { kind: 'table', table: 'users', positionStart: 53, positionEnd: 58 },
         joins: [],
         where: {
           type: 'binary',

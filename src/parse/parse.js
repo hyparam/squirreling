@@ -223,9 +223,9 @@ export function parseSelectInternal(state) {
     from = parseFromSubquery(state)
   } else {
     // Simple table name: SELECT * FROM users
-    const table = expectIdentifier(state).value
+    const tableTok = expectIdentifier(state)
     const alias = parseTableAlias(state)
-    from = { kind: 'table', table, alias }
+    from = { kind: 'table', table: tableTok.value, alias, positionStart: tableTok.positionStart, positionEnd: tableTok.positionEnd }
   }
 
   // Parse JOIN clauses

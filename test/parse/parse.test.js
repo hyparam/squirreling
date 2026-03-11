@@ -15,7 +15,7 @@ describe('parseSql', () => {
       expect(select).toEqual({
         distinct: false,
         columns: [{ kind: 'star' }],
-        from: { kind: 'table', table: 'users' },
+        from: { kind: 'table', table: 'users', positionStart: 14, positionEnd: 19 },
         joins: [],
         groupBy: [],
         orderBy: [],
@@ -27,7 +27,7 @@ describe('parseSql', () => {
       expect(select).toEqual({
         distinct: false,
         columns: [{ kind: 'star', table: 'users' }],
-        from: { kind: 'table', table: 'users' },
+        from: { kind: 'table', table: 'users', positionStart: 20, positionEnd: 25 },
         joins: [],
         groupBy: [],
         orderBy: [],
@@ -102,7 +102,7 @@ describe('parseSql', () => {
 
     it('should handle trailing semicolon', () => {
       const select = parseSql({ query: 'SELECT * FROM users;' })
-      expect(select.from).toEqual({ kind: 'table', table: 'users' })
+      expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
     })
 
     it('should parse SELECT with negative number', () => {
@@ -136,7 +136,7 @@ describe('parseSql', () => {
       expect(select.columns).toEqual([
         { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
       ])
-      expect(select.from).toEqual({ kind: 'table', table: 'users' })
+      expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 17, positionEnd: 22 })
     })
   })
 
@@ -151,17 +151,17 @@ describe('parseSql', () => {
 
     it('should parse quoted table names with spaces', () => {
       const select = parseSql({ query: 'SELECT * FROM "user data"' })
-      expect(select.from).toEqual({ kind: 'table', table: 'user data' })
+      expect(select.from).toEqual({ kind: 'table', table: 'user data', positionStart: 14, positionEnd: 25 })
     })
 
     it('should parse table alias', () => {
       const select = parseSql({ query: 'SELECT u.name FROM users u WHERE u.active = 1' })
-      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
+      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 19, positionEnd: 24 })
     })
 
     it('should parse table alias with AS', () => {
       const select = parseSql({ query: 'SELECT u.name FROM users AS u' })
-      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
+      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 19, positionEnd: 24 })
     })
 
     it('should parse quoted column with alias', () => {
@@ -237,7 +237,7 @@ describe('parseSql', () => {
             alias: 'total',
           },
         ],
-        from: { kind: 'table', table: 'users', alias: undefined },
+        from: { kind: 'table', table: 'users', alias: undefined, positionStart: 62, positionEnd: 67 },
         joins: [],
         where: {
           type: 'binary',

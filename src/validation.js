@@ -64,9 +64,8 @@ export function expectNoAggregate(expr, clause) {
   if (agg) {
     const hint = clause === 'WHERE' ? '. Use HAVING instead.' : ''
     throw new ParseError({
+      ...agg,
       message: `Aggregate function ${agg.name.toUpperCase()} is not allowed in ${clause} clause${hint}`,
-      positionStart: agg.positionStart,
-      positionEnd: agg.positionEnd,
     })
   }
 }

@@ -1,9 +1,10 @@
+import { columnNotFoundError, tableNotFoundError } from '../planErrors.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation.js'
 import { extractColumns } from './columns.js'
 
 /**
- * @import { ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement } from '../types.js'
  * @import { QueryPlan } from './types.d.ts'
  */
 
@@ -14,7 +15,7 @@ import { extractColumns } from './columns.js'
  * @param {PlanSqlOptions} options
  * @returns {QueryPlan} the root of the query plan tree
  */
-export function planSql({ query, functions }) {
+export function planSql({ query, functions, tables }) {
   const select = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Build CTE plans in order (each CTE can reference preceding CTEs)
@@ -22,12 +23,12 @@ export function planSql({ query, functions }) {
   const ctePlans = new Map()
   if (select.with) {
     for (const cte of select.with.ctes) {
-      const ctePlan = planSelect({ select: cte.query, ctePlans })
+      const ctePlan = planSelect({ select: cte.query, ctePlans, tables })
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
     }
   }
 
-  return planSelect({ select, ctePlans })
+  return planSelect({ select, ctePlans, tables })
 }
 
 /**
@@ -36,9 +37,10 @@ export function planSql({ query, functions }) {
  * @param {object} options
  * @param {SelectStatement} options.select
  * @param {Map<string, QueryPlan>} options.ctePlans
+ * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planSelect({ select, ctePlans }) {
+function planSelect({ select, ctePlans, tables }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.kind === 'derived' && findAggregate(col.expr)
@@ -67,11 +69,11 @@ function planSelect({ select, ctePlans }) {
 
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
-  let plan = planFrom({ select, ctePlans, hints })
+  let plan = planFrom({ select, ctePlans, hints, tables })
 
   // Add JOINs
   if (select.joins.length) {
-    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns })
+    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns, tables })
   }
 
   // Whether FROM resolved to our own direct table scan
@@ -153,20 +155,22 @@ function planSelect({ select, ctePlans }) {
  * @param {SelectStatement} options.select
  * @param {Map<string, QueryPlan>} options.ctePlans
  * @param {ScanOptions} options.hints
+ * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planFrom({ select, ctePlans, hints }) {
+function planFrom({ select, ctePlans, hints, tables }) {
   if (select.from.kind === 'table') {
     const ctePlan = ctePlans.get(select.from.table.toLowerCase())
     if (ctePlan) {
       return ctePlan
     }
+    validateScan({ ...select.from, hints, tables })
     return { type: 'Scan', table: select.from.table, hints }
   } else {
     if (select.from.query.with) {
       throw new Error('WITH clause is not supported inside subqueries')
     }
-    return planSelect({ select: select.from.query, ctePlans })
+    return planSelect({ select: select.from.query, ctePlans, tables })
   }
 }
 
@@ -177,9 +181,10 @@ function planFrom({ select, ctePlans, hints }) {
  * @param {string} options.leftTable - name/alias of the left table
  * @param {Map<string, QueryPlan>} options.ctePlans
  * @param {Map<string, string[] | undefined>} options.perTableColumns
+ * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planJoin({ left, joins, leftTable, ctePlans, perTableColumns }) {
+function planJoin({ left, joins, leftTable, ctePlans, perTableColumns, tables }) {
   let plan = left
   let currentLeftTable = leftTable
 
@@ -191,6 +196,7 @@ function planJoin({ left, joins, leftTable, ctePlans, perTableColumns }) {
     const rightHints = {}
     if (!ctePlan) {
       rightHints.columns = perTableColumns.get(rightTable)
+      validateScan({ ...join, hints: rightHints, tables })
     }
     /** @type {QueryPlan} */
     const rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }
@@ -311,6 +317,33 @@ function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   }
 
   return { leftKey: left, rightKey: right }
+}
+
+/**
+ * Validates that a table exists and requested columns are available.
+ *
+ * @param {object} options
+ * @param {string} options.table
+ * @param {ScanOptions} options.hints
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
+ */
+function validateScan({ table, hints, tables, positionStart, positionEnd }) {
+  if (!tables) return
+  const resolved = tables[table]
+  if (!resolved) {
+    throw tableNotFoundError({ table, tables, positionStart, positionEnd })
+  }
+  const missingColumn = hints.columns?.find(col => !resolved.columns.includes(col))
+  if (missingColumn) {
+    throw columnNotFoundError({
+      columnName: missingColumn,
+      availableColumns: resolved.columns,
+      positionStart,
+      positionEnd,
+    })
+  }
 }
 
 /**

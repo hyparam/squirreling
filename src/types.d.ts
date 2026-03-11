@@ -19,6 +19,7 @@ export interface ExecuteSqlOptions {
 export interface PlanSqlOptions {
   query: string | SelectStatement
   functions?: Record<string, UserDefinedFunction>
+  tables?: Record<string, AsyncDataSource>
 }
 
 // executePlan(plan, context)
@@ -118,6 +119,8 @@ export interface FromTable {
   kind: 'table'
   table: string
   alias?: string
+  positionStart: number
+  positionEnd: number
 }
 
 export interface FromSubquery {
@@ -319,10 +322,6 @@ export interface JoinClause {
   table: string
   alias?: string
   on?: ExprNode
-}
-
-export interface ExecuteContext {
-  tables: Record<string, AsyncDataSource>
-  functions?: Record<string, UserDefinedFunction>
-  signal?: AbortSignal
+  positionStart: number
+  positionEnd: number
 }

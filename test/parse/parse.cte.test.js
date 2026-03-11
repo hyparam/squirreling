@@ -10,8 +10,8 @@ describe('parseSql - CTE (WITH clause)', () => {
       expect(select.with).toBeDefined()
       expect(select.with?.ctes).toHaveLength(1)
       expect(select.with?.ctes[0].name).toBe('cte')
-      expect(select.with?.ctes[0].query.from).toEqual({ kind: 'table', table: 'users' })
-      expect(select.from).toEqual({ kind: 'table', table: 'cte' })
+      expect(select.with?.ctes[0].query.from).toEqual({ kind: 'table', table: 'users', positionStart: 27, positionEnd: 32 })
+      expect(select.from).toEqual({ kind: 'table', table: 'cte', positionStart: 48, positionEnd: 51 })
     })
 
     it('should parse CTE with column selection', () => {
@@ -28,7 +28,7 @@ describe('parseSql - CTE (WITH clause)', () => {
       const select = parseSql({
         query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte AS t',
       })
-      expect(select.from).toEqual({ kind: 'table', table: 'cte', alias: 't' })
+      expect(select.from).toEqual({ kind: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 51 })
     })
   })
 

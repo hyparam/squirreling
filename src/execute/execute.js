@@ -1,5 +1,5 @@
 import { memorySource } from '../backend/dataSource.js'
-import { tableNotFoundError } from '../executionErrors.js'
+import { tableNotFoundError } from '../planErrors.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
@@ -46,7 +46,7 @@ export async function* executeSql({ tables, query, functions, signal }) {
  * @yields {AsyncRow}
  */
 export async function* executeSelect({ select, context }) {
-  const plan = planSql({ query: select, functions: context.functions })
+  const plan = planSql({ query: select, functions: context.functions, tables: context.tables })
   yield* executePlan({ plan, context })
 }
 
@@ -98,7 +98,7 @@ async function* executeScan(plan, context) {
   // check table
   const table = tables[plan.table]
   if (!table) {
-    throw tableNotFoundError({ tableName: plan.table })
+    throw tableNotFoundError({ table: plan.table, tables })
   }
   // check columns
   const missingColumn = plan.hints.columns?.find(col => !table.columns.includes(col))
@@ -140,7 +140,7 @@ async function* executeScan(plan, context) {
 async function* executeCount(plan, { tables, signal }) {
   const table = tables[plan.table]
   if (!table) {
-    throw tableNotFoundError({ tableName: plan.table })
+    throw tableNotFoundError({ table: plan.table, tables })
   }
 
   // Use source numRows if available

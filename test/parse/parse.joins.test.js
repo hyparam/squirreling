@@ -4,12 +4,13 @@ import { parseSql } from '../../src/parse/parse.js'
 describe('parseSql - JOIN queries', () => {
   it('should parse simple INNER JOIN', () => {
     const select = parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users' })
+    expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
     expect(select.joins).toEqual([
       {
         joinType: 'INNER',
         table: 'orders',
-        alias: undefined,
+        positionStart: 25,
+        positionEnd: 31,
         on: {
           type: 'binary',
           op: '=',
@@ -43,7 +44,8 @@ describe('parseSql - JOIN queries', () => {
       {
         joinType: 'LEFT',
         table: 'orders',
-        alias: undefined,
+        positionStart: 30,
+        positionEnd: 36,
         on: {
           type: 'binary',
           op: '=',
@@ -113,26 +115,27 @@ describe('parseSql - JOIN queries', () => {
 
   it('should parse POSITIONAL JOIN', () => {
     const select = parseSql({ query: 'SELECT * FROM users POSITIONAL JOIN orders' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users' })
+    expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
     expect(select.joins).toEqual([
       {
         joinType: 'POSITIONAL',
         table: 'orders',
-        alias: undefined,
-        on: undefined,
+        positionStart: 36,
+        positionEnd: 42,
       },
     ])
   })
 
   it('should parse POSITIONAL JOIN with alias', () => {
     const select = parseSql({ query: 'SELECT * FROM users u POSITIONAL JOIN orders o' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u' })
+    expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 14, positionEnd: 19 })
     expect(select.joins).toEqual([
       {
         joinType: 'POSITIONAL',
         table: 'orders',
         alias: 'o',
-        on: undefined,
+        positionStart: 38,
+        positionEnd: 44,
       },
     ])
   })
