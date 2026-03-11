@@ -262,7 +262,7 @@ describe('planSql', () => {
             kind: 'derived',
             expr: {
               type: 'function',
-              name: 'COUNT',
+              funcName: 'COUNT',
               args: [
                 {
                   type: 'star',
@@ -295,7 +295,7 @@ describe('planSql', () => {
             kind: 'derived',
             expr: {
               type: 'function',
-              name: 'COUNT',
+              funcName: 'COUNT',
               args: [
                 {
                   type: 'star',
@@ -349,7 +349,7 @@ describe('planSql', () => {
             kind: 'derived',
             expr: {
               type: 'function',
-              name: 'COUNT',
+              funcName: 'COUNT',
               args: [
                 {
                   type: 'star',
@@ -367,7 +367,7 @@ describe('planSql', () => {
           op: '>',
           left: {
             type: 'function',
-            name: 'COUNT',
+            funcName: 'COUNT',
             args: [
               {
                 type: 'star',
@@ -706,7 +706,7 @@ describe('planSql', () => {
                 kind: 'derived',
                 expr: {
                   type: 'function',
-                  name: 'COUNT',
+                  funcName: 'COUNT',
                   args: [
                     {
                       type: 'star',
@@ -725,7 +725,7 @@ describe('planSql', () => {
               op: '>',
               left: {
                 type: 'function',
-                name: 'COUNT',
+                funcName: 'COUNT',
                 args: [
                   {
                     type: 'star',

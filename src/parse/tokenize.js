@@ -350,10 +350,7 @@ export function tokenizeSql(sql) {
       continue
     }
 
-    if (tokens.length === 0) {
-      throw unexpectedCharError({ char: ch, positionStart: pos, expectsSelect: true })
-    }
-    throw unexpectedCharError({ char: ch, positionStart: pos })
+    throw unexpectedCharError({ char: ch, positionStart: pos, expectsSelect: !tokens.length })
   }
 
   tokens.push({

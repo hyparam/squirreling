@@ -27,7 +27,7 @@ export class ExecutionError extends Error {
  * @param {string} options.validContext - Where it can be used
  * @param {number} options.positionStart
  * @param {number} options.positionEnd
- * @param {number} [options.rowIndex] - 1-based row number where error occurred
+ * @param {number} options.rowIndex - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
 export function invalidContextError({ item, validContext, positionStart, positionEnd, rowIndex }) {

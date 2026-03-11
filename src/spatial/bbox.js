@@ -28,7 +28,7 @@ export function bboxOverlap(a, b) {
  * @param {SimpleGeometry} geom
  * @returns {BBox}
  */
-function bbox(geom) {
+export function bbox(geom) {
   let b = bboxCache.get(geom)
   if (b) return b
   if (geom.type === 'Point') {

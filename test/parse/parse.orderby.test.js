@@ -13,7 +13,6 @@ describe('ORDER BY clause', () => {
           positionEnd: 33,
         },
         direction: 'ASC',
-        nulls: undefined,
       },
     ])
   })
@@ -29,7 +28,6 @@ describe('ORDER BY clause', () => {
           positionEnd: 33,
         },
         direction: 'ASC',
-        nulls: undefined,
       },
     ])
   })
@@ -45,7 +43,6 @@ describe('ORDER BY clause', () => {
           positionEnd: 32,
         },
         direction: 'DESC',
-        nulls: undefined,
       },
     ])
   })
@@ -61,7 +58,6 @@ describe('ORDER BY clause', () => {
           positionEnd: 33,
         },
         direction: 'ASC',
-        nulls: undefined,
       },
       {
         expr: {
@@ -71,7 +67,6 @@ describe('ORDER BY clause', () => {
           positionEnd: 42,
         },
         direction: 'DESC',
-        nulls: undefined,
       },
     ])
   })
@@ -93,7 +88,6 @@ describe('ORDER BY clause', () => {
           positionEnd: 50,
         },
         direction: 'ASC',
-        nulls: undefined,
       },
     ])
   })
@@ -136,13 +130,12 @@ describe('ORDER BY clause', () => {
       {
         expr: {
           type: 'function',
-          name: 'RANDOM',
+          funcName: 'RANDOM',
           args: [],
           positionStart: 29,
           positionEnd: 37,
         },
         direction: 'ASC',
-        nulls: undefined,
       },
     ])
   })
@@ -153,13 +146,12 @@ describe('ORDER BY clause', () => {
       {
         expr: {
           type: 'function',
-          name: 'RAND',
+          funcName: 'RAND',
           args: [],
           positionStart: 29,
           positionEnd: 35,
         },
         direction: 'ASC',
-        nulls: undefined,
       },
     ])
   })

@@ -60,6 +60,7 @@ export function parsePrimary(state) {
       const expr = parseExpression(state)
       expect(state, 'keyword', 'AS')
       const typeTok = expectIdentifier(state)
+      // TODO: check cast type
       expect(state, 'paren', ')')
       return {
         type: 'cast',
@@ -75,13 +76,11 @@ export function parsePrimary(state) {
       consume(state) // EXTRACT
       consume(state) // '('
       const fieldTok = current(state)
-      const isValidType = fieldTok.type === 'keyword' || fieldTok.type === 'identifier'
-      if (!isValidType || !isExtractField(fieldTok.value)) {
+      if (!isExtractField(fieldTok.value)) {
         throw syntaxError({
+          ...fieldTok,
           expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
           received: `"${fieldTok.value}"`,
-          positionStart: fieldTok.positionStart,
-          positionEnd: fieldTok.positionEnd,
         })
       }
       consume(state) // field
@@ -90,7 +89,7 @@ export function parsePrimary(state) {
       expect(state, 'paren', ')')
       return {
         type: 'function',
-        name: 'EXTRACT',
+        funcName: 'EXTRACT',
         args: [
           { type: 'literal', value: fieldTok.value, positionStart: fieldTok.positionStart, positionEnd: fieldTok.positionEnd },
           expr,
@@ -123,7 +122,7 @@ export function parsePrimary(state) {
       consume(state)
       return {
         type: 'function',
-        name: tok.value,
+        funcName: tok.value,
         args: [],
         positionStart,
         positionEnd: state.lastPos,
@@ -217,7 +216,12 @@ export function parsePrimary(state) {
         const condition = parseExpression(state)
         expect(state, 'keyword', 'THEN')
         const result = parseExpression(state)
-        whenClauses.push({ condition, result })
+        whenClauses.push({
+          condition,
+          result,
+          positionStart: condition.positionStart,
+          positionEnd: result.positionEnd,
+        })
       }
 
       if (whenClauses.length === 0) {

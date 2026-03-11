@@ -1,4 +1,4 @@
-import { UserDefinedFunction } from '../types.js'
+import type { UserDefinedFunction } from '../types.js'
 
 export interface ParserState {
   tokens: Token[]

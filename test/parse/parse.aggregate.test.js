@@ -10,7 +10,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'COUNT',
+            funcName: 'COUNT',
             args: [{ type: 'star', positionStart: 13, positionEnd: 14 }],
             positionStart: 7,
             positionEnd: 15,
@@ -26,7 +26,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'COUNT',
+            funcName: 'COUNT',
             args: [{ type: 'identifier', name: 'id', positionStart: 13, positionEnd: 15 }],
             positionStart: 7,
             positionEnd: 16,
@@ -42,7 +42,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'SUM',
+            funcName: 'SUM',
             args: [{ type: 'identifier', name: 'amount', positionStart: 11, positionEnd: 17 }],
             positionStart: 7,
             positionEnd: 18,
@@ -58,7 +58,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'AVG',
+            funcName: 'AVG',
             args: [{ type: 'identifier', name: 'score', positionStart: 11, positionEnd: 16 }],
             positionStart: 7,
             positionEnd: 17,
@@ -74,7 +74,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'MIN',
+            funcName: 'MIN',
             args: [{ type: 'identifier', name: 'price', positionStart: 11, positionEnd: 16 }],
             positionStart: 7,
             positionEnd: 17,
@@ -84,7 +84,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'MAX',
+            funcName: 'MAX',
             args: [{ type: 'identifier', name: 'price', positionStart: 23, positionEnd: 28 }],
             positionStart: 19,
             positionEnd: 29,
@@ -100,7 +100,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'COUNT',
+            funcName: 'COUNT',
             args: [{ type: 'star', positionStart: 13, positionEnd: 14 }],
             positionStart: 7,
             positionEnd: 15,

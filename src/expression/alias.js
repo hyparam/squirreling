@@ -31,9 +31,9 @@ export function derivedAlias(expr) {
   if (expr.type === 'function') {
     // Handle aggregate functions with star (COUNT(*) -> count_all)
     if (expr.args.length === 1 && expr.args[0].type === 'star') {
-      return expr.name.toLowerCase() + '_all'
+      return expr.funcName.toLowerCase() + '_all'
     }
-    return expr.name.toLowerCase() + '_' + expr.args.map(derivedAlias).join('_')
+    return expr.funcName.toLowerCase() + '_' + expr.args.map(derivedAlias).join('_')
   }
   if (expr.type === 'interval') {
     return `interval_${expr.value}_${expr.unit.toLowerCase()}`

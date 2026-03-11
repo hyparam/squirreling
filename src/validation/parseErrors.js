@@ -1,5 +1,3 @@
-import { FUNCTION_SIGNATURES } from './functions.js'
-
 /**
  * Structured parse error with position range.
  */
@@ -24,8 +22,8 @@ export class ParseError extends Error {
  * @param {Object} options
  * @param {string} options.expected - Description of what was expected
  * @param {string} options.received - What was actually found
- * @param {number} options.positionStart - Start character position in query
- * @param {number} options.positionEnd - End character position in query
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @param {string} [options.after] - What token came before (for context)
  * @returns {ParseError}
  */
@@ -39,8 +37,8 @@ export function syntaxError({ expected, received, positionStart, positionEnd, af
  *
  * @param {Object} options
  * @param {'string' | 'identifier'} options.type - Type of unterminated literal
- * @param {number} options.positionStart - Starting position
- * @param {number} options.positionEnd - End position
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @returns {ParseError}
  */
 export function unterminatedError({ type, positionStart, positionEnd }) {
@@ -54,8 +52,8 @@ export function unterminatedError({ type, positionStart, positionEnd }) {
  * @param {Object} options
  * @param {string} options.type - Type of invalid literal (e.g., 'number', 'interval value', 'interval unit')
  * @param {string} options.value - The invalid value
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @param {string} [options.validValues] - List of valid values (for enums like interval units)
  * @returns {ParseError}
  */
@@ -69,11 +67,11 @@ export function invalidLiteralError({ type, value, positionStart, positionEnd, v
  *
  * @param {Object} options
  * @param {string} options.char - The unexpected character
- * @param {number} options.positionStart - Position in query
- * @param {boolean} [options.expectsSelect=false] - Whether SELECT was expected (first token)
+ * @param {number} options.positionStart
+ * @param {boolean} options.expectsSelect - Whether SELECT was expected (first token)
  * @returns {ParseError}
  */
-export function unexpectedCharError({ char, positionStart, expectsSelect = false }) {
+export function unexpectedCharError({ char, positionStart, expectsSelect }) {
   const positionEnd = positionStart + 1
   if (expectsSelect) {
     return new ParseError({ message: `Expected SELECT but found "${char}" at position ${positionStart}. Queries must start with SELECT or WITH.`, positionStart, positionEnd })
@@ -86,44 +84,14 @@ export function unexpectedCharError({ char, positionStart, expectsSelect = false
  *
  * @param {Object} options
  * @param {string} options.funcName - The unknown function name
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
- * @param {string} [options.validFunctions] - List of valid functions
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @returns {ParseError}
  */
-export function unknownFunctionError({ funcName, positionStart, positionEnd, validFunctions }) {
-  const supported = validFunctions ||
-    'COUNT, SUM, AVG, MIN, MAX, UPPER, LOWER, CONCAT, LENGTH, SUBSTRING, TRIM, REPLACE, FLOOR, CEIL, ABS, MOD, EXP, LN, LOG10, POWER, SQRT, JSON_OBJECT, JSON_VALUE, JSON_QUERY, JSON_ARRAYAGG'
-
+export function unknownFunctionError({ funcName, positionStart, positionEnd }) {
+  // TODO: suggest similar function names based on edit distance
   return new ParseError({
-    message: `Unknown function "${funcName}" at position ${positionStart}. Supported: ${supported}`,
-    positionStart,
-    positionEnd,
-  })
-}
-
-/**
- * Error for wrong number of function arguments at parse time.
- *
- * @param {Object} options
- * @param {string} options.funcName - The function name
- * @param {number | string} options.expected - Expected count (number or range like "2 to 3")
- * @param {number} options.received - Actual argument count
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
- * @returns {ParseError}
- */
-export function argCountParseError({ funcName, expected, received, positionStart, positionEnd }) {
-  const signature = FUNCTION_SIGNATURES[funcName]?.signature ?? ''
-  let expectedStr = `${expected} arguments`
-  if (expected === 0) expectedStr = 'no arguments'
-  if (expected === 1) expectedStr = '1 argument'
-  if (typeof expected === 'string' && expected.endsWith(' 1')) {
-    expectedStr = `${expected} argument`
-  }
-
-  return new ParseError({
-    message: `${funcName}(${signature}) function requires ${expectedStr}, got ${received}`,
+    message: `Unknown function "${funcName}" at position ${positionStart}.`,
     positionStart,
     positionEnd,
   })
@@ -135,12 +103,12 @@ export function argCountParseError({ funcName, expected, received, positionStart
  * @param {Object} options
  * @param {string} options.missing - What is missing (e.g., 'WHEN clause', 'FROM clause', 'ON condition')
  * @param {string} options.context - Where it's missing from (e.g., 'CASE expression', 'SELECT statement', 'JOIN')
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @returns {ParseError}
  */
 export function missingClauseError({ missing, context, positionStart, positionEnd }) {
-  return new ParseError({ message: `${context} requires ${missing}`, positionStart: positionStart ?? 0, positionEnd: positionEnd ?? 0 })
+  return new ParseError({ message: `${context} requires ${missing}`, positionStart, positionEnd })
 }
 
 /**
@@ -148,8 +116,8 @@ export function missingClauseError({ missing, context, positionStart, positionEn
  *
  * @param {Object} options
  * @param {string} options.cteName - The duplicate CTE name
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @returns {ParseError}
  */
 export function duplicateCTEError({ cteName, positionStart, positionEnd }) {

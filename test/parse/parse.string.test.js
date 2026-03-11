@@ -9,7 +9,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'UPPER',
+          funcName: 'UPPER',
           args: [
             {
               type: 'identifier',
@@ -21,7 +21,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 18,
         },
-        alias: undefined,
       },
     ])
   })
@@ -33,7 +32,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'LOWER',
+          funcName: 'LOWER',
           args: [
             {
               type: 'identifier',
@@ -45,7 +44,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 19,
         },
-        alias: undefined,
       },
     ])
   })
@@ -57,7 +55,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'LENGTH',
+          funcName: 'LENGTH',
           args: [
             {
               type: 'identifier',
@@ -69,7 +67,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 19,
         },
-        alias: undefined,
       },
     ])
   })
@@ -81,7 +78,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'TRIM',
+          funcName: 'TRIM',
           args: [
             {
               type: 'identifier',
@@ -93,7 +90,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 17,
         },
-        alias: undefined,
       },
     ])
   })
@@ -105,7 +101,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'CONCAT',
+          funcName: 'CONCAT',
           args: [
             {
               type: 'identifier',
@@ -123,7 +119,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 36,
         },
-        alias: undefined,
       },
     ])
   })
@@ -135,7 +130,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'CONCAT',
+          funcName: 'CONCAT',
           args: [
             {
               type: 'identifier',
@@ -154,7 +149,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 41,
         },
-        alias: undefined,
       },
     ])
   })
@@ -166,7 +160,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'SUBSTRING',
+          funcName: 'SUBSTRING',
           args: [
             {
               type: 'identifier',
@@ -180,7 +174,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 28,
         },
-        alias: undefined,
       },
     ])
   })
@@ -192,7 +185,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'UPPER',
+          funcName: 'UPPER',
           args: [
             {
               type: 'identifier',
@@ -216,7 +209,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'LOWER',
+          funcName: 'LOWER',
           args: [
             {
               type: 'identifier',
@@ -240,7 +233,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'UPPER',
+          funcName: 'UPPER',
           args: [
             {
               type: 'identifier',
@@ -252,13 +245,12 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 24,
         },
-        alias: undefined,
       },
       {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'LOWER',
+          funcName: 'LOWER',
           args: [
             {
               type: 'identifier',
@@ -270,13 +262,12 @@ describe('parseSql - string functions', () => {
           positionStart: 26,
           positionEnd: 42,
         },
-        alias: undefined,
       },
       {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'LENGTH',
+          funcName: 'LENGTH',
           args: [
             {
               type: 'identifier',
@@ -288,7 +279,6 @@ describe('parseSql - string functions', () => {
           positionStart: 44,
           positionEnd: 57,
         },
-        alias: undefined,
       },
     ])
   })
@@ -300,7 +290,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'UPPER',
+          funcName: 'UPPER',
           args: [
             {
               type: 'identifier',
@@ -312,7 +302,6 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 24,
         },
-        alias: undefined,
       },
     ])
   })
@@ -323,13 +312,12 @@ describe('parseSql - string functions', () => {
       {
         kind: 'derived',
         expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 },
-        alias: undefined,
       },
       {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'UPPER',
+          funcName: 'UPPER',
           args: [
             {
               type: 'identifier',
@@ -341,7 +329,6 @@ describe('parseSql - string functions', () => {
           positionStart: 11,
           positionEnd: 22,
         },
-        alias: undefined,
       },
       {
         kind: 'derived',
@@ -351,7 +338,6 @@ describe('parseSql - string functions', () => {
           positionStart: 24,
           positionEnd: 29,
         },
-        alias: undefined,
       },
     ])
   })
@@ -363,7 +349,7 @@ describe('parseSql - string functions', () => {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'UPPER',
+          funcName: 'UPPER',
           args: [
             {
               type: 'identifier',
@@ -375,13 +361,12 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 18,
         },
-        alias: undefined,
       },
       {
         kind: 'derived',
         expr: {
           type: 'function',
-          name: 'COUNT',
+          funcName: 'COUNT',
           args: [{ type: 'star', positionStart: 26, positionEnd: 27 }],
           positionStart: 20,
           positionEnd: 28,

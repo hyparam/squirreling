@@ -1,5 +1,5 @@
 import { isAggregateFunc, validateFunctionArgCount } from '../validation/functions.js'
-import { ParseError, argCountParseError, syntaxError } from '../validation/parseErrors.js'
+import { ParseError, syntaxError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 
@@ -17,11 +17,13 @@ import { consume, current, expect, match } from './state.js'
  * @returns {ExprNode}
  */
 export function parseFunctionCall(state, funcName, positionStart) {
-  consume(state) // '('
+  const funcNameUpper = funcName.toUpperCase()
+  consume(state) // '(' checked by caller
 
   /** @type {ExprNode[]} */
   const args = []
-  let distinct = false
+  /** @type {true | undefined} */
+  let distinct
 
   // Check for DISTINCT or ALL keyword (for aggregate functions like COUNT(DISTINCT x))
   if (current(state).type === 'keyword' && current(state).value === 'DISTINCT') {
@@ -48,14 +50,12 @@ export function parseFunctionCall(state, funcName, positionStart) {
       if (!match(state, 'comma')) break
     }
   }
-
   expect(state, 'paren', ')')
 
   // Check for FILTER clause (only valid for aggregate functions)
   /** @type {ExprNode | undefined} */
   let filter
   if (current(state).type === 'keyword' && current(state).value === 'FILTER') {
-    const funcNameUpper = funcName.toUpperCase()
     if (!isAggregateFunc(funcNameUpper)) {
       throw syntaxError({
         expected: 'aggregate function for FILTER clause',
@@ -70,44 +70,35 @@ export function parseFunctionCall(state, funcName, positionStart) {
     filter = parseExpression(state)
     expect(state, 'paren', ')')
   }
+  const positionEnd = state.lastPos
 
   // Validate star argument at parse time (only COUNT supports *)
-  const funcNameUpper = funcName.toUpperCase()
   const hasStar = args.length === 1 && args[0].type === 'star'
-  if (hasStar && isAggregateFunc(funcNameUpper) && funcNameUpper !== 'COUNT') {
+  if (hasStar && funcNameUpper !== 'COUNT') {
     throw new ParseError({
       message: `${funcName} cannot be applied to "*"`,
       positionStart,
-      positionEnd: state.lastPos,
+      positionEnd,
     })
   }
   if (hasStar && distinct) {
     throw new ParseError({
       message: 'COUNT(DISTINCT *) is not allowed',
       positionStart,
-      positionEnd: state.lastPos,
+      positionEnd,
     })
   }
 
   // Validate argument count at parse time
-  const validation = validateFunctionArgCount(funcNameUpper, args.length, state.functions)
-  if (!validation.valid) {
-    throw argCountParseError({
-      funcName,
-      expected: validation.expected,
-      received: args.length,
-      positionStart,
-      positionEnd: state.lastPos,
-    })
-  }
+  validateFunctionArgCount(funcNameUpper, args.length, positionStart, positionEnd, state.functions)
 
   return {
     type: 'function',
-    name: funcName,
+    funcName,
     args,
-    distinct: distinct || undefined,
+    distinct,
     filter,
     positionStart,
-    positionEnd: state.lastPos,
+    positionEnd,
   }
 }

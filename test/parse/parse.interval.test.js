@@ -15,7 +15,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 21,
           },
-          alias: undefined,
         },
       ])
     })
@@ -32,7 +31,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 23,
           },
-          alias: undefined,
         },
       ])
     })
@@ -49,7 +47,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 22,
           },
-          alias: undefined,
         },
       ])
     })
@@ -66,7 +63,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 23,
           },
-          alias: undefined,
         },
       ])
     })
@@ -83,7 +79,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 25,
           },
-          alias: undefined,
         },
       ])
     })
@@ -100,7 +95,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 25,
           },
-          alias: undefined,
         },
       ])
     })
@@ -119,7 +113,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 23,
           },
-          alias: undefined,
         },
       ])
     })
@@ -136,7 +129,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 26,
           },
-          alias: undefined,
         },
       ])
     })
@@ -166,7 +158,6 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 34,
         },
-        alias: undefined,
       }])
     })
 
@@ -193,7 +184,6 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 38,
         },
-        alias: undefined,
       }])
     })
 
@@ -206,7 +196,7 @@ describe('INTERVAL parsing', () => {
           op: '+',
           left: {
             type: 'function',
-            name: 'CURRENT_DATE',
+            funcName: 'CURRENT_DATE',
             args: [],
             positionStart: 7,
             positionEnd: 19,
@@ -221,7 +211,6 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 38,
         },
-        alias: undefined,
       }])
     })
   })
@@ -239,7 +228,6 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 22,
           },
-          alias: undefined,
         },
       ])
     })
@@ -267,7 +255,6 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 32,
         },
-        alias: undefined,
       }])
     })
   })

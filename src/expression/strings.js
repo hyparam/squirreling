@@ -1,5 +1,5 @@
 /**
- * @import { SqlPrimitive, StringFunc } from '../types.js'
+ * @import { FunctionNode, SqlPrimitive, StringFunc } from '../types.js'
  */
 
 import { argValueError } from '../validation/expressionErrors.js'
@@ -8,23 +8,20 @@ import { argValueError } from '../validation/expressionErrors.js'
  * Evaluate a string function
  *
  * @param {Object} options
- * @param {StringFunc} options.funcName - Uppercase function name
+ * @param {StringFunc} options.funcName
+ * @param {FunctionNode} options.node
  * @param {SqlPrimitive[]} options.args - Function arguments
- * @param {number} options.positionStart - Start position for error reporting
- * @param {number} options.positionEnd - End position for error reporting
- * @param {number} [options.rowIndex] - Row index for error reporting
+ * @param {number} options.rowIndex - Row index for error reporting
  * @returns {SqlPrimitive}
  */
-export function evaluateStringFunc({ funcName, args, positionStart, positionEnd, rowIndex }) {
+export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
   if (funcName === 'CONCAT') {
     // Returns NULL if any argument is NULL
     if (args.some(a => a == null)) return null
     if (args.some(a => typeof a === 'object')) {
       throw argValueError({
-        funcName: 'CONCAT',
+        ...node,
         message: 'does not support object arguments',
-        positionStart,
-        positionEnd,
         hint: 'Use CAST to convert objects to strings first.',
         rowIndex,
       })
@@ -53,10 +50,8 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
     const start = Number(args[1])
     if (!Number.isInteger(start) || start < 1) {
       throw argValueError({
-        funcName,
+        ...node,
         message: `start position must be a positive integer, got ${args[1]}`,
-        positionStart,
-        positionEnd,
         hint: 'SQL uses 1-based indexing.',
         rowIndex,
       })
@@ -67,10 +62,9 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
       const len = Number(args[2])
       if (!Number.isInteger(len) || len < 0) {
         throw argValueError({
-          funcName,
+          ...node,
           message: `length must be a non-negative integer, got ${args[2]}`,
-          positionStart,
-          positionEnd,
+          hint: 'SQL uses 1-based indexing.',
           rowIndex,
         })
       }
@@ -97,10 +91,9 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
     const len = Number(n)
     if (!Number.isInteger(len) || len < 0) {
       throw argValueError({
-        funcName,
+        ...node,
         message: `length must be a non-negative integer, got ${n}`,
-        positionStart,
-        positionEnd,
+        hint: 'SQL uses 1-based indexing.',
         rowIndex,
       })
     }
@@ -113,10 +106,9 @@ export function evaluateStringFunc({ funcName, args, positionStart, positionEnd,
     const len = Number(n)
     if (!Number.isInteger(len) || len < 0) {
       throw argValueError({
-        funcName,
+        ...node,
         message: `length must be a non-negative integer, got ${n}`,
-        positionStart,
-        positionEnd,
+        hint: 'SQL uses 1-based indexing.',
         rowIndex,
       })
     }

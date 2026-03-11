@@ -357,7 +357,7 @@ function isAllCountStar(columns) {
   return columns.every(col =>
     col.kind === 'derived' &&
     col.expr.type === 'function' &&
-    col.expr.name.toUpperCase() === 'COUNT' &&
+    col.expr.funcName.toUpperCase() === 'COUNT' &&
     col.expr.args.length === 1 &&
     col.expr.args[0].type === 'star' &&
     !col.expr.distinct &&

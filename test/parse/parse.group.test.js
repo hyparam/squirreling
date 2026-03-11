@@ -25,10 +25,10 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'MAX',
+            funcName: 'MAX',
             args: [{
               type: 'function',
-              name: 'LENGTH',
+              funcName: 'LENGTH',
               args: [{ type: 'identifier', name: 'problem', positionStart: 18, positionEnd: 25 }],
               positionStart: 11,
               positionEnd: 26,
@@ -48,7 +48,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'COUNT',
+            funcName: 'COUNT',
             args: [{ type: 'identifier', name: 'problem_id', positionStart: 22, positionEnd: 32 }],
             distinct: true,
             positionStart: 7,
@@ -66,7 +66,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'COUNT',
+            funcName: 'COUNT',
             args: [{ type: 'identifier', name: 'problem_id', positionStart: 17, positionEnd: 27 }],
             positionStart: 7,
             positionEnd: 28,

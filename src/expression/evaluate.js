@@ -100,7 +100,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // Function calls
   if (node.type === 'function') {
-    const funcName = node.name.toUpperCase()
+    const funcName = node.funcName.toUpperCase()
 
     // Handle aggregate functions
     if (isAggregateFunc(funcName)) {
@@ -111,11 +111,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (row.columns.includes(alias)) {
           return row.cells[alias]()
         } else {
-          throw aggregateError({
-            funcName,
-            positionStart: node.positionStart,
-            positionEnd: node.positionEnd,
-          })
+          throw aggregateError(node)
         }
       }
 
@@ -231,23 +227,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       : await Promise.all(node.args.map(arg => evaluateExpr({ node: arg, row, rowIndex, rows, context })))
 
     if (isStringFunc(funcName)) {
-      return evaluateStringFunc({
-        funcName,
-        args,
-        positionStart: node.positionStart,
-        positionEnd: node.positionEnd,
-        rowIndex,
-      })
+      return evaluateStringFunc({ funcName, node, args, rowIndex })
     }
 
     if (isRegexpFunc(funcName)) {
-      return evaluateRegexpFunc({
-        funcName,
-        args,
-        positionStart: node.positionStart,
-        positionEnd: node.positionEnd,
-        rowIndex,
-      })
+      return evaluateRegexpFunc({ funcName, node, args, rowIndex })
     }
 
     if (isMathFunc(funcName)) {
@@ -297,10 +281,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (funcName === 'JSON_OBJECT') {
       if (args.length % 2 !== 0) {
         throw argValueError({
-          funcName: 'JSON_OBJECT',
+          ...node,
           message: 'requires an even number of arguments (key-value pairs)',
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
           rowIndex,
         })
       }
@@ -311,10 +293,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         const value = args[i + 1]
         if (key == null) {
           throw argValueError({
-            funcName: 'JSON_OBJECT',
+            ...node,
             message: 'key cannot be null',
-            positionStart: node.positionStart,
-            positionEnd: node.positionEnd,
             hint: 'All keys must be non-null values.',
             rowIndex,
           })
@@ -361,10 +341,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           jsonArg = JSON.parse(jsonArg)
         } catch {
           throw argValueError({
-            funcName,
+            ...node,
             message: 'invalid JSON string',
-            positionStart: node.positionStart,
-            positionEnd: node.positionEnd,
             hint: 'First argument must be valid JSON.',
             rowIndex,
           })
@@ -372,10 +350,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
       if (typeof jsonArg !== 'object' || jsonArg instanceof Date) {
         throw argValueError({
-          funcName,
+          ...node,
           message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
-          positionStart: node.positionStart,
-          positionEnd: node.positionEnd,
           rowIndex,
         })
       }
@@ -415,11 +391,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
     }
 
-    throw unknownFunctionError({
-      funcName,
-      positionStart: node.positionStart,
-      positionEnd: node.positionEnd,
-    })
+    throw unknownFunctionError(node)
   }
 
   if (node.type === 'cast') {
@@ -432,13 +404,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
     // Can only cast primitives to other primitive types
     if (typeof val === 'object') {
-      throw castError({
-        toType: node.toType,
-        positionStart: node.positionStart,
-        positionEnd: node.positionEnd,
-        fromType: 'object',
-        rowIndex,
-      })
+      throw castError({ ...node, fromType: 'object', rowIndex })
     }
     if (toType === 'INTEGER' || toType === 'INT') {
       const num = Number(val)
@@ -456,12 +422,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (toType === 'BOOLEAN' || toType === 'BOOL') {
       return Boolean(val)
     }
-    throw castError({
-      toType: node.toType,
-      positionStart: node.positionStart,
-      positionEnd: node.positionEnd,
-      rowIndex,
-    })
+    throw castError({ ...node, rowIndex })
   }
 
   // IN and NOT IN with value lists

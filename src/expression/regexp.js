@@ -1,21 +1,20 @@
 import { argValueError } from '../validation/expressionErrors.js'
 
 /**
- * @import { SqlPrimitive } from '../types.js'
+ * @import { FunctionNode, RegExpFunction, SqlPrimitive } from '../types.js'
  */
 
 /**
  * Evaluate a regexp function
  *
  * @param {Object} options
- * @param {string} options.funcName - Uppercase function name
+ * @param {RegExpFunction} options.funcName
+ * @param {FunctionNode} options.node
  * @param {SqlPrimitive[]} options.args - Function arguments
- * @param {number} options.positionStart - Start position in SQL string for error reporting
- * @param {number} options.positionEnd - End position in SQL string for error reporting
- * @param {number} [options.rowIndex] - Row number for error reporting
+ * @param {number} options.rowIndex - Row index for error reporting
  * @returns {SqlPrimitive}
  */
-export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd, rowIndex }) {
+export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
   if (funcName === 'REGEXP_SUBSTR') {
     const str = args[0]
     const pattern = args[1]
@@ -29,10 +28,8 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
       position = Number(args[2])
       if (!Number.isInteger(position) || position < 1) {
         throw argValueError({
-          funcName,
+          ...node,
           message: `position must be a positive integer, got ${args[2]}`,
-          positionStart,
-          positionEnd,
           hint: 'SQL uses 1-based indexing.',
           rowIndex,
         })
@@ -45,10 +42,9 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
       occurrence = Number(args[3])
       if (!Number.isInteger(occurrence) || occurrence < 1) {
         throw argValueError({
-          funcName,
+          ...node,
           message: `occurrence must be a positive integer, got ${args[3]}`,
-          positionStart,
-          positionEnd,
+          hint: 'SQL uses 1-based indexing.',
           rowIndex,
         })
       }
@@ -60,10 +56,8 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
       regex = new RegExp(patternStr, 'g')
     } catch (/** @type {any} */ error) {
       throw argValueError({
-        funcName,
+        ...node,
         message: `invalid regex pattern: ${error.message}`,
-        positionStart,
-        positionEnd,
         rowIndex,
       })
     }
@@ -99,10 +93,8 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
       position = Number(args[3])
       if (!Number.isInteger(position) || position < 1) {
         throw argValueError({
-          funcName,
+          ...node,
           message: `position must be a positive integer, got ${args[3]}`,
-          positionStart,
-          positionEnd,
           hint: 'SQL uses 1-based indexing.',
           rowIndex,
         })
@@ -115,10 +107,8 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
       occurrence = Number(args[4])
       if (!Number.isInteger(occurrence) || occurrence < 0) {
         throw argValueError({
-          funcName,
+          ...node,
           message: `occurrence must be a non-negative integer, got ${args[4]}`,
-          positionStart,
-          positionEnd,
           hint: 'Use 0 to replace all occurrences.',
           rowIndex,
         })
@@ -131,10 +121,8 @@ export function evaluateRegexpFunc({ funcName, args, positionStart, positionEnd,
       regex = new RegExp(patternStr, 'g')
     } catch (/** @type {any} */ error) {
       throw argValueError({
-        funcName,
+        ...node,
         message: `invalid regex pattern: ${error.message}`,
-        positionStart,
-        positionEnd,
         rowIndex,
       })
     }

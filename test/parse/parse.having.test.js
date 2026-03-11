@@ -9,7 +9,7 @@ describe('parseSql - HAVING clause', () => {
       op: '>',
       left: {
         type: 'function',
-        name: 'COUNT',
+        funcName: 'COUNT',
         args: [
           {
             type: 'star',
@@ -33,7 +33,7 @@ describe('parseSql - HAVING clause', () => {
       op: '>',
       left: {
         type: 'function',
-        name: 'SUM',
+        funcName: 'SUM',
         args: [
           {
             type: 'identifier',
@@ -66,7 +66,7 @@ describe('parseSql - HAVING clause', () => {
         op: '>',
         left: {
           type: 'function',
-          name: 'COUNT',
+          funcName: 'COUNT',
           args: [
             {
               type: 'star',
@@ -86,7 +86,7 @@ describe('parseSql - HAVING clause', () => {
         op: '>',
         left: {
           type: 'function',
-          name: 'AVG',
+          funcName: 'AVG',
           args: [
             {
               type: 'identifier',
@@ -174,7 +174,7 @@ describe('parseSql - HAVING clause', () => {
         op: '>=',
         left: {
           type: 'function',
-          name: 'COUNT',
+          funcName: 'COUNT',
           args: [
             {
               type: 'star',
@@ -199,7 +199,7 @@ describe('parseSql - HAVING clause', () => {
         op: '<',
         left: {
           type: 'function',
-          name: 'AVG',
+          funcName: 'AVG',
           args: [
             {
               type: 'identifier',
@@ -232,7 +232,6 @@ describe('parseSql - HAVING clause', () => {
           positionEnd: 179,
         },
         direction: 'DESC',
-        nulls: undefined,
       },
     ])
     expect(select.limit).toBe(5)

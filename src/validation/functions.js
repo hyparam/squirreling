@@ -1,6 +1,7 @@
 /**
- * @import { AggregateFunc, BinaryOp, FunctionSignature, IntervalUnit, MathFunc, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
+ * @import { AggregateFunc, BinaryOp, FunctionSignature, IntervalUnit, MathFunc, RegExpFunction, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
  */
+import { ParseError } from '../validation/parseErrors.js'
 
 /**
  * @param {string} name
@@ -12,7 +13,19 @@ export function isAggregateFunc(name) {
 
 /**
  * @param {string} name
- * @returns {boolean}
+ * @returns {name is MathFunc}
+ */
+export function isMathFunc(name) {
+  return [
+    'FLOOR', 'CEIL', 'CEILING', 'ROUND', 'ABS', 'SIGN', 'MOD', 'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
+    'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'DEGREES', 'RADIANS', 'PI',
+    'RAND', 'RANDOM',
+  ].includes(name)
+}
+
+/**
+ * @param {string} name
+ * @returns {name is RegExpFunction}
  */
 export function isRegexpFunc(name) {
   return ['REGEXP_SUBSTR', 'REGEXP_REPLACE'].includes(name)
@@ -28,18 +41,6 @@ export function isSpatialFunc(name) {
     'ST_OVERLAPS', 'ST_TOUCHES', 'ST_EQUALS', 'ST_CROSSES',
     'ST_COVERS', 'ST_COVEREDBY', 'ST_DWITHIN',
     'ST_GEOMFROMTEXT', 'ST_MAKEENVELOPE', 'ST_ASTEXT',
-  ].includes(name)
-}
-
-/**
- * @param {string} name
- * @returns {name is MathFunc}
- */
-export function isMathFunc(name) {
-  return [
-    'FLOOR', 'CEIL', 'CEILING', 'ROUND', 'ABS', 'SIGN', 'MOD', 'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
-    'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'DEGREES', 'RADIANS', 'PI',
-    'RAND', 'RANDOM',
   ].includes(name)
 }
 
@@ -188,13 +189,15 @@ function formatExpected(min, max) {
 }
 
 /**
- * Validates function argument count.
+ * Validates function argument count, throwing a ParseError if invalid.
  * @param {string} funcName - The function name (uppercase)
  * @param {number} argCount - Number of arguments provided
+ * @param {number} positionStart - Start position in query
+ * @param {number} positionEnd - End position in query
  * @param {Record<string, UserDefinedFunction>} [functions] - User-defined functions
- * @returns {{ valid: boolean, expected: string | number }}
+ * @throws {ParseError}
  */
-export function validateFunctionArgCount(funcName, argCount, functions) {
+export function validateFunctionArgCount(funcName, argCount, positionStart, positionEnd, functions) {
   // Check built-in functions
   let spec = FUNCTION_SIGNATURES[funcName]
 
@@ -206,18 +209,26 @@ export function validateFunctionArgCount(funcName, argCount, functions) {
     }
   }
 
-  if (!spec) return { valid: true, expected: 0 }
+  if (!spec) return
 
   const { min, max } = spec
 
-  if (argCount < min) {
-    return { valid: false, expected: formatExpected(min, max) }
-  }
-  if (max != null && argCount > max) {
-    return { valid: false, expected: formatExpected(min, max) }
-  }
+  if (argCount < min || max != null && argCount > max) {
+    const expected = formatExpected(min, max)
+    const signature = FUNCTION_SIGNATURES[funcName]?.signature ?? ''
+    let expectedStr = `${expected} arguments`
+    if (expected === 0) expectedStr = 'no arguments'
+    if (expected === 1) expectedStr = '1 argument'
+    if (typeof expected === 'string' && expected.endsWith(' 1')) {
+      expectedStr = `${expected} argument`
+    }
 
-  return { valid: true, expected: formatExpected(min, max) }
+    throw new ParseError({
+      message: `${funcName}(${signature}) function requires ${expectedStr}, got ${argCount}`,
+      positionStart,
+      positionEnd,
+    })
+  }
 }
 
 /**
@@ -228,25 +239,7 @@ export function validateFunctionArgCount(funcName, argCount, functions) {
  */
 export function isKnownFunction(funcName, functions) {
   // Check built-in functions
-  if (
-    isAggregateFunc(funcName) ||
-    isMathFunc(funcName) ||
-    isStringFunc(funcName) ||
-    isRegexpFunc(funcName) ||
-    isSpatialFunc(funcName)
-  ) {
-    return true
-  }
-
-  // Date/time, JSON, conditional, and CAST functions
-  if ([
-    'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'DATE_TRUNC', 'DATE_PART', 'EXTRACT',
-    'JSON_VALUE', 'JSON_QUERY', 'JSON_OBJECT',
-    'ARRAY_LENGTH', 'ARRAY_POSITION', 'ARRAY_SORT', 'CARDINALITY',
-    'COALESCE', 'NULLIF', 'CAST',
-  ].includes(funcName)) {
-    return true
-  }
+  if (FUNCTION_SIGNATURES[funcName]) return true
 
   // Check user-defined functions (case-insensitive)
   if (functions) {

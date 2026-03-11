@@ -7,14 +7,15 @@ import { FUNCTION_SIGNATURES } from './functions.js'
  * @param {Object} options
  * @param {string} options.funcName - The function name
  * @param {string} options.message - Specific error message
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @param {string} [options.hint] - Recovery hint
- * @param {number} [options.rowIndex] - 1-based row number where error occurred
+ * @param {number} options.rowIndex - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
 export function argValueError({ funcName, message, positionStart, positionEnd, hint, rowIndex }) {
-  const signature = FUNCTION_SIGNATURES[funcName]?.signature ?? ''
+  const funcNameUpper = funcName.toUpperCase()
+  const signature = FUNCTION_SIGNATURES[funcNameUpper]?.signature ?? ''
   const suffix = hint ? `. ${hint}` : ''
   return new ExecutionError({ message: `${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd, rowIndex })
 }
@@ -24,8 +25,8 @@ export function argValueError({ funcName, message, positionStart, positionEnd, h
  *
  * @param {Object} options
  * @param {string} options.funcName - The aggregate function
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
  * @returns {ExecutionError}
  */
 export function aggregateError({ funcName, positionStart, positionEnd }) {
@@ -41,10 +42,10 @@ export function aggregateError({ funcName, positionStart, positionEnd }) {
  *
  * @param {Object} options
  * @param {string} options.toType - The unsupported target type
- * @param {number} options.positionStart - Start position in query
- * @param {number} options.positionEnd - End position in query
- * @param {string} [options.fromType] - The source type (optional)
- * @param {number} [options.rowIndex] - 1-based row number where error occurred
+ * @param {number} options.positionStart
+ * @param {number} options.positionEnd
+ * @param {string} [options.fromType] - The source type (undefined means unsupported target type)
+ * @param {number} options.rowIndex - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
 export function castError({ toType, positionStart, positionEnd, fromType, rowIndex }) {

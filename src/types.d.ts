@@ -1,3 +1,6 @@
+import type { ExprNode, SelectStatement, SqlPrimitive } from './ast.js'
+
+export * from './ast.js'
 export { ParserState, Token, TokenType } from './parse/types.js'
 export { QueryPlan } from './plan/types.js'
 
@@ -74,16 +77,6 @@ export interface ScanOptions {
   signal?: AbortSignal
 }
 
-export type SqlPrimitive =
-  | string
-  | number
-  | bigint
-  | boolean
-  | Date
-  | null
-  | SqlPrimitive[]
-  | Record<string, any>
-
 export interface FunctionSignature {
   min: number
   max?: number
@@ -95,153 +88,9 @@ export interface UserDefinedFunction {
   arguments: FunctionSignature
 }
 
-export interface CTEDefinition {
-  name: string
-  query: SelectStatement
-}
-
-export interface WithClause {
-  ctes: CTEDefinition[]
-}
-
-export interface SelectStatement {
-  with?: WithClause
-  distinct: boolean
-  columns: SelectColumn[]
-  from: FromTable | FromSubquery
-  joins: JoinClause[]
-  where?: ExprNode
-  groupBy: ExprNode[]
-  having?: ExprNode
-  orderBy: OrderByItem[]
-  limit?: number
-  offset?: number
-}
-
-export interface FromTable {
-  kind: 'table'
-  table: string
-  alias?: string
-  positionStart: number
-  positionEnd: number
-}
-
-export interface FromSubquery {
-  kind: 'subquery'
-  query: SelectStatement
-  alias: string
-}
-
-export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'
-
-export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp | ArithmeticOp
-
-export type ComparisonOp = '=' | '!=' | '<>' | '<' | '>' | '<=' | '>='
-
-export interface ExprNodeBase {
-  positionStart: number // start position in query (0-based, inclusive)
-  positionEnd: number // end position in query (0-based, exclusive)
-}
-
-export interface LiteralNode extends ExprNodeBase {
-  type: 'literal'
-  value: SqlPrimitive
-}
-
-export interface IdentifierNode extends ExprNodeBase {
-  type: 'identifier'
-  name: string
-}
-
-export interface UnaryNode extends ExprNodeBase {
-  type: 'unary'
-  op: 'NOT' | 'IS NULL' | 'IS NOT NULL' | '-'
-  argument: ExprNode
-}
-
-export interface BinaryNode extends ExprNodeBase {
-  type: 'binary'
-  op: BinaryOp
-  left: ExprNode
-  right: ExprNode
-}
-
-export interface FunctionNode extends ExprNodeBase {
-  type: 'function'
-  name: string
-  args: ExprNode[]
-  distinct?: boolean
-  filter?: ExprNode
-}
-
-export interface CastNode extends ExprNodeBase {
-  type: 'cast'
-  expr: ExprNode
-  toType: string
-}
-
-export interface InSubqueryNode extends ExprNodeBase {
-  type: 'in'
-  expr: ExprNode
-  subquery: SelectStatement
-}
-
-export interface InValuesNode extends ExprNodeBase {
-  type: 'in valuelist'
-  expr: ExprNode
-  values: ExprNode[]
-}
-
-export interface ExistsNode extends ExprNodeBase {
-  type: 'exists' | 'not exists'
-  subquery: SelectStatement
-}
-
-export interface WhenClause {
-  condition: ExprNode
-  result: ExprNode
-}
-
-export interface CaseNode extends ExprNodeBase {
-  type: 'case'
-  caseExpr?: ExprNode
-  whenClauses: WhenClause[]
-  elseResult?: ExprNode
-}
-
-export interface SubqueryNode extends ExprNodeBase {
-  type: 'subquery'
-  subquery: SelectStatement
-}
-
-export type IntervalUnit = 'DAY' | 'MONTH' | 'YEAR' | 'HOUR' | 'MINUTE' | 'SECOND'
-
-export interface IntervalNode extends ExprNodeBase {
-  type: 'interval'
-  value: number
-  unit: IntervalUnit
-}
-
-export interface StarNode extends ExprNodeBase {
-  type: 'star'
-}
-
-export type ExprNode =
-  | LiteralNode
-  | IdentifierNode
-  | UnaryNode
-  | BinaryNode
-  | FunctionNode
-  | CastNode
-  | InSubqueryNode
-  | InValuesNode
-  | ExistsNode
-  | CaseNode
-  | SubqueryNode
-  | IntervalNode
-  | StarNode
-
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP'
+
+export type RegExpFunction = 'REGEXP_SUBSTR' | 'REGEXP_REPLACE'
 
 export type MathFunc =
   | 'FLOOR'
@@ -298,33 +147,3 @@ export type SpatialFunc =
   | 'ST_GEOMFROMTEXT'
   | 'ST_MAKEENVELOPE'
   | 'ST_ASTEXT'
-
-export interface StarColumn {
-  kind: 'star'
-  table?: string
-}
-
-export interface DerivedColumn {
-  kind: 'derived'
-  expr: ExprNode
-  alias?: string
-}
-
-export type SelectColumn = StarColumn | DerivedColumn
-
-export interface OrderByItem {
-  expr: ExprNode
-  direction: 'ASC' | 'DESC'
-  nulls?: 'FIRST' | 'LAST'
-}
-
-export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS' | 'POSITIONAL'
-
-export interface JoinClause {
-  joinType: JoinType
-  table: string
-  alias?: string
-  on?: ExprNode
-  positionStart: number
-  positionEnd: number
-}

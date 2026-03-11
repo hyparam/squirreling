@@ -6,7 +6,7 @@ describe('parseSql', () => {
     it('should parse literal SELECT', () => {
       const select = parseSql({ query: 'SELECT 1 from users' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'literal', value: 1, positionStart: 7, positionEnd: 8 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'literal', value: 1, positionStart: 7, positionEnd: 8 } },
       ])
     })
 
@@ -48,7 +48,6 @@ describe('parseSql', () => {
             positionStart: 10,
             positionEnd: 15,
           },
-          alias: undefined,
         },
       ])
     })
@@ -56,9 +55,9 @@ describe('parseSql', () => {
     it('should parse SELECT with columns before and after asterisk', () => {
       const select = parseSql({ query: 'SELECT id, *, name FROM data' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 } },
         { kind: 'star' },
-        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 14, positionEnd: 18 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 14, positionEnd: 18 } },
       ])
     })
 
@@ -74,7 +73,6 @@ describe('parseSql', () => {
             positionStart: 16,
             positionEnd: 21,
           },
-          alias: undefined,
         },
       ])
     })
@@ -82,16 +80,16 @@ describe('parseSql', () => {
     it('should parse SELECT with single column', () => {
       const select = parseSql({ query: 'SELECT name FROM users' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 } },
       ])
     })
 
     it('should parse SELECT with multiple columns', () => {
       const select = parseSql({ query: 'SELECT name, age, email FROM users' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'age', positionStart: 13, positionEnd: 16 }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'email', positionStart: 18, positionEnd: 23 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'age', positionStart: 13, positionEnd: 16 } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email', positionStart: 18, positionEnd: 23 } },
       ])
     })
 
@@ -134,7 +132,7 @@ describe('parseSql', () => {
     it('should parse column alias without AS', () => {
       const select = parseSql({ query: 'SELECT name FROM users' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 7, positionEnd: 11 } },
       ])
       expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 17, positionEnd: 22 })
     })
@@ -144,8 +142,8 @@ describe('parseSql', () => {
     it('should parse column names with spaces using double quotes', () => {
       const select = parseSql({ query: 'SELECT "first name", "last name" FROM users' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'first name', positionStart: 7, positionEnd: 19 }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'last name', positionStart: 21, positionEnd: 32 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'first name', positionStart: 7, positionEnd: 19 } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'last name', positionStart: 21, positionEnd: 32 } },
       ])
     })
 
@@ -174,9 +172,9 @@ describe('parseSql', () => {
     it('should parse mixed quoted and unquoted identifiers', () => {
       const select = parseSql({ query: 'SELECT id, "full name", email FROM users' })
       expect(select.columns).toEqual([
-        { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'full name', positionStart: 11, positionEnd: 22 }, alias: undefined },
-        { kind: 'derived', expr: { type: 'identifier', name: 'email', positionStart: 24, positionEnd: 29 }, alias: undefined },
+        { kind: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'full name', positionStart: 11, positionEnd: 22 } },
+        { kind: 'derived', expr: { type: 'identifier', name: 'email', positionStart: 24, positionEnd: 29 } },
       ])
     })
   })
@@ -223,13 +221,12 @@ describe('parseSql', () => {
               positionStart: 25,
               positionEnd: 29,
             },
-            alias: undefined,
           },
           {
             kind: 'derived',
             expr: {
               type: 'function',
-              name: 'COUNT',
+              funcName: 'COUNT',
               args: [{ type: 'star', positionStart: 37, positionEnd: 38 }],
               positionStart: 31,
               positionEnd: 39,
@@ -237,7 +234,7 @@ describe('parseSql', () => {
             alias: 'total',
           },
         ],
-        from: { kind: 'table', table: 'users', alias: undefined, positionStart: 62, positionEnd: 67 },
+        from: { kind: 'table', table: 'users', positionStart: 62, positionEnd: 67 },
         joins: [],
         where: {
           type: 'binary',
@@ -260,7 +257,6 @@ describe('parseSql', () => {
             positionEnd: 112,
           },
         ],
-        having: undefined,
         orderBy: [
           {
             expr: {
@@ -270,7 +266,6 @@ describe('parseSql', () => {
               positionEnd: 135,
             },
             direction: 'DESC',
-            nulls: undefined,
           },
         ],
         limit: 5,
@@ -313,7 +308,7 @@ describe('parseSql', () => {
           kind: 'derived',
           expr: {
             type: 'function',
-            name: 'SUM',
+            funcName: 'SUM',
             args: [{
               type: 'cast',
               expr: { type: 'identifier', name: 'size', positionStart: 16, positionEnd: 20 },
@@ -340,7 +335,6 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 11,
           },
-          alias: undefined,
         },
       ])
       expect(select.from).toMatchObject({
@@ -400,6 +394,8 @@ describe('parseSql', () => {
                   positionStart: 17,
                   positionEnd: 25,
                 },
+                positionStart: 17,
+                positionEnd: 38,
                 result: {
                   type: 'literal',
                   value: 'adult',
@@ -417,7 +413,6 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 55,
           },
-          alias: undefined,
         },
       ])
     })
@@ -443,6 +438,8 @@ describe('parseSql', () => {
                   positionStart: 24,
                   positionEnd: 25,
                 },
+                positionStart: 24,
+                positionEnd: 39,
                 result: {
                   type: 'literal',
                   value: 'active',
@@ -457,6 +454,8 @@ describe('parseSql', () => {
                   positionStart: 45,
                   positionEnd: 46,
                 },
+                positionStart: 45,
+                positionEnd: 62,
                 result: {
                   type: 'literal',
                   value: 'inactive',
@@ -468,7 +467,6 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 66,
           },
-          alias: undefined,
         },
       ])
     })
@@ -499,6 +497,8 @@ describe('parseSql', () => {
                 positionStart: 17,
                 positionEnd: 26,
               },
+              positionStart: 17,
+              positionEnd: 39,
               result: {
                 type: 'literal',
                 value: 'adult',

@@ -14,7 +14,7 @@ import { ParseError } from './parseErrors.js'
  */
 export function findAggregate(expr) {
   if (!expr) return undefined
-  if (expr.type === 'function' && isAggregateFunc(expr.name.toUpperCase())) {
+  if (expr.type === 'function' && isAggregateFunc(expr.funcName.toUpperCase())) {
     return expr
   }
   if (expr.type === 'binary') {
@@ -61,7 +61,7 @@ export function expectNoAggregate(expr, clause) {
     const hint = clause === 'WHERE' ? '. Use HAVING instead.' : ''
     throw new ParseError({
       ...agg,
-      message: `Aggregate function ${agg.name.toUpperCase()} is not allowed in ${clause} clause${hint}`,
+      message: `Aggregate function ${agg.funcName} is not allowed in ${clause} clause${hint}`,
     })
   }
 }
