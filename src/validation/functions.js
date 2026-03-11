@@ -1,73 +1,13 @@
-import { ParseError } from './parseErrors.js'
+/**
+ * @import { AggregateFunc, BinaryOp, FunctionSignature, IntervalUnit, MathFunc, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
+ */
 
 /**
- * @import { AggregateFunc, BinaryOp, ExprNode, FunctionNode, IntervalUnit, MathFunc, SpatialFunc, StringFunc, UserDefinedFunction } from './types.js'
  * @param {string} name
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
   return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP'].includes(name)
-}
-
-/**
- * Finds the first aggregate function call in an expression tree.
- * Does not recurse into subqueries (they have their own aggregate scope).
- *
- * @param {ExprNode | undefined} expr
- * @returns {FunctionNode | undefined}
- */
-export function findAggregate(expr) {
-  if (!expr) return undefined
-  if (expr.type === 'function' && isAggregateFunc(expr.name.toUpperCase())) {
-    return expr
-  }
-  if (expr.type === 'binary') {
-    return findAggregate(expr.left) || findAggregate(expr.right)
-  }
-  if (expr.type === 'unary') {
-    return findAggregate(expr.argument)
-  }
-  if (expr.type === 'cast') {
-    return findAggregate(expr.expr)
-  }
-  if (expr.type === 'case') {
-    if (expr.caseExpr) {
-      const found = findAggregate(expr.caseExpr)
-      if (found) return found
-    }
-    for (const when of expr.whenClauses) {
-      const found = findAggregate(when.condition) || findAggregate(when.result)
-      if (found) return found
-    }
-    return findAggregate(expr.elseResult)
-  }
-  if (expr.type === 'in valuelist') {
-    const found = findAggregate(expr.expr)
-    if (found) return found
-    for (const val of expr.values) {
-      const found = findAggregate(val)
-      if (found) return found
-    }
-  }
-  // Subqueries have their own aggregate scope
-  return undefined
-}
-
-/**
- * Throws a ParseError if the expression contains an aggregate function.
- *
- * @param {ExprNode | undefined} expr - The expression to check
- * @param {string} clause - The clause name (e.g., 'WHERE', 'JOIN ON', 'GROUP BY')
- */
-export function expectNoAggregate(expr, clause) {
-  const agg = findAggregate(expr)
-  if (agg) {
-    const hint = clause === 'WHERE' ? '. Use HAVING instead.' : ''
-    throw new ParseError({
-      ...agg,
-      message: `Aggregate function ${agg.name.toUpperCase()} is not allowed in ${clause} clause${hint}`,
-    })
-  }
 }
 
 /**
@@ -139,102 +79,100 @@ export function isBinaryOp(op) {
 }
 
 /**
- * Function argument count specifications.
- * min: minimum number of arguments
- * max: maximum number of arguments
- * @type {Record<string, {min: number, max?: number}>}
+ * Function signatures: argument counts and human-readable parameter signatures.
+ * @type {Record<string, FunctionSignature>}
  */
-export const FUNCTION_ARG_COUNTS = {
+export const FUNCTION_SIGNATURES = {
   // String functions
-  UPPER: { min: 1, max: 1 },
-  LOWER: { min: 1, max: 1 },
-  LENGTH: { min: 1, max: 1 },
-  TRIM: { min: 1, max: 1 },
-  REPLACE: { min: 3, max: 3 },
-  SUBSTRING: { min: 2, max: 3 },
-  SUBSTR: { min: 2, max: 3 },
-  CONCAT: { min: 1 },
-  LEFT: { min: 2, max: 2 },
-  RIGHT: { min: 2, max: 2 },
-  INSTR: { min: 2, max: 2 },
-  REGEXP_SUBSTR: { min: 2, max: 4 },
-  REGEXP_REPLACE: { min: 3, max: 5 },
+  UPPER: { min: 1, max: 1, signature: 'string' },
+  LOWER: { min: 1, max: 1, signature: 'string' },
+  LENGTH: { min: 1, max: 1, signature: 'string' },
+  TRIM: { min: 1, max: 1, signature: 'string' },
+  REPLACE: { min: 3, max: 3, signature: 'string, search, replacement' },
+  SUBSTRING: { min: 2, max: 3, signature: 'string, start[, length]' },
+  SUBSTR: { min: 2, max: 3, signature: 'string, start[, length]' },
+  CONCAT: { min: 1, signature: 'value1, value2[, ...]' },
+  LEFT: { min: 2, max: 2, signature: 'string, length' },
+  RIGHT: { min: 2, max: 2, signature: 'string, length' },
+  INSTR: { min: 2, max: 2, signature: 'string, substring' },
+  REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, flags]]' },
+  REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, flags]]' },
 
   // Date/time functions
-  RANDOM: { min: 0, max: 0 },
-  RAND: { min: 0, max: 0 },
-  CURRENT_DATE: { min: 0, max: 0 },
-  CURRENT_TIME: { min: 0, max: 0 },
-  CURRENT_TIMESTAMP: { min: 0, max: 0 },
-  DATE_TRUNC: { min: 2, max: 2 },
-  DATE_PART: { min: 2, max: 2 },
-  EXTRACT: { min: 2, max: 2 },
+  RANDOM: { min: 0, max: 0, signature: '' },
+  RAND: { min: 0, max: 0, signature: '' },
+  CURRENT_DATE: { min: 0, max: 0, signature: '' },
+  CURRENT_TIME: { min: 0, max: 0, signature: '' },
+  CURRENT_TIMESTAMP: { min: 0, max: 0, signature: '' },
+  DATE_TRUNC: { min: 2, max: 2, signature: 'unit, date' },
+  DATE_PART: { min: 2, max: 2, signature: 'field, date' },
+  EXTRACT: { min: 2, max: 2, signature: 'field FROM date' },
 
   // Math functions
-  FLOOR: { min: 1, max: 1 },
-  CEIL: { min: 1, max: 1 },
-  CEILING: { min: 1, max: 1 },
-  ROUND: { min: 1, max: 2 },
-  ABS: { min: 1, max: 1 },
-  SIGN: { min: 1, max: 1 },
-  MOD: { min: 2, max: 2 },
-  EXP: { min: 1, max: 1 },
-  LN: { min: 1, max: 1 },
-  LOG10: { min: 1, max: 1 },
-  POWER: { min: 2, max: 2 },
-  SQRT: { min: 1, max: 1 },
-  SIN: { min: 1, max: 1 },
-  COS: { min: 1, max: 1 },
-  TAN: { min: 1, max: 1 },
-  COT: { min: 1, max: 1 },
-  ASIN: { min: 1, max: 1 },
-  ACOS: { min: 1, max: 1 },
-  ATAN: { min: 1, max: 2 },
-  ATAN2: { min: 2, max: 2 },
-  DEGREES: { min: 1, max: 1 },
-  RADIANS: { min: 1, max: 1 },
-  PI: { min: 0, max: 0 },
+  FLOOR: { min: 1, max: 1, signature: 'number' },
+  CEIL: { min: 1, max: 1, signature: 'number' },
+  CEILING: { min: 1, max: 1, signature: 'number' },
+  ROUND: { min: 1, max: 2, signature: 'number[, decimals]' },
+  ABS: { min: 1, max: 1, signature: 'number' },
+  SIGN: { min: 1, max: 1, signature: 'number' },
+  MOD: { min: 2, max: 2, signature: 'dividend, divisor' },
+  EXP: { min: 1, max: 1, signature: 'number' },
+  LN: { min: 1, max: 1, signature: 'number' },
+  LOG10: { min: 1, max: 1, signature: 'number' },
+  POWER: { min: 2, max: 2, signature: 'base, exponent' },
+  SQRT: { min: 1, max: 1, signature: 'number' },
+  SIN: { min: 1, max: 1, signature: 'radians' },
+  COS: { min: 1, max: 1, signature: 'radians' },
+  TAN: { min: 1, max: 1, signature: 'radians' },
+  COT: { min: 1, max: 1, signature: 'radians' },
+  ASIN: { min: 1, max: 1, signature: 'number' },
+  ACOS: { min: 1, max: 1, signature: 'number' },
+  ATAN: { min: 1, max: 2, signature: 'number' },
+  ATAN2: { min: 2, max: 2, signature: 'y, x' },
+  DEGREES: { min: 1, max: 1, signature: 'radians' },
+  RADIANS: { min: 1, max: 1, signature: 'degrees' },
+  PI: { min: 0, max: 0, signature: '' },
 
   // JSON functions
-  JSON_VALUE: { min: 2, max: 2 },
-  JSON_QUERY: { min: 2, max: 2 },
-  JSON_OBJECT: { min: 0 },
-  JSON_ARRAYAGG: { min: 1, max: 1 },
+  JSON_VALUE: { min: 2, max: 2, signature: 'expression, path' },
+  JSON_QUERY: { min: 2, max: 2, signature: 'expression, path' },
+  JSON_OBJECT: { min: 0, signature: 'key1, value1[, ...]' },
+  JSON_ARRAYAGG: { min: 1, max: 1, signature: 'expression' },
 
   // Array functions
-  ARRAY_LENGTH: { min: 1, max: 1 },
-  ARRAY_POSITION: { min: 2, max: 2 },
-  ARRAY_SORT: { min: 1, max: 1 },
-  CARDINALITY: { min: 1, max: 1 },
+  ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
+  ARRAY_POSITION: { min: 2, max: 2, signature: 'array, element' },
+  ARRAY_SORT: { min: 1, max: 1, signature: 'array' },
+  CARDINALITY: { min: 1, max: 1, signature: 'array' },
 
   // Conditional functions
-  COALESCE: { min: 1 },
-  NULLIF: { min: 2, max: 2 },
+  COALESCE: { min: 1, signature: 'value1, value2[, ...]' },
+  NULLIF: { min: 2, max: 2, signature: 'value1, value2' },
 
   // Aggregate functions
-  COUNT: { min: 1, max: 1 },
-  SUM: { min: 1, max: 1 },
-  AVG: { min: 1, max: 1 },
-  MIN: { min: 1, max: 1 },
-  MAX: { min: 1, max: 1 },
-  STDDEV_SAMP: { min: 1, max: 1 },
-  STDDEV_POP: { min: 1, max: 1 },
+  COUNT: { min: 1, max: 1, signature: 'expression' },
+  SUM: { min: 1, max: 1, signature: 'expression' },
+  AVG: { min: 1, max: 1, signature: 'expression' },
+  MIN: { min: 1, max: 1, signature: 'expression' },
+  MAX: { min: 1, max: 1, signature: 'expression' },
+  STDDEV_SAMP: { min: 1, max: 1, signature: 'expression' },
+  STDDEV_POP: { min: 1, max: 1, signature: 'expression' },
 
-  // Spatial predicate functions
-  ST_INTERSECTS: { min: 2, max: 2 },
-  ST_CONTAINS: { min: 2, max: 2 },
-  ST_CONTAINSPROPERLY: { min: 2, max: 2 },
-  ST_WITHIN: { min: 2, max: 2 },
-  ST_OVERLAPS: { min: 2, max: 2 },
-  ST_TOUCHES: { min: 2, max: 2 },
-  ST_EQUALS: { min: 2, max: 2 },
-  ST_CROSSES: { min: 2, max: 2 },
-  ST_COVERS: { min: 2, max: 2 },
-  ST_COVEREDBY: { min: 2, max: 2 },
-  ST_DWITHIN: { min: 3, max: 3 },
-  ST_GEOMFROMTEXT: { min: 1, max: 1 },
-  ST_MAKEENVELOPE: { min: 4, max: 4 },
-  ST_ASTEXT: { min: 1, max: 1 },
+  // Spatial functions
+  ST_INTERSECTS: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_CONTAINS: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_CONTAINSPROPERLY: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_WITHIN: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_OVERLAPS: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_TOUCHES: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_EQUALS: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_CROSSES: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_COVERS: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_COVEREDBY: { min: 2, max: 2, signature: 'geometry, geometry' },
+  ST_DWITHIN: { min: 3, max: 3, signature: 'geometry, geometry, distance' },
+  ST_GEOMFROMTEXT: { min: 1, max: 1, signature: 'wkt' },
+  ST_MAKEENVELOPE: { min: 4, max: 4, signature: 'xmin, ymin, xmax, ymax' },
+  ST_ASTEXT: { min: 1, max: 1, signature: 'geometry' },
 }
 
 /**
@@ -258,7 +196,7 @@ function formatExpected(min, max) {
  */
 export function validateFunctionArgCount(funcName, argCount, functions) {
   // Check built-in functions
-  let spec = FUNCTION_ARG_COUNTS[funcName]
+  let spec = FUNCTION_SIGNATURES[funcName]
 
   // Check user-defined functions (case-insensitive)
   if (!spec && functions) {

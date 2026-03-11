@@ -2,7 +2,7 @@
  * @import { SqlPrimitive, StringFunc } from '../types.js'
  */
 
-import { argValueError } from '../validationErrors.js'
+import { argValueError } from '../validation/expressionErrors.js'
 
 /**
  * Evaluate a string function

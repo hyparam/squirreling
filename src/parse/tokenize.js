@@ -1,8 +1,4 @@
-import {
-  invalidLiteralError,
-  unexpectedCharError,
-  unterminatedError,
-} from '../parseErrors.js'
+import { invalidLiteralError, unexpectedCharError, unterminatedError } from '../validation/parseErrors.js'
 
 /**
  * @import { Token } from '../types.d.ts'

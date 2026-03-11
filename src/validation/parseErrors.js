@@ -1,8 +1,4 @@
-// ============================================================================
-// PARSE ERRORS - Issues during SQL tokenization and parsing
-// ============================================================================
-
-import { FUNCTION_SIGNATURES } from './validationErrors.js'
+import { FUNCTION_SIGNATURES } from './functions.js'
 
 /**
  * Structured parse error with position range.
@@ -11,8 +7,8 @@ export class ParseError extends Error {
   /**
    * @param {Object} options
    * @param {string} options.message - Human-readable error message
-   * @param {number} options.positionStart - Start position (0-based character offset)
-   * @param {number} options.positionEnd - End position (exclusive, 0-based character offset)
+   * @param {number} options.positionStart
+   * @param {number} options.positionEnd
    */
   constructor({ message, positionStart, positionEnd }) {
     super(message)
@@ -118,7 +114,7 @@ export function unknownFunctionError({ funcName, positionStart, positionEnd, val
  * @returns {ParseError}
  */
 export function argCountParseError({ funcName, expected, received, positionStart, positionEnd }) {
-  const signature = FUNCTION_SIGNATURES[funcName] ?? ''
+  const signature = FUNCTION_SIGNATURES[funcName]?.signature ?? ''
   let expectedStr = `${expected} arguments`
   if (expected === 0) expectedStr = 'no arguments'
   if (expected === 1) expectedStr = '1 argument'

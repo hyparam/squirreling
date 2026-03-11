@@ -1,5 +1,5 @@
-import { syntaxError } from '../parseErrors.js'
-import { isBinaryOp } from '../validation.js'
+import { isBinaryOp } from '../validation/functions.js'
+import { syntaxError } from '../validation/parseErrors.js'
 import { parseAdditive, parseExpression, parseSubquery } from './expression.js'
 import { consume, current, expect, match, peekToken } from './state.js'
 

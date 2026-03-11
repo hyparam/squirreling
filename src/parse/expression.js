@@ -3,8 +3,8 @@ import {
   missingClauseError,
   syntaxError,
   unknownFunctionError,
-} from '../parseErrors.js'
-import { RESERVED_KEYWORDS, isExtractField, isIntervalUnit, isKnownFunction } from '../validation.js'
+} from '../validation/parseErrors.js'
+import { RESERVED_KEYWORDS, isExtractField, isIntervalUnit, isKnownFunction } from '../validation/functions.js'
 import { parseComparison } from './comparison.js'
 import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'

@@ -1,5 +1,5 @@
-import { ParseError, argCountParseError, syntaxError } from '../parseErrors.js'
-import { isAggregateFunc, validateFunctionArgCount } from '../validation.js'
+import { isAggregateFunc, validateFunctionArgCount } from '../validation/functions.js'
+import { ParseError, argCountParseError, syntaxError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 

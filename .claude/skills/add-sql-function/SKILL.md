@@ -10,8 +10,7 @@ description: |
 
 1. **Identify function category** - Determine which category the function belongs to
 2. **Write a failing test** - Always start with a test that demonstrates the function is not yet implemented
-3. **Add to type guard** - Register the function in the appropriate type guard in `src/validation.js`
-4. **Add argument count** - Specify min/max args in `FUNCTION_ARG_COUNTS` in `src/validation.js`
+3. **Register the function** - Add to type guard and `FUNCTION_SIGNATURES` in `src/validation/functions.js`
 5. **Implement the function** - Add the execution logic in the appropriate file
 6. **Run all checks** - Ensure lint, tests, and TypeScript all pass
 7. **Update README** - Add the function to the appropriate list (if it's a new built-in)
@@ -37,18 +36,15 @@ npx vitest test/execute/execute.math.test.js --run
 
 ## Step 2: Update Validation
 
-**REQUIRED for:** Math, String, Aggregate, Regex functions.
-**SKIP for:** Date/Time, JSON, Conditional functions (these use inline checks).
+In `src/validation/functions.js`, add the function name to the appropriate type guard array (`isMathFunc`, `isStringFunc`, `isAggregateFunc`, or `isRegexpFunc`).
 
-In `src/validation.js`, add the function name to the appropriate type guard array (`isMathFunc`, `isStringFunc`, `isAggregateFunc`, or `isRegexpFunc`).
-
-In `src/validation.js`, add to `FUNCTION_ARG_COUNTS`:
+In `src/validation/functions.js`, add to `FUNCTION_SIGNATURES`:
 
 ```javascript
-NEW_FUNCTION: { min: 1, max: 1 },  // exactly 1 arg
-// or: { min: 2, max: 2 },         // exactly 2 args
-// or: { min: 1, max: 3 },         // 1 to 3 args
-// or: { min: 1 },                 // at least 1 arg (no max)
+NEW_FUNCTION: { min: 1, max: 1, signature: 'value' },
+// or: { min: 2, max: 2, signature: 'a, b' },
+// or: { min: 1, max: 3, signature: 'required[, opt1[, opt2]]' },
+// or: { min: 1, signature: 'value1[, ...]' },
 ```
 
 ---

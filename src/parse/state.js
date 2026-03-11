@@ -1,8 +1,8 @@
-import { syntaxError } from '../parseErrors.js'
+import { syntaxError } from '../validation/parseErrors.js'
 
 /**
  * @import { ParserState, Token, TokenType } from '../types.js'
- * @import { ParseError } from '../parseErrors.js'
+ * @import { ParseError } from '../validation/parseErrors.js'
  */
 
 /**

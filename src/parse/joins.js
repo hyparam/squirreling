@@ -1,7 +1,7 @@
+import { expectNoAggregate } from '../validation/aggregates.js'
 import { parseExpression } from './expression.js'
 import { parseTableAlias } from './parse.js'
 import { consume, current, expect, expectIdentifier, match } from './state.js'
-import { expectNoAggregate } from '../validation.js'
 
 /**
  * @import { ExprNode, JoinClause, JoinType, ParserState } from '../types.js'

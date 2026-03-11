@@ -1,6 +1,6 @@
-import { columnNotFoundError, tableNotFoundError } from '../planErrors.js'
 import { parseSql } from '../parse/parse.js'
-import { findAggregate } from '../validation.js'
+import { findAggregate } from '../validation/aggregates.js'
+import { columnNotFoundError, tableNotFoundError } from '../validation/planErrors.js'
 import { extractColumns } from './columns.js'
 
 /**

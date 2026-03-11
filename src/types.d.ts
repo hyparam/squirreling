@@ -84,12 +84,15 @@ export type SqlPrimitive =
   | SqlPrimitive[]
   | Record<string, any>
 
+export interface FunctionSignature {
+  min: number
+  max?: number
+  signature?: string
+}
+
 export interface UserDefinedFunction {
   apply: (...args: SqlPrimitive[]) => SqlPrimitive | Promise<SqlPrimitive>
-  arguments: {
-    min: number
-    max?: number
-  }
+  arguments: FunctionSignature
 }
 
 export interface CTEDefinition {
@@ -136,8 +139,8 @@ export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp | ArithmeticOp
 export type ComparisonOp = '=' | '!=' | '<>' | '<' | '>' | '<=' | '>='
 
 export interface ExprNodeBase {
-  positionStart: number
-  positionEnd: number
+  positionStart: number // start position in query (0-based, inclusive)
+  positionEnd: number // end position in query (0-based, exclusive)
 }
 
 export interface LiteralNode extends ExprNodeBase {
