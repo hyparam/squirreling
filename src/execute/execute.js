@@ -119,7 +119,7 @@ async function* executeScan(plan, context) {
 
   // Apply WHERE if data source did not
   if (!appliedWhere && plan.hints.where) {
-    result = filterRows(result, plan.hints.where, context)
+    result = filterRows(result, plan.hints.where, context, plan.hints.limit)
   }
 
   // Apply LIMIT/OFFSET if data source did not
@@ -174,11 +174,12 @@ async function* executeCount(plan, { tables, signal }) {
  * @param {AsyncIterable<AsyncRow>} rows
  * @param {ExprNode} condition
  * @param {ExecuteContext} context
+ * @param {number} [limit] - downstream LIMIT hint for chunk sizing
  * @yields {AsyncRow}
  */
-async function* filterRows(rows, condition, context) {
+async function* filterRows(rows, condition, context, limit) {
   const MAX_CHUNK = 256
-  let chunkSize = 1
+  let chunkSize = limit ?? Infinity
   let rowIndex = 0
 
   /** @type {{ row: AsyncRow, rowIndex: number }[]} */
