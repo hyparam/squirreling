@@ -177,12 +177,38 @@ async function* executeCount(plan, { tables, signal }) {
  * @yields {AsyncRow}
  */
 async function* filterRows(rows, condition, context) {
+  const MAX_CHUNK = 256
+  let chunkSize = 1
   let rowIndex = 0
+
+  /** @type {{ row: AsyncRow, rowIndex: number }[]} */
+  let buffer = []
+
   for await (const row of rows) {
     if (context.signal?.aborted) return
     rowIndex++
-    const pass = await evaluateExpr({ node: condition, row, rowIndex, context })
-    if (pass) yield row
+    buffer.push({ row, rowIndex })
+
+    if (buffer.length >= chunkSize) {
+      const results = await Promise.all(buffer.map(b =>
+        evaluateExpr({ node: condition, row: b.row, rowIndex: b.rowIndex, context })
+      ))
+      for (let i = 0; i < buffer.length; i++) {
+        if (results[i]) yield buffer[i].row
+      }
+      buffer = []
+      chunkSize = Math.min(chunkSize * 2, MAX_CHUNK)
+    }
+  }
+
+  // Flush remaining rows
+  if (buffer.length > 0) {
+    const results = await Promise.all(buffer.map(b =>
+      evaluateExpr({ node: condition, row: b.row, rowIndex: b.rowIndex, context })
+    ))
+    for (let i = 0; i < buffer.length; i++) {
+      if (results[i]) yield buffer[i].row
+    }
   }
 }
 
