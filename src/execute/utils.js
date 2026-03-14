@@ -44,17 +44,22 @@ export function compareForTerm(a, b, term) {
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
 export async function collect(asyncRows) {
-  /** @type {Record<string, SqlPrimitive>[]} */
-  const results = []
+  // Collect all rows first, then materialize cells concurrently
+  // This enables dataloader-style batching of cell accessors
+  /** @type {AsyncRow[]} */
+  const rows = []
   for await (const asyncRow of asyncRows) {
+    rows.push(asyncRow)
+  }
+  return Promise.all(rows.map(async asyncRow => {
+    const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
     /** @type {Record<string, SqlPrimitive>} */
     const item = {}
-    for (const key of asyncRow.columns) {
-      item[key] = await asyncRow.cells[key]()
+    for (let i = 0; i < asyncRow.columns.length; i++) {
+      item[asyncRow.columns[i]] = values[i]
     }
-    results.push(item)
-  }
-  return results
+    return item
+  }))
 }
 
 /**
@@ -79,11 +84,6 @@ export function stringify(value) {
  */
 export async function stableRowKey(cells) {
   const keys = Object.keys(cells).sort()
-  /** @type {string[]} */
-  const parts = []
-  for (const k of keys) {
-    const v = await cells[k]()
-    parts.push(k + ':' + stringify(v))
-  }
-  return parts.join('|')
+  const values = await Promise.all(keys.map(k => cells[k]()))
+  return keys.map((k, i) => k + ':' + stringify(values[i])).join('|')
 }

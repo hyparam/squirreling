@@ -119,7 +119,7 @@ async function* executeScan(plan, context) {
 
   // Apply WHERE if data source did not
   if (!appliedWhere && plan.hints.where) {
-    result = filterRows(result, plan.hints.where, context)
+    result = filterRows(result, plan.hints.where, context, plan.hints.limit)
   }
 
   // Apply LIMIT/OFFSET if data source did not
@@ -174,15 +174,42 @@ async function* executeCount(plan, { tables, signal }) {
  * @param {AsyncIterable<AsyncRow>} rows
  * @param {ExprNode} condition
  * @param {ExecuteContext} context
+ * @param {number} [limit] - downstream LIMIT hint for chunk sizing
  * @yields {AsyncRow}
  */
-async function* filterRows(rows, condition, context) {
+async function* filterRows(rows, condition, context, limit) {
+  const MAX_CHUNK = 256
+  let chunkSize = limit ?? Infinity
   let rowIndex = 0
+
+  /** @type {{ row: AsyncRow, rowIndex: number }[]} */
+  let buffer = []
+
   for await (const row of rows) {
     if (context.signal?.aborted) return
     rowIndex++
-    const pass = await evaluateExpr({ node: condition, row, rowIndex, context })
-    if (pass) yield row
+    buffer.push({ row, rowIndex })
+
+    if (buffer.length >= chunkSize) {
+      const results = await Promise.all(buffer.map(b =>
+        evaluateExpr({ node: condition, row: b.row, rowIndex: b.rowIndex, context })
+      ))
+      for (let i = 0; i < buffer.length; i++) {
+        if (results[i]) yield buffer[i].row
+      }
+      buffer = []
+      chunkSize = Math.min(chunkSize * 2, MAX_CHUNK)
+    }
+  }
+
+  // Flush remaining rows
+  if (buffer.length > 0) {
+    const results = await Promise.all(buffer.map(b =>
+      evaluateExpr({ node: condition, row: b.row, rowIndex: b.rowIndex, context })
+    ))
+    for (let i = 0; i < buffer.length; i++) {
+      if (results[i]) yield buffer[i].row
+    }
   }
 }
 
