@@ -302,17 +302,38 @@ async function* executeProject(plan, context) {
  */
 async function* executeDistinct(plan, context) {
   const { signal } = context
+  const MAX_CHUNK = 256
 
   /** @type {Set<string>} */
   const seen = new Set()
 
+  /** @type {AsyncRow[]} */
+  let buffer = []
+
   for await (const row of executePlan({ plan: plan.child, context })) {
     if (signal?.aborted) return
+    buffer.push(row)
 
-    const key = await stableRowKey(row.cells)
-    if (!seen.has(key)) {
-      seen.add(key)
-      yield row
+    if (buffer.length >= MAX_CHUNK) {
+      const keys = await Promise.all(buffer.map(r => stableRowKey(r.cells)))
+      for (let i = 0; i < buffer.length; i++) {
+        if (!seen.has(keys[i])) {
+          seen.add(keys[i])
+          yield buffer[i]
+        }
+      }
+      buffer = []
+    }
+  }
+
+  // Flush remaining
+  if (buffer.length > 0) {
+    const keys = await Promise.all(buffer.map(r => stableRowKey(r.cells)))
+    for (let i = 0; i < buffer.length; i++) {
+      if (!seen.has(keys[i])) {
+        seen.add(keys[i])
+        yield buffer[i]
+      }
     }
   }
 }
