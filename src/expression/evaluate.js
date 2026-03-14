@@ -118,11 +118,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       // Apply FILTER clause if present
       let filteredRows = rows
       if (node.filter) {
-        filteredRows = []
-        for (const row of rows) {
-          const passes = await evaluateExpr({ node: node.filter, row, context })
-          if (passes) filteredRows.push(row)
-        }
+        const passes = await Promise.all(rows.map(row =>
+          evaluateExpr({ node: node.filter, row, context })
+        ))
+        filteredRows = rows.filter((_, i) => passes[i])
       }
 
       const argNode = node.args[0]
@@ -132,23 +131,27 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           return filteredRows.length
         }
 
+        const values = await Promise.all(filteredRows.map(row =>
+          evaluateExpr({ node: argNode, row, context })
+        ))
         if (node.distinct) {
           const seen = new Set()
-          for (const row of filteredRows) {
-            const v = await evaluateExpr({ node: argNode, row, context })
+          for (const v of values) {
             if (v != null) seen.add(v)
           }
           return seen.size
         }
         let count = 0
-        for (const row of filteredRows) {
-          const v = await evaluateExpr({ node: argNode, row, context })
+        for (const v of values) {
           if (v != null) count++
         }
         return count
       }
 
       if (funcName === 'SUM' || funcName === 'AVG' || funcName === 'MIN' || funcName === 'MAX') {
+        const rawValues = await Promise.all(filteredRows.map(row =>
+          evaluateExpr({ node: argNode, row, context })
+        ))
         let sum = 0
         let count = 0
         /** @type {number | null} */
@@ -156,8 +159,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         /** @type {number | null} */
         let max = null
 
-        for (const row of filteredRows) {
-          const raw = await evaluateExpr({ node: argNode, row, context })
+        for (const raw of rawValues) {
           if (raw == null) continue
           const num = Number(raw)
           if (!Number.isFinite(num)) continue
@@ -180,9 +182,12 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
 
       if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
+        const rawValues = await Promise.all(filteredRows.map(row =>
+          evaluateExpr({ node: argNode, row, context })
+        ))
+        /** @type {number[]} */
         const values = []
-        for (const row of filteredRows) {
-          const raw = await evaluateExpr({ node: argNode, row, context })
+        for (const raw of rawValues) {
           if (raw == null) continue
           const num = Number(raw)
           if (!Number.isFinite(num)) continue
