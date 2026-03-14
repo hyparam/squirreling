@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.10.2]
+ - Parallelize cell evaluation for much faster execution of async queries
+
 ## [0.10.1]
  - Plan-time table validation
 
