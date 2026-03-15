@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.10.3]
+ - Export more geospatial functions
+
 ## [0.10.2]
  - Parallelize cell evaluation for much faster execution of async queries
 

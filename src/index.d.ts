@@ -76,6 +76,8 @@ export function tokenizeSql(sql: string): Token[]
  */
 export function collect<T>(asyncGen: AsyncGenerator<AsyncRow>): Promise<Record<string, SqlPrimitive>[]>
 
+export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): AsyncRow
+
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
 
 /**

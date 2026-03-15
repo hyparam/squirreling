@@ -69,6 +69,25 @@ export function evaluateSpatialFunc({ funcName, args }) {
 }
 
 /**
+ * Decompose Multi* and GeometryCollection into simple geometries.
+ *
+ * @param {Geometry} geom
+ * @returns {SimpleGeometry[]}
+ */
+export function decompose(geom) {
+  if (geom.type === 'MultiPoint') {
+    return geom.coordinates.map(c => ({ type: 'Point', coordinates: c }))
+  } else if (geom.type === 'MultiLineString') {
+    return geom.coordinates.map(c => ({ type: 'LineString', coordinates: c }))
+  } else if (geom.type === 'MultiPolygon') {
+    return geom.coordinates.map(c => ({ type: 'Polygon', coordinates: c }))
+  } else if (geom.type === 'GeometryCollection') {
+    return geom.geometries.flatMap(decompose)
+  }
+  return [geom]
+}
+
+/**
  * Normalize a geometry value. Accepts GeoJSON objects.
  * Returns null if the value is not a valid geometry.
  *
@@ -89,10 +108,6 @@ function toGeometry(val) {
   }
   return null
 }
-
-// ============================================================================
-// Minimum distance between geometries
-// ============================================================================
 
 /**
  * Get all line segments from a geometry.
@@ -165,35 +180,6 @@ function stDWithin(a, b, distance) {
   return false
 }
 
-// ============================================================================
-// Spatial predicate dispatch - decompose to primitive type pairs
-// ============================================================================
-
-/**
- * Decompose Multi* and GeometryCollection into simple geometries.
- *
- * @param {Geometry} geom
- * @returns {SimpleGeometry[]}
- */
-function decompose(geom) {
-  switch (geom.type) {
-  case 'MultiPoint':
-    return geom.coordinates.map(c => ({ type: 'Point', coordinates: c }))
-  case 'MultiLineString':
-    return geom.coordinates.map(c => ({ type: 'LineString', coordinates: c }))
-  case 'MultiPolygon':
-    return geom.coordinates.map(c => ({ type: 'Polygon', coordinates: c }))
-  case 'GeometryCollection':
-    return geom.geometries.flatMap(decompose)
-  default:
-    return [geom]
-  }
-}
-
-// ============================================================================
-// ST_Contains
-// ============================================================================
-
 /**
  * @param {SimpleGeometry[]} a
  * @param {SimpleGeometry[]} b
@@ -204,10 +190,6 @@ function stContains(a, b) {
   return b.every(pb => a.some(pa => pairContainment(pa, pb) !== 'OUTSIDE'))
 }
 
-// ============================================================================
-// ST_ContainsProperly
-// ============================================================================
-
 /**
  * @param {SimpleGeometry[]} a
  * @param {SimpleGeometry[]} b
@@ -217,10 +199,6 @@ function stContainsProperly(a, b) {
   // Every part of b must be strictly inside some part of a
   return b.every(pb => a.some(pa => pairContainment(pa, pb) === 'INSIDE'))
 }
-
-// ============================================================================
-// ST_Touches
-// ============================================================================
 
 /**
  * @param {SimpleGeometry[]} a
@@ -238,10 +216,6 @@ function stTouches(a, b) {
   }
   return intersects
 }
-
-// ============================================================================
-// ST_Overlaps
-// ============================================================================
 
 /**
  * @param {SimpleGeometry[]} a
@@ -281,10 +255,6 @@ function geometryDimension(parts) {
   return max
 }
 
-// ============================================================================
-// ST_Equals
-// ============================================================================
-
 /**
  * @param {SimpleGeometry[]} a
  * @param {SimpleGeometry[]} b
@@ -309,10 +279,6 @@ function stEquals(a, b) {
   }
   return true
 }
-
-// ============================================================================
-// ST_Crosses
-// ============================================================================
 
 /**
  * @param {SimpleGeometry[]} a
