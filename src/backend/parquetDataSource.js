@@ -76,7 +76,7 @@ export function parquetDataSource(file, metadata, compressors) {
               filter,
               filterStrict: false,
               compressors,
-              useOffsetIndex: true,
+              useOffsetIndex: safeOffset > 0 || safeLimit < rowCount,
             })
 
             // Yield each row

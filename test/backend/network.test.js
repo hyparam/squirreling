@@ -45,9 +45,9 @@ describe('parquet backend', async () => {
       },
     ])
     // reads entire second row group
-    expect(counting.bytes).toBe(6111314)
+    expect(counting.bytes).toBe(6111170)
     // expect(counting.bytes).toBe(617381) // TODO: 1 text page!
-    expect(counting.fetches).toBe(3) // 1 offset index + 1 run of 3 column chunks + 1 page
+    expect(counting.fetches).toBe(2) // 1 run of 3 column chunks + 1 page
   })
 
   it('should respect limit across row group boundaries', async () => {

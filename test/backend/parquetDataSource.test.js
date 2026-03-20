@@ -124,6 +124,18 @@ describe('parquet backend', async () => {
     ])
   })
 
+  it('should return correct count with WHERE equality filter on large file', async () => {
+    const ddFile = await asyncBufferFromFile('Discord-Dialogs.parquet')
+    const ddMetadata = await parquetMetadataAsync(ddFile)
+    const dd = parquetDataSource(ddFile, ddMetadata, compressors)
+
+    const result = await collect(executeSql({
+      tables: { dd },
+      query: 'SELECT COUNT(*) as count FROM dd WHERE turns = 8',
+    }))
+    expect(result).toEqual([{ count: 7108 }])
+  })
+
   it('should prune row groups with WHERE equality filter', async () => {
     // alpha.parquet has multiple row groups with alphabetically sorted data (aa, ab, ... zz)
     const alphaFile = await asyncBufferFromFile('test/files/alpha.parquet')
