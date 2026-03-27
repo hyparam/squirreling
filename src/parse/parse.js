@@ -64,8 +64,7 @@ function parseSelectList(state) {
     }
 
     // Check for unqualified asterisk (*)
-    if (tok.type === 'operator' && tok.value === '*') {
-      consume(state)
+    if (match(state, 'operator', '*')) {
       cols.push({ kind: 'star' })
       if (!match(state, 'comma')) break
       continue
@@ -365,9 +364,7 @@ export function parseSelectInternal(state) {
   }
 
   // optional trailing semicolon
-  if (current(state).type === 'semicolon') {
-    consume(state)
-  }
+  match(state, 'semicolon')
 
   return {
     distinct,

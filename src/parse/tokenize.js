@@ -121,15 +121,15 @@ export function tokenizeSql(sql) {
           numericValue: BigInt(text.slice(0, -1)),
         }
       } catch {
-        throw invalidLiteralError({ type: 'bigint', value: text.slice(0, -1), positionStart: startPos, positionEnd: i })
+        throw invalidLiteralError({ expected: 'bigint', value: text.slice(0, -1), positionStart: startPos, positionEnd: i })
       }
     }
     if (isAlpha(peek())) {
-      throw invalidLiteralError({ type: 'number', value: text + peek(), positionStart: startPos, positionEnd: i + 1 })
+      throw invalidLiteralError({ expected: 'number', value: text + peek(), positionStart: startPos, positionEnd: i + 1 })
     }
     const num = parseFloat(text)
     if (isNaN(num)) {
-      throw invalidLiteralError({ type: 'number', value: text, positionStart: startPos, positionEnd: i })
+      throw invalidLiteralError({ expected: 'number', value: text, positionStart: startPos, positionEnd: i })
     }
     return {
       type: 'number',

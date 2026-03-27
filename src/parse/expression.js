@@ -63,9 +63,10 @@ export function parsePrimary(state) {
       const toType = typeTok.value.toUpperCase()
       if (!isCastType(toType)) {
         throw syntaxError({
-          ...typeTok,
           expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL)',
           received: `"${typeTok.value}"`,
+          after: 'AS',
+          ...typeTok,
         })
       }
       expect(state, 'paren', ')')
@@ -85,9 +86,9 @@ export function parsePrimary(state) {
       const fieldTok = current(state)
       if (!isExtractField(fieldTok.value)) {
         throw syntaxError({
-          ...fieldTok,
           expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
           received: `"${fieldTok.value}"`,
+          ...fieldTok,
         })
       }
       consume(state) // field
@@ -140,8 +141,7 @@ export function parsePrimary(state) {
     let name = tok.value
 
     // table.column
-    if (current(state).type === 'dot') {
-      consume(state)
+    if (match(state, 'dot')) {
       const columnTok = expectIdentifier(state)
       name = name + '.' + columnTok.value
     }
@@ -182,20 +182,16 @@ export function parsePrimary(state) {
       return parseFunctionCall(state, tok.value, positionStart)
     }
 
-    if (tok.value === 'TRUE') {
-      consume(state)
+    if (match(state, 'keyword', 'TRUE')) {
       return { type: 'literal', value: true, positionStart, positionEnd: state.lastPos }
     }
-    if (tok.value === 'FALSE') {
-      consume(state)
+    if (match(state, 'keyword', 'FALSE')) {
       return { type: 'literal', value: false, positionStart, positionEnd: state.lastPos }
     }
-    if (tok.value === 'NULL') {
-      consume(state)
+    if (match(state, 'keyword', 'NULL')) {
       return { type: 'literal', value: null, positionStart, positionEnd: state.lastPos }
     }
-    if (tok.value === 'EXISTS') {
-      consume(state) // EXISTS
+    if (match(state, 'keyword', 'EXISTS')) {
       const subquery = parseSubquery(state)
       return {
         type: 'exists',
@@ -204,9 +200,7 @@ export function parsePrimary(state) {
         positionEnd: state.lastPos,
       }
     }
-    if (tok.value === 'CASE') {
-      consume(state) // CASE
-
+    if (match(state, 'keyword', 'CASE')) {
       // Check if it's simple CASE (CASE expr WHEN ...) or searched CASE (CASE WHEN ...)
       /** @type {ExprNode | undefined} */
       let caseExpr
@@ -274,8 +268,7 @@ export function parsePrimary(state) {
     }
   }
 
-  if (tok.type === 'operator' && tok.value === '-') {
-    consume(state)
+  if (match(state, 'operator', '-')) {
     const argument = parsePrimary(state)
     return {
       type: 'unary',
@@ -287,7 +280,7 @@ export function parsePrimary(state) {
   }
 
   const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  throw syntaxError({ expected: 'expression', received: found, positionStart: tok.positionStart, positionEnd: tok.positionEnd })
+  throw syntaxError({ expected: 'expression', received: found, ...tok })
 }
 
 /**
@@ -295,19 +288,19 @@ export function parsePrimary(state) {
  * @returns {ExprNode}
  */
 function parseOr(state) {
-  let node = parseAnd(state)
+  let left = parseAnd(state)
   while (match(state, 'keyword', 'OR')) {
     const right = parseAnd(state)
-    node = {
+    left = {
       type: 'binary',
       op: 'OR',
-      left: node,
+      left,
       right,
-      positionStart: node.positionStart,
+      positionStart: left.positionStart,
       positionEnd: right.positionEnd,
     }
   }
-  return node
+  return left
 }
 
 /**
@@ -315,19 +308,19 @@ function parseOr(state) {
  * @returns {ExprNode}
  */
 function parseAnd(state) {
-  let node = parseNot(state)
+  let left = parseNot(state)
   while (match(state, 'keyword', 'AND')) {
     const right = parseNot(state)
-    node = {
+    left = {
       type: 'binary',
       op: 'AND',
-      left: node,
+      left,
       right,
-      positionStart: node.positionStart,
+      positionStart: left.positionStart,
       positionEnd: right.positionEnd,
     }
   }
-  return node
+  return left
 }
 
 /**
@@ -339,9 +332,7 @@ function parseNot(state) {
   if (match(state, 'keyword', 'NOT')) {
     const { positionStart } = tok
     // Check for NOT EXISTS
-    const nextTok = current(state)
-    if (nextTok.type === 'keyword' && nextTok.value === 'EXISTS') {
-      consume(state) // EXISTS
+    if (match(state, 'keyword', 'EXISTS')) {
       const subquery = parseSubquery(state)
       return {
         type: 'not exists',
@@ -367,25 +358,26 @@ function parseNot(state) {
  * @returns {ExprNode}
  */
 export function parseAdditive(state) {
-  let node = parseMultiplicative(state)
+  let left = parseMultiplicative(state)
   while (true) {
     const tok = current(state)
     if (tok.type === 'operator' && (tok.value === '+' || tok.value === '-')) {
       consume(state)
       const right = parseMultiplicative(state)
-      node = {
+      // Recursive left-associative binary operator
+      left = {
         type: 'binary',
         op: tok.value,
-        left: node,
+        left,
         right,
-        positionStart: node.positionStart,
+        positionStart: left.positionStart,
         positionEnd: right.positionEnd,
       }
     } else {
       break
     }
   }
-  return node
+  return left
 }
 
 /**
@@ -393,25 +385,26 @@ export function parseAdditive(state) {
  * @returns {ExprNode}
  */
 function parseMultiplicative(state) {
-  let node = parsePrimary(state)
+  let left = parsePrimary(state)
   while (true) {
     const tok = current(state)
     if (tok.type === 'operator' && (tok.value === '*' || tok.value === '/' || tok.value === '%')) {
       consume(state)
       const right = parsePrimary(state)
-      node = {
+      // Recursively build left-associative tree for multiplicative operators
+      left = {
         type: 'binary',
         op: tok.value,
-        left: node,
+        left,
         right,
-        positionStart: node.positionStart,
+        positionStart: left.positionStart,
         positionEnd: right.positionEnd,
       }
     } else {
       break
     }
   }
-  return node
+  return left
 }
 
 /**
@@ -432,8 +425,7 @@ export function parseSubquery(state) {
  * @returns {IntervalNode}
  */
 function parseInterval(state) {
-  const { positionStart } = current(state)
-  consume(state) // INTERVAL
+  const { positionStart } = expect(state, 'keyword', 'INTERVAL')
 
   // Get value (number or quoted string)
   const valueTok = current(state)
@@ -446,22 +438,20 @@ function parseInterval(state) {
     consume(state)
     const parsed = parseFloat(valueTok.value)
     if (isNaN(parsed)) {
-      throw invalidLiteralError({ type: 'interval value', value: valueTok.value, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
+      throw invalidLiteralError({ expected: 'interval value', ...valueTok })
     }
     value = parsed
   } else {
-    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, positionStart: valueTok.positionStart, positionEnd: valueTok.positionEnd })
+    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, ...valueTok })
   }
 
   // Get unit keyword
   const unitTok = current(state)
   if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
     throw invalidLiteralError({
-      type: 'interval unit',
-      value: unitTok.value,
-      positionStart: unitTok.positionStart,
-      positionEnd: unitTok.positionEnd,
+      expected: 'interval unit',
       validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
+      ...unitTok,
     })
   }
   consume(state)

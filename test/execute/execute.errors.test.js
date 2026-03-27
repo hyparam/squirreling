@@ -154,7 +154,7 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT CAST(age AS BINARY) FROM users',
-      }))).rejects.toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) but found "BINARY"')
+      }))).rejects.toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) after "AS" but found "BINARY"')
     })
 
     it('should throw error when casting object to non-string type', async () => {

@@ -92,5 +92,5 @@ export function parseError(state, expected) {
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken ? prevToken.originalValue ?? prevToken.value : undefined
   const received = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  return syntaxError({ expected, received, positionStart: tok.positionStart, positionEnd: tok.positionEnd, after })
+  return syntaxError({ expected, received, after, ...tok })
 }

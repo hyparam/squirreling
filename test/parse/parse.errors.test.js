@@ -173,7 +173,7 @@ describe('parseSql error handling', () => {
   describe('CAST errors', () => {
     it('should throw error for unsupported CAST type', () => {
       expect(() => parseSql({ query: 'SELECT CAST(x AS BINARY) FROM t' }))
-        .toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) but found "BINARY" at position 17')
+        .toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) after "AS" but found "BINARY" at position 17')
     })
   })
 
@@ -181,6 +181,16 @@ describe('parseSql error handling', () => {
     it('should throw error on incomplete WHERE clause', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users WHERE' }))
         .toThrow('Expected expression but found end of query at position 25')
+    })
+
+    it('should throw error on dangling NOT in WHERE clause', () => {
+      expect(() => parseSql({ query: 'SELECT * FROM users WHERE age NOT ORDER BY id' }))
+        .toThrow('Expected LIKE, BETWEEN, or IN after "NOT" but found "ORDER" at position 34')
+    })
+
+    it('should throw error on dangling NOT in WHERE comparison', () => {
+      expect(() => parseSql({ query: 'SELECT * FROM t WHERE x NOT y' }))
+        .toThrow('Expected LIKE, BETWEEN, or IN after "NOT" but found "y" at position 28')
     })
 
     it('should throw error on missing closing paren in WHERE', () => {

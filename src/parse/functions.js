@@ -1,4 +1,4 @@
-import { isAggregateFunc, validateFunctionArgCount } from '../validation/functions.js'
+import { isAggregateFunc, validateFunctionArgCount as validateFunctionArgs } from '../validation/functions.js'
 import { ParseError, syntaxError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
@@ -26,19 +26,18 @@ export function parseFunctionCall(state, funcName, positionStart) {
   let distinct
 
   // Check for DISTINCT or ALL keyword (for aggregate functions like COUNT(DISTINCT x))
-  if (current(state).type === 'keyword' && current(state).value === 'DISTINCT') {
-    consume(state)
+  if (match(state, 'keyword', 'DISTINCT')) {
     distinct = true
-  } else if (current(state).type === 'keyword' && current(state).value === 'ALL') {
-    consume(state)
+  } else {
+    match(state, 'keyword', 'ALL')
   }
 
+  // Parse function arguments
   if (current(state).type !== 'paren' || current(state).value !== ')') {
     while (true) {
       // Handle COUNT(*) - treat * as a special identifier
-      if (current(state).type === 'operator' && current(state).value === '*') {
-        const starTok = current(state)
-        consume(state)
+      const starTok = current(state)
+      if (match(state, 'operator', '*')) {
         args.push({
           type: 'star',
           positionStart: starTok.positionStart,
@@ -51,26 +50,7 @@ export function parseFunctionCall(state, funcName, positionStart) {
     }
   }
   expect(state, 'paren', ')')
-
-  // Check for FILTER clause (only valid for aggregate functions)
-  /** @type {ExprNode | undefined} */
-  let filter
-  if (current(state).type === 'keyword' && current(state).value === 'FILTER') {
-    if (!isAggregateFunc(funcNameUpper)) {
-      throw syntaxError({
-        expected: 'aggregate function for FILTER clause',
-        received: `FILTER on non-aggregate function "${funcName}"`,
-        positionStart: current(state).positionStart,
-        positionEnd: current(state).positionEnd,
-      })
-    }
-    consume(state) // FILTER
-    expect(state, 'paren', '(')
-    expect(state, 'keyword', 'WHERE')
-    filter = parseExpression(state)
-    expect(state, 'paren', ')')
-  }
-  const positionEnd = state.lastPos
+  const functionEnd = state.lastPos
 
   // Validate star argument at parse time (only COUNT supports *)
   const hasStar = args.length === 1 && args[0].type === 'star'
@@ -78,19 +58,37 @@ export function parseFunctionCall(state, funcName, positionStart) {
     throw new ParseError({
       message: `${funcName} cannot be applied to "*"`,
       positionStart,
-      positionEnd,
+      positionEnd: functionEnd,
     })
   }
   if (hasStar && distinct) {
     throw new ParseError({
       message: 'COUNT(DISTINCT *) is not allowed',
       positionStart,
-      positionEnd,
+      positionEnd: functionEnd,
     })
   }
 
   // Validate argument count at parse time
-  validateFunctionArgCount(funcNameUpper, args.length, positionStart, positionEnd, state.functions)
+  validateFunctionArgs(funcNameUpper, args.length, positionStart, functionEnd, state.functions)
+
+  // Check for FILTER clause (only valid for aggregate functions)
+  /** @type {ExprNode | undefined} */
+  let filter
+  const filterTok = current(state)
+  if (match(state, 'keyword', 'FILTER')) {
+    if (!isAggregateFunc(funcNameUpper)) {
+      throw syntaxError({
+        expected: 'aggregate function for FILTER clause',
+        received: `FILTER on non-aggregate function "${funcName}"`,
+        ...filterTok,
+      })
+    }
+    expect(state, 'paren', '(')
+    expect(state, 'keyword', 'WHERE')
+    filter = parseExpression(state)
+    expect(state, 'paren', ')')
+  }
 
   return {
     type: 'function',
@@ -99,6 +97,6 @@ export function parseFunctionCall(state, funcName, positionStart) {
     distinct,
     filter,
     positionStart,
-    positionEnd,
+    positionEnd: state.lastPos,
   }
 }

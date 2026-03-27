@@ -50,16 +50,16 @@ export function unterminatedError({ type, positionStart, positionEnd }) {
  * Error for invalid literals (numbers, intervals, etc).
  *
  * @param {Object} options
- * @param {string} options.type - Type of invalid literal (e.g., 'number', 'interval value', 'interval unit')
+ * @param {string} options.expected - Type of invalid literal (e.g., 'number', 'interval value', 'interval unit')
  * @param {string} options.value - The invalid value
  * @param {number} options.positionStart
  * @param {number} options.positionEnd
  * @param {string} [options.validValues] - List of valid values (for enums like interval units)
  * @returns {ParseError}
  */
-export function invalidLiteralError({ type, value, positionStart, positionEnd, validValues }) {
+export function invalidLiteralError({ expected, value, positionStart, positionEnd, validValues }) {
   const suffix = validValues ? `. Valid values: ${validValues}` : ''
-  return new ParseError({ message: `Invalid ${type} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd })
+  return new ParseError({ message: `Invalid ${expected} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd })
 }
 
 /**

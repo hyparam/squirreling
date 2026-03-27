@@ -13,40 +13,25 @@ import { consume, current, expect, match, peekToken } from './state.js'
  */
 export function parseComparison(state) {
   const left = parseAdditive(state)
-  const tok = current(state)
 
   // IS [NOT] NULL
-  if (tok.type === 'keyword' && tok.value === 'IS') {
-    consume(state)
-    const notToken = current(state)
-    if (notToken.type === 'keyword' && notToken.value === 'NOT') {
-      consume(state)
-      expect(state, 'keyword', 'NULL')
-      return {
-        type: 'unary',
-        op: 'IS NOT NULL',
-        argument: left,
-        positionStart: left.positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
+  if (match(state, 'keyword', 'IS')) {
+    const op = match(state, 'keyword', 'NOT') ? 'IS NOT NULL' : 'IS NULL'
     expect(state, 'keyword', 'NULL')
     return {
       type: 'unary',
-      op: 'IS NULL',
+      op,
       argument: left,
       positionStart: left.positionStart,
       positionEnd: state.lastPos,
     }
   }
 
-  // [NOT] LIKE
-  if (tok.type === 'keyword' && tok.value === 'NOT') {
-    const nextTok = peekToken(state, 1)
-    if (nextTok.type === 'keyword' && nextTok.value === 'LIKE') {
-      const notPositionStart = tok.positionStart
-      consume(state) // NOT
-      consume(state) // LIKE
+  // Binary operators
+  const opTok = current(state)
+  if (match(state, 'keyword', 'NOT')) {
+    // NOT LIKE
+    if (match(state, 'keyword', 'LIKE')) {
       const right = parseAdditive(state)
       return {
         type: 'unary',
@@ -59,14 +44,50 @@ export function parseComparison(state) {
           positionStart: left.positionStart,
           positionEnd: right.positionEnd,
         },
-        positionStart: notPositionStart,
+        positionStart: opTok.positionStart,
         positionEnd: right.positionEnd,
       }
     }
+
+    // NOT BETWEEN - convert to range comparison
+    if (match(state, 'keyword', 'BETWEEN')) {
+      const lower = parseAdditive(state)
+      expect(state, 'keyword', 'AND')
+      const upper = parseAdditive(state)
+      // NOT BETWEEN -> expr < lower OR expr > upper
+      return {
+        type: 'binary',
+        op: 'OR',
+        left: { type: 'binary', op: '<', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
+        right: { type: 'binary', op: '>', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
+        positionStart: opTok.positionStart,
+        positionEnd: upper.positionEnd,
+      }
+    }
+
+    // NOT IN
+    if (match(state, 'keyword', 'IN')) {
+      const node = parseIn(state, left)
+      return {
+        type: 'unary',
+        op: 'NOT',
+        argument: node,
+        positionStart: opTok.positionStart,
+        positionEnd: node.positionEnd,
+      }
+    }
+
+    const found = current(state)
+    throw syntaxError({
+      expected: 'LIKE, BETWEEN, or IN',
+      received: found.type === 'eof' ? 'end of query' : `"${found.originalValue ?? found.value}"`,
+      after: 'NOT',
+      ...found,
+    })
   }
 
-  if (tok.type === 'keyword' && tok.value === 'LIKE') {
-    consume(state)
+  // LIKE
+  if (match(state, 'keyword', 'LIKE')) {
     const right = parseAdditive(state)
     return {
       type: 'binary',
@@ -78,30 +99,8 @@ export function parseComparison(state) {
     }
   }
 
-  // [NOT] BETWEEN - convert to range comparison
-  if (tok.type === 'keyword' && tok.value === 'NOT') {
-    const nextTok = peekToken(state, 1)
-    if (nextTok.type === 'keyword' && nextTok.value === 'BETWEEN') {
-      const notPositionStart = tok.positionStart
-      consume(state) // NOT
-      consume(state) // BETWEEN
-      const lower = parseAdditive(state)
-      expect(state, 'keyword', 'AND')
-      const upper = parseAdditive(state)
-      // NOT BETWEEN -> expr < lower OR expr > upper
-      return {
-        type: 'binary',
-        op: 'OR',
-        left: { type: 'binary', op: '<', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
-        right: { type: 'binary', op: '>', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
-        positionStart: notPositionStart,
-        positionEnd: upper.positionEnd,
-      }
-    }
-  }
-
-  if (tok.type === 'keyword' && tok.value === 'BETWEEN') {
-    consume(state)
+  // BETWEEN - convert to range comparison
+  if (match(state, 'keyword', 'BETWEEN')) {
     const lower = parseAdditive(state)
     expect(state, 'keyword', 'AND')
     const upper = parseAdditive(state)
@@ -116,112 +115,17 @@ export function parseComparison(state) {
     }
   }
 
-  // [NOT] IN
-  if (tok.type === 'keyword' && tok.value === 'NOT') {
-    const nextTok = peekToken(state, 1)
-    if (nextTok.type === 'keyword' && nextTok.value === 'IN') {
-      const notPositionStart = tok.positionStart
-      consume(state) // NOT
-      consume(state) // IN
-
-      // Check if it's a subquery or a list of values by peeking ahead
-      // parseSubquery expects to consume the opening paren itself
-      const parenTok = current(state)
-      if (parenTok.type !== 'paren' || parenTok.value !== '(') {
-        throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, positionStart: parenTok.positionStart, positionEnd: parenTok.positionEnd, after: 'IN' })
-      }
-      const peekTok = peekToken(state, 1)
-      if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
-        // Subquery - let parseSubquery handle the parens
-        const subquery = parseSubquery(state)
-        const positionEnd = state.lastPos
-        return {
-          type: 'unary',
-          op: 'NOT',
-          argument: {
-            type: 'in',
-            expr: left,
-            subquery,
-            positionStart: left.positionStart,
-            positionEnd,
-          },
-          positionStart: notPositionStart,
-          positionEnd,
-        }
-      } else {
-        // Parse list of values - we handle the parens
-        consume(state) // '('
-        /** @type {ExprNode[]} */
-        const values = []
-        while (true) {
-          values.push(parseExpression(state))
-          if (!match(state, 'comma')) break
-        }
-        expect(state, 'paren', ')')
-        const positionEnd = state.lastPos
-        return {
-          type: 'unary',
-          op: 'NOT',
-          argument: {
-            type: 'in valuelist',
-            expr: left,
-            values,
-            positionStart: left.positionStart,
-            positionEnd,
-          },
-          positionStart: notPositionStart,
-          positionEnd,
-        }
-      }
-    }
+  // IN
+  if (match(state, 'keyword', 'IN')) {
+    return parseIn(state, left)
   }
 
-  if (tok.type === 'keyword' && tok.value === 'IN') {
-    consume(state) // IN
-
-    // Check if it's a subquery or a list of values by peeking ahead
-    // parseSubquery expects to consume the opening paren itself
-    const parenTok = current(state)
-    if (parenTok.type !== 'paren' || parenTok.value !== '(') {
-      throw syntaxError({ expected: '(', received: `"${parenTok.value}"`, positionStart: parenTok.positionStart, positionEnd: parenTok.positionEnd, after: 'IN' })
-    }
-    const peekTok = peekToken(state, 1)
-    if (peekTok.type === 'keyword' && peekTok.value === 'SELECT') {
-      // Subquery - let parseSubquery handle the parens
-      const subquery = parseSubquery(state)
-      return {
-        type: 'in',
-        expr: left,
-        subquery,
-        positionStart: left.positionStart,
-        positionEnd: state.lastPos,
-      }
-    } else {
-      // Parse list of values - we handle the parens
-      consume(state) // '('
-      /** @type {ExprNode[]} */
-      const values = []
-      while (true) {
-        values.push(parseExpression(state))
-        if (!match(state, 'comma')) break
-      }
-      expect(state, 'paren', ')')
-      return {
-        type: 'in valuelist',
-        expr: left,
-        values,
-        positionStart: left.positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-  }
-
-  if (tok.type === 'operator' && isBinaryOp(tok.value)) {
+  if (opTok.type === 'operator' && isBinaryOp(opTok.value)) {
     consume(state)
     const right = parseAdditive(state)
     return {
       type: 'binary',
-      op: tok.value,
+      op: opTok.value,
       left,
       right,
       positionStart: left.positionStart,
@@ -230,4 +134,41 @@ export function parseComparison(state) {
   }
 
   return left
+}
+
+/**
+ * Parses an IN expression (subquery or value list).
+ *
+ * @param {ParserState} state
+ * @param {ExprNode} left
+ * @returns {ExprNode}
+ */
+function parseIn(state, left) {
+  // Subquery
+  if (peekToken(state, 0).type === 'paren' && peekToken(state, 1).value === 'SELECT') {
+    const subquery = parseSubquery(state)
+    return {
+      type: 'in',
+      expr: left,
+      subquery,
+      positionStart: left.positionStart,
+      positionEnd: state.lastPos,
+    }
+  }
+  // Value list
+  expect(state, 'paren', '(')
+  /** @type {ExprNode[]} */
+  const values = []
+  while (true) {
+    values.push(parseExpression(state))
+    if (!match(state, 'comma')) break
+  }
+  expect(state, 'paren', ')')
+  return {
+    type: 'in valuelist',
+    expr: left,
+    values,
+    positionStart: left.positionStart,
+    positionEnd: state.lastPos,
+  }
 }
