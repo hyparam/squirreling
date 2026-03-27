@@ -128,7 +128,7 @@ describe('parseSql - JOIN queries', () => {
 
   it('should parse POSITIONAL JOIN with alias', () => {
     const select = parseSql({ query: 'SELECT * FROM users u POSITIONAL JOIN orders o' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 14, positionEnd: 19 })
+    expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 14, positionEnd: 21 })
     expect(select.joins).toEqual([
       {
         joinType: 'POSITIONAL',

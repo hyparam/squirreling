@@ -31,7 +31,7 @@ export function isMathFunc(name) {
  * @returns {name is RegExpFunction}
  */
 export function isRegexpFunc(name) {
-  return ['REGEXP_SUBSTR', 'REGEXP_REPLACE'].includes(name)
+  return ['REGEXP_SUBSTR', 'REGEXP_EXTRACT', 'REGEXP_REPLACE'].includes(name)
 }
 
 /**
@@ -78,7 +78,7 @@ export function isCastType(name) {
 export function isStringFunc(name) {
   return [
     'UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM',
-    'REPLACE', 'LEFT', 'RIGHT', 'INSTR',
+    'REPLACE', 'LEFT', 'RIGHT', 'INSTR', 'POSITION', 'STRPOS',
   ].includes(name)
 }
 
@@ -107,8 +107,11 @@ export const FUNCTION_SIGNATURES = {
   LEFT: { min: 2, max: 2, signature: 'string, length' },
   RIGHT: { min: 2, max: 2, signature: 'string, length' },
   INSTR: { min: 2, max: 2, signature: 'string, substring' },
-  REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, flags]]' },
-  REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, flags]]' },
+  POSITION: { min: 2, max: 2, signature: 'string, substring' },
+  STRPOS: { min: 2, max: 2, signature: 'string, substring' },
+  REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
+  REGEXP_EXTRACT: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
+  REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, occurrence]]' },
 
   // Date/time functions
   RANDOM: { min: 0, max: 0, signature: '' },

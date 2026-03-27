@@ -148,13 +148,13 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 ### Functions
 
 - Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `STDDEV_POP`, `STDDEV_SAMP`, `JSON_ARRAYAGG`
-- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`
+- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`, `POSITION`, `STRPOS`
 - Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
 - Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `DATE_PART`, `DATE_TRUNC`, `EXTRACT`, `INTERVAL`
 - Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_OBJECT`
 - Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_SORT`, `CARDINALITY`
-- Regex: `REGEXP_SUBSTR`, `REGEXP_REPLACE`
+- Regex: `REGEXP_SUBSTR`, `REGEXP_EXTRACT`, `REGEXP_REPLACE`
 - Spatial: `ST_GeomFromText`, `ST_MakeEnvelope`, `ST_AsText`, `ST_Intersects`, `ST_Contains`, `ST_ContainsProperly`, `ST_Within`, `ST_Overlaps`, `ST_Touches`, `ST_Equals`, `ST_Crosses`, `ST_Covers`, `ST_CoveredBy`, `ST_DWithin`
 - Conditional: `COALESCE`, `NULLIF`
 - User-defined functions (UDFs)

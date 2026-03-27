@@ -158,12 +158,12 @@ describe('parseSql', () => {
 
     it('should parse table alias', () => {
       const select = parseSql({ query: 'SELECT u.name FROM users u WHERE u.active = 1' })
-      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 19, positionEnd: 24 })
+      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 19, positionEnd: 26 })
     })
 
     it('should parse table alias with AS', () => {
       const select = parseSql({ query: 'SELECT u.name FROM users AS u' })
-      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 19, positionEnd: 24 })
+      expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 19, positionEnd: 29 })
     })
 
     it('should parse quoted column with alias', () => {

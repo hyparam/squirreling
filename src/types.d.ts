@@ -90,7 +90,7 @@ export interface UserDefinedFunction {
 
 export type AggregateFunc = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP'
 
-export type RegExpFunction = 'REGEXP_SUBSTR' | 'REGEXP_REPLACE'
+export type RegExpFunction = 'REGEXP_SUBSTR' | 'REGEXP_EXTRACT' | 'REGEXP_REPLACE'
 
 export type MathFunc =
   | 'FLOOR'
@@ -131,6 +131,8 @@ export type StringFunc =
   | 'LEFT'
   | 'RIGHT'
   | 'INSTR'
+  | 'POSITION'
+  | 'STRPOS'
 
 export type SpatialFunc =
   | 'ST_INTERSECTS'

@@ -15,7 +15,7 @@ import { argValueError } from '../validation/executionErrors.js'
  * @returns {SqlPrimitive}
  */
 export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
-  if (funcName === 'REGEXP_SUBSTR') {
+  if (funcName === 'REGEXP_SUBSTR' || funcName === 'REGEXP_EXTRACT') {
     const str = args[0]
     const pattern = args[1]
     if (str == null || pattern == null) return null

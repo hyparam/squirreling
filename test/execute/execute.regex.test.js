@@ -149,6 +149,41 @@ describe('regex functions', () => {
     })
   })
 
+  describe('REGEXP_EXTRACT', () => {
+    it('should work as alias for REGEXP_SUBSTR', async () => {
+      const data = [
+        { id: 1, text: 'Hello World 123' },
+        { id: 2, text: 'abc 456 def 789' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_EXTRACT(text, \'[0-9]+\') AS num FROM data',
+      }))
+      expect(result).toEqual([
+        { num: '123' },
+        { num: '456' },
+      ])
+    })
+
+    it('should support position and occurrence parameters', async () => {
+      const data = [{ id: 1, text: 'abc 123 def 456 ghi 789' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_EXTRACT(text, \'[0-9]+\', 1, 2) AS num FROM data',
+      }))
+      expect(result[0].num).toBe('456')
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_EXTRACT(text, \'[a-z]+\') AS word FROM data',
+      }))
+      expect(result[0].word).toBeNull()
+    })
+  })
+
   describe('REGEXP_REPLACE', () => {
     it('should replace all matches by default', async () => {
       const data = [{ id: 1, text: 'abc 123 def 456' }]

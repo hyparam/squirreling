@@ -61,7 +61,6 @@ export function parseSelectInternal(state) {
   const tok = current(state)
   if (tok.type === 'paren' && tok.value === '(') {
     // Subquery: SELECT * FROM (SELECT ...) AS alias
-    const { positionStart } = current(state)
     expect(state, 'paren', '(')
     const query = parseSelectInternal(state)
     expect(state, 'paren', ')')
@@ -70,19 +69,19 @@ export function parseSelectInternal(state) {
       kind: 'subquery',
       query,
       alias,
-      positionStart,
+      positionStart: tok.positionStart,
       positionEnd: state.lastPos,
     }
   } else {
     // Simple table name: SELECT * FROM users
-    const tableTok = expect(state, 'identifier')
+    expect(state, 'identifier')
     const alias = parseTableAlias(state)
     from = {
       kind: 'table',
-      table: tableTok.value,
+      table: tok.value,
       alias,
-      positionStart: tableTok.positionStart,
-      positionEnd: tableTok.positionEnd,
+      positionStart: tok.positionStart,
+      positionEnd: state.lastPos,
     }
   }
 

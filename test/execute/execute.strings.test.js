@@ -702,6 +702,64 @@ describe('string functions', () => {
     })
   })
 
+  describe('POSITION', () => {
+    it('should work as alias for INSTR', async () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(text, \'World\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(7)
+    })
+
+    it('should return 0 when not found', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(text, \'xyz\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(0)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(text, \'a\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBeNull()
+    })
+  })
+
+  describe('STRPOS', () => {
+    it('should work as alias for INSTR', async () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRPOS(text, \'World\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(7)
+    })
+
+    it('should return 0 when not found', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRPOS(text, \'xyz\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(0)
+    })
+
+    it('should handle null values', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRPOS(text, \'a\') AS pos FROM data',
+      }))
+      expect(result[0].pos).toBeNull()
+    })
+  })
+
   describe('COALESCE', () => {
     it('should return first non-null value', async () => {
       const data = [

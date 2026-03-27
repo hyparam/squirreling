@@ -28,7 +28,7 @@ describe('parseSql - CTE (WITH clause)', () => {
       const select = parseSql({
         query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte AS t',
       })
-      expect(select.from).toEqual({ kind: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 51 })
+      expect(select.from).toEqual({ kind: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 })
     })
   })
 
@@ -45,9 +45,18 @@ describe('parseSql - CTE (WITH clause)', () => {
       expect(select.with?.ctes).toHaveLength(2)
       expect(select.with?.ctes[0].name).toBe('cte1')
       expect(select.with?.ctes[1].name).toBe('cte2')
-      expect(select.with?.ctes[0].query.from.kind).toBe('table')
-      expect(select.with?.ctes[0].query.from.kind === 'table' && select.with?.ctes[0].query.from.table).toBe('users')
-      expect(select.with?.ctes[1].query.from.kind === 'table' && select.with?.ctes[1].query.from.table).toBe('orders')
+      expect(select.with?.ctes[0].query.from).toEqual({
+        kind: 'table',
+        table: 'users',
+        positionStart: 52,
+        positionEnd: 57,
+      })
+      expect(select.with?.ctes[1].query.from).toEqual({
+        kind: 'table',
+        table: 'orders',
+        positionStart: 96,
+        positionEnd: 102,
+      })
     })
 
     it('should parse CTE referencing another CTE', () => {

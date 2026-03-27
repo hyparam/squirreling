@@ -116,7 +116,7 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     return str.substring(str.length - len)
   }
 
-  if (funcName === 'INSTR') {
+  if (funcName === 'INSTR' || funcName === 'POSITION' || funcName === 'STRPOS') {
     const search = args[1]
     if (search == null) return null
     // INSTR returns 1-based position, 0 if not found
