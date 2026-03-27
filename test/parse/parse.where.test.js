@@ -467,7 +467,7 @@ describe('parseSql - WHERE clause', () => {
         positionStart: 26,
         positionEnd: 51,
       },
-      positionStart: 30,
+      positionStart: 26,
       positionEnd: 51,
     })
   })

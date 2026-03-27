@@ -1,7 +1,6 @@
 import { executeSelect } from '../execute/execute.js'
 import { stringify } from '../execute/utils.js'
-import { invalidContextError } from '../validation/executionErrors.js'
-import { aggregateError, argValueError, castError } from '../validation/expressionErrors.js'
+import { ExecutionError, argValueError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
 import { unknownFunctionError } from '../validation/parseErrors.js'
 import { columnNotFoundError } from '../validation/planErrors.js'
@@ -49,9 +48,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     throw columnNotFoundError({
       columnName: node.name,
       availableColumns: row.columns,
-      positionStart: node.positionStart,
-      positionEnd: node.positionEnd,
       rowIndex,
+      ...node,
     })
   }
 
@@ -111,7 +109,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (row.columns.includes(alias)) {
           return row.cells[alias]()
         } else {
-          throw aggregateError(node)
+          throw new ExecutionError({
+            message: `Aggregate function ${funcName} is not available in this context`,
+            ...node,
+          })
         }
       }
 
@@ -137,7 +138,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (node.distinct) {
           const seen = new Set()
           for (const v of values) {
-            if (v != null) seen.add(v)
+            if (v != null) seen.add(stringify(v))
           }
           return seen.size
         }
@@ -185,6 +186,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         const rawValues = await Promise.all(filteredRows.map(row =>
           evaluateExpr({ node: argNode, row, context })
         ))
+        let sum = 0
         /** @type {number[]} */
         const values = []
         for (const raw of rawValues) {
@@ -192,21 +194,22 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           const num = Number(raw)
           if (!Number.isFinite(num)) continue
           values.push(num)
+          sum += num
         }
         const n = values.length
         if (n === 0) return null
         if (funcName === 'STDDEV_SAMP' && n === 1) return null
 
-        const mean = values.reduce((a, b) => a + b, 0) / n
+        const mean = sum / n
         const squaredDiffs = values.reduce((acc, val) => acc + (val - mean) ** 2, 0)
         const divisor = funcName === 'STDDEV_SAMP' ? n - 1 : n
         return Math.sqrt(squaredDiffs / divisor)
       }
 
       if (funcName === 'JSON_ARRAYAGG') {
-        /** @type {SqlPrimitive[]} */
-        const values = []
         if (node.distinct) {
+          /** @type {SqlPrimitive[]} */
+          const values = []
           const seen = new Set()
           for (const row of filteredRows) {
             const v = await evaluateExpr({ node: argNode, row, context })
@@ -216,13 +219,12 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
               values.push(v)
             }
           }
+          return values
         } else {
-          for (const row of filteredRows) {
-            const v = await evaluateExpr({ node: argNode, row, context })
-            values.push(v)
-          }
+          return await Promise.all(filteredRows.map(row =>
+            evaluateExpr({ node: argNode, row, context })
+          ))
         }
-        return values
       }
     }
 
@@ -258,9 +260,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     if (funcName === 'NULLIF') {
       // NULLIF(a, b) returns null if a = b, otherwise returns a
+      const val2 = evaluateExpr({ node: node.args[1], row, rowIndex, rows, context })
       const val1 = await evaluateExpr({ node: node.args[0], row, rowIndex, rows, context })
-      const val2 = await evaluateExpr({ node: node.args[1], row, rowIndex, rows, context })
-      return val1 == val2 ? null : val1
+      return val1 == await val2 ? null : val1
     }
 
     if (funcName === 'DATE_TRUNC') {
@@ -409,7 +411,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
     // Can only cast primitives to other primitive types
     if (typeof val === 'object') {
-      throw castError({ ...node, fromType: 'object', rowIndex })
+      throw new ExecutionError({ message: `Cannot CAST object to ${toType}`, rowIndex, ...node })
     }
     if (toType === 'INTEGER' || toType === 'INT') {
       const num = Number(val)
@@ -427,7 +429,6 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (toType === 'BOOLEAN' || toType === 'BOOL') {
       return Boolean(val)
     }
-    throw castError({ ...node, rowIndex })
   }
 
   // IN and NOT IN with value lists
@@ -467,17 +468,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     // Iterate through WHEN clauses
     for (const whenClause of node.whenClauses) {
-      let conditionResult
-      if (caseValue !== undefined) {
-        // Simple CASE: compare caseValue with condition
-        const whenValue = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, context })
-        conditionResult = caseValue == whenValue
-      } else {
-        // Searched CASE: evaluate condition as boolean
-        conditionResult = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, context })
-      }
-
-      if (conditionResult) {
+      const whenValue = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, context })
+      // compare caseValue with condition or evaluate as boolean
+      if (caseValue !== undefined ? caseValue == whenValue : whenValue) {
         return evaluateExpr({ node: whenClause.result, row, rowIndex, rows, context })
       }
     }
@@ -492,12 +485,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   // INTERVAL expressions should only appear as part of binary +/- operations
   // which are handled above. A standalone interval is an error.
   if (node.type === 'interval') {
-    throw invalidContextError({
-      item: 'INTERVAL',
-      validContext: 'date arithmetic (+ or -)',
-      positionStart: node.positionStart,
-      positionEnd: node.positionEnd,
+    throw new ExecutionError({
+      message: 'INTERVAL can only be used with date arithmetic (+ or -)',
       rowIndex,
+      ...node,
     })
   }
 

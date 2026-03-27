@@ -21,15 +21,16 @@ export class ParseError extends Error {
  *
  * @param {Object} options
  * @param {string} options.expected - Description of what was expected
- * @param {string} options.received - What was actually found
+ * @param {string} options.value - What was actually found
  * @param {number} options.positionStart
  * @param {number} options.positionEnd
  * @param {string} [options.after] - What token came before (for context)
  * @returns {ParseError}
  */
-export function syntaxError({ expected, received, positionStart, positionEnd, after }) {
-  const afterClause = after ? ` after "${after}"` : ''
-  return new ParseError({ message: `Expected ${expected}${afterClause} but found ${received} at position ${positionStart}`, positionStart, positionEnd })
+export function syntaxError({ expected, value, positionStart, positionEnd, after }) {
+  after = after ? ` after "${after}"` : ''
+  value = value ? `"${value}"` : 'end of query'
+  return new ParseError({ message: `Expected ${expected}${after} but found ${value} at position ${positionStart}`, positionStart, positionEnd })
 }
 
 /**
@@ -78,37 +79,6 @@ export function unknownFunctionError({ funcName, positionStart, positionEnd }) {
   // TODO: suggest similar function names based on edit distance
   return new ParseError({
     message: `Unknown function "${funcName}" at position ${positionStart}.`,
-    positionStart,
-    positionEnd,
-  })
-}
-
-/**
- * Error for missing required clause or structure.
- *
- * @param {Object} options
- * @param {string} options.missing - What is missing (e.g., 'WHEN clause', 'FROM clause', 'ON condition')
- * @param {string} options.context - Where it's missing from (e.g., 'CASE expression', 'SELECT statement', 'JOIN')
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- * @returns {ParseError}
- */
-export function missingClauseError({ missing, context, positionStart, positionEnd }) {
-  return new ParseError({ message: `${context} requires ${missing}`, positionStart, positionEnd })
-}
-
-/**
- * Error for duplicate CTE names in WITH clause.
- *
- * @param {Object} options
- * @param {string} options.cteName - The duplicate CTE name
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- * @returns {ParseError}
- */
-export function duplicateCTEError({ cteName, positionStart, positionEnd }) {
-  return new ParseError({
-    message: `CTE "${cteName}" is defined more than once at position ${positionStart}`,
     positionStart,
     positionEnd,
   })

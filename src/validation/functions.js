@@ -1,7 +1,8 @@
+import { ParseError, unknownFunctionError } from '../validation/parseErrors.js'
+
 /**
  * @import { AggregateFunc, BinaryOp, CastType, FunctionSignature, IntervalUnit, MathFunc, RegExpFunction, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
  */
-import { ParseError, unknownFunctionError } from '../validation/parseErrors.js'
 
 export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP']
 

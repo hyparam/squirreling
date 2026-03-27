@@ -42,13 +42,13 @@ export function consume(state) {
 /**
  * @param {ParserState} state
  * @param {TokenType} type
- * @param {string} [value]
+ * @param {string} [expected]
  * @returns {boolean}
  */
-export function match(state, type, value) {
+export function match(state, type, expected) {
   const tok = current(state)
   if (tok.type !== type) return false
-  if (typeof value === 'string' && tok.value !== value) return false
+  if (expected && tok.value !== expected) return false
   consume(state)
   return true
 }
@@ -56,26 +56,13 @@ export function match(state, type, value) {
 /**
  * @param {ParserState} state
  * @param {TokenType} type
- * @param {string} value
+ * @param {string} [expected]
  * @returns {Token}
  */
-export function expect(state, type, value) {
+export function expect(state, type, expected) {
   const tok = current(state)
-  if (tok.type !== type || tok.value !== value) {
-    throw parseError(state, value)
-  }
-  consume(state)
-  return tok
-}
-
-/**
- * @param {ParserState} state
- * @returns {Token}
- */
-export function expectIdentifier(state) {
-  const tok = current(state)
-  if (tok.type !== 'identifier') {
-    throw parseError(state, 'identifier')
+  if (tok.type !== type || expected && tok.value !== expected) {
+    throw parseError(state, expected ?? type)
   }
   consume(state)
   return tok
@@ -91,6 +78,5 @@ export function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken?.originalValue ?? prevToken?.value
-  const received = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  return syntaxError({ expected, received, after, ...tok })
+  return syntaxError({ expected, after, ...tok })
 }

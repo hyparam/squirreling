@@ -1,10 +1,10 @@
 import { isCastType, isExtractField, isIntervalUnit, isKnownFunction, niladicFuncs } from '../validation/functions.js'
-import { invalidLiteralError, missingClauseError, syntaxError, unknownFunctionError } from '../validation/parseErrors.js'
+import { ParseError, invalidLiteralError, syntaxError, unknownFunctionError } from '../validation/parseErrors.js'
 import { RESERVED_KEYWORDS } from '../validation/keywords.js'
 import { parseExpression } from './expression.js'
 import { parseFunctionCall } from './functions.js'
 import { parseSelectInternal } from './parse.js'
-import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
+import { consume, current, expect, match, peekToken } from './state.js'
 
 /**
  * @import { ExprNode, IntervalNode, ParserState, WhenClause } from '../types.js'
@@ -20,7 +20,7 @@ export function parsePrimary(state) {
 
   if (match(state, 'paren', '(')) {
     // Peek ahead to see if this is a scalar subquery
-    const next = peekToken(state, 0)
+    const next = current(state)
     if (next.type === 'keyword' && next.value === 'SELECT') {
       // It's a scalar subquery
       const subquery = parseSelectInternal(state)
@@ -47,12 +47,11 @@ export function parsePrimary(state) {
       consume(state) // '('
       const expr = parseExpression(state)
       expect(state, 'keyword', 'AS')
-      const typeTok = expectIdentifier(state)
+      const typeTok = expect(state, 'identifier')
       const toType = typeTok.value.toUpperCase()
       if (!isCastType(toType)) {
         throw syntaxError({
           expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL)',
-          received: `"${typeTok.value}"`,
           after: 'AS',
           ...typeTok,
         })
@@ -71,16 +70,14 @@ export function parsePrimary(state) {
     if (tok.value === 'EXTRACT' && next.type === 'paren' && next.value === '(') {
       consume(state) // EXTRACT
       consume(state) // '('
-      const fieldTok = current(state)
+      const fieldTok = consume(state)
       if (!isExtractField(fieldTok.value)) {
         throw syntaxError({
           expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
-          received: `"${fieldTok.value}"`,
           after: 'EXTRACT(',
           ...fieldTok,
         })
       }
-      consume(state) // field
       expect(state, 'keyword', 'FROM')
       const expr = parseExpression(state)
       expect(state, 'paren', ')')
@@ -113,13 +110,11 @@ export function parsePrimary(state) {
     }
 
     // Table identifier
-    consume(state)
-    let name = tok.value
+    let name = consume(state).value
 
     // table.column
     if (match(state, 'dot')) {
-      const columnTok = expectIdentifier(state)
-      name = name + '.' + columnTok.value
+      name += '.' + expect(state, 'identifier').value
     }
 
     return {
@@ -193,9 +188,8 @@ export function parsePrimary(state) {
       }
 
       if (whenClauses.length === 0) {
-        throw missingClauseError({
-          missing: 'at least one WHEN clause',
-          context: 'CASE expression',
+        throw new ParseError({
+          message: 'CASE expression requires at least one WHEN clause',
           positionStart,
           positionEnd: state.lastPos,
         })
@@ -219,6 +213,7 @@ export function parsePrimary(state) {
         positionEnd: state.lastPos,
       }
     }
+
     if (tok.value === 'INTERVAL') {
       return parseInterval(state)
     }
@@ -246,8 +241,7 @@ export function parsePrimary(state) {
     }
   }
 
-  const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  throw syntaxError({ expected: 'expression', received: found, ...tok })
+  throw syntaxError({ expected: 'expression', ...tok })
 }
 
 /**
@@ -258,25 +252,22 @@ function parseInterval(state) {
   const { positionStart } = expect(state, 'keyword', 'INTERVAL')
 
   // Get value (number or quoted string)
-  const valueTok = current(state)
+  const valueTok = consume(state)
   /** @type {number} */
   let value
   if (valueTok.type === 'number') {
-    consume(state)
     value = Number(valueTok.numericValue)
   } else if (valueTok.type === 'string') {
-    consume(state)
-    const parsed = parseFloat(valueTok.value)
-    if (isNaN(parsed)) {
+    value = parseFloat(valueTok.value)
+    if (isNaN(value)) {
       throw invalidLiteralError({ expected: 'interval value', ...valueTok })
     }
-    value = parsed
   } else {
-    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, ...valueTok })
+    throw syntaxError({ expected: 'interval value (number)', ...valueTok })
   }
 
   // Get unit keyword
-  const unitTok = current(state)
+  const unitTok = consume(state)
   if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
     throw invalidLiteralError({
       expected: 'interval unit',
@@ -284,7 +275,6 @@ function parseInterval(state) {
       ...unitTok,
     })
   }
-  consume(state)
 
   return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: state.lastPos }
 }

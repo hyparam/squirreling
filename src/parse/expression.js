@@ -2,7 +2,7 @@ import { isBinaryOp } from '../validation/functions.js'
 import { syntaxError } from '../validation/parseErrors.js'
 import { parsePrimary } from './primary.js'
 import { parseSelectInternal } from './parse.js'
-import { consume, current, expect, match, peekToken } from './state.js'
+import { consume, current, expect, match } from './state.js'
 
 /**
  * @import { ExprNode, ParserState } from '../types.js'
@@ -89,6 +89,7 @@ function parseNot(state) {
  */
 function parseComparison(state) {
   const left = parseAdditive(state)
+  const { positionStart } = left
 
   // IS [NOT] NULL
   if (match(state, 'keyword', 'IS')) {
@@ -98,13 +99,12 @@ function parseComparison(state) {
       type: 'unary',
       op,
       argument: left,
-      positionStart: left.positionStart,
+      positionStart,
       positionEnd: state.lastPos,
     }
   }
 
   // Binary operators
-  const opTok = current(state)
   if (match(state, 'keyword', 'NOT')) {
     // NOT LIKE
     if (match(state, 'keyword', 'LIKE')) {
@@ -117,10 +117,10 @@ function parseComparison(state) {
           op: 'LIKE',
           left,
           right,
-          positionStart: left.positionStart,
+          positionStart,
           positionEnd: right.positionEnd,
         },
-        positionStart: opTok.positionStart,
+        positionStart,
         positionEnd: right.positionEnd,
       }
     }
@@ -134,9 +134,9 @@ function parseComparison(state) {
       return {
         type: 'binary',
         op: 'OR',
-        left: { type: 'binary', op: '<', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
-        right: { type: 'binary', op: '>', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
-        positionStart: opTok.positionStart,
+        left: { type: 'binary', op: '<', left, right: lower, positionStart, positionEnd: lower.positionEnd },
+        right: { type: 'binary', op: '>', left, right: upper, positionStart, positionEnd: upper.positionEnd },
+        positionStart,
         positionEnd: upper.positionEnd,
       }
     }
@@ -148,7 +148,7 @@ function parseComparison(state) {
         type: 'unary',
         op: 'NOT',
         argument: node,
-        positionStart: opTok.positionStart,
+        positionStart,
         positionEnd: node.positionEnd,
       }
     }
@@ -156,7 +156,6 @@ function parseComparison(state) {
     const found = current(state)
     throw syntaxError({
       expected: 'LIKE, BETWEEN, or IN',
-      received: found.type === 'eof' ? 'end of query' : `"${found.originalValue ?? found.value}"`,
       after: 'NOT',
       ...found,
     })
@@ -170,7 +169,7 @@ function parseComparison(state) {
       op: 'LIKE',
       left,
       right,
-      positionStart: left.positionStart,
+      positionStart,
       positionEnd: right.positionEnd,
     }
   }
@@ -184,9 +183,9 @@ function parseComparison(state) {
     return {
       type: 'binary',
       op: 'AND',
-      left: { type: 'binary', op: '>=', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
-      right: { type: 'binary', op: '<=', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
-      positionStart: left.positionStart,
+      left: { type: 'binary', op: '>=', left, right: lower, positionStart, positionEnd: lower.positionEnd },
+      right: { type: 'binary', op: '<=', left, right: upper, positionStart, positionEnd: upper.positionEnd },
+      positionStart,
       positionEnd: upper.positionEnd,
     }
   }
@@ -196,6 +195,7 @@ function parseComparison(state) {
     return parseIn(state, left)
   }
 
+  const opTok = current(state)
   if (opTok.type === 'operator' && isBinaryOp(opTok.value)) {
     consume(state)
     const right = parseAdditive(state)
@@ -204,7 +204,7 @@ function parseComparison(state) {
       op: opTok.value,
       left,
       right,
-      positionStart: left.positionStart,
+      positionStart,
       positionEnd: right.positionEnd,
     }
   }
@@ -276,7 +276,7 @@ function parseMultiplicative(state) {
 function parseIn(state, left) {
   expect(state, 'paren', '(')
   // Subquery
-  const next = peekToken(state, 0)
+  const next = current(state)
   if (next.type === 'keyword' && next.value === 'SELECT') {
     const subquery = parseSelectInternal(state)
     expect(state, 'paren', ')')

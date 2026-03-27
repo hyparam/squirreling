@@ -1,8 +1,8 @@
+import { argValueError } from '../validation/executionErrors.js'
+
 /**
  * @import { FunctionNode, SqlPrimitive, StringFunc } from '../types.js'
  */
-
-import { argValueError } from '../validation/expressionErrors.js'
 
 /**
  * Evaluate a string function

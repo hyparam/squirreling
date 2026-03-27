@@ -1,3 +1,5 @@
+import { FUNCTION_SIGNATURES } from './functions.js'
+
 /**
  * Structured execution error with position range and optional row number.
  */
@@ -20,16 +22,20 @@ export class ExecutionError extends Error {
 }
 
 /**
- * Error for invalid context (e.g., INTERVAL without date arithmetic).
+ * Error for invalid argument type or value.
  *
  * @param {Object} options
- * @param {string} options.item - What was used incorrectly
- * @param {string} options.validContext - Where it can be used
+ * @param {string} options.funcName - The function name
+ * @param {string} options.message - Specific error message
  * @param {number} options.positionStart
  * @param {number} options.positionEnd
+ * @param {string} [options.hint] - Recovery hint
  * @param {number} options.rowIndex - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
-export function invalidContextError({ item, validContext, positionStart, positionEnd, rowIndex }) {
-  return new ExecutionError({ message: `${item} can only be used with ${validContext}`, positionStart, positionEnd, rowIndex })
+export function argValueError({ funcName, message, positionStart, positionEnd, hint, rowIndex }) {
+  const funcNameUpper = funcName.toUpperCase()
+  const signature = FUNCTION_SIGNATURES[funcNameUpper]?.signature ?? ''
+  const suffix = hint ? `. ${hint}` : ''
+  return new ExecutionError({ message: `${funcName}(${signature}): ${message}${suffix}`, positionStart, positionEnd, rowIndex })
 }

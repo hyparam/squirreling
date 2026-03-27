@@ -5,6 +5,8 @@ import { ParseError, invalidLiteralError, unexpectedCharError } from '../validat
  * @import { Token } from '../types.d.ts'
  */
 
+const NUMBER_REGEX = /^-?(?:\d+n|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/
+
 /**
  * @param {string} query
  * @returns {Token[]}
@@ -34,71 +36,44 @@ export function tokenizeSql(query) {
    * @returns {Token}
    */
   function parseNumber(positionStart) {
-    let value = ''
-    if (peek() === '-') {
-      value += nextChar()
+    const value = query.slice(i).match(NUMBER_REGEX)?.[0]
+    if (!value) {
+      throw invalidLiteralError({ expected: 'number', value: query[i] || 'eof', positionStart, positionEnd: i + 1 })
     }
-    while (isDigit(peek())) {
-      value += nextChar()
+    i += value.length
+    const next = peek()
+    if (isAlpha(next) || next === '.') {
+      throw invalidLiteralError({ expected: 'number', value: value + next, positionStart, positionEnd: i + 1 })
     }
-    if (peek() === '.') {
-      value += nextChar()
-      while (isDigit(peek())) {
-        value += nextChar()
+    if (value.endsWith('n')) {
+      return {
+        type: 'number',
+        value,
+        positionStart,
+        positionEnd: i,
+        numericValue: BigInt(value.slice(0, -1)),
       }
-    }
-    // exponent
-    if (peek() === 'e' || peek() === 'E') {
-      value += nextChar()
-      if (peek() === '+' || peek() === '-') {
-        value += nextChar()
-      }
-      while (isDigit(peek())) {
-        value += nextChar()
-      }
-    }
-    // bigint suffix
-    if (peek() === 'n') {
-      value += nextChar()
-      try {
-        return {
-          type: 'number',
-          value,
-          positionStart,
-          positionEnd: i,
-          numericValue: BigInt(value.slice(0, -1)),
-        }
-      } catch {
-        throw invalidLiteralError({ expected: 'bigint', value, positionStart, positionEnd: i })
-      }
-    }
-    if (isAlpha(peek())) {
-      value += nextChar()
-      throw invalidLiteralError({ expected: 'number', value, positionStart, positionEnd: i })
-    }
-    const num = Number(value)
-    if (isNaN(num)) {
-      throw invalidLiteralError({ expected: 'number', value, positionStart, positionEnd: i })
     }
     return {
       type: 'number',
       value,
       positionStart,
       positionEnd: i,
-      numericValue: num,
+      numericValue: Number(value),
     }
   }
 
   while (i < len) {
+    const positionStart = i
     const ch = peek()
 
     if (isWhitespace(ch)) {
-      nextChar()
+      i++
       continue
     }
 
     // line comment --
-    if (ch === '-' && i + 1 < len && query[i + 1] === '-') {
+    if (ch === '-' && query[i + 1] === '-') {
       while (i < len && query[i] !== '\n') {
         i++
       }
@@ -106,10 +81,10 @@ export function tokenizeSql(query) {
     }
 
     // block comment /* ... */
-    if (ch === '/' && i + 1 < len && query[i + 1] === '*') {
+    if (ch === '/' && query[i + 1] === '*') {
       i += 2
       while (i < len) {
-        if (query[i] === '*' && i + 1 < len && query[i + 1] === '/') {
+        if (query[i] === '*' && query[i + 1] === '/') {
           i += 2
           break
         }
@@ -118,10 +93,8 @@ export function tokenizeSql(query) {
       continue
     }
 
-    const positionStart = i
-
     // negative numbers (when not subtraction)
-    if (ch === '-' && i + 1 < len && isDigit(query[i + 1])) {
+    if (ch === '-' && isDigit(query[i + 1])) {
       const lastToken = tokens[tokens.length - 1]
       const isValueBefore = lastToken && (
         lastToken.type === 'identifier' ||
@@ -197,8 +170,8 @@ export function tokenizeSql(query) {
       continue
     }
 
-    // two-character operators
-    if (ch === '<' || ch === '>' || ch === '!' || ch === '=') {
+    // operators
+    if ('<>!=+-*/%'.includes(ch)) {
       let op = nextChar()
       if ((op === '<' || op === '>' || op === '!') && peek() === '=') {
         op += nextChar()
@@ -208,18 +181,6 @@ export function tokenizeSql(query) {
       tokens.push({
         type: 'operator',
         value: op,
-        positionStart,
-        positionEnd: i,
-      })
-      continue
-    }
-
-    // single-char operators
-    if (ch === '*' || ch === '+' || ch === '-' || ch === '/' || ch === '%') {
-      i++
-      tokens.push({
-        type: 'operator',
-        value: ch,
         positionStart,
         positionEnd: i,
       })

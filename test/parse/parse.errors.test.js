@@ -137,6 +137,11 @@ describe('parseSql error handling', () => {
       expect(() => parseSql({ query: 'SELECT COUNT(DISTINCT *) FROM users' }))
         .toThrow('COUNT(DISTINCT *) is not allowed')
     })
+
+    it('should throw error for FILTER clause on non-aggregate function', () => {
+      expect(() => parseSql({ query: 'SELECT UPPER(name) FILTER (WHERE name > \'a\') FROM users' }))
+        .toThrow('FILTER cannot be applied to non-aggregate function "UPPER"')
+    })
   })
 
   describe('string function errors', () => {

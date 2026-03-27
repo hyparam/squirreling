@@ -1,9 +1,9 @@
 import { expectNoAggregate, findAggregate } from '../validation/aggregates.js'
 import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation/keywords.js'
-import { duplicateCTEError } from '../validation/parseErrors.js'
+import { ParseError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { parseJoins } from './joins.js'
-import { consume, current, expect, expectIdentifier, match, parseError, peekToken } from './state.js'
+import { consume, current, expect, match, parseError, peekToken } from './state.js'
 import { tokenizeSql } from './tokenize.js'
 
 /**
@@ -37,7 +37,6 @@ export function parseSql({ query, functions }) {
 
   return select
 }
-
 
 /**
  * @param {ParserState} state
@@ -76,7 +75,7 @@ export function parseSelectInternal(state) {
     }
   } else {
     // Simple table name: SELECT * FROM users
-    const tableTok = expectIdentifier(state)
+    const tableTok = expect(state, 'identifier')
     const alias = parseTableAlias(state)
     from = {
       kind: 'table',
@@ -225,10 +224,10 @@ function parseSelectList(state) {
       const next = peekToken(state, 1)
       const nextNext = peekToken(state, 2)
       if (next.type === 'dot' && nextNext.type === 'operator' && nextNext.value === '*') {
-        const tableTok = consume(state) // consume table name
+        const table = consume(state).value
         consume(state) // consume dot
         consume(state) // consume asterisk
-        cols.push({ kind: 'star', table: tableTok.value })
+        cols.push({ kind: 'star', table })
         if (!match(state, 'comma')) break
         continue
       }
@@ -268,13 +267,16 @@ function parseWithClause(state) {
 
   while (true) {
     // Parse CTE name
-    const nameTok = expectIdentifier(state)
+    const nameTok = expect(state, 'identifier')
     const name = nameTok.value
     const nameLower = name.toLowerCase()
 
     // Check for duplicate CTE names
     if (seenNames.has(nameLower)) {
-      throw duplicateCTEError({ cteName: name, ...nameTok })
+      throw new ParseError({
+        message: `CTE "${name}" is defined more than once at position ${positionStart}`,
+        ...nameTok,
+      })
     }
     seenNames.add(nameLower)
 
@@ -304,7 +306,7 @@ function parseWithClause(state) {
 export function parseTableAlias(state) {
   // Check for explicit AS keyword
   if (match(state, 'keyword', 'AS')) {
-    const aliasTok = expectIdentifier(state)
+    const aliasTok = expect(state, 'identifier')
     return aliasTok.value
   }
   // Check for implicit alias (identifier not in reserved list)

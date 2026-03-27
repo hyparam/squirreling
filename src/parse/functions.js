@@ -1,5 +1,5 @@
 import { isAggregateFunc, isKnownFunction, niladicFuncs, validateFunctionArgs } from '../validation/functions.js'
-import { ParseError, syntaxError, unknownFunctionError } from '../validation/parseErrors.js'
+import { ParseError, unknownFunctionError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 
@@ -93,9 +93,8 @@ export function parseFunctionCall(state, positionStart) {
   const filterTok = current(state)
   if (match(state, 'keyword', 'FILTER')) {
     if (!isAggregateFunc(funcNameUpper)) {
-      throw syntaxError({
-        expected: 'aggregate function for FILTER clause',
-        received: `FILTER on non-aggregate function "${funcName}"`,
+      throw new ParseError({
+        message: `FILTER cannot be applied to non-aggregate function "${funcName}"`,
         ...filterTok,
       })
     }

@@ -1,7 +1,7 @@
 import { expectNoAggregate } from '../validation/aggregates.js'
 import { parseExpression } from './expression.js'
 import { parseTableAlias } from './parse.js'
-import { current, expect, expectIdentifier, match } from './state.js'
+import { current, expect, match } from './state.js'
 
 /**
  * @import { ExprNode, JoinClause, JoinType, ParserState } from '../types.js'
@@ -46,7 +46,7 @@ export function parseJoins(state) {
     }
 
     // Parse table name and optional alias
-    const tableTok = expectIdentifier(state)
+    const tableTok = expect(state, 'identifier')
     const tableName = tableTok.value
     const tableAlias = parseTableAlias(state)
 

@@ -227,8 +227,11 @@ describe('tokenize', () => {
   })
 
   it('should throw error on invalid number', () => {
-    expect(() => tokenizeSql('12.34n')).toThrow('Invalid bigint 12.34n at position 0')
+    expect(() => tokenizeSql('1.2.3')).toThrow('Invalid number 1.2. at position 0')
+    expect(() => tokenizeSql('1234nn')).toThrow('Invalid number 1234nn at position 0')
+    expect(() => tokenizeSql('12.34n')).toThrow('Invalid number 12.34n at position 0')
     expect(() => tokenizeSql('12.34x')).toThrow('Invalid number 12.34x at position 0')
+    expect(() => tokenizeSql('1e')).toThrow('Invalid number 1e at position 0')
   })
 
   it('should throw error on unexpected character', () => {

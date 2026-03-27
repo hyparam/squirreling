@@ -162,7 +162,7 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { data },
         query: 'SELECT CAST(obj AS INTEGER) FROM data',
-      }))).rejects.toThrow('Cannot CAST object to INTEGER. Supported types: STRING, INT, BIGINT, FLOAT, BOOL')
+      }))).rejects.toThrow('Cannot CAST object to INTEGER (row 1)')
     })
   })
 

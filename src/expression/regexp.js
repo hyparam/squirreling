@@ -1,4 +1,4 @@
-import { argValueError } from '../validation/expressionErrors.js'
+import { argValueError } from '../validation/executionErrors.js'
 
 /**
  * @import { FunctionNode, RegExpFunction, SqlPrimitive } from '../types.js'
