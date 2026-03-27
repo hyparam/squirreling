@@ -3,3 +3,4 @@ package-lock.json
 coverage
 *.tgz
 .DS_Store
+*.parquet

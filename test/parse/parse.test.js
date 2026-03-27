@@ -19,6 +19,8 @@ describe('parseSql', () => {
         joins: [],
         groupBy: [],
         orderBy: [],
+        positionStart: 0,
+        positionEnd: 19,
       })
     })
 
@@ -31,6 +33,8 @@ describe('parseSql', () => {
         joins: [],
         groupBy: [],
         orderBy: [],
+        positionStart: 0,
+        positionEnd: 25,
       })
     })
 
@@ -270,6 +274,8 @@ describe('parseSql', () => {
         ],
         limit: 5,
         offset: 10,
+        positionStart: 9,
+        positionEnd: 174,
       })
     })
 

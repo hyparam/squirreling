@@ -19,18 +19,15 @@ export function parseSql({ query, functions }) {
   /** @type {ParserState} */
   const state = { tokens, pos: 0, lastPos: 0, functions }
 
-  // Check for WITH clause
-  /** @type {WithClause | undefined} */
-  let withClause
-  if (match(state, 'keyword', 'WITH')) {
-    withClause = parseWithClause(state)
-  }
+  // Parse optional WITH clause
+  const withClause = parseWithClause(state)
 
   const select = parseSelectInternal(state)
 
   // Attach WITH clause to the select statement
   if (withClause) {
     select.with = withClause
+    select.positionStart = withClause.positionStart
   }
 
   const tok = current(state)
@@ -85,9 +82,11 @@ function parseSelectList(state) {
  * Parses a WITH clause containing one or more CTEs
  *
  * @param {ParserState} state
- * @returns {WithClause}
+ * @returns {WithClause | undefined}
  */
 function parseWithClause(state) {
+  const withTok = current(state)
+  if (!match(state, 'keyword', 'WITH')) return undefined
   /** @type {CTEDefinition[]} */
   const ctes = []
   /** @type {Set<string>} */
@@ -118,7 +117,7 @@ function parseWithClause(state) {
 
     expect(state, 'paren', ')')
 
-    ctes.push({ name, query })
+    ctes.push({ name, query, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
 
     // Check for comma (more CTEs) or end of WITH clause
     if (!match(state, 'comma')) {
@@ -126,7 +125,7 @@ function parseWithClause(state) {
     }
   }
 
-  return { ctes }
+  return { ctes, positionStart: withTok.positionStart, positionEnd: state.lastPos }
 }
 
 /**
@@ -192,11 +191,18 @@ function parseAs(state) {
  * @returns {FromSubquery}
  */
 function parseFromSubquery(state) {
+  const { positionStart } = current(state)
   expect(state, 'paren', '(')
   const query = parseSelectInternal(state)
   expect(state, 'paren', ')')
   const alias = parseTableAlias(state)
-  return { kind: 'subquery', query, alias }
+  return {
+    kind: 'subquery',
+    query,
+    alias,
+    positionStart,
+    positionEnd: state.lastPos,
+  }
 }
 
 /**
@@ -204,6 +210,7 @@ function parseFromSubquery(state) {
  * @returns {SelectStatement}
  */
 export function parseSelectInternal(state) {
+  const { positionStart } = current(state)
   expect(state, 'keyword', 'SELECT')
 
   let distinct = false
@@ -226,7 +233,13 @@ export function parseSelectInternal(state) {
     // Simple table name: SELECT * FROM users
     const tableTok = expectIdentifier(state)
     const alias = parseTableAlias(state)
-    from = { kind: 'table', table: tableTok.value, alias, positionStart: tableTok.positionStart, positionEnd: tableTok.positionEnd }
+    from = {
+      kind: 'table',
+      table: tableTok.value,
+      alias,
+      positionStart: tableTok.positionStart,
+      positionEnd: tableTok.positionEnd,
+    }
   }
 
   // Parse JOIN clauses
@@ -367,5 +380,7 @@ export function parseSelectInternal(state) {
     orderBy,
     limit,
     offset,
+    positionStart,
+    positionEnd: state.lastPos,
   }
 }

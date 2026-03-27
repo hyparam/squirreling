@@ -8,7 +8,7 @@ export type SqlPrimitive =
   | SqlPrimitive[]
   | Record<string, any>
 
-export interface SelectStatement {
+export interface SelectStatement extends AstBase {
   with?: WithClause
   distinct: boolean
   columns: SelectColumn[]
@@ -22,11 +22,11 @@ export interface SelectStatement {
   offset?: number
 }
 
-export interface WithClause {
+export interface WithClause extends AstBase {
   ctes: CTEDefinition[]
 }
 
-export interface CTEDefinition {
+export interface CTEDefinition extends AstBase {
   name: string
   query: SelectStatement
 }
@@ -37,7 +37,7 @@ export interface FromTable extends AstBase {
   alias?: string
 }
 
-export interface FromSubquery {
+export interface FromSubquery extends AstBase {
   kind: 'subquery'
   query: SelectStatement
   alias: string

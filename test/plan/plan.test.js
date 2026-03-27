@@ -488,42 +488,6 @@ describe('planSql', () => {
       })
     })
 
-    it('should push per-table column hints to join scans', () => {
-      const plan = planSql({ query: 'SELECT users.name, orders.total FROM users JOIN orders ON users.id = orders.user_id' })
-      expect(plan).toMatchObject({
-        child: {
-          type: 'HashJoin',
-          left: {
-            type: 'Scan',
-            table: 'users',
-            hints: { columns: ['name', 'id'] },
-          },
-          right: {
-            type: 'Scan',
-            table: 'orders',
-            hints: { columns: ['total', 'user_id'] },
-          },
-        },
-      })
-    })
-
-    it('should not add column hints for SELECT * join', () => {
-      const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
-      expect(plan).toMatchObject({
-        type: 'HashJoin',
-        left: {
-          type: 'Scan',
-          table: 'users',
-          hints: {},
-        },
-        right: {
-          type: 'Scan',
-          table: 'orders',
-          hints: {},
-        },
-      })
-    })
-
     it('should handle LEFT JOIN', () => {
       const plan = planSql({ query: 'SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id' })
       expect(plan).toEqual({

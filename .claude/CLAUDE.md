@@ -21,6 +21,9 @@ npx tsc           # Type check with TypeScript
 - 2-space indentation
 - Prefer `function` over arrow `=>` for named functions
 - JSDoc type annotations required for all functions (@param, @returns, @yields)
+- Tests:
+  - Prefer `toEqual` over `toMatchObject` for more precise assertions
+  - Do not add `: undefined` values to test fixtures (toEqual ignores undefined properties)
 
 ## Architecture
 
