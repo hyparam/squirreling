@@ -187,6 +187,17 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_EXTRACT', () => {
+    it('should work as an alias for JSON_VALUE', async () => {
+      const data = [{ id: 1, json: { user: { name: 'Alice' } } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT(json, \'$.user.name\') AS name FROM data',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }])
+    })
+  })
+
   describe('JSON_OBJECT', () => {
     it('should create an object with string key and value', async () => {
       const data = [{ id: 1 }]

@@ -160,6 +160,16 @@ describe('parseSql error handling', () => {
         .toThrow('Unknown function "FOOBAR" at position 7')
     })
 
+    it('should suggest similar functions with shared prefix', () => {
+      expect(() => parseSql({ query: 'SELECT JSON_EXTRACT_STRING(name) FROM users' }))
+        .toThrow('Unknown function "JSON_EXTRACT_STRING" at position 7. Did you mean JSON_EXTRACT, JSON_ARRAYAGG, JSON_OBJECT, JSON_VALUE?')
+    })
+
+    it('should suggest similar functions by edit distance', () => {
+      expect(() => parseSql({ query: 'SELECT UPER(name) FROM users' }))
+        .toThrow('Unknown function "UPER" at position 7. Did you mean UPPER, LOWER, POWER, PI?')
+    })
+
     it('should allow unknown function names when functions parameter provided', () => {
       // Should NOT throw - FOOBAR is provided in functions parameter
       const result = parseSql({

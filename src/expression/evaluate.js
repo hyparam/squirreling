@@ -337,7 +337,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       })
     }
 
-    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY') {
+    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT') {
       let jsonArg = args[0]
       const pathArg = args[1]
       if (jsonArg == null || pathArg == null) return null

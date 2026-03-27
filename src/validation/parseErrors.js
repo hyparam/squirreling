@@ -1,3 +1,5 @@
+import { FUNCTION_SIGNATURES } from './functions.js'
+
 /**
  * Structured parse error with position range.
  */
@@ -76,10 +78,62 @@ export function unexpectedCharError({ char, positionStart, expectsSelect }) {
  * @returns {ParseError}
  */
 export function unknownFunctionError({ funcName, positionStart, positionEnd }) {
-  // TODO: suggest similar function names based on edit distance
-  return new ParseError({
-    message: `Unknown function "${funcName}" at position ${positionStart}.`,
-    positionStart,
-    positionEnd,
-  })
+  const suggestions = suggestFunctions(funcName)
+  let message = `Unknown function "${funcName}" at position ${positionStart}.`
+  if (suggestions.length) {
+    message += ` Did you mean ${suggestions.join(', ')}?`
+  }
+  return new ParseError({ message, positionStart, positionEnd })
+}
+
+/**
+ * Suggests similar function names for an unknown function.
+ * Combines prefix matches and edit distance into a single ranked list.
+ *
+ * @param {string} name - The unknown function name (uppercase)
+ * @returns {string[]} Up to 4 suggested function names
+ */
+function suggestFunctions(name) {
+  const upper = name.toUpperCase()
+  const allNames = Object.keys(FUNCTION_SIGNATURES)
+
+  // Find shared prefix (e.g. JSON_, ST_)
+  const underscoreIdx = upper.indexOf('_')
+  const prefix = underscoreIdx > 0 ? upper.slice(0, underscoreIdx + 1) : ''
+
+  const maxDist = Math.max(3, Math.floor(upper.length / 2))
+  const results = allNames
+    .map(n => {
+      const dist = editDistance(upper, n)
+      const hasPrefix = prefix && n.startsWith(prefix)
+      return { name: n, dist, hasPrefix }
+    })
+    .filter(s => s.dist <= maxDist || s.hasPrefix)
+    .sort((a, b) => a.dist - b.dist)
+  return results.slice(0, 4).map(s => s.name)
+}
+
+/**
+ * Levenshtein edit distance between two strings.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function editDistance(a, b) {
+  const m = a.length
+  const n = b.length
+  const dp = Array.from({ length: m + 1 }, (_, i) => i)
+  for (let j = 1; j <= n; j++) {
+    let prev = dp[0]
+    dp[0] = j
+    for (let i = 1; i <= m; i++) {
+      const tmp = dp[i]
+      dp[i] = a[i - 1] === b[j - 1]
+        ? prev
+        : 1 + Math.min(prev, dp[i], dp[i - 1])
+      prev = tmp
+    }
+  }
+  return dp[m]
 }
