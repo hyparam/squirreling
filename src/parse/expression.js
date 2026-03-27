@@ -1,293 +1,21 @@
-import {
-  invalidLiteralError,
-  missingClauseError,
-  syntaxError,
-  unknownFunctionError,
-} from '../validation/parseErrors.js'
-import { RESERVED_KEYWORDS, isCastType, isExtractField, isIntervalUnit, isKnownFunction } from '../validation/functions.js'
-import { parseComparison } from './comparison.js'
-import { parseFunctionCall } from './functions.js'
+import { isBinaryOp } from '../validation/functions.js'
+import { syntaxError } from '../validation/parseErrors.js'
+import { parsePrimary } from './primary.js'
 import { parseSelectInternal } from './parse.js'
-import { consume, current, expect, expectIdentifier, match, peekToken } from './state.js'
+import { consume, current, expect, match, peekToken } from './state.js'
 
 /**
- * @import { ExprNode, IntervalNode, ParserState, SelectStatement, WhenClause } from '../types.js'
+ * @import { ExprNode, ParserState } from '../types.js'
  */
+
+// Precedence (lowest to highest):
+// OR, AND, NOT, Comparison, Additive, Multiplicative, Primary
 
 /**
  * @param {ParserState} state
  * @returns {ExprNode}
  */
 export function parseExpression(state) {
-  return parseOr(state)
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-export function parsePrimary(state) {
-  const tok = current(state)
-  const { positionStart } = tok
-
-  if (tok.type === 'paren' && tok.value === '(') {
-    // Peek ahead to see if this is a scalar subquery
-    const nextTok = peekToken(state, 1)
-    if (nextTok.type === 'keyword' && nextTok.value === 'SELECT') {
-      // It's a scalar subquery
-      const subquery = parseSubquery(state)
-      return {
-        type: 'subquery',
-        subquery,
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-    // Regular grouped expression
-    consume(state)
-    const expr = parseExpression(state)
-    expect(state, 'paren', ')')
-    return expr
-  }
-
-  if (tok.type === 'identifier') {
-    const next = peekToken(state, 1)
-
-    // CAST expression
-    if (tok.value === 'CAST' && next.type === 'paren' && next.value === '(') {
-      consume(state) // CAST
-      consume(state) // '('
-      const expr = parseExpression(state)
-      expect(state, 'keyword', 'AS')
-      const typeTok = expectIdentifier(state)
-      const toType = typeTok.value.toUpperCase()
-      if (!isCastType(toType)) {
-        throw syntaxError({
-          expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL)',
-          received: `"${typeTok.value}"`,
-          after: 'AS',
-          ...typeTok,
-        })
-      }
-      expect(state, 'paren', ')')
-      return {
-        type: 'cast',
-        expr,
-        toType,
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-
-    // EXTRACT(field FROM expr)
-    if (tok.value === 'EXTRACT' && next.type === 'paren' && next.value === '(') {
-      consume(state) // EXTRACT
-      consume(state) // '('
-      const fieldTok = current(state)
-      if (!isExtractField(fieldTok.value)) {
-        throw syntaxError({
-          expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
-          received: `"${fieldTok.value}"`,
-          ...fieldTok,
-        })
-      }
-      consume(state) // field
-      expect(state, 'keyword', 'FROM')
-      const expr = parseExpression(state)
-      expect(state, 'paren', ')')
-      return {
-        type: 'function',
-        funcName: 'EXTRACT',
-        args: [
-          { type: 'literal', value: fieldTok.value, positionStart: fieldTok.positionStart, positionEnd: fieldTok.positionEnd },
-          expr,
-        ],
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-
-    // function call
-    if (next.type === 'paren' && next.value === '(') {
-      const funcName = tok.value
-
-      // Validate function existence early for better error messages
-      if (!isKnownFunction(funcName.toUpperCase(), state.functions)) {
-        throw unknownFunctionError({
-          funcName,
-          positionStart,
-          positionEnd: tok.positionEnd,
-        })
-      }
-
-      consume(state) // function name
-      return parseFunctionCall(state, funcName, positionStart)
-    }
-
-    // Niladic datetime functions (no parentheses required per ANSI SQL)
-    const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP']
-    if (niladicFuncs.includes(tok.value)) {
-      consume(state)
-      return {
-        type: 'function',
-        funcName: tok.value,
-        args: [],
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-
-    consume(state)
-    let name = tok.value
-
-    // table.column
-    if (match(state, 'dot')) {
-      const columnTok = expectIdentifier(state)
-      name = name + '.' + columnTok.value
-    }
-
-    return {
-      type: 'identifier',
-      name,
-      positionStart,
-      positionEnd: state.lastPos,
-    }
-  }
-
-  if (tok.type === 'number') {
-    consume(state)
-    return {
-      type: 'literal',
-      value: tok.numericValue ?? null,
-      positionStart,
-      positionEnd: state.lastPos,
-    }
-  }
-
-  if (tok.type === 'string') {
-    consume(state)
-    return {
-      type: 'literal',
-      value: tok.value,
-      positionStart,
-      positionEnd: state.lastPos,
-    }
-  }
-
-  // Keywords that can be used as function names (e.g., LEFT, RIGHT)
-  if (tok.type === 'keyword') {
-    const next = peekToken(state, 1)
-    if (next.type === 'paren' && next.value === '(' && isKnownFunction(tok.value, state.functions)) {
-      consume(state) // function name
-      return parseFunctionCall(state, tok.value, positionStart)
-    }
-
-    if (match(state, 'keyword', 'TRUE')) {
-      return { type: 'literal', value: true, positionStart, positionEnd: state.lastPos }
-    }
-    if (match(state, 'keyword', 'FALSE')) {
-      return { type: 'literal', value: false, positionStart, positionEnd: state.lastPos }
-    }
-    if (match(state, 'keyword', 'NULL')) {
-      return { type: 'literal', value: null, positionStart, positionEnd: state.lastPos }
-    }
-    if (match(state, 'keyword', 'EXISTS')) {
-      const subquery = parseSubquery(state)
-      return {
-        type: 'exists',
-        subquery,
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-    if (match(state, 'keyword', 'CASE')) {
-      // Check if it's simple CASE (CASE expr WHEN ...) or searched CASE (CASE WHEN ...)
-      /** @type {ExprNode | undefined} */
-      let caseExpr
-      const nextTok = current(state)
-      if (nextTok.type !== 'keyword' || nextTok.value !== 'WHEN') {
-        // Simple CASE: parse the case expression
-        caseExpr = parseExpression(state)
-      }
-
-      // Parse WHEN clauses
-      /** @type {WhenClause[]} */
-      const whenClauses = []
-      while (match(state, 'keyword', 'WHEN')) {
-        const condition = parseExpression(state)
-        expect(state, 'keyword', 'THEN')
-        const result = parseExpression(state)
-        whenClauses.push({
-          condition,
-          result,
-          positionStart: condition.positionStart,
-          positionEnd: result.positionEnd,
-        })
-      }
-
-      if (whenClauses.length === 0) {
-        throw missingClauseError({
-          missing: 'at least one WHEN clause',
-          context: 'CASE expression',
-          positionStart,
-          positionEnd: state.lastPos,
-        })
-      }
-
-      // Parse optional ELSE clause
-      /** @type {ExprNode | undefined} */
-      let elseResult
-      if (match(state, 'keyword', 'ELSE')) {
-        elseResult = parseExpression(state)
-      }
-
-      expect(state, 'keyword', 'END')
-
-      return {
-        type: 'case',
-        caseExpr,
-        whenClauses,
-        elseResult,
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-    if (tok.value === 'INTERVAL') {
-      return parseInterval(state)
-    }
-
-    // Non-reserved keywords can be used as identifiers (e.g. column aliases)
-    if (!RESERVED_KEYWORDS.has(tok.value)) {
-      consume(state)
-      return {
-        type: 'identifier',
-        name: tok.originalValue ?? tok.value,
-        positionStart,
-        positionEnd: state.lastPos,
-      }
-    }
-  }
-
-  if (match(state, 'operator', '-')) {
-    const argument = parsePrimary(state)
-    return {
-      type: 'unary',
-      op: '-',
-      argument,
-      positionStart,
-      positionEnd: argument.positionEnd,
-    }
-  }
-
-  const found = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
-  throw syntaxError({ expected: 'expression', received: found, ...tok })
-}
-
-/**
- * @param {ParserState} state
- * @returns {ExprNode}
- */
-function parseOr(state) {
   let left = parseAnd(state)
   while (match(state, 'keyword', 'OR')) {
     const right = parseAnd(state)
@@ -333,7 +61,9 @@ function parseNot(state) {
     const { positionStart } = tok
     // Check for NOT EXISTS
     if (match(state, 'keyword', 'EXISTS')) {
-      const subquery = parseSubquery(state)
+      expect(state, 'paren', '(')
+      const subquery = parseSelectInternal(state)
+      expect(state, 'paren', ')')
       return {
         type: 'not exists',
         subquery,
@@ -357,7 +87,136 @@ function parseNot(state) {
  * @param {ParserState} state
  * @returns {ExprNode}
  */
-export function parseAdditive(state) {
+function parseComparison(state) {
+  const left = parseAdditive(state)
+
+  // IS [NOT] NULL
+  if (match(state, 'keyword', 'IS')) {
+    const op = match(state, 'keyword', 'NOT') ? 'IS NOT NULL' : 'IS NULL'
+    expect(state, 'keyword', 'NULL')
+    return {
+      type: 'unary',
+      op,
+      argument: left,
+      positionStart: left.positionStart,
+      positionEnd: state.lastPos,
+    }
+  }
+
+  // Binary operators
+  const opTok = current(state)
+  if (match(state, 'keyword', 'NOT')) {
+    // NOT LIKE
+    if (match(state, 'keyword', 'LIKE')) {
+      const right = parseAdditive(state)
+      return {
+        type: 'unary',
+        op: 'NOT',
+        argument: {
+          type: 'binary',
+          op: 'LIKE',
+          left,
+          right,
+          positionStart: left.positionStart,
+          positionEnd: right.positionEnd,
+        },
+        positionStart: opTok.positionStart,
+        positionEnd: right.positionEnd,
+      }
+    }
+
+    // NOT BETWEEN - convert to range comparison
+    if (match(state, 'keyword', 'BETWEEN')) {
+      const lower = parseAdditive(state)
+      expect(state, 'keyword', 'AND')
+      const upper = parseAdditive(state)
+      // NOT BETWEEN -> expr < lower OR expr > upper
+      return {
+        type: 'binary',
+        op: 'OR',
+        left: { type: 'binary', op: '<', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
+        right: { type: 'binary', op: '>', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
+        positionStart: opTok.positionStart,
+        positionEnd: upper.positionEnd,
+      }
+    }
+
+    // NOT IN
+    if (match(state, 'keyword', 'IN')) {
+      const node = parseIn(state, left)
+      return {
+        type: 'unary',
+        op: 'NOT',
+        argument: node,
+        positionStart: opTok.positionStart,
+        positionEnd: node.positionEnd,
+      }
+    }
+
+    const found = current(state)
+    throw syntaxError({
+      expected: 'LIKE, BETWEEN, or IN',
+      received: found.type === 'eof' ? 'end of query' : `"${found.originalValue ?? found.value}"`,
+      after: 'NOT',
+      ...found,
+    })
+  }
+
+  // LIKE
+  if (match(state, 'keyword', 'LIKE')) {
+    const right = parseAdditive(state)
+    return {
+      type: 'binary',
+      op: 'LIKE',
+      left,
+      right,
+      positionStart: left.positionStart,
+      positionEnd: right.positionEnd,
+    }
+  }
+
+  // BETWEEN - convert to range comparison
+  if (match(state, 'keyword', 'BETWEEN')) {
+    const lower = parseAdditive(state)
+    expect(state, 'keyword', 'AND')
+    const upper = parseAdditive(state)
+    // BETWEEN -> expr >= lower AND expr <= upper
+    return {
+      type: 'binary',
+      op: 'AND',
+      left: { type: 'binary', op: '>=', left, right: lower, positionStart: left.positionStart, positionEnd: lower.positionEnd },
+      right: { type: 'binary', op: '<=', left, right: upper, positionStart: left.positionStart, positionEnd: upper.positionEnd },
+      positionStart: left.positionStart,
+      positionEnd: upper.positionEnd,
+    }
+  }
+
+  // IN
+  if (match(state, 'keyword', 'IN')) {
+    return parseIn(state, left)
+  }
+
+  if (opTok.type === 'operator' && isBinaryOp(opTok.value)) {
+    consume(state)
+    const right = parseAdditive(state)
+    return {
+      type: 'binary',
+      op: opTok.value,
+      left,
+      right,
+      positionStart: left.positionStart,
+      positionEnd: right.positionEnd,
+    }
+  }
+
+  return left
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {ExprNode}
+ */
+function parseAdditive(state) {
   let left = parseMultiplicative(state)
   while (true) {
     const tok = current(state)
@@ -408,53 +267,40 @@ function parseMultiplicative(state) {
 }
 
 /**
- * Creates an ExprCursor adapter for the ParserState.
+ * Parses an IN expression (subquery or value list).
  *
  * @param {ParserState} state
- * @returns {SelectStatement}
+ * @param {ExprNode} left
+ * @returns {ExprNode}
  */
-export function parseSubquery(state) {
+function parseIn(state, left) {
   expect(state, 'paren', '(')
-  const query = parseSelectInternal(state)
-  expect(state, 'paren', ')')
-  return query
-}
-
-/**
- * @param {ParserState} state
- * @returns {IntervalNode}
- */
-function parseInterval(state) {
-  const { positionStart } = expect(state, 'keyword', 'INTERVAL')
-
-  // Get value (number or quoted string)
-  const valueTok = current(state)
-  /** @type {number} */
-  let value
-  if (valueTok.type === 'number') {
-    consume(state)
-    value = Number(valueTok.numericValue)
-  } else if (valueTok.type === 'string') {
-    consume(state)
-    const parsed = parseFloat(valueTok.value)
-    if (isNaN(parsed)) {
-      throw invalidLiteralError({ expected: 'interval value', ...valueTok })
+  // Subquery
+  const next = peekToken(state, 0)
+  if (next.type === 'keyword' && next.value === 'SELECT') {
+    const subquery = parseSelectInternal(state)
+    expect(state, 'paren', ')')
+    return {
+      type: 'in',
+      expr: left,
+      subquery,
+      positionStart: left.positionStart,
+      positionEnd: state.lastPos,
     }
-    value = parsed
-  } else {
-    throw syntaxError({ expected: 'interval value (number)', received: `"${valueTok.value}"`, ...valueTok })
   }
-
-  // Get unit keyword
-  const unitTok = current(state)
-  if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
-    throw invalidLiteralError({
-      expected: 'interval unit',
-      validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
-      ...unitTok,
-    })
+  // Value list
+  /** @type {ExprNode[]} */
+  const values = []
+  while (true) {
+    values.push(parseExpression(state))
+    if (!match(state, 'comma')) break
   }
-  consume(state)
-
-  return { type: 'interval', value, unit: unitTok.value, positionStart, positionEnd: state.lastPos }
+  expect(state, 'paren', ')')
+  return {
+    type: 'in valuelist',
+    expr: left,
+    values,
+    positionStart: left.positionStart,
+    positionEnd: state.lastPos,
+  }
 }

@@ -33,20 +33,6 @@ export function syntaxError({ expected, received, positionStart, positionEnd, af
 }
 
 /**
- * Error for unterminated literals (strings, identifiers).
- *
- * @param {Object} options
- * @param {'string' | 'identifier'} options.type - Type of unterminated literal
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- * @returns {ParseError}
- */
-export function unterminatedError({ type, positionStart, positionEnd }) {
-  const name = type === 'string' ? 'string literal' : 'identifier'
-  return new ParseError({ message: `Unterminated ${name} starting at position ${positionStart}`, positionStart, positionEnd })
-}
-
-/**
  * Error for invalid literals (numbers, intervals, etc).
  *
  * @param {Object} options

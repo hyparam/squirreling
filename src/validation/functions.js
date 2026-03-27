@@ -1,7 +1,9 @@
 /**
  * @import { AggregateFunc, BinaryOp, CastType, FunctionSignature, IntervalUnit, MathFunc, RegExpFunction, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
  */
-import { ParseError } from '../validation/parseErrors.js'
+import { ParseError, unknownFunctionError } from '../validation/parseErrors.js'
+
+export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP']
 
 /**
  * @param {string} name
@@ -185,18 +187,6 @@ export const FUNCTION_SIGNATURES = {
 }
 
 /**
- * Format expected argument count for error messages.
- * @param {number} min
- * @param {number | undefined} max
- * @returns {string | number}
- */
-function formatExpected(min, max) {
-  if (max == null) return `at least ${min}`
-  if (min === max) return min
-  return `${min} or ${max}`
-}
-
-/**
  * Validates function argument count, throwing a ParseError if invalid.
  * @param {string} funcName - The function name (uppercase)
  * @param {number} argCount - Number of arguments provided
@@ -205,7 +195,7 @@ function formatExpected(min, max) {
  * @param {Record<string, UserDefinedFunction>} [functions] - User-defined functions
  * @throws {ParseError}
  */
-export function validateFunctionArgCount(funcName, argCount, positionStart, positionEnd, functions) {
+export function validateFunctionArgs(funcName, argCount, positionStart, positionEnd, functions) {
   // Check built-in functions
   let spec = FUNCTION_SIGNATURES[funcName]
 
@@ -217,22 +207,22 @@ export function validateFunctionArgCount(funcName, argCount, positionStart, posi
     }
   }
 
-  if (!spec) return
-
-  const { min, max } = spec
+  if (!spec) {
+    throw unknownFunctionError({ funcName, positionStart, positionEnd })
+  }
+  const { min, max, signature } = spec
 
   if (argCount < min || max != null && argCount > max) {
-    const expected = formatExpected(min, max)
-    const signature = FUNCTION_SIGNATURES[funcName]?.signature ?? ''
-    let expectedStr = `${expected} arguments`
-    if (expected === 0) expectedStr = 'no arguments'
-    if (expected === 1) expectedStr = '1 argument'
-    if (typeof expected === 'string' && expected.endsWith(' 1')) {
-      expectedStr = `${expected} argument`
+    let expected = ''
+    if (max == null) expected += `at least ${min} argument`
+    else if (min !== max) expected += `${min}-${max} arguments`
+    else {
+      expected += `${min} argument`
+      if (min !== 1) expected += 's'
     }
 
     throw new ParseError({
-      message: `${funcName}(${signature}) function requires ${expectedStr}, got ${argCount}`,
+      message: `${funcName}(${signature ?? ''}) function requires ${expected}, got ${argCount}`,
       positionStart,
       positionEnd,
     })
@@ -256,26 +246,3 @@ export function isKnownFunction(funcName, functions) {
 
   return false
 }
-
-// Reserved keywords that cannot be used as identifiers in expressions.
-// Non-reserved keywords (e.g. DAY, MONTH, FILTER, ASC) can be used as column alias references.
-export const RESERVED_KEYWORDS = new Set([
-  'SELECT', 'FROM', 'WHERE', 'WITH',
-  'AND', 'OR', 'NOT', 'IS', 'LIKE', 'IN', 'BETWEEN',
-  'TRUE', 'FALSE', 'NULL',
-  'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'INTERVAL',
-  'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
-  'AS', 'ALL', 'DISTINCT',
-  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'ON',
-])
-
-// Keywords that cannot be used as implicit aliases after a column
-export const RESERVED_AFTER_COLUMN = new Set([
-  'FROM', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
-])
-
-// Keywords that cannot be used as table aliases
-export const RESERVED_AFTER_TABLE = new Set([
-  'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'JOIN', 'INNER',
-  'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'POSITIONAL',
-])

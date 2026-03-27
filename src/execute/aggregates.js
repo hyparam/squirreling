@@ -31,7 +31,7 @@ function projectAggregateColumns(selectColumns, group, context) {
           cells[key] = firstRow.cells[key]
         }
       }
-    } else if (col.kind === 'derived') {
+    } else {
       const alias = col.alias ?? derivedAlias(col.expr)
       columns.push(alias)
       cells[alias] = () => evaluateExpr({

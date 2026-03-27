@@ -14,11 +14,16 @@ describe('tokenize', () => {
   })
 
   it('should tokenize numbers', () => {
-    const tokens = tokenizeSql('123 45.67 1.2e10 3E-5')
-    expect(tokens[0]).toMatchObject({ type: 'number', value: '123', numericValue: 123 })
-    expect(tokens[1]).toMatchObject({ type: 'number', value: '45.67', numericValue: 45.67 })
-    expect(tokens[2]).toMatchObject({ type: 'number', value: '1.2e10', numericValue: 1.2e10 })
-    expect(tokens[3]).toMatchObject({ type: 'number', value: '3E-5', numericValue: 3e-5 })
+    const tokens = tokenizeSql('-1 0 123 45.67 0.2e2 1.2e10 3E-5')
+    expect(tokens).toHaveLength(8)
+    expect(tokens[0]).toMatchObject({ type: 'number', value: '-1', numericValue: -1 })
+    expect(tokens[1]).toMatchObject({ type: 'number', value: '0', numericValue: 0 })
+    expect(tokens[2]).toMatchObject({ type: 'number', value: '123', numericValue: 123 })
+    expect(tokens[3]).toMatchObject({ type: 'number', value: '45.67', numericValue: 45.67 })
+    expect(tokens[4]).toMatchObject({ type: 'number', value: '0.2e2', numericValue: 20 })
+    expect(tokens[5]).toMatchObject({ type: 'number', value: '1.2e10', numericValue: 1.2e10 })
+    expect(tokens[6]).toMatchObject({ type: 'number', value: '3E-5', numericValue: 3e-5 })
+    expect(tokens[7]).toMatchObject({ type: 'eof' })
   })
 
   it('should tokenize negative numbers and expressions', () => {
@@ -30,6 +35,12 @@ describe('tokenize', () => {
       { type: 'identifier', value: 'x' },
       { type: 'operator', value: '-' },
       { type: 'number', value: '42', numericValue: 42 },
+      { type: 'eof' },
+    ])
+    expect(tokenizeSql('x - -42')).toMatchObject([
+      { type: 'identifier', value: 'x' },
+      { type: 'operator', value: '-' },
+      { type: 'number', value: '-42', numericValue: -42 },
       { type: 'eof' },
     ])
     expect(tokenizeSql('- x')).toMatchObject([
@@ -203,7 +214,7 @@ describe('tokenize', () => {
   })
 
   it('should throw error on unterminated string literal', () => {
-    expect(() => tokenizeSql('\'unterminated string')).toThrow('Unterminated string literal starting at position 0')
+    expect(() => tokenizeSql('\'unterminated string')).toThrow('Unterminated string starting at position 0')
   })
 
   it('should throw error on unterminated identifier', () => {
@@ -216,7 +227,7 @@ describe('tokenize', () => {
   })
 
   it('should throw error on invalid number', () => {
-    expect(() => tokenizeSql('12.34n')).toThrow('Invalid bigint 12.34 at position 0')
+    expect(() => tokenizeSql('12.34n')).toThrow('Invalid bigint 12.34n at position 0')
     expect(() => tokenizeSql('12.34x')).toThrow('Invalid number 12.34x at position 0')
   })
 

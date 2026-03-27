@@ -68,7 +68,7 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT SUBSTRING(name) FROM users',
-      }))).rejects.toThrow('SUBSTRING(string, start[, length]) function requires 2 or 3 arguments, got 1')
+      }))).rejects.toThrow('SUBSTRING(string, start[, length]) function requires 2-3 arguments, got 1')
     })
 
     it('should throw error for CONCAT with no args', async () => {
@@ -82,14 +82,14 @@ describe('executeSql error handling', () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT RANDOM(1) FROM users',
-      }))).rejects.toThrow('RANDOM() function requires no arguments, got 1')
+      }))).rejects.toThrow('RANDOM() function requires 0 arguments, got 1')
     })
 
     it('should throw error for CURRENT_DATE with args', async () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT CURRENT_DATE(1) FROM users',
-      }))).rejects.toThrow('CURRENT_DATE() function requires no arguments, got 1')
+      }))).rejects.toThrow('CURRENT_DATE() function requires 0 arguments, got 1')
     })
 
     it('should throw error for JSON_VALUE with wrong arg count', async () => {

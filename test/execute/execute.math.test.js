@@ -604,7 +604,7 @@ describe('math functions', () => {
       await expect(collect(executeSql({
         tables: { data: errorData },
         query: 'SELECT ROUND(value, 2, 3) FROM data',
-      }))).rejects.toThrow('ROUND(number[, decimals]) function requires 1 or 2 arguments, got 3')
+      }))).rejects.toThrow('ROUND(number[, decimals]) function requires 1-2 arguments, got 3')
     })
   })
 })

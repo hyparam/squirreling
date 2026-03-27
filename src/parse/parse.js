@@ -1,5 +1,5 @@
 import { expectNoAggregate, findAggregate } from '../validation/aggregates.js'
-import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation/functions.js'
+import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation/keywords.js'
 import { duplicateCTEError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { parseJoins } from './joins.js'
@@ -38,171 +38,6 @@ export function parseSql({ query, functions }) {
   return select
 }
 
-/**
- * @param {ParserState} state
- * @returns {SelectColumn[]}
- */
-function parseSelectList(state) {
-  /** @type {SelectColumn[]} */
-  const cols = []
-
-  while (true) {
-    const tok = current(state)
-
-    // Check for qualified asterisk (table.*)
-    if (tok.type === 'identifier') {
-      const next = peekToken(state, 1)
-      const nextNext = peekToken(state, 2)
-      if (next.type === 'dot' && nextNext.type === 'operator' && nextNext.value === '*') {
-        const tableTok = consume(state) // consume table name
-        consume(state) // consume dot
-        consume(state) // consume asterisk
-        cols.push({ kind: 'star', table: tableTok.value })
-        if (!match(state, 'comma')) break
-        continue
-      }
-    }
-
-    // Check for unqualified asterisk (*)
-    if (match(state, 'operator', '*')) {
-      cols.push({ kind: 'star' })
-      if (!match(state, 'comma')) break
-      continue
-    }
-
-    cols.push(parseSelectItem(state))
-    if (!match(state, 'comma')) break
-  }
-
-  return cols
-}
-
-/**
- * Parses a WITH clause containing one or more CTEs
- *
- * @param {ParserState} state
- * @returns {WithClause | undefined}
- */
-function parseWithClause(state) {
-  const withTok = current(state)
-  if (!match(state, 'keyword', 'WITH')) return undefined
-  /** @type {CTEDefinition[]} */
-  const ctes = []
-  /** @type {Set<string>} */
-  const seenNames = new Set()
-
-  while (true) {
-    // Parse CTE name
-    const nameTok = expectIdentifier(state)
-    const name = nameTok.value
-    const nameLower = name.toLowerCase()
-
-    // Check for duplicate CTE names
-    if (seenNames.has(nameLower)) {
-      throw duplicateCTEError({
-        cteName: name,
-        positionStart: nameTok.positionStart,
-        positionEnd: nameTok.positionEnd,
-      })
-    }
-    seenNames.add(nameLower)
-
-    // Expect AS statement
-    expect(state, 'keyword', 'AS')
-    expect(state, 'paren', '(')
-
-    // Parse the CTE's SELECT statement
-    const query = parseSelectInternal(state)
-
-    expect(state, 'paren', ')')
-
-    ctes.push({ name, query, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
-
-    // Check for comma (more CTEs) or end of WITH clause
-    if (!match(state, 'comma')) {
-      break
-    }
-  }
-
-  return { ctes, positionStart: withTok.positionStart, positionEnd: state.lastPos }
-}
-
-/**
- * @param {ParserState} state
- * @returns {SelectColumn}
- */
-function parseSelectItem(state) {
-  const expr = parseExpression(state)
-  const alias = parseAs(state)
-  return { kind: 'derived', expr, alias }
-}
-
-/**
- * Parses an optional table alias (e.g., "FROM users u" or "FROM users AS u")
- * @param {ParserState} state
- * @returns {string | undefined}
- */
-export function parseTableAlias(state) {
-  // Check for explicit AS keyword
-  if (match(state, 'keyword', 'AS')) {
-    const aliasTok = expectIdentifier(state)
-    return aliasTok.value
-  }
-  // Check for implicit alias (identifier not in reserved list)
-  const maybeAlias = current(state)
-  if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_TABLE.has(maybeAlias.value.toUpperCase())) {
-    consume(state)
-    return maybeAlias.value
-  }
-}
-
-/**
- * @param {ParserState} state
- * @returns {string | undefined}
- */
-function parseAs(state) {
-  if (match(state, 'keyword', 'AS')) {
-    // After AS, allow keywords as aliases (except reserved ones)
-    const aliasTok = current(state)
-    if (aliasTok.type === 'identifier') {
-      consume(state)
-      return aliasTok.value
-    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
-      consume(state)
-      // Use original case for keywords used as aliases
-      return aliasTok.originalValue ?? aliasTok.value
-    } else {
-      throw parseError(state, 'alias')
-    }
-  } else {
-    // Implicit alias SELECT UPPER(name) name_upper
-    const maybeAlias = current(state)
-    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
-      consume(state)
-      return maybeAlias.value
-    }
-  }
-}
-
-/**
- * Parses a subquery in parentheses with an alias
- * @param {ParserState} state
- * @returns {FromSubquery}
- */
-function parseFromSubquery(state) {
-  const { positionStart } = current(state)
-  expect(state, 'paren', '(')
-  const query = parseSelectInternal(state)
-  expect(state, 'paren', ')')
-  const alias = parseTableAlias(state)
-  return {
-    kind: 'subquery',
-    query,
-    alias,
-    positionStart,
-    positionEnd: state.lastPos,
-  }
-}
 
 /**
  * @param {ParserState} state
@@ -227,7 +62,18 @@ export function parseSelectInternal(state) {
   const tok = current(state)
   if (tok.type === 'paren' && tok.value === '(') {
     // Subquery: SELECT * FROM (SELECT ...) AS alias
-    from = parseFromSubquery(state)
+    const { positionStart } = current(state)
+    expect(state, 'paren', '(')
+    const query = parseSelectInternal(state)
+    expect(state, 'paren', ')')
+    const alias = parseTableAlias(state)
+    from = {
+      kind: 'subquery',
+      query,
+      alias,
+      positionStart,
+      positionEnd: state.lastPos,
+    }
   } else {
     // Simple table name: SELECT * FROM users
     const tableTok = expectIdentifier(state)
@@ -297,12 +143,11 @@ export function parseSelectInternal(state) {
       /** @type {'FIRST' | 'LAST' | undefined} */
       let nulls
       if (match(state, 'keyword', 'NULLS')) {
-        const tok = current(state)
-        if (tok.type === 'identifier' && tok.value.toUpperCase() === 'FIRST') {
-          consume(state)
+        const tok = consume(state)
+        const upper = tok.value.toUpperCase()
+        if (tok.type === 'identifier' && upper === 'FIRST') {
           nulls = 'FIRST'
-        } else if (tok.type === 'identifier' && tok.value.toUpperCase() === 'LAST') {
-          consume(state)
+        } else if (tok.type === 'identifier' && upper === 'LAST') {
           nulls = 'LAST'
         } else {
           throw parseError(state, 'FIRST or LAST after NULLS')
@@ -318,49 +163,31 @@ export function parseSelectInternal(state) {
   }
 
   if (match(state, 'keyword', 'LIMIT')) {
-    const tok = current(state)
-    if (tok.type !== 'number') {
+    const tok = consume(state)
+    if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
       throw parseError(state, 'numeric LIMIT')
     }
-    consume(state)
-    const n = parseInt(tok.value, 10)
-    if (!Number.isFinite(n)) {
-      throw parseError(state, 'valid LIMIT value')
+    if (!Number.isInteger(tok.numericValue)) {
+      throw parseError(state, 'integer LIMIT value')
     }
-    if (n < 0) {
+    if (tok.numericValue < 0) {
       throw parseError(state, 'non-negative LIMIT value')
     }
-    limit = n
+    limit = tok.numericValue
+  }
 
-    if (match(state, 'keyword', 'OFFSET')) {
-      const oTok = current(state)
-      if (oTok.type !== 'number') {
-        throw parseError(state, 'numeric OFFSET')
-      }
-      consume(state)
-      const off = parseInt(oTok.value, 10)
-      if (!Number.isFinite(off)) {
-        throw parseError(state, 'valid OFFSET value')
-      }
-      if (off < 0) {
-        throw parseError(state, 'non-negative OFFSET value')
-      }
-      offset = off
-    }
-  } else if (match(state, 'keyword', 'OFFSET')) {
-    const oTok = current(state)
-    if (oTok.type !== 'number') {
+  if (match(state, 'keyword', 'OFFSET')) {
+    const oTok = consume(state)
+    if (oTok.type !== 'number' || typeof oTok.numericValue !== 'number') {
       throw parseError(state, 'numeric OFFSET')
     }
-    consume(state)
-    const off = parseInt(oTok.value, 10)
-    if (!Number.isFinite(off)) {
-      throw parseError(state, 'valid OFFSET value')
+    if (!Number.isInteger(oTok.numericValue)) {
+      throw parseError(state, 'integer OFFSET value')
     }
-    if (off < 0) {
+    if (oTok.numericValue < 0) {
       throw parseError(state, 'non-negative OFFSET value')
     }
-    offset = off
+    offset = oTok.numericValue
   }
 
   // optional trailing semicolon
@@ -379,5 +206,139 @@ export function parseSelectInternal(state) {
     offset,
     positionStart,
     positionEnd: state.lastPos,
+  }
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {SelectColumn[]}
+ */
+function parseSelectList(state) {
+  /** @type {SelectColumn[]} */
+  const cols = []
+
+  while (true) {
+    const tok = current(state)
+
+    // Check for qualified asterisk (table.*)
+    if (tok.type === 'identifier') {
+      const next = peekToken(state, 1)
+      const nextNext = peekToken(state, 2)
+      if (next.type === 'dot' && nextNext.type === 'operator' && nextNext.value === '*') {
+        const tableTok = consume(state) // consume table name
+        consume(state) // consume dot
+        consume(state) // consume asterisk
+        cols.push({ kind: 'star', table: tableTok.value })
+        if (!match(state, 'comma')) break
+        continue
+      }
+    }
+
+    // Check for unqualified asterisk (*)
+    if (match(state, 'operator', '*')) {
+      cols.push({ kind: 'star' })
+      if (!match(state, 'comma')) break
+      continue
+    }
+
+    // Parse derived column with optional alias
+    const expr = parseExpression(state)
+    const alias = parseAs(state)
+    cols.push({ kind: 'derived', expr, alias })
+
+    if (!match(state, 'comma')) break
+  }
+
+  return cols
+}
+
+/**
+ * Parses a WITH clause containing one or more CTEs
+ *
+ * @param {ParserState} state
+ * @returns {WithClause | undefined}
+ */
+function parseWithClause(state) {
+  const positionStart = state.lastPos
+  if (!match(state, 'keyword', 'WITH')) return
+  /** @type {CTEDefinition[]} */
+  const ctes = []
+  /** @type {Set<string>} */
+  const seenNames = new Set()
+
+  while (true) {
+    // Parse CTE name
+    const nameTok = expectIdentifier(state)
+    const name = nameTok.value
+    const nameLower = name.toLowerCase()
+
+    // Check for duplicate CTE names
+    if (seenNames.has(nameLower)) {
+      throw duplicateCTEError({ cteName: name, ...nameTok })
+    }
+    seenNames.add(nameLower)
+
+    // Expect AS statement
+    expect(state, 'keyword', 'AS')
+    expect(state, 'paren', '(')
+
+    // Parse the CTE's SELECT statement
+    const query = parseSelectInternal(state)
+
+    expect(state, 'paren', ')')
+
+    ctes.push({ name, query, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
+
+    // Check for comma (more CTEs) or end of WITH clause
+    if (!match(state, 'comma')) break
+  }
+
+  return { ctes, positionStart, positionEnd: state.lastPos }
+}
+
+/**
+ * Parses an optional table alias (e.g., "FROM users u" or "FROM users AS u")
+ * @param {ParserState} state
+ * @returns {string | undefined}
+ */
+export function parseTableAlias(state) {
+  // Check for explicit AS keyword
+  if (match(state, 'keyword', 'AS')) {
+    const aliasTok = expectIdentifier(state)
+    return aliasTok.value
+  }
+  // Check for implicit alias (identifier not in reserved list)
+  const maybeAlias = current(state)
+  if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_TABLE.has(maybeAlias.value.toUpperCase())) {
+    consume(state)
+    return maybeAlias.value
+  }
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {string | undefined}
+ */
+function parseAs(state) {
+  if (match(state, 'keyword', 'AS')) {
+    // After AS, allow keywords as aliases (except reserved ones)
+    const aliasTok = current(state)
+    if (aliasTok.type === 'identifier') {
+      consume(state)
+      return aliasTok.value
+    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
+      consume(state)
+      // Use original case for keywords used as aliases
+      return aliasTok.originalValue ?? aliasTok.value
+    } else {
+      throw parseError(state, 'alias')
+    }
+  } else {
+    // Implicit alias SELECT UPPER(name) name_upper
+    const maybeAlias = current(state)
+    if (maybeAlias.type === 'identifier' && !RESERVED_AFTER_COLUMN.has(maybeAlias.value.toUpperCase())) {
+      consume(state)
+      return maybeAlias.value
+    }
   }
 }

@@ -34,7 +34,7 @@ export function consume(state) {
   const tok = current(state)
   state.lastPos = tok.positionEnd
   if (state.pos < state.tokens.length - 1) {
-    state.pos += 1
+    state.pos++
   }
   return tok
 }
@@ -90,7 +90,7 @@ export function expectIdentifier(state) {
 export function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
-  const after = prevToken ? prevToken.originalValue ?? prevToken.value : undefined
+  const after = prevToken?.originalValue ?? prevToken?.value
   const received = tok.type === 'eof' ? 'end of query' : `"${tok.originalValue ?? tok.value}"`
   return syntaxError({ expected, received, after, ...tok })
 }

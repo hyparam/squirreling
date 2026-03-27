@@ -63,10 +63,10 @@ export function planSql(options: PlanSqlOptions): QueryPlan
 /**
  * Tokenizes a SQL query string into an array of tokens
  *
- * @param sql - SQL query string to tokenize
+ * @param query - SQL query string to tokenize
  * @returns array of tokens
  */
-export function tokenizeSql(sql: string): Token[]
+export function tokenizeSql(query: string): Token[]
 
 /**
  * Collects all results from an async generator into an array

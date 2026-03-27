@@ -388,14 +388,14 @@ describe('trigonometric functions', () => {
       await expect(collect(executeSql({
         tables: { data: errorData },
         query: 'SELECT PI(value) FROM data',
-      }))).rejects.toThrow('PI() function requires no arguments, got 1')
+      }))).rejects.toThrow('PI() function requires 0 arguments, got 1')
     })
 
     it('should throw for ATAN with wrong argument count', async () => {
       await expect(collect(executeSql({
         tables: { data: errorData },
         query: 'SELECT ATAN(value, 2, 3) FROM data',
-      }))).rejects.toThrow('ATAN(number) function requires 1 or 2 arguments, got 3')
+      }))).rejects.toThrow('ATAN(number) function requires 1-2 arguments, got 3')
     })
 
     it('should throw for DEGREES with wrong argument count', async () => {

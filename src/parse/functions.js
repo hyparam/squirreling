@@ -1,5 +1,5 @@
-import { isAggregateFunc, validateFunctionArgCount as validateFunctionArgs } from '../validation/functions.js'
-import { ParseError, syntaxError } from '../validation/parseErrors.js'
+import { isAggregateFunc, isKnownFunction, niladicFuncs, validateFunctionArgs } from '../validation/functions.js'
+import { ParseError, syntaxError, unknownFunctionError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 
@@ -8,17 +8,33 @@ import { consume, current, expect, match } from './state.js'
  */
 
 /**
- * Parses a function call after the function name has been identified.
- * Expects the current token to be '('.
- *
  * @param {ParserState} state
- * @param {string} funcName - The function name
- * @param {number} positionStart - Start position of the function name
+ * @param {number} positionStart
  * @returns {ExprNode}
  */
-export function parseFunctionCall(state, funcName, positionStart) {
+export function parseFunctionCall(state, positionStart) {
+  const funcTok = consume(state)
+  const funcName = funcTok.value
   const funcNameUpper = funcName.toUpperCase()
-  consume(state) // '(' checked by caller
+
+  // Validate function existence early for better error messages
+  if (!isKnownFunction(funcNameUpper, state.functions)) {
+    throw unknownFunctionError({ funcName, ...funcTok })
+  }
+
+  // Niladic datetime functions (no parentheses required per ANSI SQL)
+  const parens = current(state)
+  if (niladicFuncs.includes(funcNameUpper) && parens.type !== 'paren' || parens.value !== '(') {
+    return {
+      type: 'function',
+      funcName,
+      args: [],
+      positionStart,
+      positionEnd: state.lastPos,
+    }
+  }
+
+  expect(state, 'paren', '(')
 
   /** @type {ExprNode[]} */
   const args = []
@@ -33,24 +49,23 @@ export function parseFunctionCall(state, funcName, positionStart) {
   }
 
   // Parse function arguments
-  if (current(state).type !== 'paren' || current(state).value !== ')') {
-    while (true) {
-      // Handle COUNT(*) - treat * as a special identifier
-      const starTok = current(state)
-      if (match(state, 'operator', '*')) {
-        args.push({
-          type: 'star',
-          positionStart: starTok.positionStart,
-          positionEnd: state.lastPos,
-        })
-      } else {
-        args.push(parseExpression(state))
-      }
-      if (!match(state, 'comma')) break
+  while (true) {
+    const next = current(state)
+    if (next.type === 'paren' && next.value === ')') break
+
+    // Handle COUNT(*) - treat * as a special identifier
+    if (match(state, 'operator', '*')) {
+      args.push({
+        type: 'star',
+        positionStart: next.positionStart,
+        positionEnd: state.lastPos,
+      })
+    } else {
+      args.push(parseExpression(state))
     }
+    if (!match(state, 'comma')) break
   }
   expect(state, 'paren', ')')
-  const functionEnd = state.lastPos
 
   // Validate star argument at parse time (only COUNT supports *)
   const hasStar = args.length === 1 && args[0].type === 'star'
@@ -58,19 +73,19 @@ export function parseFunctionCall(state, funcName, positionStart) {
     throw new ParseError({
       message: `${funcName} cannot be applied to "*"`,
       positionStart,
-      positionEnd: functionEnd,
+      positionEnd: state.lastPos,
     })
   }
   if (hasStar && distinct) {
     throw new ParseError({
       message: 'COUNT(DISTINCT *) is not allowed',
       positionStart,
-      positionEnd: functionEnd,
+      positionEnd: state.lastPos,
     })
   }
 
   // Validate argument count at parse time
-  validateFunctionArgs(funcNameUpper, args.length, positionStart, functionEnd, state.functions)
+  validateFunctionArgs(funcNameUpper, args.length, positionStart, state.lastPos, state.functions)
 
   // Check for FILTER clause (only valid for aggregate functions)
   /** @type {ExprNode | undefined} */

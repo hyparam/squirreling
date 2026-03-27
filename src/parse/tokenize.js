@@ -1,146 +1,95 @@
-import { invalidLiteralError, unexpectedCharError, unterminatedError } from '../validation/parseErrors.js'
+import { KEYWORDS } from '../validation/keywords.js'
+import { ParseError, invalidLiteralError, unexpectedCharError } from '../validation/parseErrors.js'
 
 /**
  * @import { Token } from '../types.d.ts'
  */
 
-const KEYWORDS = new Set([
-  'WITH',
-  'SELECT',
-  'FROM',
-  'WHERE',
-  'AND',
-  'OR',
-  'NOT',
-  'IS',
-  'GROUP',
-  'BY',
-  'HAVING',
-  'ORDER',
-  'ASC',
-  'DESC',
-  'NULLS',
-  'LIMIT',
-  'OFFSET',
-  'AS',
-  'ALL',
-  'DISTINCT',
-  'TRUE',
-  'FALSE',
-  'NULL',
-  'LIKE',
-  'IN',
-  'EXISTS',
-  'BETWEEN',
-  'CASE',
-  'WHEN',
-  'THEN',
-  'ELSE',
-  'END',
-  'JOIN',
-  'INNER',
-  'LEFT',
-  'RIGHT',
-  'FULL',
-  'OUTER',
-  'POSITIONAL',
-  'ON',
-  'INTERVAL',
-  'DAY',
-  'MONTH',
-  'YEAR',
-  'HOUR',
-  'MINUTE',
-  'SECOND',
-  'FILTER',
-])
-
 /**
- * @param {string} sql
+ * @param {string} query
  * @returns {Token[]}
  */
-export function tokenizeSql(sql) {
+export function tokenizeSql(query) {
   /** @type {Token[]} */
   const tokens = []
-  const { length } = sql
-  let i = 0
+  const len = query.length
+  let i = 0 // current position in query string
 
   /**
    * @returns {string}
    */
   function peek() {
-    if (i >= length) return ''
-    return sql[i]
+    return query[i]
   }
 
   /**
    * @returns {string}
    */
   function nextChar() {
-    if (i >= length) return ''
-    const ch = sql[i]
-    i++
-    return ch
+    return query[i++]
   }
 
   /**
-   * @param {number} startPos
-   * @param {string} prefix
+   * @param {number} positionStart
    * @returns {Token}
    */
-  function parseNumber(startPos, prefix = '') {
-    let text = prefix
+  function parseNumber(positionStart) {
+    let value = ''
+    if (peek() === '-') {
+      value += nextChar()
+    }
     while (isDigit(peek())) {
-      text += nextChar()
+      value += nextChar()
     }
     if (peek() === '.') {
-      text += nextChar()
+      value += nextChar()
       while (isDigit(peek())) {
-        text += nextChar()
+        value += nextChar()
       }
     }
     // exponent
     if (peek() === 'e' || peek() === 'E') {
-      text += nextChar()
+      value += nextChar()
       if (peek() === '+' || peek() === '-') {
-        text += nextChar()
+        value += nextChar()
       }
       while (isDigit(peek())) {
-        text += nextChar()
+        value += nextChar()
       }
     }
     // bigint suffix
     if (peek() === 'n') {
-      text += nextChar()
+      value += nextChar()
       try {
         return {
           type: 'number',
-          value: text,
-          positionStart: startPos,
+          value,
+          positionStart,
           positionEnd: i,
-          numericValue: BigInt(text.slice(0, -1)),
+          numericValue: BigInt(value.slice(0, -1)),
         }
       } catch {
-        throw invalidLiteralError({ expected: 'bigint', value: text.slice(0, -1), positionStart: startPos, positionEnd: i })
+        throw invalidLiteralError({ expected: 'bigint', value, positionStart, positionEnd: i })
       }
     }
     if (isAlpha(peek())) {
-      throw invalidLiteralError({ expected: 'number', value: text + peek(), positionStart: startPos, positionEnd: i + 1 })
+      value += nextChar()
+      throw invalidLiteralError({ expected: 'number', value, positionStart, positionEnd: i })
     }
-    const num = parseFloat(text)
+    const num = Number(value)
     if (isNaN(num)) {
-      throw invalidLiteralError({ expected: 'number', value: text, positionStart: startPos, positionEnd: i })
+      throw invalidLiteralError({ expected: 'number', value, positionStart, positionEnd: i })
     }
     return {
       type: 'number',
-      value: text,
-      positionStart: startPos,
+      value,
+      positionStart,
       positionEnd: i,
       numericValue: num,
     }
   }
 
-  while (i < length) {
+  while (i < len) {
     const ch = peek()
 
     if (isWhitespace(ch)) {
@@ -149,18 +98,18 @@ export function tokenizeSql(sql) {
     }
 
     // line comment --
-    if (ch === '-' && i + 1 < length && sql[i + 1] === '-') {
-      while (i < length && sql[i] !== '\n') {
+    if (ch === '-' && i + 1 < len && query[i + 1] === '-') {
+      while (i < len && query[i] !== '\n') {
         i++
       }
       continue
     }
 
     // block comment /* ... */
-    if (ch === '/' && i + 1 < length && sql[i + 1] === '*') {
+    if (ch === '/' && i + 1 < len && query[i + 1] === '*') {
       i += 2
-      while (i < length) {
-        if (sql[i] === '*' && i + 1 < length && sql[i + 1] === '/') {
+      while (i < len) {
+        if (query[i] === '*' && i + 1 < len && query[i + 1] === '/') {
           i += 2
           break
         }
@@ -169,10 +118,10 @@ export function tokenizeSql(sql) {
       continue
     }
 
-    const pos = i
+    const positionStart = i
 
     // negative numbers (when not subtraction)
-    if (ch === '-' && i + 1 < length && isDigit(sql[i + 1])) {
+    if (ch === '-' && i + 1 < len && isDigit(query[i + 1])) {
       const lastToken = tokens[tokens.length - 1]
       const isValueBefore = lastToken && (
         lastToken.type === 'identifier' ||
@@ -181,99 +130,70 @@ export function tokenizeSql(sql) {
         lastToken.type === 'paren' && lastToken.value === ')'
       )
       if (!isValueBefore) {
-        nextChar() // consume '-'
-        tokens.push(parseNumber(pos, '-'))
+        tokens.push(parseNumber(positionStart))
         continue
       }
     }
 
     // numbers
     if (isDigit(ch)) {
-      tokens.push(parseNumber(pos))
+      tokens.push(parseNumber(positionStart))
       continue
     }
 
     // identifiers / keywords
     if (isAlpha(ch)) {
-      let text = ''
+      let value = ''
       while (isAlphaNumeric(peek())) {
-        text += nextChar()
+        value += nextChar()
       }
-      const upper = text.toUpperCase()
+      const upper = value.toUpperCase()
       if (KEYWORDS.has(upper)) {
         tokens.push({
           type: 'keyword',
           value: upper,
-          originalValue: text,
-          positionStart: pos,
+          originalValue: value,
+          positionStart,
           positionEnd: i,
         })
       } else {
         tokens.push({
           type: 'identifier',
-          value: text,
-          positionStart: pos,
+          value,
+          positionStart,
           positionEnd: i,
         })
       }
       continue
     }
 
-    // string literals: single quotes
-    if (ch === '\'') {
+    // string literals (single quotes) and quoted identifiers (double quotes)
+    if (ch === '\'' || ch === '"') {
+      const type = ch === '\'' ? 'string' : 'identifier'
       const quote = nextChar()
-      let text = ''
-      while (i <= length) {
-        if (i === length) {
-          throw unterminatedError({ type: 'string', positionStart: pos, positionEnd: length })
+      let value = ''
+      while (i <= len) {
+        if (i === len) {
+          throw new ParseError({
+            message: `Unterminated ${type} starting at position ${positionStart}`,
+            positionStart,
+            positionEnd: i,
+          })
         }
         const c = nextChar()
         if (c === quote) {
           // check for escaped quote
           if (peek() === quote) {
-            text += quote
-            nextChar()
+            value += quote
+            i++
             continue
           }
+          // end quote
           break
         }
-        text += c
+        value += c
       }
-      tokens.push({
-        type: 'string',
-        value: text,
-        positionStart: pos,
-        positionEnd: i,
-      })
-      continue
-    }
-
-    // quoted identifiers: double quotes
-    if (ch === '"') {
-      const quote = nextChar()
-      let text = ''
-      while (i <= length) {
-        if (i === length) {
-          throw unterminatedError({ type: 'identifier', positionStart: pos, positionEnd: length })
-        }
-        const c = nextChar()
-        if (c === quote) {
-          // check for escaped quote
-          if (peek() === quote) {
-            text += quote
-            nextChar()
-            continue
-          }
-          break
-        }
-        text += c
-      }
-      tokens.push({
-        type: 'identifier',
-        value: text,
-        positionStart: pos,
-        positionEnd: i,
-      })
+      tokens.push({ type, value, positionStart, positionEnd: i })
       continue
     }
 
@@ -288,7 +208,7 @@ export function tokenizeSql(sql) {
       tokens.push({
         type: 'operator',
         value: op,
-        positionStart: pos,
+        positionStart,
         positionEnd: i,
       })
       continue
@@ -296,68 +216,68 @@ export function tokenizeSql(sql) {
 
     // single-char operators
     if (ch === '*' || ch === '+' || ch === '-' || ch === '/' || ch === '%') {
-      nextChar()
+      i++
       tokens.push({
         type: 'operator',
         value: ch,
-        positionStart: pos,
+        positionStart,
         positionEnd: i,
       })
       continue
     }
 
     if (ch === ',') {
-      nextChar()
+      i++
       tokens.push({
         type: 'comma',
         value: ',',
-        positionStart: pos,
+        positionStart,
         positionEnd: i,
       })
       continue
     }
 
     if (ch === '.') {
-      nextChar()
+      i++
       tokens.push({
         type: 'dot',
         value: '.',
-        positionStart: pos,
+        positionStart,
         positionEnd: i,
       })
       continue
     }
 
     if (ch === '(' || ch === ')') {
-      nextChar()
+      i++
       tokens.push({
         type: 'paren',
         value: ch,
-        positionStart: pos,
+        positionStart,
         positionEnd: i,
       })
       continue
     }
 
     if (ch === ';') {
-      nextChar()
+      i++
       tokens.push({
         type: 'semicolon',
         value: ';',
-        positionStart: pos,
+        positionStart,
         positionEnd: i,
       })
       continue
     }
 
-    throw unexpectedCharError({ char: ch, positionStart: pos, expectsSelect: !tokens.length })
+    throw unexpectedCharError({ char: ch, positionStart, expectsSelect: !tokens.length })
   }
 
   tokens.push({
     type: 'eof',
     value: '',
-    positionStart: length,
-    positionEnd: length,
+    positionStart: len,
+    positionEnd: len,
   })
 
   return tokens

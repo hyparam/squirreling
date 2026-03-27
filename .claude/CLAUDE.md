@@ -10,7 +10,8 @@ npm test          # Run all tests
 npm run lint      # Run ESLint
 npm run lint:fix  # Fix linting issues
 npm run coverage  # Run tests with coverage
-npx vitest test/parse/parse.test.js  # Run a single test file
+npx vitest run test/parse/parse.test.js  # Run a single test file
+npx vitest run -t 'test name' # Run a single test by name
 npx tsc           # Type check with TypeScript
 ```
 
@@ -27,10 +28,13 @@ npx tsc           # Type check with TypeScript
 
 ## Architecture
 
-The main flow is:
+The main flow inside `executeSql({ tables, query, functions, signal })`:
 
 ```
-SQL string → parse → SelectStatement → plan → QueryPlan → execute → AsyncIterable<AsyncRow>
+1. tokenizeSql(query: string) → Token[]
+2. parseSql({ query }) → SelectStatement
+3. planSql({ query, tables }) → QueryPlan
+4. executePlan({ plan, context }) → AsyncIterable<AsyncRow>
 ```
 
 ### Key Components
