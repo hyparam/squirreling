@@ -11,7 +11,7 @@ export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP'
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP'].includes(name)
+  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE'].includes(name)
 }
 
 /**
@@ -173,6 +173,9 @@ export const FUNCTION_SIGNATURES = {
   MAX: { min: 1, max: 1, signature: 'expression' },
   STDDEV_SAMP: { min: 1, max: 1, signature: 'expression' },
   STDDEV_POP: { min: 1, max: 1, signature: 'expression' },
+  MEDIAN: { min: 1, max: 1, signature: 'expression' },
+  PERCENTILE_CONT: { min: 2, max: 2, signature: 'fraction, expression' },
+  APPROX_QUANTILE: { min: 2, max: 2, signature: 'expression, fraction' },
 
   // Spatial functions
   ST_INTERSECTS: { min: 2, max: 2, signature: 'geometry, geometry' },

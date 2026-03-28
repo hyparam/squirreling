@@ -206,6 +206,46 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         return Math.sqrt(squaredDiffs / divisor)
       }
 
+      if (funcName === 'MEDIAN' || funcName === 'PERCENTILE_CONT' || funcName === 'APPROX_QUANTILE') {
+        let fraction
+        let valueNode
+        if (funcName === 'MEDIAN') {
+          fraction = 0.5
+          valueNode = argNode
+        } else if (funcName === 'PERCENTILE_CONT') {
+          fraction = Number(await evaluateExpr({ node: node.args[0], row: filteredRows[0] ?? { columns: [], cells: {} }, context }))
+          valueNode = node.args[1]
+        } else {
+          // APPROX_QUANTILE: (expression, fraction)
+          fraction = Number(await evaluateExpr({ node: node.args[1], row: filteredRows[0] ?? { columns: [], cells: {} }, context }))
+          valueNode = argNode
+        }
+        if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) {
+          throw new ExecutionError({
+            message: `${funcName}: fraction must be between 0 and 1, got ${fraction}`,
+            ...node,
+          })
+        }
+        const rawValues = await Promise.all(filteredRows.map(row =>
+          evaluateExpr({ node: valueNode, row, context })
+        ))
+        /** @type {number[]} */
+        const values = []
+        for (const raw of rawValues) {
+          if (raw == null) continue
+          const num = Number(raw)
+          if (!Number.isFinite(num)) continue
+          values.push(num)
+        }
+        if (values.length === 0) return null
+        values.sort((a, b) => a - b)
+        const pos = fraction * (values.length - 1)
+        const lower = Math.floor(pos)
+        const upper = Math.ceil(pos)
+        if (lower === upper) return values[lower]
+        return values[lower] + (values[upper] - values[lower]) * (pos - lower)
+      }
+
       if (funcName === 'JSON_ARRAYAGG') {
         if (node.distinct) {
           /** @type {SqlPrimitive[]} */

@@ -285,6 +285,99 @@ describe('executeSql', () => {
       expect(result[1].stddev).toBe(0)
     })
 
+    it('should calculate MEDIAN', async () => {
+      // Odd count: 1, 2, 3, 4, 5 => median = 3
+      const data = [{ v: 3 }, { v: 1 }, { v: 5 }, { v: 2 }, { v: 4 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MEDIAN(v) AS med FROM data',
+      }))
+      expect(result).toEqual([{ med: 3 }])
+    })
+
+    it('should calculate MEDIAN with even count (interpolated)', async () => {
+      // Even count: 1, 2, 3, 4 => median = 2.5
+      const data = [{ v: 4 }, { v: 1 }, { v: 3 }, { v: 2 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MEDIAN(v) AS med FROM data',
+      }))
+      expect(result).toEqual([{ med: 2.5 }])
+    })
+
+    it('should return null for MEDIAN of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { empty },
+        query: 'SELECT MEDIAN(value) AS med FROM empty',
+      }))
+      expect(result).toEqual([{ med: null }])
+    })
+
+    it('should skip nulls in MEDIAN', async () => {
+      const data = [{ v: null }, { v: 1 }, { v: null }, { v: 3 }, { v: 5 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MEDIAN(v) AS med FROM data',
+      }))
+      expect(result).toEqual([{ med: 3 }])
+    })
+
+    it('should calculate PERCENTILE_CONT', async () => {
+      // 1, 2, 3, 4, 5 at 0.25 => position 1.0 => value 2
+      const data = [{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }, { v: 5 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT PERCENTILE_CONT(0.25, v) AS p25 FROM data',
+      }))
+      expect(result).toEqual([{ p25: 2 }])
+    })
+
+    it('should interpolate PERCENTILE_CONT', async () => {
+      // 1, 2, 3, 4 at 0.5 => position 1.5 => 2 + 0.5*(3-2) = 2.5
+      const data = [{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT PERCENTILE_CONT(0.5, v) AS p50 FROM data',
+      }))
+      expect(result).toEqual([{ p50: 2.5 }])
+    })
+
+    it('should return null for PERCENTILE_CONT of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { empty },
+        query: 'SELECT PERCENTILE_CONT(0.5, value) AS p50 FROM empty',
+      }))
+      expect(result).toEqual([{ p50: null }])
+    })
+
+    it('should calculate APPROX_QUANTILE', async () => {
+      // Same semantics as PERCENTILE_CONT but args reversed: (expression, fraction)
+      const data = [{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }, { v: 5 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT APPROX_QUANTILE(v, 0.75) AS p75 FROM data',
+      }))
+      expect(result).toEqual([{ p75: 4 }])
+    })
+
+    it('should handle MEDIAN with GROUP BY', async () => {
+      const data = [
+        { category: 'A', v: 10 },
+        { category: 'A', v: 20 },
+        { category: 'A', v: 30 },
+        { category: 'B', v: 1 },
+        { category: 'B', v: 2 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT category, MEDIAN(v) AS med FROM data GROUP BY category ORDER BY category',
+      }))
+      expect(result).toEqual([
+        { category: 'A', med: 20 },
+        { category: 'B', med: 1.5 },
+      ])
+    })
+
   })
 
   describe('null handling in aggregates', () => {
