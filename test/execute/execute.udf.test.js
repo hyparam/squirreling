@@ -144,7 +144,7 @@ describe('user-defined functions', () => {
       await expect(collect(executeSql({
         tables: { users },
         query: 'SELECT UNKNOWN_FUNC(score) FROM users',
-      }))).rejects.toThrow(/unknown function/i)
+      }))).rejects.toThrow('Unknown function "UNKNOWN_FUNC" at position 7.')
     })
 
     it('should throw error for unknown function when UDFs provided but not matching', async () => {
@@ -157,7 +157,7 @@ describe('user-defined functions', () => {
             arguments: { min: 1, max: 1 },
           },
         },
-      }))).rejects.toThrow(/unknown function/i)
+      }))).rejects.toThrow('Unknown function "UNKNOWN_FUNC" at position 7.')
     })
   })
 

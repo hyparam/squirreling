@@ -18,7 +18,7 @@ describe('planSql', () => {
         type: 'Project',
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'name',
@@ -43,7 +43,7 @@ describe('planSql', () => {
         type: 'Project',
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'name',
@@ -52,7 +52,7 @@ describe('planSql', () => {
             },
           },
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'age',
@@ -141,7 +141,7 @@ describe('planSql', () => {
         type: 'Project',
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'name',
@@ -184,7 +184,7 @@ describe('planSql', () => {
           type: 'Project',
           columns: [
             {
-              kind: 'derived',
+              type: 'derived',
               expr: {
                 type: 'identifier',
                 name: 'name',
@@ -250,7 +250,7 @@ describe('planSql', () => {
         ],
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'department',
@@ -259,7 +259,7 @@ describe('planSql', () => {
             },
           },
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'function',
               funcName: 'COUNT',
@@ -292,7 +292,7 @@ describe('planSql', () => {
         table: 'users',
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'function',
               funcName: 'COUNT',
@@ -337,7 +337,7 @@ describe('planSql', () => {
         ],
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'department',
@@ -346,7 +346,7 @@ describe('planSql', () => {
             },
           },
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'function',
               funcName: 'COUNT',
@@ -528,7 +528,7 @@ describe('planSql', () => {
         type: 'Project',
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'id',
@@ -576,7 +576,7 @@ describe('planSql', () => {
           type: 'Project',
           columns: [
             {
-              kind: 'derived',
+              type: 'derived',
               expr: {
                 type: 'identifier',
                 name: 'name',
@@ -658,7 +658,7 @@ describe('planSql', () => {
             ],
             columns: [
               {
-                kind: 'derived',
+                type: 'derived',
                 expr: {
                   type: 'identifier',
                   name: 'department',
@@ -667,7 +667,7 @@ describe('planSql', () => {
                 },
               },
               {
-                kind: 'derived',
+                type: 'derived',
                 expr: {
                   type: 'function',
                   funcName: 'COUNT',

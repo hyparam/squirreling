@@ -7,7 +7,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT COUNT(*) FROM users' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'COUNT',
@@ -23,7 +23,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT COUNT(id) FROM users' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'COUNT',
@@ -39,7 +39,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT SUM(amount) FROM transactions' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'SUM',
@@ -55,7 +55,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT AVG(score) FROM tests' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'AVG',
@@ -71,7 +71,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT MIN(price), MAX(price) FROM products' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'MIN',
@@ -81,7 +81,7 @@ describe('parseSql', () => {
           },
         },
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'MAX',
@@ -97,7 +97,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT COUNT(*) AS total FROM users' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'COUNT',

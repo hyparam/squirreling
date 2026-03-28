@@ -145,7 +145,7 @@ async function* executeCount(plan, { tables, signal }) {
 
   // Use source numRows if available
   let count = table.numRows
-  if (table.numRows === undefined) {
+  if (count === undefined) {
     // Fall back to counting rows via scan
     count = 0
     const { rows } = table.scan({ signal })
@@ -272,12 +272,12 @@ async function* executeProject(plan, context) {
     const cells = {}
 
     for (const col of plan.columns) {
-      if (col.kind === 'star') {
+      if (col.type === 'star') {
         for (const key of row.columns) {
           columns.push(key)
           cells[key] = row.cells[key]
         }
-      } else if (col.kind === 'derived') {
+      } else if (col.type === 'derived') {
         const alias = col.alias ?? derivedAlias(col.expr)
         columns.push(alias)
         cells[alias] = () => evaluateExpr({

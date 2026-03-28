@@ -122,4 +122,6 @@ export function evaluateMathFunc({ funcName, args }) {
   if (funcName === 'RADIANS') {
     return Number(val) * Math.PI / 180
   }
+
+  throw new Error(`Unsupported math function: ${funcName}`)
 }

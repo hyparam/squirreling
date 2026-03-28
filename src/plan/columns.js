@@ -1,6 +1,14 @@
 /**
- * @import { ExprNode, SelectStatement } from '../types.js'
+ * @import { ExprNode, FromSubquery, FromTable, SelectStatement } from '../types.js'
  */
+
+/**
+ * @param {FromTable | FromSubquery} from
+ * @returns {string}
+ */
+export function fromAlias(from) {
+  return from.alias ?? (from.type === 'table' ? from.table : 'table')
+}
 
 /**
  * Extracts per-table column names needed from a SELECT statement with joins.
@@ -14,16 +22,13 @@ export function extractColumns(select) {
   const result = new Map()
 
   // Build alias list from FROM + JOINs
-  const fromAlias = select.from.kind === 'table'
-    ? select.from.alias ?? select.from.table
-    : select.from.alias
-  const aliases = [fromAlias]
+  const aliases = [fromAlias(select.from)]
   for (const join of select.joins) {
     aliases.push(join.alias ?? join.table)
   }
 
   // If any unqualified SELECT * exists, all tables need all columns
-  if (select.columns.some(col => col.kind === 'star' && !col.table)) {
+  if (select.columns.some(col => col.type === 'star' && !col.table)) {
     /** @type {Map<string, string[] | undefined>} */
     const result = new Map()
     for (const alias of aliases) {
@@ -46,10 +51,10 @@ export function extractColumns(select) {
   const selectAliases = new Set()
 
   for (const col of select.columns) {
-    if (col.kind === 'star' && col.table) {
+    if (col.type === 'star' && col.table) {
       // SELECT table.* means all columns needed
       perTable.set(col.table, undefined)
-    } else if (col.kind === 'derived') {
+    } else if (col.type === 'derived') {
       collectColumnsFromExpr(col.expr, identifiers)
       if (col.alias) {
         selectAliases.add(col.alias)

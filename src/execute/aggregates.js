@@ -23,7 +23,7 @@ function projectAggregateColumns(selectColumns, group, context) {
   const cells = {}
 
   for (const col of selectColumns) {
-    if (col.kind === 'star') {
+    if (col.type === 'star') {
       const firstRow = group[0]
       if (firstRow) {
         for (const key of firstRow.columns) {

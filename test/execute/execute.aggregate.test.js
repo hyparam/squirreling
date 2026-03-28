@@ -596,7 +596,7 @@ describe('executeSql', () => {
           tables: { orders },
           query: 'SELECT UPPER(status) FILTER (WHERE amount > 100) FROM orders',
         }))
-      }).rejects.toThrow(/FILTER/)
+      }).rejects.toThrow('FILTER cannot be applied to non-aggregate function "UPPER"')
     })
 
     it('should handle FILTER in HAVING clause', async () => {

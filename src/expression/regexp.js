@@ -11,7 +11,7 @@ import { argValueError } from '../validation/executionErrors.js'
  * @param {RegExpFunction} options.funcName
  * @param {FunctionNode} options.node
  * @param {SqlPrimitive[]} options.args - Function arguments
- * @param {number} options.rowIndex - Row index for error reporting
+ * @param {number} [options.rowIndex] - Row index for error reporting
  * @returns {SqlPrimitive}
  */
 export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
@@ -144,4 +144,6 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     })
     return prefix + result
   }
+
+  throw new Error(`Unsupported regexp function: ${funcName}`)
 }

@@ -66,7 +66,7 @@ export function parseSelectInternal(state) {
     expect(state, 'paren', ')')
     const alias = parseTableAlias(state)
     from = {
-      kind: 'subquery',
+      type: 'subquery',
       query,
       alias,
       positionStart: tok.positionStart,
@@ -77,7 +77,7 @@ export function parseSelectInternal(state) {
     expect(state, 'identifier')
     const alias = parseTableAlias(state)
     from = {
-      kind: 'table',
+      type: 'table',
       table: tok.value,
       alias,
       positionStart: tok.positionStart,
@@ -121,7 +121,7 @@ export function parseSelectInternal(state) {
   }
 
   const hasAggregate = groupBy.length > 0 || columns.some(col =>
-    col.kind === 'derived' && findAggregate(col.expr)
+    col.type === 'derived' && findAggregate(col.expr)
   )
 
   if (match(state, 'keyword', 'ORDER')) {
@@ -192,6 +192,7 @@ export function parseSelectInternal(state) {
   match(state, 'semicolon')
 
   return {
+    type: 'select',
     distinct,
     columns,
     from,
@@ -226,7 +227,7 @@ function parseSelectList(state) {
         const table = consume(state).value
         consume(state) // consume dot
         consume(state) // consume asterisk
-        cols.push({ kind: 'star', table })
+        cols.push({ type: 'star', table })
         if (!match(state, 'comma')) break
         continue
       }
@@ -234,7 +235,7 @@ function parseSelectList(state) {
 
     // Check for unqualified asterisk (*)
     if (match(state, 'operator', '*')) {
-      cols.push({ kind: 'star' })
+      cols.push({ type: 'star' })
       if (!match(state, 'comma')) break
       continue
     }
@@ -242,7 +243,7 @@ function parseSelectList(state) {
     // Parse derived column with optional alias
     const expr = parseExpression(state)
     const alias = parseAs(state)
-    cols.push({ kind: 'derived', expr, alias })
+    cols.push({ type: 'derived', expr, alias })
 
     if (!match(state, 'comma')) break
   }
@@ -284,11 +285,11 @@ function parseWithClause(state) {
     expect(state, 'paren', '(')
 
     // Parse the CTE's SELECT statement
-    const query = parseSelectInternal(state)
+    const select = parseSelectInternal(state)
 
     expect(state, 'paren', ')')
 
-    ctes.push({ name, query, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
+    ctes.push({ name, select, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
 
     // Check for comma (more CTEs) or end of WITH clause
     if (!match(state, 'comma')) break

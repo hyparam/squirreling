@@ -30,7 +30,14 @@ describe('scan hints', () => {
   it('should pass column and where hints from WHERE clause', async () => {
     const hints = await captureHints('SELECT id FROM data WHERE name = \'Alice\'')
     expect(hints.columns).toEqual(['id', 'name'])
-    expect(hints.where).toMatchObject({ type: 'binary', op: '=' })
+    expect(hints.where).toEqual({
+      type: 'binary',
+      op: '=',
+      left: { type: 'identifier', name: 'name', positionStart: 26, positionEnd: 30 },
+      right: { type: 'literal', value: 'Alice', positionStart: 33, positionEnd: 40 },
+      positionStart: 26,
+      positionEnd: 40,
+    })
   })
 
   it('should return undefined columns for SELECT *', async () => {

@@ -645,10 +645,11 @@ describe('parseSql - WHERE clause', () => {
         positionEnd: 34,
       },
       subquery: {
+        type: 'select',
         distinct: false,
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'id',
@@ -657,7 +658,7 @@ describe('parseSql - WHERE clause', () => {
             },
           },
         ],
-        from: { kind: 'table', table: 'users', positionStart: 54, positionEnd: 59 },
+        from: { type: 'table', table: 'users', positionStart: 54, positionEnd: 59 },
         joins: [],
         where: {
           type: 'binary',
@@ -727,9 +728,10 @@ describe('parseSql - WHERE clause', () => {
     expect(select.where).toEqual({
       type: 'exists',
       subquery: {
+        type: 'select',
         distinct: false,
-        columns: [{ kind: 'star' }],
-        from: { kind: 'table', table: 'users', positionStart: 49, positionEnd: 54 },
+        columns: [{ type: 'star' }],
+        from: { type: 'table', table: 'users', positionStart: 49, positionEnd: 54 },
         joins: [],
         where: {
           type: 'binary',
@@ -764,9 +766,10 @@ describe('parseSql - WHERE clause', () => {
     expect(select.where).toEqual({
       type: 'not exists',
       subquery: {
+        type: 'select',
         distinct: false,
-        columns: [{ kind: 'star' }],
-        from: { kind: 'table', table: 'users', positionStart: 53, positionEnd: 58 },
+        columns: [{ type: 'star' }],
+        from: { type: 'table', table: 'users', positionStart: 53, positionEnd: 58 },
         joins: [],
         where: {
           type: 'binary',

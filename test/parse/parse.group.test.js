@@ -22,7 +22,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT MAX(LENGTH(problem)) AS max_problem_len FROM table' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'MAX',
@@ -45,7 +45,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT COUNT(DISTINCT problem_id) AS n_unique_problems FROM table' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'COUNT',
@@ -63,7 +63,7 @@ describe('parseSql', () => {
       const select = parseSql({ query: 'SELECT COUNT(ALL problem_id) FROM table' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'function',
             funcName: 'COUNT',

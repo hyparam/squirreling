@@ -30,7 +30,7 @@ export class ExecutionError extends Error {
  * @param {number} options.positionStart
  * @param {number} options.positionEnd
  * @param {string} [options.hint] - Recovery hint
- * @param {number} options.rowIndex - 1-based row number where error occurred
+ * @param {number} [options.rowIndex] - 1-based row number where error occurred
  * @returns {ExecutionError}
  */
 export function argValueError({ funcName, message, positionStart, positionEnd, hint, rowIndex }) {

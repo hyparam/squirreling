@@ -10,8 +10,8 @@ describe('parseSql - CTE (WITH clause)', () => {
       expect(select.with).toBeDefined()
       expect(select.with?.ctes).toHaveLength(1)
       expect(select.with?.ctes[0].name).toBe('cte')
-      expect(select.with?.ctes[0].query.from).toEqual({ kind: 'table', table: 'users', positionStart: 27, positionEnd: 32 })
-      expect(select.from).toEqual({ kind: 'table', table: 'cte', positionStart: 48, positionEnd: 51 })
+      expect(select.with?.ctes[0].select.from).toEqual({ type: 'table', table: 'users', positionStart: 27, positionEnd: 32 })
+      expect(select.from).toEqual({ type: 'table', table: 'cte', positionStart: 48, positionEnd: 51 })
     })
 
     it('should parse CTE with column selection', () => {
@@ -20,15 +20,15 @@ describe('parseSql - CTE (WITH clause)', () => {
       })
       expect(select.with?.ctes).toHaveLength(1)
       expect(select.with?.ctes[0].name).toBe('active')
-      expect(select.with?.ctes[0].query.columns).toHaveLength(2)
-      expect(select.with?.ctes[0].query.where).toBeDefined()
+      expect(select.with?.ctes[0].select.columns).toHaveLength(2)
+      expect(select.with?.ctes[0].select.where).toBeDefined()
     })
 
     it('should parse CTE with alias', () => {
       const select = parseSql({
         query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte AS t',
       })
-      expect(select.from).toEqual({ kind: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 })
+      expect(select.from).toEqual({ type: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 })
     })
   })
 
@@ -45,14 +45,14 @@ describe('parseSql - CTE (WITH clause)', () => {
       expect(select.with?.ctes).toHaveLength(2)
       expect(select.with?.ctes[0].name).toBe('cte1')
       expect(select.with?.ctes[1].name).toBe('cte2')
-      expect(select.with?.ctes[0].query.from).toEqual({
-        kind: 'table',
+      expect(select.with?.ctes[0].select.from).toEqual({
+        type: 'table',
         table: 'users',
         positionStart: 52,
         positionEnd: 57,
       })
-      expect(select.with?.ctes[1].query.from).toEqual({
-        kind: 'table',
+      expect(select.with?.ctes[1].select.from).toEqual({
+        type: 'table',
         table: 'orders',
         positionStart: 96,
         positionEnd: 102,
@@ -71,8 +71,8 @@ describe('parseSql - CTE (WITH clause)', () => {
       expect(select.with?.ctes).toHaveLength(2)
       expect(select.with?.ctes[0].name).toBe('base')
       expect(select.with?.ctes[1].name).toBe('filtered')
-      expect(select.with?.ctes[1].query.from.kind).toBe('table')
-      expect(select.with?.ctes[1].query.from.kind === 'table' && select.with?.ctes[1].query.from.table).toBe('base')
+      expect(select.with?.ctes[1].select.from.type).toBe('table')
+      expect(select.with?.ctes[1].select.from.type === 'table' && select.with?.ctes[1].select.from.table).toBe('base')
     })
   })
 
@@ -88,7 +88,7 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM totals
         `,
       })
-      expect(select.with?.ctes[0].query.groupBy).toHaveLength(1)
+      expect(select.with?.ctes[0].select.groupBy).toHaveLength(1)
     })
 
     it('should parse CTE with HAVING', () => {
@@ -103,7 +103,7 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM big_spenders
         `,
       })
-      expect(select.with?.ctes[0].query.having).toBeDefined()
+      expect(select.with?.ctes[0].select.having).toBeDefined()
     })
 
     it('should parse CTE with ORDER BY and LIMIT', () => {
@@ -117,8 +117,8 @@ describe('parseSql - CTE (WITH clause)', () => {
           SELECT * FROM top_users
         `,
       })
-      expect(select.with?.ctes[0].query.orderBy).toHaveLength(1)
-      expect(select.with?.ctes[0].query.limit).toBe(10)
+      expect(select.with?.ctes[0].select.orderBy).toHaveLength(1)
+      expect(select.with?.ctes[0].select.limit).toBe(10)
     })
 
     it('should parse CTE with JOIN in main query', () => {
@@ -130,8 +130,8 @@ describe('parseSql - CTE (WITH clause)', () => {
           JOIN orders ON active.id = orders.user_id
         `,
       })
-      expect(select.from.kind).toBe('table')
-      expect(select.from.kind === 'table' && select.from.table).toBe('active')
+      expect(select.from.type).toBe('table')
+      expect(select.from.type === 'table' && select.from.table).toBe('active')
       expect(select.joins).toHaveLength(1)
       expect(select.joins[0].table).toBe('orders')
     })
@@ -143,7 +143,7 @@ describe('parseSql - CTE (WITH clause)', () => {
         parseSql({
           query: 'WITH cte AS (SELECT 1 FROM a), cte AS (SELECT 2 FROM b) SELECT * FROM cte',
         })
-      }).toThrow(/CTE "cte" is defined more than once/)
+      }).toThrow('CTE "cte" is defined more than once at position 0')
     })
 
     it('should throw error for duplicate CTE names (case-insensitive)', () => {
@@ -151,7 +151,7 @@ describe('parseSql - CTE (WITH clause)', () => {
         parseSql({
           query: 'WITH Cte AS (SELECT 1 FROM a), CTE AS (SELECT 2 FROM b) SELECT * FROM cte',
         })
-      }).toThrow(/CTE "CTE" is defined more than once/)
+      }).toThrow('CTE "CTE" is defined more than once at position 0')
     })
   })
 

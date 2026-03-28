@@ -322,7 +322,7 @@ describe('CTE execution', () => {
             SELECT * FROM undefined_cte
           `,
         }))
-      }).rejects.toThrow(/Table "undefined_cte" not found/)
+      }).rejects.toThrow('Table "undefined_cte" not found. Available tables: users')
     })
 
     it('should throw error for table not found in CTE', async () => {
@@ -334,7 +334,7 @@ describe('CTE execution', () => {
             SELECT * FROM cte
           `,
         }))
-      }).rejects.toThrow(/Table "nonexistent" not found/)
+      }).rejects.toThrow('Table "nonexistent" not found. Available tables: users')
     })
   })
 

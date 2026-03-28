@@ -32,19 +32,20 @@ export function memorySource({ data, columns }) {
     if (!data.length) {
       throw new Error('Unknown columns: data is empty and no columns provided')
     }
-    columns = Object.keys(data[0])
+    const firstColumns = Object.keys(data[0])
     // Check first 1000 rows for consistent columns
     for (let i = 1; i < data.length && i < 1000; i++) {
       const rowColumns = Object.keys(data[i])
-      const missing = columns.find(col => !rowColumns.includes(col))
+      const missing = firstColumns.find(col => !rowColumns.includes(col))
       if (missing) {
         throw new Error(`Inconsistent data, column "${missing}" not found in row ${i}`)
       }
-      const extra = rowColumns.find(col => !columns.includes(col))
+      const extra = rowColumns.find(col => !firstColumns.includes(col))
       if (extra) {
         throw new Error(`Inconsistent data, unexpected column "${extra}" found in row ${i}`)
       }
     }
+    columns = firstColumns
   }
   return {
     numRows: data.length,

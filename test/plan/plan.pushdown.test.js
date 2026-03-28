@@ -10,7 +10,7 @@ describe('column pushdown', () => {
       type: 'Project',
       columns: [
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'identifier',
             name: 'id',
@@ -42,7 +42,7 @@ describe('column pushdown', () => {
       type: 'Project',
       columns: [
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'identifier',
             name: 'full_name',
@@ -55,7 +55,7 @@ describe('column pushdown', () => {
         type: 'Project',
         columns: [
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'id',
@@ -64,7 +64,7 @@ describe('column pushdown', () => {
             },
           },
           {
-            kind: 'derived',
+            type: 'derived',
             expr: {
               type: 'identifier',
               name: 'name',
@@ -92,7 +92,7 @@ describe('column pushdown', () => {
       type: 'Project',
       columns: [
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'identifier',
             name: 'id',
@@ -136,7 +136,7 @@ describe('column pushdown', () => {
       type: 'Project',
       columns: [
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'identifier',
             name: 'users.name',
@@ -145,7 +145,7 @@ describe('column pushdown', () => {
           },
         },
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'identifier',
             name: 'orders.total',

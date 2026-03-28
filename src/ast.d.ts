@@ -9,6 +9,7 @@ export type SqlPrimitive =
   | Record<string, any>
 
 export interface SelectStatement extends AstBase {
+  type: 'select'
   with?: WithClause
   distinct: boolean
   columns: SelectColumn[]
@@ -28,19 +29,19 @@ export interface WithClause extends AstBase {
 
 export interface CTEDefinition extends AstBase {
   name: string
-  query: SelectStatement
+  select: SelectStatement
 }
 
 export interface FromTable extends AstBase {
-  kind: 'table'
+  type: 'table'
   table: string
   alias?: string
 }
 
 export interface FromSubquery extends AstBase {
-  kind: 'subquery'
+  type: 'subquery'
   query: SelectStatement
-  alias: string
+  alias?: string
 }
 
 export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'
@@ -150,12 +151,12 @@ export type ExprNode =
   | StarNode
 
 export interface StarColumn {
-  kind: 'star'
+  type: 'star'
   table?: string
 }
 
 export interface DerivedColumn {
-  kind: 'derived'
+  type: 'derived'
   expr: ExprNode
   alias?: string
 }

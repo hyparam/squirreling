@@ -1,7 +1,7 @@
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { columnNotFoundError, tableNotFoundError } from '../validation/planErrors.js'
-import { extractColumns } from './columns.js'
+import { extractColumns, fromAlias } from './columns.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement } from '../types.js'
@@ -23,7 +23,7 @@ export function planSql({ query, functions, tables }) {
   const ctePlans = new Map()
   if (select.with) {
     for (const cte of select.with.ctes) {
-      const ctePlan = planSelect({ select: cte.query, ctePlans, tables })
+      const ctePlan = planSelect({ select: cte.select, ctePlans, tables })
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
     }
   }
@@ -43,15 +43,13 @@ export function planSql({ query, functions, tables }) {
 function planSelect({ select, ctePlans, tables }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
-    col.kind === 'derived' && findAggregate(col.expr)
+    col.type === 'derived' && findAggregate(col.expr)
   )
   const useGrouping = hasAggregate || select.groupBy.length > 0
   const needsBuffering = useGrouping || select.orderBy.length > 0
 
   // Source alias for FROM clause
-  const sourceAlias = select.from.kind === 'table'
-    ? select.from.alias ?? select.from.table
-    : select.from.alias
+  const sourceAlias = fromAlias(select.from)
 
   // Determine scan hints for direct table scans (WHERE and LIMIT/OFFSET are
   // included so they are only applied to fresh scans, not CTE/subquery plans)
@@ -118,7 +116,7 @@ function planSelect({ select, ctePlans, tables }) {
       /** @type {Map<string, ExprNode>} */
       const aliases = new Map()
       for (const col of select.columns) {
-        if (col.kind === 'derived' && col.alias) {
+        if (col.type === 'derived' && col.alias) {
           aliases.set(col.alias, col.expr)
         }
       }
@@ -133,7 +131,7 @@ function planSelect({ select, ctePlans, tables }) {
     // So the order is: Sort -> Project -> Distinct -> Limit
 
     // Fast path for SELECT *
-    const isPassthrough = select.columns.length === 1 && select.columns[0].kind === 'star'
+    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star'
     if (!isPassthrough) {
       plan = { type: 'Project', columns: select.columns, child: plan }
     }
@@ -159,7 +157,7 @@ function planSelect({ select, ctePlans, tables }) {
  * @returns {QueryPlan}
  */
 function planFrom({ select, ctePlans, hints, tables }) {
-  if (select.from.kind === 'table') {
+  if (select.from.type === 'table') {
     const ctePlan = ctePlans.get(select.from.table.toLowerCase())
     if (ctePlan) {
       return ctePlan
@@ -355,7 +353,7 @@ function validateScan({ table, hints, tables, positionStart, positionEnd }) {
 function isAllCountStar(columns) {
   if (columns.length === 0) return false
   return columns.every(col =>
-    col.kind === 'derived' &&
+    col.type === 'derived' &&
     col.expr.type === 'function' &&
     col.expr.funcName.toUpperCase() === 'COUNT' &&
     col.expr.args.length === 1 &&

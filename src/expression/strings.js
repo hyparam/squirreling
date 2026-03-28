@@ -11,7 +11,7 @@ import { argValueError } from '../validation/executionErrors.js'
  * @param {StringFunc} options.funcName
  * @param {FunctionNode} options.node
  * @param {SqlPrimitive[]} options.args - Function arguments
- * @param {number} options.rowIndex - Row index for error reporting
+ * @param {number} [options.rowIndex] - Row index for error reporting
  * @returns {SqlPrimitive}
  */
 export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
@@ -122,4 +122,6 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     // INSTR returns 1-based position, 0 if not found
     return str.indexOf(String(search)) + 1
   }
+
+  throw new Error(`Unsupported string function: ${funcName}`)
 }

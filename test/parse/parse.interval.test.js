@@ -7,7 +7,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL 1 DAY FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 1,
@@ -23,7 +23,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL 2 MONTH FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 2,
@@ -39,7 +39,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL 5 YEAR FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 5,
@@ -55,7 +55,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL 12 HOUR FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 12,
@@ -71,7 +71,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL 30 MINUTE FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 30,
@@ -87,7 +87,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL 45 SECOND FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 45,
@@ -105,7 +105,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL \'1\' DAY FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 1,
@@ -121,7 +121,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL \'2.5\' HOUR FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: 2.5,
@@ -138,7 +138,7 @@ describe('INTERVAL parsing', () => {
     it('should parse date + INTERVAL', () => {
       const select = parseSql({ query: 'SELECT order_date + INTERVAL 7 DAY FROM orders' })
       expect(select.columns).toEqual([{
-        kind: 'derived',
+        type: 'derived',
         expr: {
           type: 'binary',
           op: '+',
@@ -164,7 +164,7 @@ describe('INTERVAL parsing', () => {
     it('should parse date - INTERVAL', () => {
       const select = parseSql({ query: 'SELECT created_at - INTERVAL 30 MINUTE FROM events' })
       expect(select.columns).toEqual([{
-        kind: 'derived',
+        type: 'derived',
         expr: {
           type: 'binary',
           op: '-',
@@ -190,7 +190,7 @@ describe('INTERVAL parsing', () => {
     it('should parse CURRENT_DATE + INTERVAL', () => {
       const select = parseSql({ query: 'SELECT CURRENT_DATE + INTERVAL 1 MONTH FROM dummy' })
       expect(select.columns).toEqual([{
-        kind: 'derived',
+        type: 'derived',
         expr: {
           type: 'binary',
           op: '+',
@@ -220,7 +220,7 @@ describe('INTERVAL parsing', () => {
       const select = parseSql({ query: 'SELECT INTERVAL -1 DAY FROM dummy' })
       expect(select.columns).toEqual([
         {
-          kind: 'derived',
+          type: 'derived',
           expr: {
             type: 'interval',
             value: -1,
@@ -235,7 +235,7 @@ describe('INTERVAL parsing', () => {
     it('should parse date subtraction with INTERVAL', () => {
       const select = parseSql({ query: 'SELECT date_col - INTERVAL 1 DAY FROM t' })
       expect(select.columns).toEqual([{
-        kind: 'derived',
+        type: 'derived',
         expr: {
           type: 'binary',
           op: '-',

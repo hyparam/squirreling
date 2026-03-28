@@ -119,8 +119,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       // Apply FILTER clause if present
       let filteredRows = rows
       if (node.filter) {
+        const filterNode = node.filter
         const passes = await Promise.all(rows.map(row =>
-          evaluateExpr({ node: node.filter, row, context })
+          evaluateExpr({ node: filterNode, row, context })
         ))
         filteredRows = rows.filter((_, i) => passes[i])
       }

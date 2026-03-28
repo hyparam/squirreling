@@ -4,7 +4,7 @@ import { parseSql } from '../../src/parse/parse.js'
 describe('parseSql - JOIN queries', () => {
   it('should parse simple INNER JOIN', () => {
     const select = parseSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
+    expect(select.from).toEqual({ type: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
     expect(select.joins).toEqual([
       {
         joinType: 'INNER',
@@ -115,7 +115,7 @@ describe('parseSql - JOIN queries', () => {
 
   it('should parse POSITIONAL JOIN', () => {
     const select = parseSql({ query: 'SELECT * FROM users POSITIONAL JOIN orders' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
+    expect(select.from).toEqual({ type: 'table', table: 'users', positionStart: 14, positionEnd: 19 })
     expect(select.joins).toEqual([
       {
         joinType: 'POSITIONAL',
@@ -128,7 +128,7 @@ describe('parseSql - JOIN queries', () => {
 
   it('should parse POSITIONAL JOIN with alias', () => {
     const select = parseSql({ query: 'SELECT * FROM users u POSITIONAL JOIN orders o' })
-    expect(select.from).toEqual({ kind: 'table', table: 'users', alias: 'u', positionStart: 14, positionEnd: 21 })
+    expect(select.from).toEqual({ type: 'table', table: 'users', alias: 'u', positionStart: 14, positionEnd: 21 })
     expect(select.joins).toEqual([
       {
         joinType: 'POSITIONAL',

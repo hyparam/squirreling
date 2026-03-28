@@ -181,7 +181,7 @@ describe('parseSql error handling', () => {
           },
         },
       })
-      expect(result.columns[0].kind).toBe('derived')
+      expect(result.columns[0].type).toBe('derived')
     })
   })
 
@@ -380,7 +380,7 @@ describe('ParseError structure', () => {
         },
       },
     })
-    expect(result.columns[0].kind).toBe('derived')
+    expect(result.columns[0].type).toBe('derived')
   })
 
   it('should have correct position range for unexpected character', () => {
