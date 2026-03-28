@@ -176,6 +176,20 @@ describe('subqueries', () => {
       }))
       expect(result).toEqual([{ id: 2 }])
     })
+
+    it('should execute set operations in FROM clause subqueries', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT name FROM (
+            SELECT name FROM users WHERE age < 30
+            UNION ALL
+            SELECT name FROM users WHERE age >= 30
+          ) AS u
+        `,
+      }))
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob', 'Charlie'])
+    })
   })
 
   describe('IN subquery', () => {
@@ -211,6 +225,20 @@ describe('subqueries', () => {
         query: 'SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = TRUE)',
       }))
       expect(result).toHaveLength(3) // orders 1, 2, 3
+    })
+
+    it('should execute IN with set-operation subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT * FROM orders WHERE user_id IN (
+            SELECT id FROM users WHERE active = TRUE
+            EXCEPT
+            SELECT user_id AS id FROM orders WHERE amount >= 200
+          )
+        `,
+      }))
+      expect(result.map(r => r.id).sort()).toEqual([1, 3])
     })
 
     it('should work with IN subquery on non-id columns', async () => {
@@ -272,6 +300,20 @@ describe('subqueries', () => {
       const result = await collect(executeSql({
         tables: { users, orders },
         query: 'SELECT * FROM users WHERE EXISTS (SELECT * FROM orders WHERE amount > 100)',
+      }))
+      expect(result).toHaveLength(3)
+    })
+
+    it('should execute EXISTS with set-operation subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT * FROM users WHERE EXISTS (
+            SELECT id FROM users WHERE active = TRUE
+            UNION
+            SELECT user_id AS id FROM orders WHERE amount > 1000
+          )
+        `,
       }))
       expect(result).toHaveLength(3)
     })

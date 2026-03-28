@@ -3,7 +3,7 @@ import { InvalidLiteralError, ParseError, SyntaxError, UnknownFunctionError } fr
 import { RESERVED_KEYWORDS } from '../validation/keywords.js'
 import { parseExpression } from './expression.js'
 import { parseFunctionCall } from './functions.js'
-import { parseSelectInternal } from './parse.js'
+import { parseStatement } from './parse.js'
 import { consume, current, expect, match, peekToken } from './state.js'
 
 /**
@@ -23,7 +23,7 @@ export function parsePrimary(state) {
     const next = current(state)
     if (next.type === 'keyword' && next.value === 'SELECT') {
       // It's a scalar subquery
-      const subquery = parseSelectInternal(state)
+      const subquery = parseStatement(state)
       expect(state, 'paren', ')')
       return {
         type: 'subquery',
@@ -153,7 +153,7 @@ export function parsePrimary(state) {
     }
     if (match(state, 'keyword', 'EXISTS')) {
       expect(state, 'paren', '(')
-      const subquery = parseSelectInternal(state)
+      const subquery = parseStatement(state)
       expect(state, 'paren', ')')
       return {
         type: 'exists',

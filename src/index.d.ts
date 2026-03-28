@@ -1,4 +1,4 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, SetOperationStatement, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
@@ -12,6 +12,7 @@ export type {
   ScanOptions,
   ScanResults,
   SelectStatement,
+  SetOperationStatement,
   SqlPrimitive,
   Statement,
   Token,

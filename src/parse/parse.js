@@ -7,7 +7,7 @@ import { consume, current, expect, match, parseError, peekToken } from './state.
 import { tokenizeSql } from './tokenize.js'
 
 /**
- * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, Statement, SelectColumn } from '../types.js'
+ * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectColumn, SelectStatement, SetOperationStatement, SetOperator, Statement } from '../types.js'
  */
 
 /**
@@ -31,12 +31,12 @@ export function parseSql({ query, functions }) {
 }
 
 /**
- * Parses a WITH clause containing one or more CTEs
+ * Parses a WITH clause containing one or more CTEs, or a SELECT with optional set operations.
  *
  * @param {ParserState} state
  * @returns {Statement}
  */
-function parseStatement(state) {
+export function parseStatement(state) {
   const positionStart = state.lastPos
   if (match(state, 'keyword', 'WITH')) {
     /** @type {CTEDefinition[]} */
@@ -64,7 +64,7 @@ function parseStatement(state) {
       expect(state, 'paren', '(')
 
       // Parse the CTE's SELECT statement
-      const query = parseSelectInternal(state)
+      const query = parseStatement(state)
 
       expect(state, 'paren', ')')
 
@@ -74,19 +74,100 @@ function parseStatement(state) {
       if (!match(state, 'comma')) break
     }
 
-    const query = parseSelectInternal(state)
+    const query = parseSetOperations(state)
 
     return { type: 'with', ctes, query, positionStart, positionEnd: state.lastPos }
   } else {
-    return parseSelectInternal(state)
+    return parseSetOperations(state)
   }
+}
+
+/**
+ * Checks for and parses UNION/INTERSECT/EXCEPT set operations after a SELECT.
+ * Handles chaining (e.g., SELECT ... UNION SELECT ... EXCEPT SELECT ...).
+ * ORDER BY and LIMIT/OFFSET on the last segment apply to the entire compound result.
+ *
+ * @param {ParserState} state
+ * @returns {SelectStatement | SetOperationStatement}
+ */
+function parseSetOperations(state) {
+  let left = parseIntersectOperations(state)
+
+  while (true) {
+    /** @type {SetOperator | undefined} */
+    let operator
+    if (match(state, 'keyword', 'UNION')) {
+      operator = 'UNION'
+    } else if (match(state, 'keyword', 'EXCEPT')) {
+      operator = 'EXCEPT'
+    }
+    if (!operator) return left
+
+    const all = !!match(state, 'keyword', 'ALL')
+    const right = parseIntersectOperations(state)
+
+    // ORDER BY / LIMIT / OFFSET after a set operation apply to the compound result.
+    // If the right SELECT parsed them, lift them to the compound statement.
+    left = {
+      type: 'compound',
+      operator,
+      all,
+      left,
+      right,
+      orderBy: right.orderBy,
+      limit: right.limit,
+      offset: right.offset,
+      positionStart: left.positionStart,
+      positionEnd: right.positionEnd,
+    }
+
+    // Clear lifted clauses from the right SELECT
+    right.orderBy = []
+    right.limit = undefined
+    right.offset = undefined
+  }
+}
+
+/**
+ * Parses a left-associative INTERSECT chain, which binds tighter than UNION/EXCEPT.
+ *
+ * @param {ParserState} state
+ * @returns {SelectStatement | SetOperationStatement}
+ */
+function parseIntersectOperations(state) {
+  /** @type {SelectStatement | SetOperationStatement} */
+  let left = parseSelect(state)
+
+  while (match(state, 'keyword', 'INTERSECT')) {
+    const all = !!match(state, 'keyword', 'ALL')
+    const right = parseSelect(state)
+
+    left = {
+      type: 'compound',
+      operator: 'INTERSECT',
+      all,
+      left,
+      right,
+      orderBy: right.orderBy,
+      limit: right.limit,
+      offset: right.offset,
+      positionStart: left.positionStart,
+      positionEnd: right.positionEnd,
+    }
+
+    right.orderBy = []
+    right.limit = undefined
+    right.offset = undefined
+  }
+
+  return left
 }
 
 /**
  * @param {ParserState} state
  * @returns {SelectStatement}
  */
-export function parseSelectInternal(state) {
+function parseSelect(state) {
   const { positionStart } = current(state)
   expect(state, 'keyword', 'SELECT')
 
@@ -103,7 +184,7 @@ export function parseSelectInternal(state) {
   if (tok.type === 'paren' && tok.value === '(') {
     // Subquery: SELECT * FROM (SELECT ...) AS alias
     expect(state, 'paren', '(')
-    const query = parseSelectInternal(state)
+    const query = parseStatement(state)
     expect(state, 'paren', ')')
     const alias = parseTableAlias(state)
     from = {

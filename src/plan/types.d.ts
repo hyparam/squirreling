@@ -1,4 +1,4 @@
-import { DerivedColumn, ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn } from '../types.js'
+import { DerivedColumn, ExprNode, JoinType, OrderByItem, ScanOptions, SelectColumn, SetOperator } from '../types.js'
 
 export type QueryPlan =
   | ScanNode
@@ -13,6 +13,7 @@ export type QueryPlan =
   | HashJoinNode
   | NestedLoopJoinNode
   | PositionalJoinNode
+  | SetOperationNode
 
 // Scan node
 export interface ScanNode {
@@ -101,6 +102,15 @@ export interface PositionalJoinNode {
   type: 'PositionalJoin'
   leftAlias: string
   rightAlias: string
+  left: QueryPlan
+  right: QueryPlan
+}
+
+// Set operation node (UNION, INTERSECT, EXCEPT)
+export interface SetOperationNode {
+  type: 'SetOperation'
+  operator: SetOperator
+  all: boolean
   left: QueryPlan
   right: QueryPlan
 }

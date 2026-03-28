@@ -20,9 +20,17 @@ describe('parseSql - CTE (WITH clause)', () => {
       positionStart: 13,
       positionEnd: 32,
     })
-    expect(stmt.query.type).toBe('select')
-    if (stmt.query.type !== 'select') throw new Error('expected select')
-    expect(stmt.query.from).toEqual({ type: 'table', table: 'cte', positionStart: 48, positionEnd: 51 })
+    expect(stmt.query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [{ type: 'star' }],
+      from: { type: 'table', table: 'cte', positionStart: 48, positionEnd: 51 },
+      joins: [],
+      groupBy: [],
+      orderBy: [],
+      positionStart: 34,
+      positionEnd: 51,
+    })
   })
 
   it('should parse CTE with columns and WHERE', () => {
@@ -57,9 +65,17 @@ describe('parseSql - CTE (WITH clause)', () => {
     const stmt = parseWith({
       query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte AS t',
     })
-    expect(stmt.query.type).toBe('select')
-    if (stmt.query.type !== 'select') throw new Error('expected select')
-    expect(stmt.query.from).toEqual({ type: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 })
+    expect(stmt.query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [{ type: 'star' }],
+      from: { type: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 },
+      joins: [],
+      groupBy: [],
+      orderBy: [],
+      positionStart: 34,
+      positionEnd: 56,
+    })
   })
 
   it('should parse multiple CTEs', () => {
@@ -151,11 +167,33 @@ describe('parseSql - CTE (WITH clause)', () => {
     const stmt = parseWith({
       query: 'WITH active AS (SELECT id FROM users) SELECT active.id, orders.amount FROM active JOIN orders ON active.id = orders.user_id',
     })
-    expect(stmt.query.type).toBe('select')
-    if (stmt.query.type !== 'select') throw new Error('expected select')
-    expect(stmt.query.from).toEqual({ type: 'table', table: 'active', positionStart: 75, positionEnd: 81 })
-    expect(stmt.query.joins).toHaveLength(1)
-    expect(stmt.query.joins[0].table).toBe('orders')
+    expect(stmt.query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [
+        { type: 'derived', expr: { type: 'identifier', name: 'active.id', positionStart: 45, positionEnd: 54 } },
+        { type: 'derived', expr: { type: 'identifier', name: 'orders.amount', positionStart: 56, positionEnd: 69 } },
+      ],
+      from: { type: 'table', table: 'active', positionStart: 75, positionEnd: 81 },
+      joins: [{
+        joinType: 'INNER',
+        table: 'orders',
+        on: {
+          type: 'binary',
+          op: '=',
+          left: { type: 'identifier', name: 'active.id', positionStart: 97, positionEnd: 106 },
+          right: { type: 'identifier', name: 'orders.user_id', positionStart: 109, positionEnd: 123 },
+          positionStart: 97,
+          positionEnd: 123,
+        },
+        positionStart: 87,
+        positionEnd: 93,
+      }],
+      groupBy: [],
+      orderBy: [],
+      positionStart: 38,
+      positionEnd: 123,
+    })
   })
 
   it('should throw error for duplicate CTE names', () => {
@@ -175,5 +213,25 @@ describe('parseSql - CTE (WITH clause)', () => {
       query: 'WITH MyTable AS (SELECT * FROM users) SELECT * FROM MyTable',
     })
     expect(stmt.ctes[0].name).toBe('MyTable')
+  })
+
+  it('should parse set operations inside a CTE body', () => {
+    const stmt = parseWith({
+      query: `
+        WITH cte AS (
+          SELECT name FROM users WHERE age < 30
+          UNION
+          SELECT name FROM users WHERE age >= 30
+        )
+        SELECT * FROM cte
+      `,
+    })
+
+    expect(stmt.ctes[0].query.type).toBe('compound')
+    if (stmt.ctes[0].query.type === 'compound') {
+      expect(stmt.ctes[0].query.operator).toBe('UNION')
+      expect(stmt.ctes[0].query.left.type).toBe('select')
+      expect(stmt.ctes[0].query.right.type).toBe('select')
+    }
   })
 })

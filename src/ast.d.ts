@@ -22,13 +22,26 @@ export interface SelectStatement extends AstBase {
   offset?: number
 }
 
+export type SetOperator = 'UNION' | 'INTERSECT' | 'EXCEPT'
+
+export interface SetOperationStatement extends AstBase {
+  type: 'compound'
+  operator: SetOperator
+  all: boolean
+  left: Statement
+  right: Statement
+  orderBy: OrderByItem[]
+  limit?: number
+  offset?: number
+}
+
 export interface WithStatement extends AstBase {
   type: 'with'
   ctes: CTEDefinition[]
   query: Statement
 }
 
-export type Statement = SelectStatement | WithStatement
+export type Statement = SelectStatement | SetOperationStatement | WithStatement
 
 export interface CTEDefinition extends AstBase {
   name: string

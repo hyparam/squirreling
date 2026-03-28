@@ -798,4 +798,40 @@ describe('parseSql - WHERE clause', () => {
       positionEnd: 91,
     })
   })
+
+  it('should parse WHERE with EXISTS set-operation subquery', () => {
+    const select = parseSelect(`
+      SELECT * FROM orders WHERE EXISTS (
+        SELECT user_id FROM users WHERE active = TRUE
+        UNION
+        SELECT user_id FROM orders WHERE amount > 100
+      )
+    `)
+
+    expect(select.where?.type).toBe('exists')
+    if (select.where?.type === 'exists') {
+      expect(select.where.subquery.type).toBe('compound')
+      if (select.where.subquery.type === 'compound') {
+        expect(select.where.subquery.operator).toBe('UNION')
+      }
+    }
+  })
+
+  it('should parse WHERE with IN set-operation subquery', () => {
+    const select = parseSelect(`
+      SELECT * FROM orders WHERE user_id IN (
+        SELECT id FROM users WHERE active = TRUE
+        EXCEPT
+        SELECT user_id FROM orders WHERE amount < 100
+      )
+    `)
+
+    expect(select.where?.type).toBe('in')
+    if (select.where?.type === 'in') {
+      expect(select.where.subquery.type).toBe('compound')
+      if (select.where.subquery.type === 'compound') {
+        expect(select.where.subquery.operator).toBe('EXCEPT')
+      }
+    }
+  })
 })

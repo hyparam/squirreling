@@ -137,6 +137,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
 - `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN`, `POSITIONAL JOIN`
 - `GROUP BY` and `HAVING` clauses
+- Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
 - Expressions: `CASE`, `CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`
 
 ### Quoting

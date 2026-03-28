@@ -1,8 +1,18 @@
 import { parseSql } from '../src/parse/parse.js'
 
 /**
- * @import { SelectStatement, UserDefinedFunction, WithStatement } from '../src/types.js'
+ * @import { SelectStatement, Statement, UserDefinedFunction, WithStatement } from '../src/types.js'
  */
+
+/**
+ * Narrow a Statement to SelectStatement, throwing if it's not.
+ * @param {Statement} stmt
+ * @returns {SelectStatement}
+ */
+export function asSelect(stmt) {
+  if (stmt.type !== 'select') throw new Error('expected select')
+  return stmt
+}
 
 /**
  * Parse a SQL query and assert it is a SELECT statement.

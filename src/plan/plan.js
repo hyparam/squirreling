@@ -1,15 +1,15 @@
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/planErrors.js'
-import { extractColumns, fromAlias } from './columns.js'
+import { extractColumns, fromAlias, inferStatementColumns } from './columns.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, Statement } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
  * @import { QueryPlan } from './types.d.ts'
  */
 
 /**
- * Builds a query plan from a SELECT statement AST.
+ * Builds a query plan from a statement AST.
  * Resolves CTEs at plan time so no planning occurs during execution.
  *
  * @param {PlanSqlOptions} options
@@ -22,26 +22,70 @@ export function planSql({ query, functions, tables }) {
 }
 
 /**
- * Builds a plan for a SELECT statement with CTEs pre-resolved.
+ * Plans a Statement (SelectStatement, SetOperationStatement, or WithStatement).
  *
  * @param {object} options
  * @param {Statement} options.stmt
  * @param {Map<string, QueryPlan>} [options.ctePlans]
+ * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planStatement({ stmt, ctePlans, tables }) {
+function planStatement({ stmt, ctePlans, cteColumns, tables }) {
   if (stmt.type === 'with') {
     // Build CTE plans in order (each CTE can reference preceding CTEs)
     ctePlans ??= new Map()
+    cteColumns ??= new Map()
     for (const cte of stmt.ctes) {
-      const ctePlan = planStatement({ stmt: cte.query, ctePlans, tables })
+      const ctePlan = planStatement({ stmt: cte.query, ctePlans, cteColumns, tables })
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
+      cteColumns.set(cte.name.toLowerCase(), inferStatementColumns({ stmt: cte.query, cteColumns, tables }))
     }
-    return planStatement({ stmt: stmt.query, ctePlans, tables })
-  } else {
-    return planSelect({ select: stmt, ctePlans, tables })
+    return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables })
   }
+  if (stmt.type === 'compound') {
+    return planSetOperation({ compound: stmt, ctePlans, cteColumns, tables })
+  }
+  return planSelect({ select: stmt, ctePlans, cteColumns, tables })
+}
+
+/**
+ * Plans a SetOperationStatement (UNION/INTERSECT/EXCEPT).
+ *
+ * @param {object} options
+ * @param {SetOperationStatement} options.compound
+ * @param {Map<string, QueryPlan>} [options.ctePlans]
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @returns {QueryPlan}
+ */
+function planSetOperation({ compound, ctePlans, cteColumns, tables }) {
+  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables })
+  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables })
+  const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
+  const rightColumns = inferStatementColumns({ stmt: compound.right, cteColumns, tables })
+
+  if (leftColumns.length !== rightColumns.length || leftColumns.some((col, idx) => col !== rightColumns[idx])) {
+    throw new Error(`Set operation operands must have identical columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
+  }
+
+  /** @type {QueryPlan} */
+  let plan = {
+    type: 'SetOperation',
+    operator: compound.operator,
+    all: compound.all,
+    left,
+    right,
+  }
+
+  if (compound.orderBy.length) {
+    plan = { type: 'Sort', orderBy: compound.orderBy, child: plan }
+  }
+  if (compound.limit !== undefined || compound.offset) {
+    plan = { type: 'Limit', limit: compound.limit, offset: compound.offset, child: plan }
+  }
+
+  return plan
 }
 
 /**
@@ -50,10 +94,11 @@ function planStatement({ stmt, ctePlans, tables }) {
  * @param {object} options
  * @param {SelectStatement} options.select
  * @param {Map<string, QueryPlan>} [options.ctePlans]
+ * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planSelect({ select, ctePlans, tables }) {
+function planSelect({ select, ctePlans, cteColumns, tables }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.type === 'derived' && findAggregate(col.expr)
@@ -80,11 +125,11 @@ function planSelect({ select, ctePlans, tables }) {
 
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
-  let plan = planFrom({ select, ctePlans, hints, tables })
+  let plan = planFrom({ select, ctePlans, cteColumns, hints, tables })
 
   // Add JOINs
   if (select.joins.length) {
-    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, perTableColumns, tables })
+    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables })
   }
 
   // Whether FROM resolved to our own direct table scan
@@ -165,11 +210,12 @@ function planSelect({ select, ctePlans, tables }) {
  * @param {object} options
  * @param {SelectStatement} options.select
  * @param {Map<string, QueryPlan>} [options.ctePlans]
+ * @param {Map<string, string[]>} [options.cteColumns]
  * @param {ScanOptions} options.hints
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planFrom({ select, ctePlans, hints, tables }) {
+function planFrom({ select, ctePlans, cteColumns, hints, tables }) {
   if (select.from.type === 'table') {
     const ctePlan = ctePlans?.get(select.from.table.toLowerCase())
     if (ctePlan) {
@@ -178,7 +224,7 @@ function planFrom({ select, ctePlans, hints, tables }) {
     validateScan({ ...select.from, hints, tables })
     return { type: 'Scan', table: select.from.table, hints }
   } else {
-    return planStatement({ stmt: select.from.query, ctePlans, tables })
+    return planStatement({ stmt: select.from.query, ctePlans, cteColumns, tables })
   }
 }
 
@@ -188,11 +234,12 @@ function planFrom({ select, ctePlans, hints, tables }) {
  * @param {JoinClause[]} options.joins - array of join clauses
  * @param {string} options.leftTable - name/alias of the left table
  * @param {Map<string, QueryPlan>} [options.ctePlans]
+ * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Map<string, string[] | undefined>} options.perTableColumns
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {QueryPlan}
  */
-function planJoin({ left, joins, leftTable, ctePlans, perTableColumns, tables }) {
+function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables }) {
   let plan = left
   let currentLeftTable = leftTable
 
@@ -205,6 +252,9 @@ function planJoin({ left, joins, leftTable, ctePlans, perTableColumns, tables })
     if (!ctePlan) {
       rightHints.columns = perTableColumns.get(rightTable)
       validateScan({ ...join, hints: rightHints, tables })
+    } else {
+      // For CTE joins, use CTE column metadata for hints
+      rightHints.columns = perTableColumns.get(rightTable) ?? cteColumns?.get(join.table.toLowerCase())
     }
     /** @type {QueryPlan} */
     const rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }

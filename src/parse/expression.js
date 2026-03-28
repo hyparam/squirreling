@@ -1,7 +1,7 @@
 import { isBinaryOp } from '../validation/functions.js'
 import { SyntaxError } from '../validation/parseErrors.js'
 import { parsePrimary } from './primary.js'
-import { parseSelectInternal } from './parse.js'
+import { parseStatement } from './parse.js'
 import { consume, current, expect, match } from './state.js'
 
 /**
@@ -62,7 +62,7 @@ function parseNot(state) {
     // Check for NOT EXISTS
     if (match(state, 'keyword', 'EXISTS')) {
       expect(state, 'paren', '(')
-      const subquery = parseSelectInternal(state)
+      const subquery = parseStatement(state)
       expect(state, 'paren', ')')
       return {
         type: 'not exists',
@@ -278,7 +278,7 @@ function parseIn(state, left) {
   // Subquery
   const next = current(state)
   if (next.type === 'keyword' && next.value === 'SELECT') {
-    const subquery = parseSelectInternal(state)
+    const subquery = parseStatement(state)
     expect(state, 'paren', ')')
     return {
       type: 'in',

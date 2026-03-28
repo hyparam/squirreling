@@ -393,6 +393,25 @@ describe('parseSql', () => {
         positionEnd: 40,
       })
     })
+
+    it('should parse set operations in FROM clause subqueries', () => {
+      const select = parseSelect(`
+        SELECT name FROM (
+          SELECT name FROM users WHERE age < 30
+          UNION ALL
+          SELECT name FROM users WHERE age >= 30
+        ) AS u
+      `)
+
+      expect(select.from.type).toBe('subquery')
+      if (select.from.type === 'subquery') {
+        expect(select.from.query.type).toBe('compound')
+        if (select.from.query.type === 'compound') {
+          expect(select.from.query.operator).toBe('UNION')
+          expect(select.from.query.all).toBe(true)
+        }
+      }
+    })
   })
 
   describe('CASE expressions', () => {

@@ -5,6 +5,7 @@ export const KEYWORDS = new Set([
   'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'JOIN', 'INNER', 'LEFT', 'RIGHT',
   'FULL', 'OUTER', 'POSITIONAL', 'ON', 'INTERVAL', 'DAY', 'MONTH', 'YEAR',
   'HOUR', 'MINUTE', 'SECOND', 'FILTER',
+  'UNION', 'INTERSECT', 'EXCEPT',
 ])
 
 // Reserved keywords that cannot be used as identifiers in expressions.
@@ -17,15 +18,18 @@ export const RESERVED_KEYWORDS = new Set([
   'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
   'AS', 'ALL', 'DISTINCT',
   'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'ON',
+  'UNION', 'INTERSECT', 'EXCEPT',
 ])
 
 // Keywords that cannot be used as implicit aliases after a column
 export const RESERVED_AFTER_COLUMN = new Set([
   'FROM', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
+  'UNION', 'INTERSECT', 'EXCEPT',
 ])
 
 // Keywords that cannot be used as table aliases
 export const RESERVED_AFTER_TABLE = new Set([
   'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'JOIN', 'INNER',
   'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'POSITIONAL',
+  'UNION', 'INTERSECT', 'EXCEPT',
 ])

@@ -1,5 +1,7 @@
+import { derivedAlias } from '../expression/alias.js'
+
 /**
- * @import { ExprNode, FromSubquery, FromTable, SelectStatement } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, FromSubquery, FromTable, SelectStatement, Statement } from '../types.js'
  */
 
 /**
@@ -149,4 +151,81 @@ function collectColumnsFromExpr(expr, columns, aliases) {
     }
   }
   // No columns: count(*), literal, interval, exists, not exists, subquery
+}
+
+/**
+ * Infers output columns for set-operation validation.
+ *
+ * @param {object} options
+ * @param {Statement} options.stmt
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @returns {string[]}
+ */
+export function inferStatementColumns({ stmt, cteColumns, tables }) {
+  if (stmt.type === 'with') {
+    return inferStatementColumns({ stmt: stmt.query, cteColumns, tables })
+  }
+  if (stmt.type === 'compound') {
+    return inferStatementColumns({ stmt: stmt.left, cteColumns, tables })
+  }
+
+  const sourceColumns = inferSelectSourceColumns({ select: stmt, cteColumns, tables })
+  /** @type {string[]} */
+  const result = []
+
+  for (const col of stmt.columns) {
+    if (col.type === 'star') {
+      result.push(...sourceColumns)
+    } else {
+      result.push(col.alias ?? derivedAlias(col.expr))
+    }
+  }
+
+  return result
+}
+
+/**
+ * Infers the source columns available before SELECT projection.
+ * Mirrors the column ordering used by join row materialization.
+ *
+ * @param {object} options
+ * @param {SelectStatement} options.select
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @returns {string[]}
+ */
+function inferSelectSourceColumns({ select, cteColumns, tables }) {
+  if (select.from.type === 'subquery') {
+    return inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
+  }
+
+  if (!select.joins.length) {
+    return lookupTableColumns(select.from.table, cteColumns, tables)
+  }
+
+  // Collect all sources, then prefix each table's columns
+  /** @type {string[]} */
+  const result = []
+  const fromAlias = select.from.alias ?? select.from.table
+  for (const col of lookupTableColumns(select.from.table, cteColumns, tables)) {
+    result.push(`${fromAlias}.${col}`, col)
+  }
+  for (const join of select.joins) {
+    const alias = join.alias ?? join.table
+    for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
+      result.push(`${alias}.${col}`, col)
+    }
+  }
+  return result
+}
+
+/**
+ * @param {string} table
+ * @param {Map<string, string[]>} [cteColumns]
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @returns {string[]}
+ */
+function lookupTableColumns(table, cteColumns, tables) {
+  return cteColumns?.get(table.toLowerCase()) ?? tables?.[table]?.columns ?? []
 }

@@ -349,6 +349,21 @@ describe('CTE execution', () => {
       }))
       expect(result).toHaveLength(2)
     })
+
+    it('should execute set operations inside a CTE body', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          WITH combined AS (
+            SELECT name FROM users WHERE age < 30
+            UNION ALL
+            SELECT name FROM users WHERE age >= 30
+          )
+          SELECT * FROM combined
+        `,
+      }))
+      expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob', 'Charlie'])
+    })
   })
 
   describe('empty results', () => {
