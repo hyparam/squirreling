@@ -1,4 +1,4 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
@@ -13,8 +13,10 @@ export type {
   ScanResults,
   SelectStatement,
   SqlPrimitive,
+  Statement,
   Token,
   UserDefinedFunction,
+  WithStatement,
 } from './types.js'
 
 /**
@@ -45,9 +47,9 @@ export function executePlan(options: { plan: QueryPlan, context: ExecuteContext 
  * @param options
  * @param options.query - SQL query string to parse
  * @param options.functions - user-defined functions available in the SQL context
- * @returns parsed SQL select statement
+ * @returns parsed SQL statement
  */
-export function parseSql(options: ParseSqlOptions): SelectStatement
+export function parseSql(options: ParseSqlOptions): Statement
 
 /**
  * Builds a query plan from a SQL query string or AST

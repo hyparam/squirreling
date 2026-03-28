@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseSql } from '../../src/parse/parse.js'
+import { parseSelect } from '../helpers.js'
 
 describe('parseSql - string functions', () => {
   it('should parse UPPER function', () => {
-    const select = parseSql({ query: 'SELECT UPPER(name) FROM users' })
+    const select = parseSelect('SELECT UPPER(name) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -26,7 +26,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse LOWER function', () => {
-    const select = parseSql({ query: 'SELECT LOWER(email) FROM users' })
+    const select = parseSelect('SELECT LOWER(email) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -49,7 +49,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse LENGTH function', () => {
-    const select = parseSql({ query: 'SELECT LENGTH(name) FROM users' })
+    const select = parseSelect('SELECT LENGTH(name) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -72,7 +72,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse TRIM function', () => {
-    const select = parseSql({ query: 'SELECT TRIM(name) FROM users' })
+    const select = parseSelect('SELECT TRIM(name) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -95,7 +95,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse CONCAT function with two arguments', () => {
-    const select = parseSql({ query: 'SELECT CONCAT(first_name, last_name) FROM users' })
+    const select = parseSelect('SELECT CONCAT(first_name, last_name) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -124,7 +124,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse CONCAT function with string literals', () => {
-    const select = parseSql({ query: 'SELECT CONCAT(first_name, \' \', last_name) FROM users' })
+    const select = parseSelect('SELECT CONCAT(first_name, \' \', last_name) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -154,7 +154,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse SUBSTRING function with three arguments', () => {
-    const select = parseSql({ query: 'SELECT SUBSTRING(name, 1, 3) FROM users' })
+    const select = parseSelect('SELECT SUBSTRING(name, 1, 3) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -179,7 +179,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse string function with alias using AS', () => {
-    const select = parseSql({ query: 'SELECT UPPER(name) AS upper_name FROM users' })
+    const select = parseSelect('SELECT UPPER(name) AS upper_name FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -203,7 +203,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse string function with implicit alias', () => {
-    const select = parseSql({ query: 'SELECT LOWER(email) user_email FROM users' })
+    const select = parseSelect('SELECT LOWER(email) user_email FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -227,7 +227,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse multiple string functions', () => {
-    const select = parseSql({ query: 'SELECT UPPER(first_name), LOWER(last_name), LENGTH(email) FROM users' })
+    const select = parseSelect('SELECT UPPER(first_name), LOWER(last_name), LENGTH(email) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -284,7 +284,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse string function with qualified column name', () => {
-    const select = parseSql({ query: 'SELECT UPPER(users.name) FROM users' })
+    const select = parseSelect('SELECT UPPER(users.name) FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -307,7 +307,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse mix of string functions and regular columns', () => {
-    const select = parseSql({ query: 'SELECT id, UPPER(name), email FROM users' })
+    const select = parseSelect('SELECT id, UPPER(name), email FROM users')
     expect(select.columns).toEqual([
       {
         type: 'derived',
@@ -343,7 +343,7 @@ describe('parseSql - string functions', () => {
   })
 
   it('should parse string functions with aggregate functions', () => {
-    const select = parseSql({ query: 'SELECT UPPER(city), COUNT(*) FROM users GROUP BY city' })
+    const select = parseSelect('SELECT UPPER(city), COUNT(*) FROM users GROUP BY city')
     expect(select.columns).toEqual([
       {
         type: 'derived',

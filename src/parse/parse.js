@@ -7,12 +7,12 @@ import { consume, current, expect, match, parseError, peekToken } from './state.
 import { tokenizeSql } from './tokenize.js'
 
 /**
- * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, SelectColumn, WithClause } from '../types.js'
+ * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectStatement, Statement, SelectColumn } from '../types.js'
  */
 
 /**
  * @param {ParseSqlOptions} options
- * @returns {SelectStatement}
+ * @returns {Statement}
  */
 export function parseSql({ query, functions }) {
   const tokens = tokenizeSql(query)
@@ -20,22 +20,66 @@ export function parseSql({ query, functions }) {
   const state = { tokens, pos: 0, lastPos: 0, functions }
 
   // Parse optional WITH clause
-  const withClause = parseWithClause(state)
-
-  const select = parseSelectInternal(state)
-
-  // Attach WITH clause to the select statement
-  if (withClause) {
-    select.with = withClause
-    select.positionStart = withClause.positionStart
-  }
+  const stmt = parseStatement(state)
 
   const tok = current(state)
   if (tok.type !== 'eof') {
     throw parseError(state, 'end of query')
   }
 
-  return select
+  return stmt
+}
+
+/**
+ * Parses a WITH clause containing one or more CTEs
+ *
+ * @param {ParserState} state
+ * @returns {Statement}
+ */
+function parseStatement(state) {
+  const positionStart = state.lastPos
+  if (match(state, 'keyword', 'WITH')) {
+    /** @type {CTEDefinition[]} */
+    const ctes = []
+    /** @type {Set<string>} */
+    const seenNames = new Set()
+
+    while (true) {
+      // Parse CTE name
+      const nameTok = expect(state, 'identifier')
+      const name = nameTok.value
+      const nameLower = name.toLowerCase()
+
+      // Check for duplicate CTE names
+      if (seenNames.has(nameLower)) {
+        throw new ParseError({
+          message: `CTE "${name}" is defined more than once at position ${positionStart}`,
+          ...nameTok,
+        })
+      }
+      seenNames.add(nameLower)
+
+      // Expect AS statement
+      expect(state, 'keyword', 'AS')
+      expect(state, 'paren', '(')
+
+      // Parse the CTE's SELECT statement
+      const query = parseSelectInternal(state)
+
+      expect(state, 'paren', ')')
+
+      ctes.push({ name, query, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
+
+      // Check for comma (more CTEs) or end of WITH clause
+      if (!match(state, 'comma')) break
+    }
+
+    const query = parseSelectInternal(state)
+
+    return { type: 'with', ctes, query, positionStart, positionEnd: state.lastPos }
+  } else {
+    return parseSelectInternal(state)
+  }
 }
 
 /**
@@ -46,10 +90,7 @@ export function parseSelectInternal(state) {
   const { positionStart } = current(state)
   expect(state, 'keyword', 'SELECT')
 
-  let distinct = false
-  if (match(state, 'keyword', 'DISTINCT')) {
-    distinct = true
-  }
+  const distinct = match(state, 'keyword', 'DISTINCT')
 
   const columns = parseSelectList(state)
 
@@ -163,29 +204,23 @@ export function parseSelectInternal(state) {
   if (match(state, 'keyword', 'LIMIT')) {
     const tok = consume(state)
     if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
-      throw parseError(state, 'numeric LIMIT')
+      throw parseError(state, 'positive integer LIMIT')
     }
-    if (!Number.isInteger(tok.numericValue)) {
-      throw parseError(state, 'integer LIMIT value')
-    }
-    if (tok.numericValue < 0) {
-      throw parseError(state, 'non-negative LIMIT value')
+    if (!Number.isInteger(tok.numericValue) || tok.numericValue < 0) {
+      throw parseError(state, 'positive integer LIMIT value')
     }
     limit = tok.numericValue
   }
 
   if (match(state, 'keyword', 'OFFSET')) {
-    const oTok = consume(state)
-    if (oTok.type !== 'number' || typeof oTok.numericValue !== 'number') {
-      throw parseError(state, 'numeric OFFSET')
+    const tok = consume(state)
+    if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
+      throw parseError(state, 'positive integer OFFSET value')
     }
-    if (!Number.isInteger(oTok.numericValue)) {
-      throw parseError(state, 'integer OFFSET value')
+    if (!Number.isInteger(tok.numericValue) || tok.numericValue < 0) {
+      throw parseError(state, 'positive integer OFFSET value')
     }
-    if (oTok.numericValue < 0) {
-      throw parseError(state, 'non-negative OFFSET value')
-    }
-    offset = oTok.numericValue
+    offset = tok.numericValue
   }
 
   // optional trailing semicolon
@@ -249,53 +284,6 @@ function parseSelectList(state) {
   }
 
   return cols
-}
-
-/**
- * Parses a WITH clause containing one or more CTEs
- *
- * @param {ParserState} state
- * @returns {WithClause | undefined}
- */
-function parseWithClause(state) {
-  const positionStart = state.lastPos
-  if (!match(state, 'keyword', 'WITH')) return
-  /** @type {CTEDefinition[]} */
-  const ctes = []
-  /** @type {Set<string>} */
-  const seenNames = new Set()
-
-  while (true) {
-    // Parse CTE name
-    const nameTok = expect(state, 'identifier')
-    const name = nameTok.value
-    const nameLower = name.toLowerCase()
-
-    // Check for duplicate CTE names
-    if (seenNames.has(nameLower)) {
-      throw new ParseError({
-        message: `CTE "${name}" is defined more than once at position ${positionStart}`,
-        ...nameTok,
-      })
-    }
-    seenNames.add(nameLower)
-
-    // Expect AS statement
-    expect(state, 'keyword', 'AS')
-    expect(state, 'paren', '(')
-
-    // Parse the CTE's SELECT statement
-    const select = parseSelectInternal(state)
-
-    expect(state, 'paren', ')')
-
-    ctes.push({ name, select, positionStart: nameTok.positionStart, positionEnd: state.lastPos })
-
-    // Check for comma (more CTEs) or end of WITH clause
-    if (!match(state, 'comma')) break
-  }
-
-  return { ctes, positionStart, positionEnd: state.lastPos }
 }
 
 /**

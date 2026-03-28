@@ -3,14 +3,14 @@ import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { planSql } from '../plan/plan.js'
-import { tableNotFoundError } from '../validation/planErrors.js'
+import { TableNotFoundError } from '../validation/planErrors.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, SelectStatement } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode } from '../plan/types.js'
  */
 
@@ -21,7 +21,7 @@ import { stableRowKey } from './utils.js'
  * @yields {AsyncRow}
  */
 export async function* executeSql({ tables, query, functions, signal }) {
-  const select = typeof query === 'string' ? parseSql({ query, functions }) : query
+  const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
   /** @type {Record<string, AsyncDataSource>} */
@@ -34,19 +34,19 @@ export async function* executeSql({ tables, query, functions, signal }) {
     }
   }
 
-  yield* executeSelect({ select, context: { tables: normalizedTables, functions, signal } })
+  yield* executeStatement({ query: parsed, context: { tables: normalizedTables, functions, signal } })
 }
 
 /**
- * Executes a SELECT query against the provided tables
+ * Executes a statement (SELECT or WITH) against the provided tables
  *
  * @param {Object} options
- * @param {SelectStatement} options.select
+ * @param {Statement} options.query
  * @param {ExecuteContext} options.context
  * @yields {AsyncRow}
  */
-export async function* executeSelect({ select, context }) {
-  const plan = planSql({ query: select, functions: context.functions, tables: context.tables })
+export async function* executeStatement({ query, context }) {
+  const plan = planSql({ query, functions: context.functions, tables: context.tables })
   yield* executePlan({ plan, context })
 }
 
@@ -98,7 +98,7 @@ async function* executeScan(plan, context) {
   // check table
   const table = tables[plan.table]
   if (!table) {
-    throw tableNotFoundError({ table: plan.table, tables })
+    throw new TableNotFoundError({ table: plan.table, tables })
   }
   // check columns
   const missingColumn = plan.hints.columns?.find(col => !table.columns.includes(col))
@@ -140,7 +140,7 @@ async function* executeScan(plan, context) {
 async function* executeCount(plan, { tables, signal }) {
   const table = tables[plan.table]
   if (!table) {
-    throw tableNotFoundError({ table: plan.table, tables })
+    throw new TableNotFoundError({ table: plan.table, tables })
   }
 
   // Use source numRows if available

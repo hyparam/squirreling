@@ -1,4 +1,4 @@
-import { syntaxError } from '../validation/parseErrors.js'
+import { SyntaxError } from '../validation/parseErrors.js'
 
 /**
  * @import { ParserState, Token, TokenType } from '../types.js'
@@ -78,5 +78,5 @@ export function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken?.originalValue ?? prevToken?.value
-  return syntaxError({ expected, after, ...tok })
+  return new SyntaxError({ expected, after, ...tok })
 }

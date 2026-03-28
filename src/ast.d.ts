@@ -10,7 +10,6 @@ export type SqlPrimitive =
 
 export interface SelectStatement extends AstBase {
   type: 'select'
-  with?: WithClause
   distinct: boolean
   columns: SelectColumn[]
   from: FromTable | FromSubquery
@@ -23,13 +22,17 @@ export interface SelectStatement extends AstBase {
   offset?: number
 }
 
-export interface WithClause extends AstBase {
+export interface WithStatement extends AstBase {
+  type: 'with'
   ctes: CTEDefinition[]
+  query: Statement
 }
+
+export type Statement = SelectStatement | WithStatement
 
 export interface CTEDefinition extends AstBase {
   name: string
-  select: SelectStatement
+  query: Statement
 }
 
 export interface FromTable extends AstBase {
@@ -40,7 +43,7 @@ export interface FromTable extends AstBase {
 
 export interface FromSubquery extends AstBase {
   type: 'subquery'
-  query: SelectStatement
+  query: Statement
   alias?: string
 }
 
@@ -92,7 +95,7 @@ export interface CastNode extends AstBase {
 export interface InSubqueryNode extends AstBase {
   type: 'in'
   expr: ExprNode
-  subquery: SelectStatement
+  subquery: Statement
 }
 
 export interface InValuesNode extends AstBase {
@@ -103,7 +106,7 @@ export interface InValuesNode extends AstBase {
 
 export interface ExistsNode extends AstBase {
   type: 'exists' | 'not exists'
-  subquery: SelectStatement
+  subquery: Statement
 }
 
 export interface WhenClause extends AstBase {
@@ -120,7 +123,7 @@ export interface CaseNode extends AstBase {
 
 export interface SubqueryNode extends AstBase {
   type: 'subquery'
-  subquery: SelectStatement
+  subquery: Statement
 }
 
 export type IntervalUnit = 'DAY' | 'MONTH' | 'YEAR' | 'HOUR' | 'MINUTE' | 'SECOND'

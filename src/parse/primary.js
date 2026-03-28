@@ -1,5 +1,5 @@
 import { isCastType, isExtractField, isIntervalUnit, isKnownFunction, niladicFuncs } from '../validation/functions.js'
-import { ParseError, invalidLiteralError, syntaxError, unknownFunctionError } from '../validation/parseErrors.js'
+import { InvalidLiteralError, ParseError, SyntaxError, UnknownFunctionError } from '../validation/parseErrors.js'
 import { RESERVED_KEYWORDS } from '../validation/keywords.js'
 import { parseExpression } from './expression.js'
 import { parseFunctionCall } from './functions.js'
@@ -50,7 +50,7 @@ export function parsePrimary(state) {
       const typeTok = expect(state, 'identifier')
       const toType = typeTok.value.toUpperCase()
       if (!isCastType(toType)) {
-        throw syntaxError({
+        throw new SyntaxError({
           expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL)',
           after: 'AS',
           ...typeTok,
@@ -72,7 +72,7 @@ export function parsePrimary(state) {
       consume(state) // '('
       const fieldTok = consume(state)
       if (!isExtractField(fieldTok.value)) {
-        throw syntaxError({
+        throw new SyntaxError({
           expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
           after: 'EXTRACT(',
           ...fieldTok,
@@ -99,7 +99,7 @@ export function parsePrimary(state) {
 
       // Validate function existence early for better error messages
       if (!isKnownFunction(funcNameUpper, state.functions)) {
-        throw unknownFunctionError({
+        throw new UnknownFunctionError({
           funcName: tok.value,
           positionStart,
           positionEnd: tok.positionEnd,
@@ -241,7 +241,7 @@ export function parsePrimary(state) {
     }
   }
 
-  throw syntaxError({ expected: 'expression', ...tok })
+  throw new SyntaxError({ expected: 'expression', ...tok })
 }
 
 /**
@@ -260,16 +260,16 @@ function parseInterval(state) {
   } else if (valueTok.type === 'string') {
     value = parseFloat(valueTok.value)
     if (isNaN(value)) {
-      throw invalidLiteralError({ expected: 'interval value', ...valueTok })
+      throw new InvalidLiteralError({ expected: 'interval value', ...valueTok })
     }
   } else {
-    throw syntaxError({ expected: 'interval value (number)', ...valueTok })
+    throw new SyntaxError({ expected: 'interval value (number)', ...valueTok })
   }
 
   // Get unit keyword
   const unitTok = consume(state)
   if (unitTok.type !== 'keyword' || !isIntervalUnit(unitTok.value)) {
-    throw invalidLiteralError({
+    throw new InvalidLiteralError({
       expected: 'interval unit',
       validValues: 'DAY, MONTH, YEAR, HOUR, MINUTE, SECOND',
       ...unitTok,

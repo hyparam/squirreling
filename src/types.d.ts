@@ -1,4 +1,4 @@
-import type { ExprNode, SelectStatement, SqlPrimitive } from './ast.js'
+import type { ExprNode, SelectStatement, SqlPrimitive, Statement } from './ast.js'
 
 export * from './ast.js'
 export { ParserState, Token, TokenType } from './parse/types.js'
@@ -13,14 +13,14 @@ export interface ParseSqlOptions {
 // executeSql(options)
 export interface ExecuteSqlOptions {
   tables: Record<string, Row | AsyncDataSource>
-  query: string | SelectStatement
+  query: string | Statement
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
 }
 
 // planSql(options)
 export interface PlanSqlOptions {
-  query: string | SelectStatement
+  query: string | Statement
   functions?: Record<string, UserDefinedFunction>
   tables?: Record<string, AsyncDataSource>
 }

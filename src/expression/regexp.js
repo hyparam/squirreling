@@ -1,4 +1,4 @@
-import { argValueError } from '../validation/executionErrors.js'
+import { ArgValueError } from '../validation/executionErrors.js'
 
 /**
  * @import { FunctionNode, RegExpFunction, SqlPrimitive } from '../types.js'
@@ -27,7 +27,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     if (args.length >= 3 && args[2] != null) {
       position = Number(args[2])
       if (!Number.isInteger(position) || position < 1) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: `position must be a positive integer, got ${args[2]}`,
           hint: 'SQL uses 1-based indexing.',
@@ -41,7 +41,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     if (args.length >= 4 && args[3] != null) {
       occurrence = Number(args[3])
       if (!Number.isInteger(occurrence) || occurrence < 1) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: `occurrence must be a positive integer, got ${args[3]}`,
           hint: 'SQL uses 1-based indexing.',
@@ -55,7 +55,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     try {
       regex = new RegExp(patternStr, 'g')
     } catch (/** @type {any} */ error) {
-      throw argValueError({
+      throw new ArgValueError({
         ...node,
         message: `invalid regex pattern: ${error.message}`,
         rowIndex,
@@ -92,7 +92,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     if (args.length >= 4 && args[3] != null) {
       position = Number(args[3])
       if (!Number.isInteger(position) || position < 1) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: `position must be a positive integer, got ${args[3]}`,
           hint: 'SQL uses 1-based indexing.',
@@ -106,7 +106,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     if (args.length >= 5 && args[4] != null) {
       occurrence = Number(args[4])
       if (!Number.isInteger(occurrence) || occurrence < 0) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: `occurrence must be a non-negative integer, got ${args[4]}`,
           hint: 'Use 0 to replace all occurrences.',
@@ -120,7 +120,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     try {
       regex = new RegExp(patternStr, 'g')
     } catch (/** @type {any} */ error) {
-      throw argValueError({
+      throw new ArgValueError({
         ...node,
         message: `invalid regex pattern: ${error.message}`,
         rowIndex,

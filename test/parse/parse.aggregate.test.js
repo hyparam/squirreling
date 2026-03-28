@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { parseSql } from '../../src/parse/parse.js'
+import { parseSelect } from '../helpers.js'
 
 describe('parseSql', () => {
   describe('aggregate functions', () => {
     it('should parse COUNT(*)', () => {
-      const select = parseSql({ query: 'SELECT COUNT(*) FROM users' })
+      const select = parseSelect('SELECT COUNT(*) FROM users')
       expect(select.columns).toEqual([
         {
           type: 'derived',
@@ -20,7 +20,7 @@ describe('parseSql', () => {
     })
 
     it('should parse COUNT with column', () => {
-      const select = parseSql({ query: 'SELECT COUNT(id) FROM users' })
+      const select = parseSelect('SELECT COUNT(id) FROM users')
       expect(select.columns).toEqual([
         {
           type: 'derived',
@@ -36,7 +36,7 @@ describe('parseSql', () => {
     })
 
     it('should parse SUM', () => {
-      const select = parseSql({ query: 'SELECT SUM(amount) FROM transactions' })
+      const select = parseSelect('SELECT SUM(amount) FROM transactions')
       expect(select.columns).toEqual([
         {
           type: 'derived',
@@ -52,7 +52,7 @@ describe('parseSql', () => {
     })
 
     it('should parse AVG', () => {
-      const select = parseSql({ query: 'SELECT AVG(score) FROM tests' })
+      const select = parseSelect('SELECT AVG(score) FROM tests')
       expect(select.columns).toEqual([
         {
           type: 'derived',
@@ -68,7 +68,7 @@ describe('parseSql', () => {
     })
 
     it('should parse MIN and MAX', () => {
-      const select = parseSql({ query: 'SELECT MIN(price), MAX(price) FROM products' })
+      const select = parseSelect('SELECT MIN(price), MAX(price) FROM products')
       expect(select.columns).toEqual([
         {
           type: 'derived',
@@ -94,7 +94,7 @@ describe('parseSql', () => {
     })
 
     it('should parse aggregate with alias', () => {
-      const select = parseSql({ query: 'SELECT COUNT(*) AS total FROM users' })
+      const select = parseSelect('SELECT COUNT(*) AS total FROM users')
       expect(select.columns).toEqual([
         {
           type: 'derived',

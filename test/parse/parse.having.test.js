@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseSql } from '../../src/parse/parse.js'
+import { parseSelect } from '../helpers.js'
 
 describe('parseSql - HAVING clause', () => {
   it('should parse HAVING with simple condition', () => {
-    const select = parseSql({ query: 'SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5' })
+    const select = parseSelect('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5')
     expect(select.having).toEqual({
       type: 'binary',
       op: '>',
@@ -27,7 +27,7 @@ describe('parseSql - HAVING clause', () => {
   })
 
   it('should parse HAVING with aggregate comparison', () => {
-    const select = parseSql({ query: 'SELECT product, SUM(sales) as total FROM orders GROUP BY product HAVING SUM(sales) > 1000' })
+    const select = parseSelect('SELECT product, SUM(sales) as total FROM orders GROUP BY product HAVING SUM(sales) > 1000')
     expect(select.having).toEqual({
       type: 'binary',
       op: '>',
@@ -57,7 +57,7 @@ describe('parseSql - HAVING clause', () => {
   })
 
   it('should parse HAVING with multiple conditions', () => {
-    const select = parseSql({ query: 'SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5 AND AVG(age) > 25' })
+    const select = parseSelect('SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5 AND AVG(age) > 25')
     expect(select.having).toEqual({
       type: 'binary',
       op: 'AND',
@@ -113,7 +113,7 @@ describe('parseSql - HAVING clause', () => {
   })
 
   it('should parse HAVING with column reference', () => {
-    const select = parseSql({ query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city HAVING city = \'NYC\'' })
+    const select = parseSelect('SELECT city, COUNT(*) as cnt FROM users GROUP BY city HAVING city = \'NYC\'')
     expect(select.having).toEqual({
       type: 'binary',
       op: '=',
@@ -135,13 +135,13 @@ describe('parseSql - HAVING clause', () => {
   })
 
   it('should parse GROUP BY with HAVING and ORDER BY', () => {
-    const select = parseSql({ query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city HAVING COUNT(*) > 5 ORDER BY cnt DESC' })
+    const select = parseSelect('SELECT city, COUNT(*) as cnt FROM users GROUP BY city HAVING COUNT(*) > 5 ORDER BY cnt DESC')
     expect(select.having).toBeTruthy()
     expect(select.orderBy).toHaveLength(1)
   })
 
   it('should parse complex query with WHERE, GROUP BY, HAVING, ORDER BY, LIMIT', () => {
-    const select = parseSql({ query: `
+    const select = parseSelect(`
       SELECT city, COUNT(*) as cnt, AVG(age) as avg_age
       FROM users
       WHERE age > 18
@@ -149,7 +149,7 @@ describe('parseSql - HAVING clause', () => {
       HAVING COUNT(*) >= 10 AND AVG(age) < 50
       ORDER BY cnt DESC
       LIMIT 5
-    ` })
+    `)
     expect(select.where).toEqual({
       type: 'binary',
       op: '>',

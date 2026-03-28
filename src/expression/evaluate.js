@@ -1,9 +1,9 @@
-import { executeSelect } from '../execute/execute.js'
+import { executeStatement } from '../execute/execute.js'
 import { stringify } from '../execute/utils.js'
-import { ExecutionError, argValueError } from '../validation/executionErrors.js'
+import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
-import { unknownFunctionError } from '../validation/parseErrors.js'
-import { columnNotFoundError } from '../validation/planErrors.js'
+import { UnknownFunctionError } from '../validation/parseErrors.js'
+import { ColumnNotFoundError } from '../validation/planErrors.js'
 import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
 import { applyIntervalToDate, dateTrunc, extractField } from './date.js'
@@ -45,7 +45,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
     }
     // Unknown identifier
-    throw columnNotFoundError({
+    throw new ColumnNotFoundError({
       columnName: node.name,
       availableColumns: row.columns,
       rowIndex,
@@ -55,7 +55,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const gen = executeSelect({ select: node.subquery, context })
+    const gen = executeStatement({ query: node.subquery, context })
     const { value } = await gen.next() // Start the generator
     gen.return(undefined) // Stop further execution
     if (!value) return null
@@ -328,7 +328,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     if (funcName === 'JSON_OBJECT') {
       if (args.length % 2 !== 0) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: 'requires an even number of arguments (key-value pairs)',
           rowIndex,
@@ -340,7 +340,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         const key = args[i]
         const value = args[i + 1]
         if (key == null) {
-          throw argValueError({
+          throw new ArgValueError({
             ...node,
             message: 'key cannot be null',
             hint: 'All keys must be non-null values.',
@@ -388,7 +388,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         try {
           jsonArg = JSON.parse(jsonArg)
         } catch {
-          throw argValueError({
+          throw new ArgValueError({
             ...node,
             message: 'invalid JSON string',
             hint: 'First argument must be valid JSON.',
@@ -397,7 +397,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         }
       }
       if (typeof jsonArg !== 'object' || jsonArg instanceof Date) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
           rowIndex,
@@ -439,7 +439,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
     }
 
-    throw unknownFunctionError(node)
+    throw new UnknownFunctionError(node)
   }
 
   if (node.type === 'cast') {
@@ -484,7 +484,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   // IN with subqueries
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
-    const results = executeSelect({ select: node.subquery, context })
+    const results = executeStatement({ query: node.subquery, context })
     for await (const resRow of results) {
       const value = await resRow.cells[resRow.columns[0]]()
       if (exprVal == value) return true
@@ -494,11 +494,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // EXISTS and NOT EXISTS with subqueries
   if (node.type === 'exists') {
-    const results = await executeSelect({ select: node.subquery, context }).next()
+    const results = await executeStatement({ query: node.subquery, context }).next()
     return results.done === false
   }
   if (node.type === 'not exists') {
-    const results = await executeSelect({ select: node.subquery, context }).next()
+    const results = await executeStatement({ query: node.subquery, context }).next()
     return results.done === true
   }
 

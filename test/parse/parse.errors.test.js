@@ -44,8 +44,8 @@ describe('parseSql error handling', () => {
 
     it('should throw error on nonsense', () => {
       // '@' and '#' are invalid characters - tokenizer error says "SELECT or WITH"
-      expect(() => parseSql({ query: '@' })).toThrow('Expected SELECT but found "@" at position 0. Queries must start with SELECT or WITH.')
-      expect(() => parseSql({ query: ' #' })).toThrow('Expected SELECT but found "#" at position 1. Queries must start with SELECT or WITH.')
+      expect(() => parseSql({ query: '@' })).toThrow('Expected SELECT but found "@" at position 0')
+      expect(() => parseSql({ query: ' #' })).toThrow('Expected SELECT but found "#" at position 1')
       // '.' is a valid token (dot), but parser expects SELECT keyword
       expect(() => parseSql({ query: '.' })).toThrow('Expected SELECT but found "." at position 0')
     })
@@ -168,20 +168,6 @@ describe('parseSql error handling', () => {
     it('should suggest similar functions by edit distance', () => {
       expect(() => parseSql({ query: 'SELECT UPER(name) FROM users' }))
         .toThrow('Unknown function "UPER" at position 7. Did you mean UPPER, LOWER, POWER, PI?')
-    })
-
-    it('should allow unknown function names when functions parameter provided', () => {
-      // Should NOT throw - FOOBAR is provided in functions parameter
-      const result = parseSql({
-        query: 'SELECT FOOBAR(name) FROM users',
-        functions: {
-          FOOBAR: {
-            apply: (x) => x,
-            arguments: { min: 1, max: 1 },
-          },
-        },
-      })
-      expect(result.columns[0].type).toBe('derived')
     })
   })
 
@@ -307,35 +293,43 @@ describe('parseSql error handling', () => {
 
   describe('LIMIT/OFFSET errors', () => {
     it('should throw error on invalid LIMIT', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT abc' })).toThrow('Expected numeric LIMIT')
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT abc' }))
+        .toThrow('Expected positive integer LIMIT')
     })
 
     it('should throw error on missing LIMIT value', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT' })).toThrow('Expected numeric LIMIT')
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT' }))
+        .toThrow('Expected positive integer LIMIT')
     })
 
     it('should throw error on invalid OFFSET', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET xyz' })).toThrow('Expected numeric OFFSET')
+      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET xyz' }))
+        .toThrow('Expected positive integer OFFSET')
     })
 
     it('should throw error on missing OFFSET value', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET' })).toThrow('Expected numeric OFFSET')
+      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET' }))
+        .toThrow('Expected positive integer OFFSET')
     })
 
     it('should throw error on invalid OFFSET after LIMIT', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET abc' })).toThrow('Expected numeric OFFSET')
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET abc' }))
+        .toThrow('Expected positive integer OFFSET')
     })
 
     it('should throw error on negative LIMIT', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT -1' })).toThrow('Expected non-negative LIMIT value')
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT -1' }))
+        .toThrow('Expected positive integer LIMIT value')
     })
 
     it('should throw error on negative OFFSET', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET -1' })).toThrow('Expected non-negative OFFSET value')
+      expect(() => parseSql({ query: 'SELECT * FROM users OFFSET -1' }))
+        .toThrow('Expected positive integer OFFSET value')
     })
 
     it('should throw error on negative OFFSET after LIMIT', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET -5' })).toThrow('Expected non-negative OFFSET value')
+      expect(() => parseSql({ query: 'SELECT * FROM users LIMIT 10 OFFSET -5' }))
+        .toThrow('Expected positive integer OFFSET value')
     })
   })
 })
@@ -348,7 +342,7 @@ describe('ParseError structure', () => {
     } catch (/** @type {any} */ error) {
       expect(error).toBeInstanceOf(ParseError)
       expect(error).toBeInstanceOf(Error)
-      expect(error.name).toBe('ParseError')
+      expect(error.name).toBe('SyntaxError')
       expect(error.positionStart).toBe(0)
       expect(error.positionEnd).toBe(4) // "FROM" is 4 chars
       expect(error.message).toBe('Expected SELECT but found "FROM" at position 0')
@@ -380,7 +374,35 @@ describe('ParseError structure', () => {
         },
       },
     })
-    expect(result.columns[0].type).toBe('derived')
+    expect(result).toEqual({
+      type: 'select',
+      columns: [
+        {
+          type: 'derived',
+          expr: {
+            type: 'function',
+            funcName: 'FOOBAR',
+            args: [
+              { type: 'identifier', name: 'x', positionStart: 14, positionEnd: 15 },
+            ],
+            positionStart: 7,
+            positionEnd: 16,
+          },
+        },
+      ],
+      distinct: false,
+      from: {
+        type: 'table',
+        table: 't',
+        positionStart: 22,
+        positionEnd: 23,
+      },
+      groupBy: [],
+      joins: [],
+      orderBy: [],
+      positionStart: 0,
+      positionEnd: 23,
+    })
   })
 
   it('should have correct position range for unexpected character', () => {

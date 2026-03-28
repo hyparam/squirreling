@@ -12,7 +12,7 @@ export class ParseError extends Error {
    */
   constructor({ message, positionStart, positionEnd }) {
     super(message)
-    this.name = 'ParseError'
+    this.name = this.constructor.name
     this.positionStart = positionStart
     this.positionEnd = positionEnd
   }
@@ -20,70 +20,79 @@ export class ParseError extends Error {
 
 /**
  * General syntax error for unexpected tokens.
- *
- * @param {Object} options
- * @param {string} options.expected - Description of what was expected
- * @param {string} options.value - What was actually found
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- * @param {string} [options.after] - What token came before (for context)
- * @returns {ParseError}
  */
-export function syntaxError({ expected, value, positionStart, positionEnd, after }) {
-  after = after ? ` after "${after}"` : ''
-  value = value ? `"${value}"` : 'end of query'
-  return new ParseError({ message: `Expected ${expected}${after} but found ${value} at position ${positionStart}`, positionStart, positionEnd })
+export class SyntaxError extends ParseError {
+  /**
+   * @param {Object} options
+   * @param {string} options.expected - Description of what was expected
+   * @param {string} options.value - What was actually found
+   * @param {number} options.positionStart
+   * @param {number} options.positionEnd
+   * @param {string} [options.after] - What token came before (for context)
+   */
+  constructor({ expected, value, positionStart, positionEnd, after }) {
+    const afterStr = after ? ` after "${after}"` : ''
+    const valueStr = value ? `"${value}"` : 'end of query'
+    super({ message: `Expected ${expected}${afterStr} but found ${valueStr} at position ${positionStart}`, positionStart, positionEnd })
+  }
 }
 
 /**
  * Error for invalid literals (numbers, intervals, etc).
- *
- * @param {Object} options
- * @param {string} options.expected - Type of invalid literal (e.g., 'number', 'interval value', 'interval unit')
- * @param {string} options.value - The invalid value
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- * @param {string} [options.validValues] - List of valid values (for enums like interval units)
- * @returns {ParseError}
  */
-export function invalidLiteralError({ expected, value, positionStart, positionEnd, validValues }) {
-  const suffix = validValues ? `. Valid values: ${validValues}` : ''
-  return new ParseError({ message: `Invalid ${expected} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd })
+export class InvalidLiteralError extends ParseError {
+  /**
+   * @param {Object} options
+   * @param {string} options.expected - Type of invalid literal (e.g., 'number', 'interval value', 'interval unit')
+   * @param {string} options.value - The invalid value
+   * @param {number} options.positionStart
+   * @param {number} options.positionEnd
+   * @param {string} [options.validValues] - List of valid values (for enums like interval units)
+   */
+  constructor({ expected, value, positionStart, positionEnd, validValues }) {
+    const suffix = validValues ? `. Valid values: ${validValues}` : ''
+    super({ message: `Invalid ${expected} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd })
+  }
 }
 
 /**
  * Error for unexpected characters during tokenization.
- *
- * @param {Object} options
- * @param {string} options.char - The unexpected character
- * @param {number} options.positionStart
- * @param {boolean} options.expectsSelect - Whether SELECT was expected (first token)
- * @returns {ParseError}
  */
-export function unexpectedCharError({ char, positionStart, expectsSelect }) {
-  const positionEnd = positionStart + 1
-  if (expectsSelect) {
-    return new ParseError({ message: `Expected SELECT but found "${char}" at position ${positionStart}. Queries must start with SELECT or WITH.`, positionStart, positionEnd })
+export class UnexpectedCharError extends ParseError {
+  /**
+   * @param {Object} options
+   * @param {string} options.char - The unexpected character
+   * @param {number} options.positionStart
+   * @param {boolean} options.expectsSelect - Whether SELECT was expected (first token)
+   */
+  constructor({ char, positionStart, expectsSelect }) {
+    const positionEnd = positionStart + 1
+    if (expectsSelect) {
+      super({ message: `Expected SELECT but found "${char}" at position ${positionStart}`, positionStart, positionEnd })
+    } else {
+      super({ message: `Unexpected character "${char}" at position ${positionStart}`, positionStart, positionEnd })
+    }
   }
-  return new ParseError({ message: `Unexpected character "${char}" at position ${positionStart}`, positionStart, positionEnd })
 }
 
 /**
  * Error for unknown/unsupported functions.
- *
- * @param {Object} options
- * @param {string} options.funcName - The unknown function name
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- * @returns {ParseError}
  */
-export function unknownFunctionError({ funcName, positionStart, positionEnd }) {
-  const suggestions = suggestFunctions(funcName)
-  let message = `Unknown function "${funcName}" at position ${positionStart}.`
-  if (suggestions.length) {
-    message += ` Did you mean ${suggestions.join(', ')}?`
+export class UnknownFunctionError extends ParseError {
+  /**
+   * @param {Object} options
+   * @param {string} options.funcName - The unknown function name
+   * @param {number} options.positionStart
+   * @param {number} options.positionEnd
+   */
+  constructor({ funcName, positionStart, positionEnd }) {
+    const suggestions = suggestFunctions(funcName)
+    let message = `Unknown function "${funcName}" at position ${positionStart}.`
+    if (suggestions.length) {
+      message += ` Did you mean ${suggestions.join(', ')}?`
+    }
+    super({ message, positionStart, positionEnd })
   }
-  return new ParseError({ message, positionStart, positionEnd })
 }
 
 /**

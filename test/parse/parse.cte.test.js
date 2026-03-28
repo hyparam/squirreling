@@ -1,173 +1,179 @@
 import { describe, expect, it } from 'vitest'
 import { parseSql } from '../../src/parse/parse.js'
+import { parseWith } from '../helpers.js'
 
 describe('parseSql - CTE (WITH clause)', () => {
-  describe('basic CTEs', () => {
-    it('should parse simple CTE', () => {
-      const select = parseSql({
-        query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte',
-      })
-      expect(select.with).toBeDefined()
-      expect(select.with?.ctes).toHaveLength(1)
-      expect(select.with?.ctes[0].name).toBe('cte')
-      expect(select.with?.ctes[0].select.from).toEqual({ type: 'table', table: 'users', positionStart: 27, positionEnd: 32 })
-      expect(select.from).toEqual({ type: 'table', table: 'cte', positionStart: 48, positionEnd: 51 })
+  it('should parse simple CTE', () => {
+    const stmt = parseWith({
+      query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte',
     })
-
-    it('should parse CTE with column selection', () => {
-      const select = parseSql({
-        query: 'WITH active AS (SELECT id, name FROM users WHERE active = TRUE) SELECT name FROM active',
-      })
-      expect(select.with?.ctes).toHaveLength(1)
-      expect(select.with?.ctes[0].name).toBe('active')
-      expect(select.with?.ctes[0].select.columns).toHaveLength(2)
-      expect(select.with?.ctes[0].select.where).toBeDefined()
+    expect(stmt.ctes).toHaveLength(1)
+    expect(stmt.ctes[0].name).toBe('cte')
+    expect(stmt.ctes[0].query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [{ type: 'star' }],
+      from: { type: 'table', table: 'users', positionStart: 27, positionEnd: 32 },
+      joins: [],
+      groupBy: [],
+      orderBy: [],
+      positionStart: 13,
+      positionEnd: 32,
     })
+    expect(stmt.query.type).toBe('select')
+    if (stmt.query.type !== 'select') throw new Error('expected select')
+    expect(stmt.query.from).toEqual({ type: 'table', table: 'cte', positionStart: 48, positionEnd: 51 })
+  })
 
-    it('should parse CTE with alias', () => {
-      const select = parseSql({
-        query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte AS t',
-      })
-      expect(select.from).toEqual({ type: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 })
+  it('should parse CTE with columns and WHERE', () => {
+    const stmt = parseWith({
+      query: 'WITH active AS (SELECT id, name FROM users WHERE active = TRUE) SELECT name FROM active',
+    })
+    expect(stmt.ctes[0].query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [
+        { type: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 23, positionEnd: 25 } },
+        { type: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 27, positionEnd: 31 } },
+      ],
+      from: { type: 'table', table: 'users', positionStart: 37, positionEnd: 42 },
+      joins: [],
+      where: {
+        type: 'binary',
+        op: '=',
+        left: { type: 'identifier', name: 'active', positionStart: 49, positionEnd: 55 },
+        right: { type: 'literal', value: true, positionStart: 58, positionEnd: 62 },
+        positionStart: 49,
+        positionEnd: 62,
+      },
+      groupBy: [],
+      orderBy: [],
+      positionStart: 16,
+      positionEnd: 62,
     })
   })
 
-  describe('multiple CTEs', () => {
-    it('should parse multiple CTEs', () => {
-      const select = parseSql({
-        query: `
-          WITH
-            cte1 AS (SELECT id FROM users),
-            cte2 AS (SELECT id FROM orders)
-          SELECT * FROM cte1
-        `,
-      })
-      expect(select.with?.ctes).toHaveLength(2)
-      expect(select.with?.ctes[0].name).toBe('cte1')
-      expect(select.with?.ctes[1].name).toBe('cte2')
-      expect(select.with?.ctes[0].select.from).toEqual({
-        type: 'table',
-        table: 'users',
-        positionStart: 52,
-        positionEnd: 57,
-      })
-      expect(select.with?.ctes[1].select.from).toEqual({
-        type: 'table',
-        table: 'orders',
-        positionStart: 96,
-        positionEnd: 102,
-      })
+  it('should parse CTE with alias', () => {
+    const stmt = parseWith({
+      query: 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte AS t',
     })
+    expect(stmt.query.type).toBe('select')
+    if (stmt.query.type !== 'select') throw new Error('expected select')
+    expect(stmt.query.from).toEqual({ type: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 })
+  })
 
-    it('should parse CTE referencing another CTE', () => {
-      const select = parseSql({
-        query: `
-          WITH
-            base AS (SELECT id, name FROM users),
-            filtered AS (SELECT * FROM base WHERE id > 1)
-          SELECT * FROM filtered
-        `,
-      })
-      expect(select.with?.ctes).toHaveLength(2)
-      expect(select.with?.ctes[0].name).toBe('base')
-      expect(select.with?.ctes[1].name).toBe('filtered')
-      expect(select.with?.ctes[1].select.from.type).toBe('table')
-      expect(select.with?.ctes[1].select.from.type === 'table' && select.with?.ctes[1].select.from.table).toBe('base')
+  it('should parse multiple CTEs', () => {
+    const stmt = parseWith({
+      query: 'WITH cte1 AS (SELECT id FROM users), cte2 AS (SELECT id FROM orders) SELECT * FROM cte1',
+    })
+    expect(stmt.ctes).toHaveLength(2)
+    expect(stmt.ctes[0].name).toBe('cte1')
+    expect(stmt.ctes[0].query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [{ type: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 21, positionEnd: 23 } }],
+      from: { type: 'table', table: 'users', positionStart: 29, positionEnd: 34 },
+      joins: [],
+      groupBy: [],
+      orderBy: [],
+      positionStart: 14,
+      positionEnd: 34,
+    })
+    expect(stmt.ctes[1].name).toBe('cte2')
+    expect(stmt.ctes[1].query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [{ type: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 53, positionEnd: 55 } }],
+      from: { type: 'table', table: 'orders', positionStart: 61, positionEnd: 67 },
+      joins: [],
+      groupBy: [],
+      orderBy: [],
+      positionStart: 46,
+      positionEnd: 67,
     })
   })
 
-  describe('CTE with complex queries', () => {
-    it('should parse CTE with GROUP BY', () => {
-      const select = parseSql({
-        query: `
-          WITH totals AS (
-            SELECT user_id, SUM(amount) AS total
-            FROM orders
-            GROUP BY user_id
-          )
-          SELECT * FROM totals
-        `,
-      })
-      expect(select.with?.ctes[0].select.groupBy).toHaveLength(1)
+  it('should parse CTE referencing another CTE', () => {
+    const stmt = parseWith({
+      query: 'WITH base AS (SELECT id FROM users), filtered AS (SELECT * FROM base WHERE id > 1) SELECT * FROM filtered',
     })
-
-    it('should parse CTE with HAVING', () => {
-      const select = parseSql({
-        query: `
-          WITH big_spenders AS (
-            SELECT user_id, SUM(amount) AS total
-            FROM orders
-            GROUP BY user_id
-            HAVING SUM(amount) > 100
-          )
-          SELECT * FROM big_spenders
-        `,
-      })
-      expect(select.with?.ctes[0].select.having).toBeDefined()
-    })
-
-    it('should parse CTE with ORDER BY and LIMIT', () => {
-      const select = parseSql({
-        query: `
-          WITH top_users AS (
-            SELECT * FROM users
-            ORDER BY score DESC
-            LIMIT 10
-          )
-          SELECT * FROM top_users
-        `,
-      })
-      expect(select.with?.ctes[0].select.orderBy).toHaveLength(1)
-      expect(select.with?.ctes[0].select.limit).toBe(10)
-    })
-
-    it('should parse CTE with JOIN in main query', () => {
-      const select = parseSql({
-        query: `
-          WITH active AS (SELECT id, name FROM users WHERE active = TRUE)
-          SELECT active.name, orders.amount
-          FROM active
-          JOIN orders ON active.id = orders.user_id
-        `,
-      })
-      expect(select.from.type).toBe('table')
-      expect(select.from.type === 'table' && select.from.table).toBe('active')
-      expect(select.joins).toHaveLength(1)
-      expect(select.joins[0].table).toBe('orders')
+    expect(stmt.ctes[1].query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [{ type: 'star' }],
+      from: { type: 'table', table: 'base', positionStart: 64, positionEnd: 68 },
+      joins: [],
+      where: {
+        type: 'binary',
+        op: '>',
+        left: { type: 'identifier', name: 'id', positionStart: 75, positionEnd: 77 },
+        right: { type: 'literal', value: 1, positionStart: 80, positionEnd: 81 },
+        positionStart: 75,
+        positionEnd: 81,
+      },
+      groupBy: [],
+      orderBy: [],
+      positionStart: 50,
+      positionEnd: 81,
     })
   })
 
-  describe('error cases', () => {
-    it('should throw error for duplicate CTE names', () => {
-      expect(() => {
-        parseSql({
-          query: 'WITH cte AS (SELECT 1 FROM a), cte AS (SELECT 2 FROM b) SELECT * FROM cte',
-        })
-      }).toThrow('CTE "cte" is defined more than once at position 0')
+  it('should parse CTE with GROUP BY, HAVING, ORDER BY, and LIMIT', () => {
+    const stmt = parseWith({
+      query: 'WITH totals AS (SELECT user_id, SUM(amount) AS total FROM orders GROUP BY user_id HAVING SUM(amount) > 100 ORDER BY total DESC LIMIT 10) SELECT * FROM totals',
     })
-
-    it('should throw error for duplicate CTE names (case-insensitive)', () => {
-      expect(() => {
-        parseSql({
-          query: 'WITH Cte AS (SELECT 1 FROM a), CTE AS (SELECT 2 FROM b) SELECT * FROM cte',
-        })
-      }).toThrow('CTE "CTE" is defined more than once at position 0')
+    expect(stmt.ctes[0].query).toEqual({
+      type: 'select',
+      distinct: false,
+      columns: [
+        { type: 'derived', expr: { type: 'identifier', name: 'user_id', positionStart: 23, positionEnd: 30 } },
+        { type: 'derived', expr: { type: 'function', funcName: 'SUM', args: [{ type: 'identifier', name: 'amount', positionStart: 36, positionEnd: 42 }], positionStart: 32, positionEnd: 43 }, alias: 'total' },
+      ],
+      from: { type: 'table', table: 'orders', positionStart: 58, positionEnd: 64 },
+      joins: [],
+      groupBy: [{ type: 'identifier', name: 'user_id', positionStart: 74, positionEnd: 81 }],
+      having: {
+        type: 'binary',
+        op: '>',
+        left: { type: 'function', funcName: 'SUM', args: [{ type: 'identifier', name: 'amount', positionStart: 93, positionEnd: 99 }], positionStart: 89, positionEnd: 100 },
+        right: { type: 'literal', value: 100, positionStart: 103, positionEnd: 106 },
+        positionStart: 89,
+        positionEnd: 106,
+      },
+      orderBy: [{ expr: { type: 'identifier', name: 'total', positionStart: 116, positionEnd: 121 }, direction: 'DESC' }],
+      limit: 10,
+      positionStart: 16,
+      positionEnd: 135,
     })
   })
 
-  describe('edge cases', () => {
-    it('should parse query without WITH clause', () => {
-      const select = parseSql({
-        query: 'SELECT * FROM users',
-      })
-      expect(select.with).toBeUndefined()
+  it('should parse CTE with JOIN in main query', () => {
+    const stmt = parseWith({
+      query: 'WITH active AS (SELECT id FROM users) SELECT active.id, orders.amount FROM active JOIN orders ON active.id = orders.user_id',
     })
+    expect(stmt.query.type).toBe('select')
+    if (stmt.query.type !== 'select') throw new Error('expected select')
+    expect(stmt.query.from).toEqual({ type: 'table', table: 'active', positionStart: 75, positionEnd: 81 })
+    expect(stmt.query.joins).toHaveLength(1)
+    expect(stmt.query.joins[0].table).toBe('orders')
+  })
 
-    it('should preserve CTE name case', () => {
-      const select = parseSql({
-        query: 'WITH MyTable AS (SELECT * FROM users) SELECT * FROM MyTable',
-      })
-      expect(select.with?.ctes[0].name).toBe('MyTable')
+  it('should throw error for duplicate CTE names', () => {
+    expect(() => {
+      parseSql({ query: 'WITH cte AS (SELECT 1 FROM a), cte AS (SELECT 2 FROM b) SELECT * FROM cte' })
+    }).toThrow('CTE "cte" is defined more than once at position 0')
+  })
+
+  it('should throw error for duplicate CTE names (case-insensitive)', () => {
+    expect(() => {
+      parseSql({ query: 'WITH Cte AS (SELECT 1 FROM a), CTE AS (SELECT 2 FROM b) SELECT * FROM cte' })
+    }).toThrow('CTE "CTE" is defined more than once at position 0')
+  })
+
+  it('should preserve CTE name case', () => {
+    const stmt = parseWith({
+      query: 'WITH MyTable AS (SELECT * FROM users) SELECT * FROM MyTable',
     })
+    expect(stmt.ctes[0].name).toBe('MyTable')
   })
 })

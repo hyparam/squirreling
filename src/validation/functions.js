@@ -1,4 +1,4 @@
-import { ParseError, unknownFunctionError } from '../validation/parseErrors.js'
+import { ParseError, UnknownFunctionError } from '../validation/parseErrors.js'
 
 /**
  * @import { AggregateFunc, BinaryOp, CastType, FunctionSignature, IntervalUnit, MathFunc, RegExpFunction, SpatialFunc, StringFunc, UserDefinedFunction } from '../types.js'
@@ -216,7 +216,7 @@ export function validateFunctionArgs(funcName, argCount, positionStart, position
   }
 
   if (!spec) {
-    throw unknownFunctionError({ funcName, positionStart, positionEnd })
+    throw new UnknownFunctionError({ funcName, positionStart, positionEnd })
   }
   const { min, max, signature } = spec
 

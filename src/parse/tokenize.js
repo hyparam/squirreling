@@ -1,5 +1,5 @@
 import { KEYWORDS } from '../validation/keywords.js'
-import { ParseError, invalidLiteralError, unexpectedCharError } from '../validation/parseErrors.js'
+import { InvalidLiteralError, ParseError, UnexpectedCharError } from '../validation/parseErrors.js'
 
 /**
  * @import { Token } from '../types.d.ts'
@@ -38,12 +38,12 @@ export function tokenizeSql(query) {
   function parseNumber(positionStart) {
     const value = query.slice(i).match(NUMBER_REGEX)?.[0]
     if (!value) {
-      throw invalidLiteralError({ expected: 'number', value: query[i] || 'eof', positionStart, positionEnd: i + 1 })
+      throw new InvalidLiteralError({ expected: 'number', value: query[i] || 'eof', positionStart, positionEnd: i + 1 })
     }
     i += value.length
     const next = peek()
     if (isAlpha(next) || next === '.') {
-      throw invalidLiteralError({ expected: 'number', value: value + next, positionStart, positionEnd: i + 1 })
+      throw new InvalidLiteralError({ expected: 'number', value: value + next, positionStart, positionEnd: i + 1 })
     }
     if (value.endsWith('n')) {
       return {
@@ -231,7 +231,7 @@ export function tokenizeSql(query) {
       continue
     }
 
-    throw unexpectedCharError({ char: ch, positionStart, expectsSelect: !tokens.length })
+    throw new UnexpectedCharError({ char: ch, positionStart, expectsSelect: !tokens.length })
   }
 
   tokens.push({

@@ -222,7 +222,7 @@ describe('tokenize', () => {
   })
 
   it('should throw on backticks', () => {
-    expect(() => tokenizeSql('`backtick`')).toThrow('Expected SELECT but found "`" at position 0. Queries must start with SELECT or WITH.')
+    expect(() => tokenizeSql('`backtick`')).toThrow('Expected SELECT but found "`" at position 0')
     expect(() => tokenizeSql('SELECT `backtick` FROM table')).toThrow('Unexpected character "`" at position 7')
   })
 
@@ -235,8 +235,8 @@ describe('tokenize', () => {
   })
 
   it('should throw error on unexpected character', () => {
-    expect(() => tokenizeSql('@invalid')).toThrow('Expected SELECT but found "@" at position 0. Queries must start with SELECT or WITH.')
-    expect(() => tokenizeSql(' #invalid')).toThrow('Expected SELECT but found "#" at position 1. Queries must start with SELECT or WITH.')
+    expect(() => tokenizeSql('@invalid')).toThrow('Expected SELECT but found "@" at position 0')
+    expect(() => tokenizeSql(' #invalid')).toThrow('Expected SELECT but found "#" at position 1')
   })
 
   it('should tokenize subquery in FROM clause', () => {

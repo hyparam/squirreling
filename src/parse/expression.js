@@ -1,5 +1,5 @@
 import { isBinaryOp } from '../validation/functions.js'
-import { syntaxError } from '../validation/parseErrors.js'
+import { SyntaxError } from '../validation/parseErrors.js'
 import { parsePrimary } from './primary.js'
 import { parseSelectInternal } from './parse.js'
 import { consume, current, expect, match } from './state.js'
@@ -154,7 +154,7 @@ function parseComparison(state) {
     }
 
     const found = current(state)
-    throw syntaxError({
+    throw new SyntaxError({
       expected: 'LIKE, BETWEEN, or IN',
       after: 'NOT',
       ...found,

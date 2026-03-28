@@ -1,5 +1,5 @@
 import { isAggregateFunc, isKnownFunction, niladicFuncs, validateFunctionArgs } from '../validation/functions.js'
-import { ParseError, unknownFunctionError } from '../validation/parseErrors.js'
+import { ParseError, UnknownFunctionError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 
@@ -19,7 +19,7 @@ export function parseFunctionCall(state, positionStart) {
 
   // Validate function existence early for better error messages
   if (!isKnownFunction(funcNameUpper, state.functions)) {
-    throw unknownFunctionError({ funcName, ...funcTok })
+    throw new UnknownFunctionError({ funcName, ...funcTok })
   }
 
   // Niladic datetime functions (no parentheses required per ANSI SQL)

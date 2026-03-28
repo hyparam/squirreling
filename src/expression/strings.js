@@ -1,4 +1,4 @@
-import { argValueError } from '../validation/executionErrors.js'
+import { ArgValueError } from '../validation/executionErrors.js'
 
 /**
  * @import { FunctionNode, SqlPrimitive, StringFunc } from '../types.js'
@@ -19,7 +19,7 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     // Returns NULL if any argument is NULL
     if (args.some(a => a == null)) return null
     if (args.some(a => typeof a === 'object')) {
-      throw argValueError({
+      throw new ArgValueError({
         ...node,
         message: 'does not support object arguments',
         hint: 'Use CAST to convert objects to strings first.',
@@ -49,7 +49,7 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
   if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
     const start = Number(args[1])
     if (!Number.isInteger(start) || start < 1) {
-      throw argValueError({
+      throw new ArgValueError({
         ...node,
         message: `start position must be a positive integer, got ${args[1]}`,
         hint: 'SQL uses 1-based indexing.',
@@ -61,7 +61,7 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     if (args.length === 3) {
       const len = Number(args[2])
       if (!Number.isInteger(len) || len < 0) {
-        throw argValueError({
+        throw new ArgValueError({
           ...node,
           message: `length must be a non-negative integer, got ${args[2]}`,
           hint: 'SQL uses 1-based indexing.',
@@ -90,7 +90,7 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     if (n == null) return null
     const len = Number(n)
     if (!Number.isInteger(len) || len < 0) {
-      throw argValueError({
+      throw new ArgValueError({
         ...node,
         message: `length must be a non-negative integer, got ${n}`,
         hint: 'SQL uses 1-based indexing.',
@@ -105,7 +105,7 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     if (n == null) return null
     const len = Number(n)
     if (!Number.isInteger(len) || len < 0) {
-      throw argValueError({
+      throw new ArgValueError({
         ...node,
         message: `length must be a non-negative integer, got ${n}`,
         hint: 'SQL uses 1-based indexing.',
