@@ -1,5 +1,5 @@
 import { evaluateExpr } from '../expression/evaluate.js'
-import { stringify } from './utils.js'
+import { keyify } from './utils.js'
 import { executePlan } from './execute.js'
 
 /**
@@ -26,13 +26,12 @@ export async function* executeNestedLoopJoin(plan, context) {
     rightRows.push(row)
   }
 
-  const rightCols = rightRows.length ? rightRows[0].columns : []
-  const rightPrefixedCols = prefixColumns(rightCols, rightTable)
+  const rightPrefixedCols = rightRows.length ? prefixColumns(rightRows[0].columns, rightTable) : []
 
-  /** @type {string[] | null} */
-  let leftPrefixedCols = null
-  /** @type {Set<AsyncRow> | null} */
-  const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : null
+  /** @type {string[] | undefined} */
+  let leftPrefixedCols = undefined
+  /** @type {Set<AsyncRow> | undefined} */
+  const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
 
   for await (const leftRow of executePlan({ plan: plan.left, context })) {
     if (context.signal?.aborted) break
@@ -53,7 +52,7 @@ export async function* executeNestedLoopJoin(plan, context) {
 
       if (matches) {
         hasMatch = true
-        if (matchedRightRows) matchedRightRows.add(rightRow)
+        matchedRightRows?.add(rightRow)
         yield tempMerged
       }
     }
@@ -68,7 +67,7 @@ export async function* executeNestedLoopJoin(plan, context) {
   if (matchedRightRows) {
     for (const rightRow of rightRows) {
       if (!matchedRightRows.has(rightRow)) {
-        const nullLeft = createNullRow(leftPrefixedCols || [])
+        const nullLeft = createNullRow(leftPrefixedCols ?? [])
         yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
       }
     }
@@ -135,7 +134,7 @@ export async function* executeHashJoin(plan, context) {
     rightRows.push(row)
   }
 
-  /** @type {Map<string, AsyncRow[]>} */
+  /** @type {Map<any, AsyncRow[]>} */
   const hashMap = new Map()
   for (const rightRow of rightRows) {
     const keyValue = await evaluateExpr({
@@ -144,11 +143,11 @@ export async function* executeHashJoin(plan, context) {
       context,
     })
     if (keyValue == null) continue
-    const keyStr = stringify(keyValue)
-    let bucket = hashMap.get(keyStr)
+    const key = keyify(keyValue)
+    let bucket = hashMap.get(key)
     if (!bucket) {
       bucket = []
-      hashMap.set(keyStr, bucket)
+      hashMap.set(key, bucket)
     }
     bucket.push(rightRow)
   }
@@ -157,10 +156,10 @@ export async function* executeHashJoin(plan, context) {
   const rightCols = rightRows.length ? rightRows[0].columns : []
   const rightPrefixedCols = prefixColumns(rightCols, rightTable)
 
-  /** @type {string[] | null} */
-  let leftPrefixedCols = null
-  /** @type {Set<AsyncRow> | null} */
-  const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : null
+  /** @type {string[] | undefined} */
+  let leftPrefixedCols
+  /** @type {Set<AsyncRow> | undefined} */
+  const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
 
   // Probe phase: stream left rows
   for await (const leftRow of executePlan({ plan: plan.left, context })) {
@@ -175,12 +174,12 @@ export async function* executeHashJoin(plan, context) {
       row: leftRow,
       context,
     })
-    const keyStr = stringify(keyValue)
-    const matchingRightRows = hashMap.get(keyStr)
+    const key = keyify(keyValue)
+    const matchingRightRows = hashMap.get(key)
 
     if (matchingRightRows?.length) {
       for (const rightRow of matchingRightRows) {
-        if (matchedRightRows) matchedRightRows.add(rightRow)
+        matchedRightRows?.add(rightRow)
         yield mergeRows(leftRow, rightRow, leftTable, rightTable)
       }
     } else if (plan.joinType === 'LEFT' || plan.joinType === 'FULL') {
@@ -193,7 +192,7 @@ export async function* executeHashJoin(plan, context) {
   if (matchedRightRows) {
     for (const rightRow of rightRows) {
       if (!matchedRightRows.has(rightRow)) {
-        const nullLeft = createNullRow(leftPrefixedCols || [])
+        const nullLeft = createNullRow(leftPrefixedCols ?? [])
         yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
       }
     }

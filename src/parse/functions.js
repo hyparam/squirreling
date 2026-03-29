@@ -14,7 +14,7 @@ import { consume, current, expect, match } from './state.js'
  */
 export function parseFunctionCall(state, positionStart) {
   const funcTok = consume(state)
-  const funcName = funcTok.value
+  const funcName = funcTok.originalValue ?? funcTok.value
   const funcNameUpper = funcName.toUpperCase()
 
   // Validate function existence early for better error messages

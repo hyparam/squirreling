@@ -50,7 +50,7 @@ export interface AsyncDataSource {
   columns: string[]
   scan(options: ScanOptions): ScanResults
   // Optional method for fast column scans
-  scanColumn?(options: ScanColumnOptions): ScanColumnResults
+  scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>>
 }
 
 /**
@@ -86,11 +86,6 @@ export interface ScanColumnOptions {
   column: string
   signal?: AbortSignal
 }
-
-/**
- * Result of a column scan: streaming chunks of column values.
- */
-export type ScanColumnResults = AsyncIterable<ArrayLike<SqlPrimitive>>
 
 export interface FunctionSignature {
   min: number

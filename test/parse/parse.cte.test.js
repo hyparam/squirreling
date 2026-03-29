@@ -186,7 +186,7 @@ describe('parseSql - CTE (WITH clause)', () => {
           positionStart: 97,
           positionEnd: 123,
         },
-        positionStart: 87,
+        positionStart: 82,
         positionEnd: 93,
       }],
       groupBy: [],

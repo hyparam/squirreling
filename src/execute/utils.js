@@ -1,5 +1,5 @@
 /**
- * @import { AsyncCells, AsyncRow, OrderByItem, SqlPrimitive } from '../types.js'
+ * @import { AsyncRow, OrderByItem, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -77,13 +77,25 @@ export function stringify(value) {
 }
 
 /**
+ * Returns a value suitable for use as a Set/Map key.
+ * Primitives are returned as-is (fast path), objects are stringified.
+ *
+ * @param {SqlPrimitive[]} values
+ * @returns {string | number | bigint | boolean}
+ */
+export function keyify(...values) {
+  if (values.length === 1 && typeof values[0] !== 'object') return values[0]
+  // Strings must be stringified to avoid collisions when joined
+  return values.map(v => typeof v === 'object' ? stringify(v) : v).join('|')
+}
+
+/**
  * Creates a stable string key for a row to enable deduplication
  *
- * @param {AsyncCells} cells
- * @returns {Promise<string>}
+ * @param {AsyncRow} row
+ * @returns {Promise<string | number | bigint | boolean>}
  */
-export async function stableRowKey(cells) {
-  const keys = Object.keys(cells).sort()
-  const values = await Promise.all(keys.map(k => cells[k]()))
-  return keys.map((k, i) => k + ':' + stringify(values[i])).join('|')
+export function stableRowKey(row) {
+  return Promise.all(row.columns.map(k => row.cells[k]()))
+    .then(values => keyify(...values))
 }

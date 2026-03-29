@@ -9,7 +9,7 @@ describe('parseSql - JOIN queries', () => {
       {
         joinType: 'INNER',
         table: 'orders',
-        positionStart: 25,
+        positionStart: 20,
         positionEnd: 31,
         on: {
           type: 'binary',
@@ -44,7 +44,7 @@ describe('parseSql - JOIN queries', () => {
       {
         joinType: 'LEFT',
         table: 'orders',
-        positionStart: 30,
+        positionStart: 20,
         positionEnd: 36,
         on: {
           type: 'binary',
@@ -120,7 +120,7 @@ describe('parseSql - JOIN queries', () => {
       {
         joinType: 'POSITIONAL',
         table: 'orders',
-        positionStart: 36,
+        positionStart: 20,
         positionEnd: 42,
       },
     ])
@@ -134,7 +134,7 @@ describe('parseSql - JOIN queries', () => {
         joinType: 'POSITIONAL',
         table: 'orders',
         alias: 'o',
-        positionStart: 38,
+        positionStart: 22,
         positionEnd: 44,
       },
     ])

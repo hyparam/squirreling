@@ -277,7 +277,7 @@ async function* executeProject(plan, context) {
           columns.push(key)
           cells[key] = row.cells[key]
         }
-      } else if (col.type === 'derived') {
+      } else {
         const alias = col.alias ?? derivedAlias(col.expr)
         columns.push(alias)
         cells[alias] = () => evaluateExpr({
@@ -304,7 +304,6 @@ async function* executeDistinct(plan, context) {
   const { signal } = context
   const MAX_CHUNK = 256
 
-  /** @type {Set<string>} */
   const seen = new Set()
 
   /** @type {AsyncRow[]} */
@@ -315,10 +314,11 @@ async function* executeDistinct(plan, context) {
     buffer.push(row)
 
     if (buffer.length >= MAX_CHUNK) {
-      const keys = await Promise.all(buffer.map(r => stableRowKey(r.cells)))
+      const keys = buffer.map(stableRowKey)
       for (let i = 0; i < buffer.length; i++) {
-        if (!seen.has(keys[i])) {
-          seen.add(keys[i])
+        const key = await keys[i]
+        if (!seen.has(key)) {
+          seen.add(key)
           yield buffer[i]
         }
       }
@@ -328,10 +328,11 @@ async function* executeDistinct(plan, context) {
 
   // Flush remaining
   if (buffer.length > 0) {
-    const keys = await Promise.all(buffer.map(r => stableRowKey(r.cells)))
+    const keys = buffer.map(stableRowKey)
     for (let i = 0; i < buffer.length; i++) {
-      if (!seen.has(keys[i])) {
-        seen.add(keys[i])
+      const key = await keys[i]
+      if (!seen.has(key)) {
+        seen.add(key)
         yield buffer[i]
       }
     }
@@ -366,11 +367,10 @@ async function* executeSetOperation(plan, context) {
       yield* executePlan({ plan: plan.right, context })
     } else {
       // UNION: yield deduplicated rows from both sides
-      /** @type {Set<string>} */
       const seen = new Set()
       for await (const row of executePlan({ plan: plan.left, context })) {
         if (signal?.aborted) return
-        const key = await stableRowKey(row.cells)
+        const key = await stableRowKey(row)
         if (!seen.has(key)) {
           seen.add(key)
           yield row
@@ -378,7 +378,7 @@ async function* executeSetOperation(plan, context) {
       }
       for await (const row of executePlan({ plan: plan.right, context })) {
         if (signal?.aborted) return
-        const key = await stableRowKey(row.cells)
+        const key = await stableRowKey(row)
         if (!seen.has(key)) {
           seen.add(key)
           yield row
@@ -387,11 +387,11 @@ async function* executeSetOperation(plan, context) {
     }
   } else if (plan.operator === 'INTERSECT') {
     // Materialize right side keys
-    /** @type {Map<string, number>} */
+    /** @type {Map<any, number>} */
     const rightKeys = new Map()
     for await (const row of executePlan({ plan: plan.right, context })) {
       if (signal?.aborted) return
-      const key = await stableRowKey(row.cells)
+      const key = await stableRowKey(row)
       rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
     }
 
@@ -399,20 +399,19 @@ async function* executeSetOperation(plan, context) {
       // INTERSECT ALL: yield each left row that matches, consuming right counts
       for await (const row of executePlan({ plan: plan.left, context })) {
         if (signal?.aborted) return
-        const key = await stableRowKey(row.cells)
+        const key = await stableRowKey(row)
         const count = rightKeys.get(key)
-        if (count && count > 0) {
+        if (count) {
           rightKeys.set(key, count - 1)
           yield row
         }
       }
     } else {
       // INTERSECT: yield deduplicated rows present in both
-      /** @type {Set<string>} */
       const seen = new Set()
       for await (const row of executePlan({ plan: plan.left, context })) {
         if (signal?.aborted) return
-        const key = await stableRowKey(row.cells)
+        const key = await stableRowKey(row)
         if (rightKeys.has(key) && !seen.has(key)) {
           seen.add(key)
           yield row
@@ -421,11 +420,11 @@ async function* executeSetOperation(plan, context) {
     }
   } else if (plan.operator === 'EXCEPT') {
     // Materialize right side keys
-    /** @type {Map<string, number>} */
+    /** @type {Map<any, number>} */
     const rightKeys = new Map()
     for await (const row of executePlan({ plan: plan.right, context })) {
       if (signal?.aborted) return
-      const key = await stableRowKey(row.cells)
+      const key = await stableRowKey(row)
       rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
     }
 
@@ -433,9 +432,9 @@ async function* executeSetOperation(plan, context) {
       // EXCEPT ALL: yield left rows, consuming right counts
       for await (const row of executePlan({ plan: plan.left, context })) {
         if (signal?.aborted) return
-        const key = await stableRowKey(row.cells)
+        const key = await stableRowKey(row)
         const count = rightKeys.get(key)
-        if (count && count > 0) {
+        if (count) {
           rightKeys.set(key, count - 1)
         } else {
           yield row
@@ -443,11 +442,10 @@ async function* executeSetOperation(plan, context) {
       }
     } else {
       // EXCEPT: yield deduplicated left rows not in right
-      /** @type {Set<string>} */
       const seen = new Set()
       for await (const row of executePlan({ plan: plan.left, context })) {
         if (signal?.aborted) return
-        const key = await stableRowKey(row.cells)
+        const key = await stableRowKey(row)
         if (!rightKeys.has(key) && !seen.has(key)) {
           seen.add(key)
           yield row

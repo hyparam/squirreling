@@ -169,6 +169,14 @@ describe('date/time functions', () => {
       }))
       expect(result).toEqual([{ val: 2 }])
     })
+
+    it('should accept lowercase field names', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT extract(dow FROM ts) AS m FROM events',
+      }))
+      expect(result[0].m).toBe(1)
+    })
   })
 
   describe('DATE_PART', () => {

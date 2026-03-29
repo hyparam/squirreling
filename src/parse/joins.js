@@ -47,7 +47,6 @@ export function parseJoins(state) {
 
     // Parse table name and optional alias
     const tableTok = expect(state, 'identifier')
-    const tableName = tableTok.value
     const tableAlias = parseTableAlias(state)
 
     // Parse ON condition (not for POSITIONAL joins)
@@ -61,10 +60,10 @@ export function parseJoins(state) {
 
     joins.push({
       joinType,
-      table: tableName,
+      table: tableTok.value,
       alias: tableAlias,
       on: condition,
-      positionStart: tableTok.positionStart,
+      positionStart: tok.positionStart,
       positionEnd: tableTok.positionEnd,
     })
   }

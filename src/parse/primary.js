@@ -40,9 +40,10 @@ export function parsePrimary(state) {
 
   if (tok.type === 'identifier') {
     const next = peekToken(state, 1)
+    const funcNameUpper = tok.value.toUpperCase()
 
-    // CAST expression
-    if (tok.value === 'CAST' && next.type === 'paren' && next.value === '(') {
+    // CAST(expr AS type)
+    if (funcNameUpper === 'CAST' && next.type === 'paren' && next.value === '(') {
       consume(state) // CAST
       consume(state) // '('
       const expr = parseExpression(state)
@@ -67,11 +68,12 @@ export function parsePrimary(state) {
     }
 
     // EXTRACT(field FROM expr)
-    if (tok.value === 'EXTRACT' && next.type === 'paren' && next.value === '(') {
+    if (funcNameUpper === 'EXTRACT' && next.type === 'paren' && next.value === '(') {
       consume(state) // EXTRACT
       consume(state) // '('
       const fieldTok = consume(state)
-      if (!isExtractField(fieldTok.value)) {
+      const fieldUpper = fieldTok.value.toUpperCase()
+      if (!isExtractField(fieldUpper)) {
         throw new SyntaxError({
           expected: 'extract field (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, EPOCH)',
           after: 'EXTRACT(',
@@ -83,7 +85,7 @@ export function parsePrimary(state) {
       expect(state, 'paren', ')')
       return {
         type: 'function',
-        funcName: 'EXTRACT',
+        funcName: tok.originalValue ?? tok.value,
         args: [
           { type: 'literal', value: fieldTok.value, positionStart: fieldTok.positionStart, positionEnd: fieldTok.positionEnd },
           expr,
@@ -94,7 +96,6 @@ export function parsePrimary(state) {
     }
 
     // function call
-    const funcNameUpper = tok.value.toUpperCase()
     if (niladicFuncs.includes(funcNameUpper) || next.type === 'paren' && next.value === '(') {
 
       // Validate function existence early for better error messages

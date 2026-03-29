@@ -13,7 +13,7 @@ describe('CAST calls', () => {
   it('should handle CAST to INTEGER in SELECT', async () => {
     const result = await collect(executeSql({
       tables: { users },
-      query: 'SELECT id, CAST(age AS INTEGER) as age_int FROM users',
+      query: 'SELECT id, cast(age AS INTEGER) as age_int FROM users',
     }))
     expect(result).toHaveLength(5)
     expect(result[0].age_int).toBe(30)

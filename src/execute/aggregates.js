@@ -1,10 +1,10 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
-import { stringify } from './utils.js'
+import { keyify } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExprNode, SelectColumn, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  */
 
@@ -63,30 +63,21 @@ export async function* executeHashAggregate(plan, context) {
   }
 
   // Group rows by GROUP BY keys
-  /** @type {Map<string, AsyncRow[]>} */
-  const groupMap = new Map()
-  /** @type {AsyncRow[][]} */
-  const groups = []
+  /** @type {Map<any, AsyncRow[]>} */
+  const groups = new Map()
 
   for (const row of allRows) {
-    /** @type {string[]} */
-    const keyParts = []
-    for (const expr of plan.groupBy) {
-      const v = await evaluateExpr({ node: expr, row, context })
-      keyParts.push(stringify(v))
-    }
-    const key = keyParts.join('|')
-    let group = groupMap.get(key)
+    const key = keyify(...await Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context }))))
+    let group = groups.get(key)
     if (!group) {
       group = []
-      groupMap.set(key, group)
-      groups.push(group)
+      groups.set(key, group)
     }
     group.push(row)
   }
 
   // Yield one row per group
-  for (const group of groups) {
+  for (const group of groups.values()) {
     const asyncRow = projectAggregateColumns(plan.columns, group, context)
 
     // Apply HAVING filter
@@ -187,7 +178,7 @@ function tryColumnScanAggregate(plan, context) {
   const specs = []
   for (const col of plan.columns) {
     if (col.type !== 'derived') return
-    const spec = extractColumnAggSpec(col.expr, col.alias)
+    const spec = extractColumnAggSpec(col)
     if (!spec) return
     specs.push(spec)
   }
@@ -212,25 +203,23 @@ function tryColumnScanAggregate(plan, context) {
  * Extracts aggregate spec from a simple aggregate expression node.
  * Returns undefined if the expression is not a supported simple aggregate.
  *
- * @param {ExprNode} node
- * @param {string} [alias]
+ * @param {DerivedColumn} col
  * @returns {ColumnAggSpec | undefined}
  */
-function extractColumnAggSpec(node, alias) {
-  if (node.type !== 'function') return
-  const funcName = node.funcName.toUpperCase()
-  const supported = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']
-  if (!supported.includes(funcName)) return
-  // No FILTER clause
-  if (node.filter) return
-  const arg = node.args[0]
+function extractColumnAggSpec({ expr, alias }) {
+  if (expr.type !== 'function') return
+  if (expr.filter) return // FILTER not supported in fast path
+  const funcName = expr.funcName.toUpperCase()
+  if (!['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(funcName)) return
+
   // Argument must be a plain column identifier
+  const arg = expr.args[0]
   if (arg.type !== 'identifier') return
   return {
     funcName,
     column: derivedAlias(arg),
-    alias: alias ?? derivedAlias(node),
-    distinct: node.distinct,
+    alias: alias ?? derivedAlias(expr),
+    distinct: expr.distinct,
   }
 }
 
@@ -246,12 +235,13 @@ async function scanColumnAggregate(table, spec, signal) {
   const values = table.scanColumn({ column: spec.column, signal })
 
   if (spec.funcName === 'COUNT' && spec.distinct) {
-    /** @type {Set<string>} */
     const seen = new Set()
     for await (const chunk of values) {
       if (signal?.aborted) return null
       for (let i = 0; i < chunk.length; i++) {
-        if (chunk[i] != null) seen.add(stringify(chunk[i]))
+        const v = chunk[i]
+        if (v == null) continue
+        seen.add(keyify(v))
       }
     }
     return seen.size

@@ -1,5 +1,5 @@
 import { executeStatement } from '../execute/execute.js'
-import { stringify } from '../execute/utils.js'
+import { keyify, stringify } from '../execute/utils.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
 import { UnknownFunctionError } from '../validation/parseErrors.js'
@@ -139,7 +139,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (node.distinct) {
           const seen = new Set()
           for (const v of values) {
-            if (v != null) seen.add(stringify(v))
+            if (v != null) seen.add(keyify(v))
           }
           return seen.size
         }
@@ -248,7 +248,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           const seen = new Set()
           for (const row of filteredRows) {
             const v = await evaluateExpr({ node: argNode, row, context })
-            const key = stringify(v)
+            const key = keyify(v)
             if (!seen.has(key)) {
               seen.add(key)
               values.push(v)

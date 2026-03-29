@@ -124,8 +124,8 @@ export function tokenizeSql(query) {
       if (KEYWORDS.has(upper)) {
         tokens.push({
           type: 'keyword',
-          value: upper,
-          originalValue: value,
+          value: upper, // uppercase for keywords
+          originalValue: value, // preserve user casing
           positionStart,
           positionEnd: i,
         })

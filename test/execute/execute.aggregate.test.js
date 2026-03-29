@@ -53,7 +53,7 @@ describe('executeSql', () => {
     it('should calculate MIN and MAX', async () => {
       const result = await collect(executeSql({
         tables: { users },
-        query: 'SELECT MIN(age) AS min_age, MAX(age) AS max_age FROM users',
+        query: 'SELECT min(age) AS min_age, max(age) AS max_age FROM users',
       }))
       expect(result).toEqual([{ min_age: 25, max_age: 35 }])
     })
@@ -643,7 +643,7 @@ describe('executeSql', () => {
     it('should use numRows and skip scan', async () => {
       const result = await collect(executeSql({
         tables: { t: errorSource },
-        query: 'SELECT COUNT(*) FROM t',
+        query: 'SELECT count(*) FROM t', // case-insensitive
       }))
       expect(result).toEqual([{ count_all: 42 }])
     })

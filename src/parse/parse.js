@@ -397,7 +397,7 @@ function parseAs(state) {
     if (aliasTok.type === 'identifier') {
       consume(state)
       return aliasTok.value
-    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value.toUpperCase())) {
+    } else if (aliasTok.type === 'keyword' && !RESERVED_AFTER_COLUMN.has(aliasTok.value)) {
       consume(state)
       // Use original case for keywords used as aliases
       return aliasTok.originalValue ?? aliasTok.value

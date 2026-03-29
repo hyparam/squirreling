@@ -287,7 +287,7 @@ describe('planSql', () => {
     })
 
     it('should add CountNode for COUNT(*) without GROUP BY', () => {
-      const plan = planSql({ query: 'SELECT COUNT(*) FROM users' })
+      const plan = planSql({ query: 'SELECT count(*) FROM users' })
       expect(plan).toEqual({
         type: 'Count',
         table: 'users',
@@ -296,7 +296,7 @@ describe('planSql', () => {
             type: 'derived',
             expr: {
               type: 'function',
-              funcName: 'COUNT',
+              funcName: 'count',
               args: [
                 {
                   type: 'star',

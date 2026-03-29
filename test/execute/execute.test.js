@@ -86,6 +86,16 @@ describe('executeSql', () => {
       expect(result.map(r => r.city).sort()).toEqual(['LA', 'NYC'])
     })
 
+    it('should keep NULL and empty string distinct', async () => {
+      const data = [
+        { v: NULL },
+        { v: '' },
+      ]
+      const result = await collect(executeSql({ tables: { data }, query: 'SELECT DISTINCT v FROM data' }))
+      expect(result).toHaveLength(2)
+      expect(result).toEqual([{ v: null }, { v: '' }])
+    })
+
     it('should not affect non-distinct queries', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT city FROM users' }))
       expect(result).toHaveLength(5)
