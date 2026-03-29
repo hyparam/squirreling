@@ -747,6 +747,29 @@ describe('executeSql', () => {
       expect(result).toEqual([{ count_value: 3 }])
     })
 
+    it('should pushdown offset into scanColumn', async () => {
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['id'],
+        scan() {
+          throw new Error('scan should not be called')
+        },
+        scanColumn({ column, offset, limit }) {
+          if (column !== 'id') throw new Error(`unexpected column: ${column}`)
+          expect(offset).toBe(10)
+          expect(limit).toBe(10)
+          return (async function* () {
+            yield [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+          })()
+        },
+      }
+      const result = await collect(executeSql({
+        tables: { t: source },
+        query: 'SELECT SUM(id) AS total FROM (SELECT * FROM t LIMIT 10 OFFSET 10)',
+      }))
+      expect(result).toEqual([{ total: 155 }])
+    })
+
     it('should not optimize COUNT(*) FILTER', async () => {
       const orders = [
         { status: 'complete', amount: 100 },

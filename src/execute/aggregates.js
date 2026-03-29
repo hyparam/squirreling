@@ -161,16 +161,17 @@ export async function* executeScalarAggregate(plan, context) {
  * @param {ExecuteContext} context
  * @returns {AsyncGenerator<AsyncRow> | undefined}
  */
-function tryColumnScanAggregate(plan, context) {
+function tryColumnScanAggregate(plan, { tables, signal }) {
   // No HAVING support in fast path
   if (plan.having) return
   // Child must be a direct table scan
   if (plan.child.type !== 'Scan') return
   const scanNode = plan.child
-  // No WHERE in scan (scanColumn doesn't support filtering)
-  if (scanNode.hints.where) return
+  const { limit, offset, where } = scanNode.hints
+  // scanColumn doesn't support filtering
+  if (where) return
 
-  const table = context.tables[scanNode.table]
+  const table = tables[scanNode.table]
   if (!table?.scanColumn) return
 
   // All columns must be simple aggregates on plain identifiers
@@ -190,9 +191,8 @@ function tryColumnScanAggregate(plan, context) {
     const cells = {}
 
     for (const spec of specs) {
-      const value = await scanColumnAggregate(table, spec, context.signal)
       columns.push(spec.alias)
-      cells[spec.alias] = () => Promise.resolve(value)
+      cells[spec.alias] = () => scanColumnAggregate({ table, spec, limit, offset, signal })
     }
 
     yield { columns, cells }
@@ -226,13 +226,16 @@ function extractColumnAggSpec({ expr, alias }) {
 /**
  * Scans a single column and computes an aggregate value.
  *
- * @param {AsyncDataSource} table
- * @param {ColumnAggSpec} spec
- * @param {AbortSignal} [signal]
+ * @param {Object} options
+ * @param {AsyncDataSource} options.table
+ * @param {ColumnAggSpec} options.spec
+ * @param {number} [options.limit]
+ * @param {number} [options.offset]
+ * @param {AbortSignal} [options.signal]
  * @returns {Promise<SqlPrimitive>}
  */
-async function scanColumnAggregate(table, spec, signal) {
-  const values = table.scanColumn({ column: spec.column, signal })
+async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
+  const values = table.scanColumn({ column: spec.column, limit, offset, signal })
 
   if (spec.funcName === 'COUNT' && spec.distinct) {
     const seen = new Set()

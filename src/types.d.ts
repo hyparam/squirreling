@@ -84,6 +84,8 @@ export interface ScanOptions {
  */
 export interface ScanColumnOptions {
   column: string
+  limit?: number
+  offset?: number
   signal?: AbortSignal
 }
 
