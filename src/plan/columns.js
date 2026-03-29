@@ -16,10 +16,12 @@ export function fromAlias(from) {
  * Extracts per-table column names needed from a SELECT statement with joins.
  * Returns a Map from table alias to column names, or undefined if all columns needed.
  *
- * @param {SelectStatement} select
+ * @param {object} options
+ * @param {SelectStatement} options.select
+ * @param {string[]} [options.parentColumns] - columns needed by the parent query
  * @returns {Map<string, string[] | undefined>}
  */
-export function extractColumns(select) {
+export function extractColumns({ select, parentColumns }) {
   /** @type {Map<string, string[] | undefined>} */
   const result = new Map()
 
@@ -31,12 +33,16 @@ export function extractColumns(select) {
 
   // If any unqualified SELECT * exists, all tables need all columns
   if (select.columns.some(col => col.type === 'star' && !col.table)) {
-    /** @type {Map<string, string[] | undefined>} */
-    const result = new Map()
-    for (const alias of aliases) {
-      result.set(alias, undefined)
+    if (!parentColumns) {
+      /** @type {Map<string, string[] | undefined>} */
+      const result = new Map()
+      for (const alias of aliases) {
+        result.set(alias, undefined)
+      }
+      return result
     }
-    return result
+    // With parentColumns, fall through to collect internal clause columns
+    // and seed with what the parent needs
   }
 
   // Track per-table columns needed; undefined means all columns (table.*)
@@ -44,8 +50,11 @@ export function extractColumns(select) {
   const perTable = new Map(aliases.map(alias => [alias, new Set()]))
 
   // Collect all identifiers from all clauses
-  /** @type {Set<string>} */
-  const identifiers = new Set()
+  // For SELECT *, parent column names are real table columns, so seed them
+  // directly. For non-star queries, parent names may be aliases and are
+  // handled below by filtering derived columns and collecting from expressions.
+  const hasStar = select.columns.some(col => col.type === 'star' && !col.table)
+  const identifiers = new Set(hasStar ? parentColumns : undefined)
 
   // Collect ORDER BY identifiers, excluding SELECT aliases (their underlying
   // columns are already collected from select.columns expressions above)
@@ -57,6 +66,11 @@ export function extractColumns(select) {
       // SELECT table.* means all columns needed
       perTable.set(col.table, undefined)
     } else if (col.type === 'derived') {
+      // When parentColumns is set, skip columns the parent doesn't need
+      if (parentColumns) {
+        const outputName = col.alias ?? derivedAlias(col.expr)
+        if (!parentColumns.includes(outputName)) continue
+      }
       collectColumnsFromExpr(col.expr, identifiers)
       if (col.alias) {
         selectAliases.add(col.alias)

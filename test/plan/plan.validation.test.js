@@ -48,6 +48,11 @@ describe('planSql table validation', () => {
       .toThrow('Table "missing" not found. Available tables: users, orders')
   })
 
+  it('should throw for column not in subquery', () => {
+    expect(() => planSql({ query: 'SELECT name FROM (SELECT name AS full_name FROM users)', tables }))
+      .toThrow('Column "name" not found. Available columns: full_name')
+  })
+
   it('should skip validation when tables not provided', () => {
     const plan = planSql({ query: 'SELECT * FROM anything' })
     expect(plan.type).toBe('Scan')

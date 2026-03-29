@@ -79,6 +79,7 @@ describe('planSql', () => {
         hints: {},
       })
     })
+
   })
 
   describe('WHERE clause', () => {

@@ -23,8 +23,7 @@ describe('column pushdown', () => {
         type: 'Scan',
         table: 'users',
         hints: {
-          // TODO: pushdown column id and limit hints
-          // columns: ['id'],
+          columns: ['id'],
           limit: 1000,
         },
       },
@@ -58,15 +57,6 @@ describe('column pushdown', () => {
             type: 'derived',
             expr: {
               type: 'identifier',
-              name: 'id',
-              positionStart: 30,
-              positionEnd: 32,
-            },
-          },
-          {
-            type: 'derived',
-            expr: {
-              type: 'identifier',
               name: 'name',
               positionStart: 34,
               positionEnd: 38,
@@ -78,8 +68,7 @@ describe('column pushdown', () => {
           type: 'Scan',
           table: 'users',
           hints: {
-            // TODO: prune id column
-            columns: ['id', 'name'],
+            columns: ['name'],
           },
         },
       },
@@ -105,8 +94,7 @@ describe('column pushdown', () => {
         type: 'Scan',
         table: 'users',
         hints: {
-          // TODO: pushdown with both id and age columns
-          // columns: ['id', 'age'],
+          columns: ['id', 'age'],
           where: {
             type: 'binary',
             op: '>',

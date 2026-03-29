@@ -1,3 +1,4 @@
+import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/planErrors.js'
@@ -29,9 +30,10 @@ export function planSql({ query, functions, tables }) {
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {string[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
  * @returns {QueryPlan}
  */
-function planStatement({ stmt, ctePlans, cteColumns, tables }) {
+function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns }) {
   if (stmt.type === 'with') {
     // Build CTE plans in order (each CTE can reference preceding CTEs)
     ctePlans ??= new Map()
@@ -41,12 +43,12 @@ function planStatement({ stmt, ctePlans, cteColumns, tables }) {
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
       cteColumns.set(cte.name.toLowerCase(), inferStatementColumns({ stmt: cte.query, cteColumns, tables }))
     }
-    return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables })
+    return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables, parentColumns })
   }
   if (stmt.type === 'compound') {
     return planSetOperation({ compound: stmt, ctePlans, cteColumns, tables })
   }
-  return planSelect({ select: stmt, ctePlans, cteColumns, tables })
+  return planSelect({ select: stmt, ctePlans, cteColumns, tables, parentColumns })
 }
 
 /**
@@ -96,9 +98,10 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables }) {
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {string[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
  * @returns {QueryPlan}
  */
-function planSelect({ select, ctePlans, cteColumns, tables }) {
+function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.type === 'derived' && findAggregate(col.expr)
@@ -113,7 +116,7 @@ function planSelect({ select, ctePlans, cteColumns, tables }) {
   // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */
   const hints = {}
-  const perTableColumns = extractColumns(select)
+  const perTableColumns = extractColumns({ select, parentColumns })
   hints.columns = perTableColumns.get(sourceAlias)
   if (!select.joins.length) {
     hints.where = select.where
@@ -191,7 +194,14 @@ function planSelect({ select, ctePlans, cteColumns, tables }) {
     // Fast path for SELECT *
     const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star'
     if (!isPassthrough) {
-      plan = { type: 'Project', columns: select.columns, child: plan }
+      // When parent only needs specific columns, drop unneeded projections
+      let projectColumns = select.columns
+      if (parentColumns) {
+        projectColumns = select.columns.filter(col =>
+          col.type === 'star' || parentColumns.includes(col.alias ?? derivedAlias(col.expr))
+        )
+      }
+      plan = { type: 'Project', columns: projectColumns, child: plan }
     }
 
     if (select.distinct) {
@@ -224,7 +234,20 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables }) {
     validateScan({ ...select.from, hints, tables })
     return { type: 'Scan', table: select.from.table, hints }
   } else {
-    return planStatement({ stmt: select.from.query, ctePlans, cteColumns, tables })
+    const subPlan = planStatement({ stmt: select.from.query, ctePlans, cteColumns, tables, parentColumns: hints.columns })
+    // Validate that requested columns exist in subquery output
+    const availableColumns = inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
+    if (hints.columns && availableColumns.length) {
+      const missingColumn = hints.columns.find(col => !availableColumns.includes(col))
+      if (missingColumn) {
+        throw new ColumnNotFoundError({
+          columnName: missingColumn,
+          availableColumns,
+          ...select.from,
+        })
+      }
+    }
+    return subPlan
   }
 }
 
