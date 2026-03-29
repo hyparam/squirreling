@@ -358,13 +358,9 @@ function resolveAliases(node, aliases) {
  * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | undefined}
  */
 function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
-  if (condition.type !== 'binary' || condition.op !== '=') {
-    return undefined
-  }
+  if (condition.type !== 'binary' || condition.op !== '=') return
   const { left, right } = condition
-  if (left.type !== 'identifier' || right.type !== 'identifier') {
-    return undefined
-  }
+  if (left.type !== 'identifier' || right.type !== 'identifier') return
 
   // Check if keys are in swapped order (right table ref on left side)
   const leftRefsRight = left.name.startsWith(`${rightTable}.`)

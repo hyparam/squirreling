@@ -156,23 +156,17 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         ))
         let sum = 0
         let count = 0
-        /** @type {number | null} */
+        /** @type {SqlPrimitive} */
         let min = null
-        /** @type {number | null} */
+        /** @type {SqlPrimitive} */
         let max = null
 
         for (const raw of rawValues) {
           if (raw == null) continue
+          if (min === null || raw < min) min = raw
+          if (max === null || raw > max) max = raw
           const num = Number(raw)
           if (!Number.isFinite(num)) continue
-
-          if (count === 0) {
-            min = num
-            max = num
-          } else {
-            if (min == null || num < min) min = num
-            if (max == null || num > max) max = num
-          }
           sum += num
           count++
         }

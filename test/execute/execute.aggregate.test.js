@@ -58,6 +58,14 @@ describe('executeSql', () => {
       expect(result).toEqual([{ min_age: 25, max_age: 35 }])
     })
 
+    it('should calculate MIN and MAX on strings', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT MIN(name) AS min_name, MAX(name) AS max_name FROM users',
+      }))
+      expect(result).toEqual([{ min_name: 'Alice', max_name: 'Eve' }])
+    })
+
     it('should handle aggregate with alias', async () => {
       const result = await collect(executeSql({
         tables: { users },
@@ -685,12 +693,58 @@ describe('executeSql', () => {
       expect(result).toEqual([{ cnt: 5 }])
     })
 
-    it('should not optimize COUNT(DISTINCT column)', async () => {
+    it('should optimize qualified identifiers by scanning the unqualified column name', async () => {
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['id'],
+        scan() {
+          throw new Error('scan should not be called')
+        },
+        scanColumn({ column }) {
+          if (column !== 'id') {
+            throw new Error(`unexpected column: ${column}`)
+          }
+          return (async function* () {
+            yield [1, 2, 3]
+          })()
+        },
+      }
       const result = await collect(executeSql({
-        tables: { users },
-        query: 'SELECT COUNT(DISTINCT city) FROM users',
+        tables: { users: source },
+        query: 'SELECT SUM(users.id) AS total FROM users',
       }))
-      expect(result).toEqual([{ count_city: 2 }])
+      expect(result).toEqual([{ total: 6 }])
+    })
+
+    it('should preserve COUNT(DISTINCT column) value semantics in the scanColumn fast path', async () => {
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['value'],
+        scan() {
+          throw new Error('scan should not be called')
+        },
+        scanColumn({ column }) {
+          if (column !== 'value') {
+            throw new Error(`unexpected column: ${column}`)
+          }
+          return (async function* () {
+            yield [
+              new Date('2024-01-01T00:00:00.000Z'),
+              new Date('2024-01-01T00:00:00.000Z'),
+              { a: 1 },
+              { a: 1 },
+              [1, 2],
+              [1, 2],
+              null,
+            ]
+          })()
+        },
+      }
+      const result = await collect(executeSql({
+        tables: { t: source },
+        query: 'SELECT COUNT(DISTINCT value) AS count_value FROM t',
+      }))
+      expect(result).toEqual([{ count_value: 3 }])
     })
 
     it('should not optimize COUNT(*) FILTER', async () => {
