@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.11.1]
+ - Limit/offset pushdown to `scanColumn()`
+
 ## [0.11.0]
  - `UNION`, `UNION ALL`, `INTERSECT`, `EXCEPT` set operations
  - `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE` aggregate functions
