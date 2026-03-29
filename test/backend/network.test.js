@@ -50,6 +50,17 @@ describe('parquet backend', async () => {
     expect(counting.fetches).toBe(2) // 1 run of 3 column chunks + 1 page
   })
 
+  it('should pushdown offset into scanColumn', async () => {
+    const counting = countingBuffer(file)
+    const wiki = parquetDataSource(counting, metadata, compressors)
+    const result = await collect(executeSql({
+      tables: { wiki },
+      query: 'SELECT SUM(id) AS total FROM (SELECT * FROM wiki LIMIT 10 OFFSET 10)',
+    }))
+    expect(result).toEqual([{ total: 3641 }])
+    expect(counting.fetches).toBe(1) // 1 column chunk
+  })
+
   it('should respect limit across row group boundaries', async () => {
     // wiki1k.parquet has 2 row groups of 500 rows each
     // Test the source directly to verify limit is tracked across row groups

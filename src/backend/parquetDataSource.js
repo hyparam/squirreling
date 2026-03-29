@@ -1,11 +1,13 @@
 import { parquetReadObjects, parquetSchema } from 'hyparquet'
+import { parquetReadAsync } from 'hyparquet/src/read.js'
+import { assembleAsync } from 'hyparquet/src/rowgroup.js'
 import { asyncRow } from './dataSource.js'
 import { whereToParquetFilter } from './parquetFilter.js'
 import { extractSpatialFilter, rowGroupOverlaps } from './parquetSpatial.js'
 
 /**
  * @import { AsyncBuffer, Compressors, FileMetaData, ParquetQueryFilter } from 'hyparquet'
- * @import { AsyncDataSource, ScanOptions, ScanResults } from '../types.js'
+ * @import { AsyncDataSource } from '../types.js'
  */
 
 /**
@@ -21,10 +23,6 @@ export function parquetDataSource(file, metadata, compressors) {
   return {
     numRows: Number(metadata.num_rows),
     columns: schema.children.map(c => c.element.name),
-    /**
-     * @param {ScanOptions} hints
-     * @returns {ScanResults}
-     */
     scan(hints) {
       // Convert WHERE AST to hyparquet filter format
       /** @type {ParquetQueryFilter | undefined} */
@@ -90,6 +88,40 @@ export function parquetDataSource(file, metadata, compressors) {
         })(),
         appliedWhere,
         appliedLimitOffset,
+      }
+    },
+
+    async *scanColumn({ column, limit, offset, signal }) {
+      const rowStart = offset ?? 0
+      const rowEnd = limit !== undefined ? rowStart + limit : undefined
+      const asyncGroups = parquetReadAsync({
+        file,
+        metadata,
+        rowStart,
+        rowEnd,
+        columns: [column],
+        compressors,
+      })
+      // assemble struct columns
+      const schemaTree = parquetSchema(metadata)
+      const assembled = asyncGroups.map(arg => assembleAsync(arg, schemaTree))
+
+      for (const rg of assembled) {
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+        const { skipped, data } = await rg.asyncColumns[0].data
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+        let dataStart = rg.groupStart + skipped
+        for (const page of data) {
+          const pageRows = page.length
+          const selectStart = Math.max(rowStart - dataStart, 0)
+          const selectEnd = Math.min((rowEnd ?? Infinity) - dataStart, pageRows)
+          if (selectEnd > selectStart) {
+            yield selectStart > 0 || selectEnd < pageRows
+              ? page.slice(selectStart, selectEnd)
+              : page
+          }
+          dataStart += pageRows
+        }
       }
     },
   }
