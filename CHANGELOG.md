@@ -1,5 +1,14 @@
 # Squirreling Changelog
 
+## [0.11.0]
+ - `UNION`, `UNION ALL`, `INTERSECT`, `EXCEPT` set operations
+ - `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE` aggregate functions
+ - `JSON_EXTRACT` function and missing function suggestions
+ - `REGEXP_EXTRACT`, `POSITION`, `STRPOS` function aliases
+ - `WITH` statement support
+ - `AsyncDataSource.scanColumn()` for fast column scans
+ - Pushdown column projection through subqueries with `LIMIT`
+
 ## [0.10.3]
  - Export more geospatial functions
 
