@@ -2,6 +2,50 @@ import { describe, expect, it } from 'vitest'
 import { parseSelect } from '../helpers.js'
 
 describe('parseSql', () => {
+  describe('FROM shorthand', () => {
+    it('should parse FROM table as SELECT * FROM table', () => {
+      const select = parseSelect('FROM users')
+      expect(select).toEqual({
+        type: 'select',
+        distinct: false,
+        columns: [{ type: 'star' }],
+        from: { type: 'table', table: 'users', positionStart: 5, positionEnd: 10 },
+        joins: [],
+        groupBy: [],
+        orderBy: [],
+        positionStart: 0,
+        positionEnd: 10,
+      })
+    })
+
+    it('should parse FROM with WHERE clause', () => {
+      const select = parseSelect('FROM users WHERE id = 1')
+      expect(select.columns).toEqual([{ type: 'star' }])
+      expect(select.from).toEqual({ type: 'table', table: 'users', positionStart: 5, positionEnd: 10 })
+      expect(select.where).toBeDefined()
+    })
+
+    it('should parse FROM with ORDER BY and LIMIT', () => {
+      const select = parseSelect('FROM users ORDER BY name LIMIT 10')
+      expect(select.columns).toEqual([{ type: 'star' }])
+      expect(select.orderBy.length).toBe(1)
+      expect(select.limit).toBe(10)
+    })
+
+    it('should parse FROM with subquery', () => {
+      const select = parseSelect('FROM (SELECT * FROM users) t')
+      expect(select.columns).toEqual([{ type: 'star' }])
+      expect(select.from.type).toBe('subquery')
+      expect(select.from.alias).toBe('t')
+    })
+
+    it('should parse FROM with JOIN', () => {
+      const select = parseSelect('FROM users JOIN orders ON users.id = orders.user_id')
+      expect(select.columns).toEqual([{ type: 'star' }])
+      expect(select.joins.length).toBe(1)
+    })
+  })
+
   describe('basic SELECT queries', () => {
     it('should parse literal SELECT', () => {
       const select = parseSelect('SELECT 1 from users')

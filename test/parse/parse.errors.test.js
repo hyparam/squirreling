@@ -4,8 +4,8 @@ import { ParseError } from '../../src/validation/parseErrors.js'
 
 describe('parseSql error handling', () => {
   describe('basic syntax errors', () => {
-    it('should throw error on missing SELECT keyword', () => {
-      expect(() => parseSql({ query: 'FROM users' })).toThrow('Expected SELECT but found "FROM" at position 0')
+    it('should throw error on missing SELECT or FROM keyword', () => {
+      expect(() => parseSql({ query: 'WHERE true' })).toThrow('Expected SELECT but found "WHERE" at position 0')
     })
 
     it('should throw error on missing FROM keyword', () => {
@@ -337,15 +337,15 @@ describe('parseSql error handling', () => {
 describe('ParseError structure', () => {
   it('should throw ParseError with positionStart and positionEnd', () => {
     try {
-      parseSql({ query: 'FROM users' })
+      parseSql({ query: 'WHERE true' })
       expect.fail('should have thrown')
     } catch (/** @type {any} */ error) {
       expect(error).toBeInstanceOf(ParseError)
       expect(error).toBeInstanceOf(Error)
       expect(error.name).toBe('SyntaxError')
       expect(error.positionStart).toBe(0)
-      expect(error.positionEnd).toBe(4) // "FROM" is 4 chars
-      expect(error.message).toBe('Expected SELECT but found "FROM" at position 0')
+      expect(error.positionEnd).toBe(5) // "WHERE" is 5 chars
+      expect(error.message).toBe('Expected SELECT but found "WHERE" at position 0')
     }
   })
 

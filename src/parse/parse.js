@@ -169,19 +169,25 @@ function parseIntersectOperations(state) {
  */
 function parseSelect(state) {
   const { positionStart } = current(state)
-  expect(state, 'keyword', 'SELECT')
+  /** @type {SelectColumn[]} */
+  let columns
+  let distinct = false
 
-  const distinct = match(state, 'keyword', 'DISTINCT')
-
-  const columns = parseSelectList(state)
-
-  expect(state, 'keyword', 'FROM')
+  // Support duckdb-style shorthand "FROM table"
+  if (match(state, 'keyword', 'FROM')) {
+    columns = [{ type: 'star' }]
+  } else {
+    expect(state, 'keyword', 'SELECT')
+    distinct = match(state, 'keyword', 'DISTINCT')
+    columns = parseSelectList(state)
+    expect(state, 'keyword', 'FROM')
+  }
 
   // Check if it's a subquery or table name
   /** @type {FromTable | FromSubquery} */
   let from
-  const tok = current(state)
-  if (tok.type === 'paren' && tok.value === '(') {
+  const fromTok = current(state)
+  if (fromTok.type === 'paren' && fromTok.value === '(') {
     // Subquery: SELECT * FROM (SELECT ...) AS alias
     expect(state, 'paren', '(')
     const query = parseStatement(state)
@@ -191,7 +197,7 @@ function parseSelect(state) {
       type: 'subquery',
       query,
       alias,
-      positionStart: tok.positionStart,
+      positionStart: fromTok.positionStart,
       positionEnd: state.lastPos,
     }
   } else {
@@ -200,9 +206,9 @@ function parseSelect(state) {
     const alias = parseTableAlias(state)
     from = {
       type: 'table',
-      table: tok.value,
+      table: fromTok.value,
       alias,
-      positionStart: tok.positionStart,
+      positionStart: fromTok.positionStart,
       positionEnd: state.lastPos,
     }
   }
