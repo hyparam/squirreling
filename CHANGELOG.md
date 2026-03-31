@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.11.2]
+ - Validate table references in queries
+ - Fix handling of table prefixes in joins
+ - Fix chained column aliases
+
 ## [0.11.1]
  - Limit/offset pushdown to `scanColumn()`
 
