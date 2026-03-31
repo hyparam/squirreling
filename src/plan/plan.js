@@ -2,6 +2,7 @@ import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/planErrors.js'
+import { validateScan, validateTableRefs } from '../validation/tables.js'
 import { extractColumns, fromAlias, inferStatementColumns } from './columns.js'
 
 /**
@@ -112,11 +113,13 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   // Source alias for FROM clause
   const sourceAlias = fromAlias(select.from)
 
-  // Validate qualified star references
-  const tableAliases = new Set([sourceAlias, ...select.joins.map(j => j.alias ?? j.table)])
+  // Validate qualified references
+  const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table)].map(a => [a, true]))
   for (const col of select.columns) {
-    if (col.type === 'star' && col.table && !tableAliases.has(col.table)) {
-      throw new TableNotFoundError({ table: col.table, tables: Object.fromEntries([...tableAliases].map(a => [a, true])) })
+    if (col.type === 'derived') {
+      validateTableRefs(col.expr, scopeTables)
+    } else if (col.table && !(col.table in scopeTables)) {
+      throw new TableNotFoundError({ table: col.table, tables: scopeTables })
     }
   }
 
@@ -258,11 +261,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables }) {
     if (hints.columns && availableColumns.length) {
       const missingColumn = hints.columns.find(col => !availableColumns.includes(col))
       if (missingColumn) {
-        throw new ColumnNotFoundError({
-          columnName: missingColumn,
-          availableColumns,
-          ...select.from,
-        })
+        throw new ColumnNotFoundError({ missingColumn, availableColumns, ...select.from })
       }
     }
     return subPlan
@@ -406,33 +405,6 @@ function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   }
 
   return { leftKey: left, rightKey: right }
-}
-
-/**
- * Validates that a table exists and requested columns are available.
- *
- * @param {object} options
- * @param {string} options.table
- * @param {ScanOptions} options.hints
- * @param {Record<string, AsyncDataSource>} [options.tables]
- * @param {number} options.positionStart
- * @param {number} options.positionEnd
- */
-function validateScan({ table, hints, tables, positionStart, positionEnd }) {
-  if (!tables) return
-  const resolved = tables[table]
-  if (!resolved) {
-    throw new TableNotFoundError({ table, tables, positionStart, positionEnd })
-  }
-  const missingColumn = hints.columns?.find(col => !resolved.columns.includes(col))
-  if (missingColumn) {
-    throw new ColumnNotFoundError({
-      columnName: missingColumn,
-      availableColumns: resolved.columns,
-      positionStart,
-      positionEnd,
-    })
-  }
 }
 
 /**

@@ -3,7 +3,7 @@ import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { planSql } from '../plan/plan.js'
-import { TableNotFoundError } from '../validation/planErrors.js'
+import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
@@ -95,16 +95,8 @@ export async function* executePlan({ plan, context }) {
  */
 async function* executeScan(plan, context) {
   const { tables, signal } = context
-  // check table
-  const table = tables[plan.table]
-  if (!table) {
-    throw new TableNotFoundError({ table: plan.table, tables })
-  }
-  // check columns
-  const missingColumn = plan.hints.columns?.find(col => !table.columns.includes(col))
-  if (missingColumn) {
-    throw new Error(`Column "${missingColumn}" not found. Available columns: ${table.columns.join(', ') || '[]'}`)
-  }
+  const table = validateTable({ ...plan, tables })
+  validateScan({ ...plan, tables })
 
   // do the scan
   const { rows, appliedWhere, appliedLimitOffset } = table.scan({ ...plan.hints, signal })
@@ -138,10 +130,7 @@ async function* executeScan(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeCount(plan, { tables, signal }) {
-  const table = tables[plan.table]
-  if (!table) {
-    throw new TableNotFoundError({ table: plan.table, tables })
-  }
+  const table = validateTable({ ...plan, tables })
 
   // Use source numRows if available
   let count = table.numRows

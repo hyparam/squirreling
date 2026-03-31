@@ -54,7 +54,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
     // Unknown identifier
     throw new ColumnNotFoundError({
-      columnName: node.name,
+      missingColumn: node.name,
       availableColumns: row.columns,
       rowIndex,
       ...node,

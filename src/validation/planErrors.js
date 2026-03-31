@@ -30,18 +30,18 @@ export class TableNotFoundError extends ExecutionError {
 export class ColumnNotFoundError extends ExecutionError {
   /**
    * @param {Object} options
-   * @param {string} options.columnName - The missing column name
+   * @param {string} options.missingColumn - The missing column name
    * @param {string[]} options.availableColumns - List of available column names
    * @param {number} options.positionStart
    * @param {number} options.positionEnd
    * @param {number} [options.rowIndex] - 1-based row number where error occurred
    */
-  constructor({ columnName, availableColumns, positionStart, positionEnd, rowIndex }) {
+  constructor({ missingColumn, availableColumns, positionStart, positionEnd, rowIndex }) {
     const available = availableColumns.length > 0
       ? `. Available columns: ${availableColumns.join(', ')}`
       : ''
     super({
-      message: `Column "${columnName}" not found${available}`,
+      message: `Column "${missingColumn}" not found${available}`,
       positionStart,
       positionEnd,
       rowIndex,
