@@ -53,6 +53,14 @@ describe('executeSql', () => {
       expect(result[0]).toEqual({ fullName: 'Alice', years: 30 })
     })
 
+    it('should resolve earlier SELECT aliases in later columns', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT age * 2 AS doubled, doubled + 1 AS plus_one FROM users',
+      }))
+      expect(result[0]).toEqual({ doubled: 60, plus_one: 61 })
+    })
+
     it('should handle empty dataset', async () => {
       const result = await collect(executeSql({
         tables: { users: memorySource({ data: [], columns: [] }) },

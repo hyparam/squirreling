@@ -194,10 +194,20 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     // Fast path for SELECT *
     const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star'
     if (!isPassthrough) {
+      // Resolve earlier SELECT aliases in later column expressions
+      /** @type {Map<string, ExprNode>} */
+      const colAliases = new Map()
+      let projectColumns = select.columns.map(col => {
+        if (col.type !== 'derived') return col
+        const expr = resolveAliases(col.expr, colAliases)
+        if (col.alias) {
+          colAliases.set(col.alias, expr)
+        }
+        return { ...col, expr }
+      })
       // When parent only needs specific columns, drop unneeded projections
-      let projectColumns = select.columns
       if (parentColumns) {
-        projectColumns = select.columns.filter(col =>
+        projectColumns = projectColumns.filter(col =>
           col.type === 'star' || parentColumns.includes(col.alias ?? derivedAlias(col.expr))
         )
       }
@@ -321,50 +331,44 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
  * Recursively replaces identifier nodes that match SELECT aliases
  * with their aliased expressions.
  *
- * @param {ExprNode} node
+ * @param {ExprNode | undefined} node
  * @param {Map<string, ExprNode>} aliases
  * @returns {ExprNode}
  */
 function resolveAliases(node, aliases) {
+  if (!node || !aliases.size) return node
   if (node.type === 'identifier') {
-    const resolved = aliases.get(node.name)
-    if (resolved) return resolved
-    return node
+    return aliases.get(node.name) ?? node
   }
   if (node.type === 'unary') {
-    const argument = resolveAliases(node.argument, aliases)
-    return argument === node.argument ? node : { ...node, argument }
+    return { ...node, argument: resolveAliases(node.argument, aliases) }
   }
   if (node.type === 'binary') {
     const left = resolveAliases(node.left, aliases)
     const right = resolveAliases(node.right, aliases)
-    return left === node.left && right === node.right ? node : { ...node, left, right }
+    return { ...node, left, right }
   }
   if (node.type === 'function') {
     const args = node.args.map(arg => resolveAliases(arg, aliases))
-    const changed = args.some((arg, i) => arg !== node.args[i])
-    return changed ? { ...node, args } : node
+    return { ...node, args }
   }
   if (node.type === 'cast') {
-    const expr = resolveAliases(node.expr, aliases)
-    return expr === node.expr ? node : { ...node, expr }
+    return { ...node, expr: resolveAliases(node.expr, aliases) }
   }
   if (node.type === 'in valuelist') {
     const expr = resolveAliases(node.expr, aliases)
     const values = node.values.map(v => resolveAliases(v, aliases))
-    const changed = expr !== node.expr || values.some((v, i) => v !== node.values[i])
-    return changed ? { ...node, expr, values } : node
+    return { ...node, expr, values }
   }
   if (node.type === 'case') {
-    const caseExpr = node.caseExpr ? resolveAliases(node.caseExpr, aliases) : node.caseExpr
+    const caseExpr = resolveAliases(node.caseExpr, aliases)
     const whenClauses = node.whenClauses.map(w => {
       const condition = resolveAliases(w.condition, aliases)
       const result = resolveAliases(w.result, aliases)
-      return condition === w.condition && result === w.result ? w : { ...w, condition, result }
+      return { ...w, condition, result }
     })
-    const elseResult = node.elseResult ? resolveAliases(node.elseResult, aliases) : node.elseResult
-    const changed = caseExpr !== node.caseExpr || elseResult !== node.elseResult || whenClauses.some((w, i) => w !== node.whenClauses[i])
-    return changed ? { ...node, caseExpr, whenClauses, elseResult } : node
+    const elseResult = resolveAliases(node.elseResult, aliases)
+    return { ...node, caseExpr, whenClauses, elseResult }
   }
   // literal, interval, subquery, in, exists: no identifiers to resolve
   return node

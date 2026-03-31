@@ -75,6 +75,58 @@ describe('column pushdown', () => {
     })
   })
 
+  it('should not push SELECT alias references as scan columns', () => {
+    const users = memorySource({ data: [{ id: 1, name: 'Alice' }] })
+    const plan = planSql({
+      query: 'SELECT id AS a, a + 1 AS b FROM users',
+      tables: { users },
+    })
+    expect(plan).toEqual({
+      type: 'Project',
+      columns: [
+        {
+          type: 'derived',
+          expr: {
+            type: 'identifier',
+            name: 'id',
+            positionStart: 7,
+            positionEnd: 9,
+          },
+          alias: 'a',
+        },
+        {
+          type: 'derived',
+          expr: {
+            type: 'binary',
+            op: '+',
+            left: {
+              type: 'identifier',
+              name: 'id',
+              positionStart: 7,
+              positionEnd: 9,
+            },
+            right: {
+              type: 'literal',
+              value: 1,
+              positionStart: 20,
+              positionEnd: 21,
+            },
+            positionStart: 16,
+            positionEnd: 21,
+          },
+          alias: 'b',
+        },
+      ],
+      child: {
+        type: 'Scan',
+        table: 'users',
+        hints: {
+          columns: ['id'],
+        },
+      },
+    })
+  })
+
   it('should push column hints including subquery WHERE columns', () => {
     const plan = planSql({ query: 'SELECT id FROM (SELECT * FROM users WHERE age > 21)' })
     expect(plan).toEqual({

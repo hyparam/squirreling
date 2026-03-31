@@ -71,7 +71,8 @@ export function extractColumns({ select, parentColumns }) {
         const outputName = col.alias ?? derivedAlias(col.expr)
         if (!parentColumns.includes(outputName)) continue
       }
-      collectColumnsFromExpr(col.expr, identifiers)
+      // Exclude earlier SELECT aliases so they aren't treated as source columns
+      collectColumnsFromExpr(col.expr, identifiers, selectAliases)
       if (col.alias) {
         selectAliases.add(col.alias)
       }
