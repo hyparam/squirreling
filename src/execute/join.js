@@ -230,27 +230,16 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
 
   // Add left table columns with prefix
   for (const [key, cell] of Object.entries(leftRow.cells)) {
-    // Skip already-prefixed keys (from previous joins)
-    if (!key.includes('.')) {
-      const alias = `${leftTable}.${key}`
-      columns.push(alias)
-      cells[alias] = cell
-    }
-    // Also keep unqualified name for convenience
-    columns.push(key)
-    cells[key] = cell
+    const alias = key.includes('.') ? key : `${leftTable}.${key}`
+    columns.push(alias)
+    cells[alias] = cell
   }
 
   // Add right table columns with prefix
   for (const [key, cell] of Object.entries(rightRow.cells)) {
-    if (!key.includes('.')) {
-      const alias = `${rightTable}.${key}`
-      columns.push(alias)
-      cells[alias] = cell
-    }
-    // Unqualified name (overwrites if same name exists in left table)
-    columns.push(key)
-    cells[key] = cell
+    const alias = key.includes('.') ? key : `${rightTable}.${key}`
+    columns.push(alias)
+    cells[alias] = cell
   }
 
   return { columns, cells }
@@ -264,5 +253,5 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
  * @returns {string[]}
  */
 function prefixColumns(cols, table) {
-  return cols.flatMap(col => col.includes('.') ? [col] : [`${table}.${col}`, col])
+  return cols.map(col => col.includes('.') ? col : `${table}.${col}`)
 }

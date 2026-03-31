@@ -273,9 +273,14 @@ async function* executeProject(plan, context) {
 
     for (const col of plan.columns) {
       if (col.type === 'star') {
+        const prefix = col.table ? `${col.table}.` : undefined
         for (const key of row.columns) {
-          columns.push(key)
-          cells[key] = row.cells[key]
+          if (prefix && !key.startsWith(prefix)) continue
+          // Strip table prefix for output column names
+          const dotIndex = key.indexOf('.')
+          const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+          columns.push(outputKey)
+          cells[outputKey] = row.cells[key]
         }
       } else {
         const alias = col.alias ?? derivedAlias(col.expr)

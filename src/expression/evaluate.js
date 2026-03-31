@@ -37,11 +37,19 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (node.name in row.cells) {
       return row.cells[node.name]()
     }
-    // For qualified names like 'users.id', also try just the column part
-    if (node.name.includes('.')) {
-      const colName = node.name.split('.').pop()
-      if (colName && colName in row.cells) {
+    const dotIndex = node.name.indexOf('.')
+    if (dotIndex >= 0) {
+      // For qualified names like 'users.id', try just the column part
+      const colName = node.name.substring(dotIndex + 1)
+      if (colName in row.cells) {
         return row.cells[colName]()
+      }
+    } else {
+      // For unqualified names, search for a matching prefixed column (e.g. 'id' to 'a.id')
+      const suffix = '.' + node.name
+      const match = row.columns.find(col => col.endsWith(suffix))
+      if (match) {
+        return row.cells[match]()
       }
     }
     // Unknown identifier

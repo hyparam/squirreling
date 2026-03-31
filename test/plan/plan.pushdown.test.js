@@ -228,31 +228,35 @@ describe('column pushdown', () => {
   it('should not add column hints for SELECT * join', () => {
     const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
     expect(plan).toEqual({
-      type: 'HashJoin',
-      joinType: 'INNER',
-      leftAlias: 'users',
-      rightAlias: 'orders',
-      leftKey: {
-        type: 'identifier',
-        name: 'users.id',
-        positionStart: 35,
-        positionEnd: 43,
-      },
-      rightKey: {
-        type: 'identifier',
-        name: 'orders.user_id',
-        positionStart: 46,
-        positionEnd: 60,
-      },
-      left: {
-        type: 'Scan',
-        table: 'users',
-        hints: {},
-      },
-      right: {
-        type: 'Scan',
-        table: 'orders',
-        hints: {},
+      type: 'Project',
+      columns: [{ type: 'star' }],
+      child: {
+        type: 'HashJoin',
+        joinType: 'INNER',
+        leftAlias: 'users',
+        rightAlias: 'orders',
+        leftKey: {
+          type: 'identifier',
+          name: 'users.id',
+          positionStart: 35,
+          positionEnd: 43,
+        },
+        rightKey: {
+          type: 'identifier',
+          name: 'orders.user_id',
+          positionStart: 46,
+          positionEnd: 60,
+        },
+        left: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
+        },
+        right: {
+          type: 'Scan',
+          table: 'orders',
+          hints: {},
+        },
       },
     })
   })

@@ -224,12 +224,12 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
   const result = []
   const fromAlias = select.from.alias ?? select.from.table
   for (const col of lookupTableColumns(select.from.table, cteColumns, tables)) {
-    result.push(`${fromAlias}.${col}`, col)
+    result.push(`${fromAlias}.${col}`)
   }
   for (const join of select.joins) {
     const alias = join.alias ?? join.table
     for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
-      result.push(`${alias}.${col}`, col)
+      result.push(`${alias}.${col}`)
     }
   }
   return result

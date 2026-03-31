@@ -26,9 +26,13 @@ function projectAggregateColumns(selectColumns, group, context) {
     if (col.type === 'star') {
       const firstRow = group[0]
       if (firstRow) {
+        const prefix = col.table ? `${col.table}.` : undefined
         for (const key of firstRow.columns) {
-          columns.push(key)
-          cells[key] = firstRow.cells[key]
+          if (prefix && !key.startsWith(prefix)) continue
+          const dotIndex = key.indexOf('.')
+          const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+          columns.push(outputKey)
+          cells[outputKey] = firstRow.cells[key]
         }
       }
     } else {

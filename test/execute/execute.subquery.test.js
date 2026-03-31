@@ -160,7 +160,7 @@ describe('subqueries', () => {
     })
 
     it('should apply inner and outer OFFSET independently', async () => {
-      // inner OFFSET 1 skips Alice → Bob, Charlie; outer OFFSET 1 skips Bob → Charlie
+      // inner OFFSET 1 skips Alice to Bob, Charlie; outer OFFSET 1 skips Bob to Charlie
       const result = await collect(executeSql({
         tables: { users },
         query: 'SELECT * FROM (SELECT * FROM users ORDER BY id OFFSET 1) AS u OFFSET 1',

@@ -918,4 +918,26 @@ describe('JOIN queries', () => {
       expect(result.map(r => r.name).sort()).toEqual(['Alice', 'Bob'])
     })
   })
+
+  describe('qualified star', () => {
+    it('should select only columns from the qualified table', async () => {
+      const a = memorySource({ data: [{ id: 1, x: 10 }] })
+      const b = memorySource({ data: [{ id: 1, y: 20 }] })
+      const result = await collect(executeSql({
+        tables: { a, b },
+        query: 'SELECT a.* FROM a JOIN b ON a.id = b.id',
+      }))
+      expect(result).toEqual([{ id: 1, x: 10 }])
+    })
+
+    it('should select only columns from the second table', async () => {
+      const a = memorySource({ data: [{ id: 1, x: 10 }] })
+      const b = memorySource({ data: [{ id: 1, y: 20 }] })
+      const result = await collect(executeSql({
+        tables: { a, b },
+        query: 'SELECT b.* FROM a JOIN b ON a.id = b.id',
+      }))
+      expect(result).toEqual([{ id: 1, y: 20 }])
+    })
+  })
 })

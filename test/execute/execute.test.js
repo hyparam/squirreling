@@ -69,6 +69,12 @@ describe('executeSql', () => {
       expect(result).toEqual([])
     })
 
+    it('should error on qualified star with wrong table name', async () => {
+      await expect(async () => {
+        await collect(executeSql({ tables: { users }, query: 'SELECT orders.* FROM users' }))
+      }).rejects.toThrow('Table "orders" not found. Available tables: users')
+    })
+
     it('should error selecting from non-existent table', async () => {
       await expect(async () => {
         await collect(executeSql({ tables: { users }, query: 'SELECT * FROM orders' }))

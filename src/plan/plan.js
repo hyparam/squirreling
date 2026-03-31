@@ -112,6 +112,14 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   // Source alias for FROM clause
   const sourceAlias = fromAlias(select.from)
 
+  // Validate qualified star references
+  const tableAliases = new Set([sourceAlias, ...select.joins.map(j => j.alias ?? j.table)])
+  for (const col of select.columns) {
+    if (col.type === 'star' && col.table && !tableAliases.has(col.table)) {
+      throw new TableNotFoundError({ table: col.table, tables: Object.fromEntries([...tableAliases].map(a => [a, true])) })
+    }
+  }
+
   // Determine scan hints for direct table scans (WHERE and LIMIT/OFFSET are
   // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */
@@ -191,8 +199,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     // However, for streaming distinct we need to project first
     // So the order is: Sort -> Project -> Distinct -> Limit
 
-    // Fast path for SELECT *
-    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star'
+    // Fast path for SELECT * without joins
+    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length
     if (!isPassthrough) {
       // Resolve earlier SELECT aliases in later column expressions
       /** @type {Map<string, ExprNode>} */
