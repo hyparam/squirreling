@@ -138,6 +138,38 @@ describe('scan results', () => {
   })
 })
 
+describe('scanColumn fast path', () => {
+  it('should use scanColumn for single column query without WHERE', async () => {
+    let scanCalled = false
+    let scanColumnCalled = false
+
+    /** @type {AsyncDataSource} */
+    const source = {
+      columns: ['id', 'name'],
+      scan() {
+        scanCalled = true
+        return {
+          rows: (async function* () {})(),
+          appliedWhere: false,
+          appliedLimitOffset: false,
+        }
+      },
+      async *scanColumn() {
+        scanColumnCalled = true
+        yield [1, 2, 3]
+      },
+    }
+
+    const result = await collect(executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data',
+    }))
+    expect(scanColumnCalled).toBe(true)
+    expect(scanCalled).toBe(false)
+    expect(result).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+  })
+})
+
 /**
  * Executes a query and captures the hints passed to the data source.
  *

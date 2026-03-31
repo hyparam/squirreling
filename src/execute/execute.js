@@ -98,6 +98,29 @@ async function* executeScan(plan, context) {
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
 
+  // Fast path: single column scan without WHERE
+  if (table.scanColumn && plan.hints.columns?.length === 1 && !plan.hints.where) {
+    const column = plan.hints.columns[0]
+    const chunks = table.scanColumn({
+      column,
+      limit: plan.hints.limit,
+      offset: plan.hints.offset,
+      signal,
+    })
+    const columns = [column]
+    for await (const chunk of chunks) {
+      if (signal?.aborted) return
+      for (let i = 0; i < chunk.length; i++) {
+        const value = chunk[i]
+        yield {
+          columns,
+          cells: { [column]: () => Promise.resolve(value) },
+        }
+      }
+    }
+    return
+  }
+
   // do the scan
   const { rows, appliedWhere, appliedLimitOffset } = table.scan({ ...plan.hints, signal })
 

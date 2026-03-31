@@ -244,7 +244,7 @@ async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
   if (spec.funcName === 'COUNT' && spec.distinct) {
     const seen = new Set()
     for await (const chunk of values) {
-      if (signal?.aborted) return null
+      if (signal?.aborted) return
       for (let i = 0; i < chunk.length; i++) {
         const v = chunk[i]
         if (v == null) continue
@@ -257,7 +257,7 @@ async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
   if (spec.funcName === 'COUNT') {
     let count = 0
     for await (const chunk of values) {
-      if (signal?.aborted) return null
+      if (signal?.aborted) return
       for (let i = 0; i < chunk.length; i++) {
         if (chunk[i] != null) count++
       }
@@ -274,7 +274,7 @@ async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
   let max = null
 
   for await (const chunk of values) {
-    if (signal?.aborted) return null
+    if (signal?.aborted) return
     for (let i = 0; i < chunk.length; i++) {
       const v = chunk[i]
       if (v == null) continue
