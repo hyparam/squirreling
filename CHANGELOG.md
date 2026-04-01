@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.11.3]
+ - Support duckdb-style shorthand `FROM table` syntax
+ - Fix GROUP BY and ORDER BY expressions with aliases
+ - Fast path for single column scans
+
 ## [0.11.2]
  - Validate table references in queries
  - Fix handling of table prefixes in joins
