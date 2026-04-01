@@ -113,15 +113,25 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   // Source alias for FROM clause
   const sourceAlias = fromAlias(select.from)
 
-  // Validate qualified references
+  // Validate qualified references and resolve aliases
   const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table)].map(a => [a, true]))
-  for (const col of select.columns) {
+  /** @type {Map<string, ExprNode>} */
+  const aliases = new Map()
+  const columns = select.columns.map(col => {
     if (col.type === 'derived') {
       validateTableRefs(col.expr, scopeTables)
-    } else if (col.table && !(col.table in scopeTables)) {
+      const expr = resolveAliases(col.expr, aliases)
+      if (col.alias) {
+        aliases.set(col.alias, expr)
+      }
+      return { ...col, expr }
+    }
+    // Validate qualified references
+    if (col.table && !(col.table in scopeTables)) {
       throw new TableNotFoundError({ table: col.table, tables: scopeTables })
     }
-  }
+    return col
+  })
 
   // Determine scan hints for direct table scans (WHERE and LIMIT/OFFSET are
   // included so they are only applied to fresh scans, not CTE/subquery plans)
@@ -158,11 +168,15 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
     if (select.groupBy.length) {
-      plan = { type: 'HashAggregate', groupBy: select.groupBy, columns: select.columns, having: select.having, child: plan }
+      // Resolve SELECT aliases in GROUP BY expressions at plan time
+      const groupBy = aliases.size > 0
+        ? select.groupBy.map(expr => resolveAliases(expr, aliases))
+        : select.groupBy
+      plan = { type: 'HashAggregate', groupBy, columns, having: select.having, child: plan }
     } else if (!select.having && !select.where && plan.type === 'Scan' && isOwnScan && isAllCountStar(select.columns)) {
       plan = { type: 'Count', table: plan.table, columns: select.columns }
     } else {
-      plan = { type: 'ScalarAggregate', columns: select.columns, having: select.having, child: plan }
+      plan = { type: 'ScalarAggregate', columns, having: select.having, child: plan }
     }
 
     // ORDER BY (after aggregation)
@@ -185,13 +199,6 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     // ORDER BY (before projection so it can access all columns)
     // Resolve SELECT aliases in ORDER BY expressions at plan time
     if (select.orderBy.length) {
-      /** @type {Map<string, ExprNode>} */
-      const aliases = new Map()
-      for (const col of select.columns) {
-        if (col.type === 'derived' && col.alias) {
-          aliases.set(col.alias, col.expr)
-        }
-      }
       const orderBy = aliases.size > 0
         ? select.orderBy.map(term => ({ ...term, expr: resolveAliases(term.expr, aliases) }))
         : select.orderBy
@@ -205,17 +212,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     // Fast path for SELECT * without joins
     const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length
     if (!isPassthrough) {
-      // Resolve earlier SELECT aliases in later column expressions
-      /** @type {Map<string, ExprNode>} */
-      const colAliases = new Map()
-      let projectColumns = select.columns.map(col => {
-        if (col.type !== 'derived') return col
-        const expr = resolveAliases(col.expr, colAliases)
-        if (col.alias) {
-          colAliases.set(col.alias, expr)
-        }
-        return { ...col, expr }
-      })
+      let projectColumns = columns
       // When parent only needs specific columns, drop unneeded projections
       if (parentColumns) {
         projectColumns = projectColumns.filter(col =>

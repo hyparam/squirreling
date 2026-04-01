@@ -84,7 +84,7 @@ export function extractColumns({ select, parentColumns }) {
     collectColumnsFromExpr(item.expr, identifiers, selectAliases)
   }
   for (const expr of select.groupBy) {
-    collectColumnsFromExpr(expr, identifiers)
+    collectColumnsFromExpr(expr, identifiers, selectAliases)
   }
   collectColumnsFromExpr(select.having, identifiers, selectAliases)
   for (const join of select.joins) {

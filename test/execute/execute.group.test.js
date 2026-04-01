@@ -78,4 +78,35 @@ describe('executeSql - GROUP BY', () => {
     expect(northA?.total).toBe(180)
     expect(northA?.sales_count).toBe(2)
   })
+
+  it('should group by SELECT alias', async () => {
+    const data = [
+      { value: 1 },
+      { value: 2 },
+      { value: 3 },
+      { value: 4 },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT value % 2 AS parity, COUNT(*) AS count FROM data GROUP BY parity ORDER BY parity',
+    }))
+    expect(result).toEqual([{ parity: 0, count: 2 }, { parity: 1, count: 2 }])
+  })
+
+  it('should group by a chained SELECT alias', async () => {
+    const data = [
+      { x: 1 },
+      { x: 1 },
+      { x: 2 },
+      { x: 2 },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT x AS a, a + 1 AS b, COUNT(*) AS count FROM data GROUP BY b ORDER BY b',
+    }))
+    expect(result).toEqual([
+      { a: 1, b: 2, count: 2 },
+      { a: 2, b: 3, count: 2 },
+    ])
+  })
 })

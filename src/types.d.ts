@@ -1,4 +1,4 @@
-import type { ExprNode, SelectStatement, SqlPrimitive, Statement } from './ast.js'
+import type { ExprNode, SqlPrimitive, Statement } from './ast.js'
 
 export * from './ast.js'
 export { ParserState, Token, TokenType } from './parse/types.js'

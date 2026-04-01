@@ -96,6 +96,16 @@ describe('ORDER BY', () => {
     expect(result[result.length - 1].double_age).toBe(50)
   })
 
+  it('should sort by expression alias', async () => {
+    const data = [
+      { x: 3 },
+      { x: 1 },
+      { x: 2 },
+    ]
+    const result = await collect(executeSql({ tables: { data }, query: 'SELECT x + 1 AS y FROM data ORDER BY y' }))
+    expect(result).toEqual([{ y: 2 }, { y: 3 }, { y: 4 }])
+  })
+
   it('should sort by alias used inside ORDER BY expression', async () => {
     const result = await collect(executeSql({
       tables: { users },
@@ -192,6 +202,20 @@ describe('ORDER BY', () => {
     it('should sort by aggregate expression without alias or group by', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT COUNT(*) FROM users ORDER BY COUNT(*)' }))
       expect(result[0].count_all).toBe(5)
+    })
+
+    it('should sort by GROUP BY expression alias', async () => {
+      const data = [
+        { value: 1 },
+        { value: 2 },
+        { value: 3 },
+        { value: 4 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT value % 2 AS parity, COUNT(*) AS count FROM data GROUP BY parity ORDER BY parity DESC',
+      }))
+      expect(result).toEqual([{ parity: 1, count: 2 }, { parity: 0, count: 2 }])
     })
 
     it('throws on aggregate expression without alias', async () => {
