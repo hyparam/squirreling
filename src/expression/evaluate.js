@@ -33,18 +33,21 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   }
 
   if (node.type === 'identifier') {
-    // Try exact match first (handles both qualified and unqualified names)
-    if (node.name in row.cells) {
-      return row.cells[node.name]()
-    }
-    const dotIndex = node.name.indexOf('.')
-    if (dotIndex >= 0) {
-      // For qualified names like 'users.id', try just the column part
-      const colName = node.name.substring(dotIndex + 1)
-      if (colName in row.cells) {
-        return row.cells[colName]()
+    // Try qualified name first (e.g. 'users.id')
+    if (node.prefix) {
+      const qualified = node.prefix + '.' + node.name
+      if (qualified in row.cells) {
+        return row.cells[qualified]()
+      }
+      // Fall back to just the column part
+      if (node.name in row.cells) {
+        return row.cells[node.name]()
       }
     } else {
+      // Try exact match first
+      if (node.name in row.cells) {
+        return row.cells[node.name]()
+      }
       // For unqualified names, search for a matching prefixed column (e.g. 'id' to 'a.id')
       const suffix = '.' + node.name
       const match = row.columns.find(col => col.endsWith(suffix))
@@ -54,7 +57,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
     // Unknown identifier
     throw new ColumnNotFoundError({
-      missingColumn: node.name,
+      missingColumn: node.prefix ? node.prefix + '.' + node.name : node.name,
       availableColumns: row.columns,
       rowIndex,
       ...node,

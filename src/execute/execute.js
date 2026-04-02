@@ -290,7 +290,7 @@ async function* executeProject(plan, context) {
           if (prefix && !key.startsWith(prefix)) continue
           // Strip table prefix for output column names
           const dotIndex = key.indexOf('.')
-          const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+          const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
           columns.push(outputKey)
           cells[outputKey] = row.cells[key]
         }

@@ -112,15 +112,19 @@ export function parsePrimary(state) {
 
     // Table identifier
     let name = consume(state).value
+    /** @type {string | undefined} */
+    let prefix
 
     // table.column
     if (match(state, 'dot')) {
-      name += '.' + expect(state, 'identifier').value
+      prefix = name
+      name = expect(state, 'identifier').value
     }
 
     return {
       type: 'identifier',
       name,
+      prefix,
       positionStart,
       positionEnd: state.lastPos,
     }

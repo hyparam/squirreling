@@ -1,7 +1,7 @@
 import { derivedAlias } from '../expression/alias.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, FromSubquery, FromTable, SelectStatement, Statement } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, FromSubquery, FromTable, IdentifierNode, SelectStatement, Statement } from '../types.js'
  */
 
 /**
@@ -18,7 +18,7 @@ export function fromAlias(from) {
  *
  * @param {object} options
  * @param {SelectStatement} options.select
- * @param {string[]} [options.parentColumns] - columns needed by the parent query
+ * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query
  * @returns {Map<string, string[] | undefined>}
  */
 export function extractColumns({ select, parentColumns }) {
@@ -54,7 +54,8 @@ export function extractColumns({ select, parentColumns }) {
   // directly. For non-star queries, parent names may be aliases and are
   // handled below by filtering derived columns and collecting from expressions.
   const hasStar = select.columns.some(col => col.type === 'star' && !col.table)
-  const identifiers = new Set(hasStar ? parentColumns : undefined)
+  /** @type {IdentifierNode[]} */
+  const identifiers = hasStar && parentColumns ? [...parentColumns] : []
 
   // Collect ORDER BY identifiers, excluding SELECT aliases (their underlying
   // columns are already collected from select.columns expressions above)
@@ -69,7 +70,7 @@ export function extractColumns({ select, parentColumns }) {
       // When parentColumns is set, skip columns the parent doesn't need
       if (parentColumns) {
         const outputName = col.alias ?? derivedAlias(col.expr)
-        if (!parentColumns.includes(outputName)) continue
+        if (!parentColumns.some(id => id.name === outputName)) continue
       }
       // Exclude earlier SELECT aliases so they aren't treated as source columns
       collectColumnsFromExpr(col.expr, identifiers, selectAliases)
@@ -92,14 +93,11 @@ export function extractColumns({ select, parentColumns }) {
   }
 
   // Partition identifiers by table prefix
-  for (const name of identifiers) {
-    const dotIndex = name.indexOf('.')
-    if (dotIndex >= 0) {
+  for (const { prefix, name } of identifiers) {
+    if (prefix) {
       // Qualified: add to matching table only
-      const tablePrefix = name.substring(0, dotIndex)
-      const columnName = name.substring(dotIndex + 1)
-      const set = perTable.get(tablePrefix)
-      if (set) set.add(columnName)
+      const set = perTable.get(prefix)
+      if (set) set.add(name)
     } else if (aliases.length > 1) {
       // Unqualified in a JOIN: can't disambiguate, request all columns from all tables
       for (const alias of aliases) {
@@ -122,17 +120,17 @@ export function extractColumns({ select, parentColumns }) {
 }
 
 /**
- * Recursively collects column names (identifiers) from an expression
+ * Recursively collects identifier nodes from an expression
  *
  * @param {ExprNode} expr
- * @param {Set<string>} columns
+ * @param {IdentifierNode[]} columns
  * @param {Set<string>} [aliases] - aliases to exclude from columns
  */
 function collectColumnsFromExpr(expr, columns, aliases) {
   if (!expr) return
   if (expr.type === 'identifier') {
-    if (!aliases?.has(expr.name)) {
-      columns.add(expr.name)
+    if (expr.prefix || !aliases?.has(expr.name)) {
+      columns.push(expr)
     }
   } else if (expr.type === 'binary') {
     collectColumnsFromExpr(expr.left, columns, aliases)

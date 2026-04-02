@@ -171,8 +171,8 @@ describe('parseSql - CTE (WITH clause)', () => {
       type: 'select',
       distinct: false,
       columns: [
-        { type: 'derived', expr: { type: 'identifier', name: 'active.id', positionStart: 45, positionEnd: 54 } },
-        { type: 'derived', expr: { type: 'identifier', name: 'orders.amount', positionStart: 56, positionEnd: 69 } },
+        { type: 'derived', expr: { type: 'identifier', name: 'id', prefix: 'active', positionStart: 45, positionEnd: 54 } },
+        { type: 'derived', expr: { type: 'identifier', name: 'amount', prefix: 'orders', positionStart: 56, positionEnd: 69 } },
       ],
       from: { type: 'table', table: 'active', positionStart: 75, positionEnd: 81 },
       joins: [{
@@ -181,8 +181,8 @@ describe('parseSql - CTE (WITH clause)', () => {
         on: {
           type: 'binary',
           op: '=',
-          left: { type: 'identifier', name: 'active.id', positionStart: 97, positionEnd: 106 },
-          right: { type: 'identifier', name: 'orders.user_id', positionStart: 109, positionEnd: 123 },
+          left: { type: 'identifier', name: 'id', prefix: 'active', positionStart: 97, positionEnd: 106 },
+          right: { type: 'identifier', name: 'user_id', prefix: 'orders', positionStart: 109, positionEnd: 123 },
           positionStart: 97,
           positionEnd: 123,
         },

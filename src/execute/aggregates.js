@@ -30,7 +30,7 @@ function projectAggregateColumns(selectColumns, group, context) {
         for (const key of firstRow.columns) {
           if (prefix && !key.startsWith(prefix)) continue
           const dotIndex = key.indexOf('.')
-          const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+          const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
           columns.push(outputKey)
           cells[outputKey] = firstRow.cells[key]
         }
