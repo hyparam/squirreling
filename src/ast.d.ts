@@ -74,6 +74,7 @@ export interface LiteralNode extends AstBase {
 export interface IdentifierNode extends AstBase {
   type: 'identifier'
   name: string
+  prefix?: string
 }
 
 export interface UnaryNode extends AstBase {

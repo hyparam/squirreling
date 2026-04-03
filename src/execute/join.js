@@ -26,18 +26,18 @@ export async function* executeNestedLoopJoin(plan, context) {
     rightRows.push(row)
   }
 
-  const rightPrefixedCols = rightRows.length ? prefixColumns(rightRows[0].columns, rightTable) : []
+  const rightCols = rightRows.length ? rightRows[0].columns : []
 
   /** @type {string[] | undefined} */
-  let leftPrefixedCols = undefined
+  let leftCols = undefined
   /** @type {Set<AsyncRow> | undefined} */
   const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
 
   for await (const leftRow of executePlan({ plan: plan.left, context })) {
     if (context.signal?.aborted) break
 
-    if (!leftPrefixedCols) {
-      leftPrefixedCols = prefixColumns(leftRow.columns, leftTable)
+    if (!leftCols) {
+      leftCols = leftRow.columns
     }
 
     let hasMatch = false
@@ -58,7 +58,7 @@ export async function* executeNestedLoopJoin(plan, context) {
     }
 
     if (!hasMatch && (plan.joinType === 'LEFT' || plan.joinType === 'FULL')) {
-      const nullRight = createNullRow(rightPrefixedCols)
+      const nullRight = createNullRow(rightCols)
       yield mergeRows(leftRow, nullRight, leftTable, rightTable)
     }
   }
@@ -67,7 +67,7 @@ export async function* executeNestedLoopJoin(plan, context) {
   if (matchedRightRows) {
     for (const rightRow of rightRows) {
       if (!matchedRightRows.has(rightRow)) {
-        const nullLeft = createNullRow(leftPrefixedCols ?? [])
+        const nullLeft = createNullRow(leftCols ?? [])
         yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
       }
     }
@@ -104,13 +104,11 @@ export async function* executePositionalJoin(plan, context) {
   const maxLen = Math.max(leftRows.length, rightRows.length)
   const leftCols = leftRows[0]?.columns ?? []
   const rightCols = rightRows[0]?.columns ?? []
-  const leftPrefixedCols = prefixColumns(leftCols, leftTable)
-  const rightPrefixedCols = prefixColumns(rightCols, rightTable)
 
   for (let i = 0; i < maxLen; i++) {
     if (signal?.aborted) return
-    const leftRow = leftRows[i] ?? createNullRow(leftPrefixedCols)
-    const rightRow = rightRows[i] ?? createNullRow(rightPrefixedCols)
+    const leftRow = leftRows[i] ?? createNullRow(leftCols)
+    const rightRow = rightRows[i] ?? createNullRow(rightCols)
     yield mergeRows(leftRow, rightRow, leftTable, rightTable)
   }
 }
@@ -154,10 +152,9 @@ export async function* executeHashJoin(plan, context) {
 
   // Get column info for NULL row generation
   const rightCols = rightRows.length ? rightRows[0].columns : []
-  const rightPrefixedCols = prefixColumns(rightCols, rightTable)
 
   /** @type {string[] | undefined} */
-  let leftPrefixedCols
+  let leftCols
   /** @type {Set<AsyncRow> | undefined} */
   const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
 
@@ -165,8 +162,8 @@ export async function* executeHashJoin(plan, context) {
   for await (const leftRow of executePlan({ plan: plan.left, context })) {
     if (context.signal?.aborted) break
 
-    if (!leftPrefixedCols) {
-      leftPrefixedCols = prefixColumns(leftRow.columns, leftTable)
+    if (!leftCols) {
+      leftCols = leftRow.columns
     }
 
     const keyValue = await evaluateExpr({
@@ -183,7 +180,7 @@ export async function* executeHashJoin(plan, context) {
         yield mergeRows(leftRow, rightRow, leftTable, rightTable)
       }
     } else if (plan.joinType === 'LEFT' || plan.joinType === 'FULL') {
-      const nullRight = createNullRow(rightPrefixedCols)
+      const nullRight = createNullRow(rightCols)
       yield mergeRows(leftRow, nullRight, leftTable, rightTable)
     }
   }
@@ -192,7 +189,7 @@ export async function* executeHashJoin(plan, context) {
   if (matchedRightRows) {
     for (const rightRow of rightRows) {
       if (!matchedRightRows.has(rightRow)) {
-        const nullLeft = createNullRow(leftPrefixedCols ?? [])
+        const nullLeft = createNullRow(leftCols ?? [])
         yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
       }
     }
@@ -243,15 +240,4 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
   }
 
   return { columns, cells }
-}
-
-/**
- * Prefixes column names with table alias, keeping already-prefixed columns as-is
- *
- * @param {string[]} cols
- * @param {string} table
- * @returns {string[]}
- */
-function prefixColumns(cols, table) {
-  return cols.map(col => col.includes('.') ? col : `${table}.${col}`)
 }

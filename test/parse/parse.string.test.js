@@ -294,7 +294,8 @@ describe('parseSql - string functions', () => {
           args: [
             {
               type: 'identifier',
-              name: 'users.name',
+              name: 'name',
+              prefix: 'users',
               positionStart: 13,
               positionEnd: 23,
             },

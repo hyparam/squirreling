@@ -10,11 +10,6 @@
  */
 export function derivedAlias(expr) {
   if (expr.type === 'identifier') {
-    // For qualified names like 'users.name', use just the column part as alias
-    const dotIndex = expr.name.indexOf('.')
-    if (dotIndex >= 0) {
-      return expr.name.substring(dotIndex + 1)
-    }
     return expr.name
   }
   if (expr.type === 'literal') {

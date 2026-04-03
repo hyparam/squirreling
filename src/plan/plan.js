@@ -6,7 +6,7 @@ import { validateScan, validateTableRefs } from '../validation/tables.js'
 import { extractColumns, fromAlias, inferStatementColumns } from './columns.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, DerivedColumn, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
  * @import { QueryPlan } from './types.d.ts'
  */
 
@@ -31,7 +31,7 @@ export function planSql({ query, functions, tables }) {
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
- * @param {string[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
+ * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
  * @returns {QueryPlan}
  */
 function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns }) {
@@ -99,7 +99,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables }) {
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
- * @param {string[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
+ * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
  * @returns {QueryPlan}
  */
 function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
@@ -216,7 +216,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
       // When parent only needs specific columns, drop unneeded projections
       if (parentColumns) {
         projectColumns = projectColumns.filter(col =>
-          col.type === 'star' || parentColumns.includes(col.alias ?? derivedAlias(col.expr))
+          col.type === 'star' || parentColumns.some(id => id.name === (col.alias ?? derivedAlias(col.expr)))
         )
       }
       plan = { type: 'Project', columns: projectColumns, child: plan }
@@ -252,7 +252,13 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables }) {
     validateScan({ ...select.from, hints, tables })
     return { type: 'Scan', table: select.from.table, hints }
   } else {
-    const subPlan = planStatement({ stmt: select.from.query, ctePlans, cteColumns, tables, parentColumns: hints.columns })
+    const subPlan = planStatement({
+      stmt: select.from.query,
+      ctePlans,
+      cteColumns,
+      tables,
+      parentColumns: hints.columns?.map(name => ({ type: 'identifier', name, positionStart: 0, positionEnd: 0 })),
+    })
     // Validate that requested columns exist in subquery output
     const availableColumns = inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
     if (hints.columns && availableColumns.length) {
@@ -342,7 +348,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
 function resolveAliases(node, aliases) {
   if (!node || !aliases.size) return node
   if (node.type === 'identifier') {
-    return aliases.get(node.name) ?? node
+    return node.prefix ? node : aliases.get(node.name) ?? node
   }
   if (node.type === 'unary') {
     return { ...node, argument: resolveAliases(node.argument, aliases) }
@@ -394,8 +400,8 @@ function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   if (left.type !== 'identifier' || right.type !== 'identifier') return
 
   // Check if keys are in swapped order (right table ref on left side)
-  const leftRefsRight = left.name.startsWith(`${rightTable}.`)
-  const rightRefsLeft = right.name.startsWith(`${leftTable}.`)
+  const leftRefsRight = left.prefix === rightTable
+  const rightRefsLeft = right.prefix === leftTable
 
   if (leftRefsRight && rightRefsLeft) {
     return { leftKey: right, rightKey: left }

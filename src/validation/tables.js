@@ -53,11 +53,9 @@ export function validateScan({ table, hints, tables, positionStart, positionEnd 
 export function validateTableRefs(expr, tables) {
   if (!expr) return
   if (expr.type === 'identifier') {
-    const dotIndex = expr.name.indexOf('.')
-    if (dotIndex >= 0) {
-      const table = expr.name.substring(0, dotIndex)
-      if (!(table in tables)) {
-        throw new TableNotFoundError({ table, tables, positionStart: expr.positionStart, positionEnd: expr.positionStart + dotIndex })
+    if (expr.prefix) {
+      if (!(expr.prefix in tables)) {
+        throw new TableNotFoundError({ table: expr.prefix, tables, positionStart: expr.positionStart, positionEnd: expr.positionStart + expr.prefix.length })
       }
     }
     return
