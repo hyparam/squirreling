@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.11.5]
+ - `POW` function and `==` operator support
+ - Improved error messages
+
 ## [0.11.4]
  - Fix column and table resolution for names with dot
 
