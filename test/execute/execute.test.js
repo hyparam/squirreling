@@ -78,7 +78,7 @@ describe('executeSql', () => {
     it('should error on qualified column with original table name when aliased', async () => {
       await expect(async () => {
         await collect(executeSql({ tables: { users }, query: 'SELECT users.id FROM users AS u' }))
-      }).rejects.toThrow('Table "users" not found. Available tables: u')
+      }).rejects.toThrow('Table "users" not found in "users.id". Available tables: u')
     })
 
     it('should error selecting from non-existent table', async () => {

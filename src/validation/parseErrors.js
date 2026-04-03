@@ -38,6 +38,21 @@ export class SyntaxError extends ParseError {
 }
 
 /**
+ * Error when a dot appears after an identifier, suggesting the user meant a dotted name.
+ */
+export class UnexpectedDotError extends ParseError {
+  /**
+   * @param {Object} options
+   * @param {string} options.dottedName - The combined dotted name (e.g., "dataset.parquet")
+   * @param {number} options.positionStart
+   * @param {number} options.positionEnd
+   */
+  constructor({ dottedName, positionStart, positionEnd }) {
+    super({ message: `Unexpected "." in "${dottedName}". If this is an identifier, use double quotes: "${dottedName}"`, positionStart, positionEnd })
+  }
+}
+
+/**
  * Error for invalid literals (numbers, intervals, etc).
  */
 export class InvalidLiteralError extends ParseError {

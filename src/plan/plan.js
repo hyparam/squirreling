@@ -133,6 +133,19 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     return col
   })
 
+  // Validate qualified references in other clauses
+  validateTableRefs(select.where, scopeTables)
+  validateTableRefs(select.having, scopeTables)
+  for (const expr of select.groupBy) {
+    validateTableRefs(expr, scopeTables)
+  }
+  for (const term of select.orderBy) {
+    validateTableRefs(term.expr, scopeTables)
+  }
+  for (const join of select.joins) {
+    validateTableRefs(join.on, scopeTables)
+  }
+
   // Determine scan hints for direct table scans (WHERE and LIMIT/OFFSET are
   // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */

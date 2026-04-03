@@ -52,13 +52,14 @@ export function validateScan({ table, hints, tables, positionStart, positionEnd 
  */
 export function validateTableRefs(expr, tables) {
   if (!expr) return
-  if (expr.type === 'identifier') {
-    if (expr.prefix) {
-      if (!(expr.prefix in tables)) {
-        throw new TableNotFoundError({ table: expr.prefix, tables, positionStart: expr.positionStart, positionEnd: expr.positionStart + expr.prefix.length })
-      }
-    }
-    return
+  if (expr.type === 'identifier' && expr.prefix && !(expr.prefix in tables)) {
+    throw new TableNotFoundError({
+      table: expr.prefix,
+      qualified: expr.prefix + '.' + expr.name,
+      tables,
+      positionStart: expr.positionStart,
+      positionEnd: expr.positionStart + expr.prefix.length,
+    })
   }
   if (expr.type === 'binary') {
     validateTableRefs(expr.left, tables)

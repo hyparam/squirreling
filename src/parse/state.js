@@ -1,4 +1,4 @@
-import { SyntaxError } from '../validation/parseErrors.js'
+import { SyntaxError, UnexpectedDotError } from '../validation/parseErrors.js'
 
 /**
  * @import { ParserState, Token, TokenType } from '../types.js'
@@ -78,5 +78,12 @@ export function parseError(state, expected) {
   const tok = current(state)
   const prevToken = state.tokens[state.pos - 1]
   const after = prevToken?.originalValue ?? prevToken?.value
+  if (tok.type === 'dot' && prevToken?.type === 'identifier') {
+    const nextToken = state.tokens[state.pos + 1]
+    if (nextToken && (nextToken.type === 'identifier' || nextToken.type === 'keyword')) {
+      const dottedName = after + '.' + (nextToken.originalValue ?? nextToken.value)
+      return new UnexpectedDotError({ dottedName, positionStart: prevToken.positionStart, positionEnd: nextToken.positionEnd })
+    }
+  }
   return new SyntaxError({ expected, after, ...tok })
 }
