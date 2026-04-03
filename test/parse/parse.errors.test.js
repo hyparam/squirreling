@@ -4,66 +4,81 @@ import { ParseError } from '../../src/validation/parseErrors.js'
 
 describe('parseSql error handling', () => {
   describe('basic syntax errors', () => {
-    it('should throw error on missing SELECT or FROM keyword', () => {
-      expect(() => parseSql({ query: 'WHERE true' })).toThrow('Expected SELECT but found "WHERE" at position 0')
+    it('should throw error on non-SELECT query', () => {
+      expect(() => parseSql({ query: '' }))
+        .toThrow('Expected SELECT but found end of query at position 0')
+      expect(() => parseSql({ query: 'hi' }))
+        .toThrow('Expected SELECT but found "hi" at position 0')
+      expect(() => parseSql({ query: 'WHERE true' }))
+        .toThrow('Expected SELECT but found "WHERE" at position 0')
     })
 
-    it('should throw error on missing FROM keyword', () => {
-      expect(() => parseSql({ query: 'SELECT name' })).toThrow('Expected FROM after "name" but found end of query at position 11')
-    })
-
-    it('should throw error on missing FROM keyword after wildcard', () => {
-      expect(() => parseSql({ query: 'SELECT *' })).toThrow('Expected FROM after "*" but found end of query at position 8')
-    })
-
-    it('should throw error on missing table name after FROM', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM' })).toThrow('Expected identifier after "FROM" but found end of query at position 13')
-    })
-
-    it('should throw error on missing table name after lowercase FROM', () => {
-      expect(() => parseSql({ query: 'SELECT * from' })).toThrow('Expected identifier after "from" but found end of query at position 13')
+    it('should throw error on incomplete SELECT statement', () => {
+      expect(() => parseSql({ query: 'SELECT name' }))
+        .toThrow('Expected FROM after "name" but found end of query at position 11')
+      expect(() => parseSql({ query: 'SELECT *' }))
+        .toThrow('Expected FROM after "*" but found end of query at position 8')
+      expect(() => parseSql({ query: 'SELECT * FROM' }))
+        .toThrow('Expected identifier after "FROM" but found end of query at position 13')
+      // Test lowercase as well
+      expect(() => parseSql({ query: 'select * from' }))
+        .toThrow('Expected identifier after "from" but found end of query at position 13')
     })
 
     it('should throw error on invalid table name after FROM', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM 3' })).toThrow('Expected identifier after "FROM" but found "3" at position 14')
+      expect(() => parseSql({ query: 'SELECT * FROM 3' }))
+        .toThrow('Expected identifier after "FROM" but found "3" at position 14')
     })
 
     it('should throw error on dangling comma', () => {
-      expect(() => parseSql({ query: 'SELECT name,' })).toThrow('Expected expression but found end of query at position 12')
-      expect(() => parseSql({ query: 'SELECT name, FROM users' })).toThrow('Expected expression but found "FROM" at position 13')
+      expect(() => parseSql({ query: 'SELECT name,' }))
+        .toThrow('Expected expression after "," but found end of query at position 12')
+      expect(() => parseSql({ query: 'SELECT name, FROM users' }))
+        .toThrow('Expected expression after "," but found "FROM" at position 13')
+      expect(() => parseSql({ query: 'SELECT name FROM users,' }))
+        .toThrow('Expected end of query after "users" but found "," at position 22')
     })
 
     it('should throw error on illegal keywords after SELECT', () => {
-      expect(() => parseSql({ query: 'SELECT WHERE * FROM users' })).toThrow('Expected expression but found "WHERE" at position 7')
-      expect(() => parseSql({ query: 'SELECT JOIN * FROM users' })).toThrow('Expected expression but found "JOIN" at position 7')
+      expect(() => parseSql({ query: 'SELECT where FROM users' }))
+        .toThrow('Expected expression after "SELECT" but found "WHERE" at position 7')
+      expect(() => parseSql({ query: 'SELECT WHERE * FROM users' }))
+        .toThrow('Expected expression after "SELECT" but found "WHERE" at position 7')
+      expect(() => parseSql({ query: 'SELECT join FROM users' }))
+        .toThrow('Expected expression after "SELECT" but found "JOIN" at position 7')
+      expect(() => parseSql({ query: 'SELECT JOIN * FROM users' }))
+        .toThrow('Expected expression after "SELECT" but found "JOIN" at position 7')
     })
 
     it('should throw error on empty query', () => {
-      expect(() => parseSql({ query: '' })).toThrow('Expected SELECT but found end of query at position 0')
+      expect(() => parseSql({ query: '' }))
+        .toThrow('Expected SELECT but found end of query at position 0')
     })
 
     it('should throw error on nonsense', () => {
-      // '@' and '#' are invalid characters - tokenizer error says "SELECT or WITH"
-      expect(() => parseSql({ query: '@' })).toThrow('Expected SELECT but found "@" at position 0')
-      expect(() => parseSql({ query: ' #' })).toThrow('Expected SELECT but found "#" at position 1')
-      // '.' is a valid token (dot), but parser expects SELECT keyword
-      expect(() => parseSql({ query: '.' })).toThrow('Expected SELECT but found "." at position 0')
+      expect(() => parseSql({ query: '@' }))
+        .toThrow('Expected SELECT but found "@" at position 0')
+      expect(() => parseSql({ query: ' #' }))
+        .toThrow('Expected SELECT but found "#" at position 1')
+      expect(() => parseSql({ query: '.' }))
+        .toThrow('Expected SELECT but found "." at position 0')
     })
 
     it('should throw error on unexpected tokens after query', () => {
-      expect(() => parseSql({ query: 'SELECT * FROM users; SELECT' })).toThrow('Expected end of query after ";" but found "SELECT" at position 21')
+      expect(() => parseSql({ query: 'SELECT * FROM users; SELECT' }))
+        .toThrow('Expected end of query after ";" but found "SELECT" at position 21')
     })
   })
 
   describe('SELECT list errors', () => {
     it('should throw error on invalid column name', () => {
       expect(() => parseSql({ query: 'SELECT FROM users' }))
-        .toThrow('Expected expression but found "FROM" at position 7')
+        .toThrow('Expected expression after "SELECT" but found "FROM" at position 7')
     })
 
     it('should throw error on missing column after comma', () => {
       expect(() => parseSql({ query: 'SELECT name, FROM users' }))
-        .toThrow('Expected expression but found "FROM" at position 13')
+        .toThrow('Expected expression after "," but found "FROM" at position 13')
     })
 
     it('should throw error on missing alias after AS', () => {
@@ -74,6 +89,11 @@ describe('parseSql error handling', () => {
     it('should throw error on missing alias after lowercase as', () => {
       expect(() => parseSql({ query: 'SELECT name as FROM users' }))
         .toThrow('Expected alias after "as" but found "FROM" at position 15')
+    })
+
+    it('should throw error on invalid function call syntax', () => {
+      expect(() => parseSql({ query: 'SELECT name.id() FROM users' }))
+        .toThrow('Expected FROM after "id" but found "(" at position 14')
     })
   })
 
@@ -181,7 +201,7 @@ describe('parseSql error handling', () => {
   describe('WHERE clause errors', () => {
     it('should throw error on incomplete WHERE clause', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users WHERE' }))
-        .toThrow('Expected expression but found end of query at position 25')
+        .toThrow('Expected expression after "WHERE" but found end of query at position 25')
     })
 
     it('should throw error on dangling NOT in WHERE clause', () => {
@@ -201,7 +221,7 @@ describe('parseSql error handling', () => {
 
     it('should throw error on incomplete comparison in WHERE', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users WHERE age >' }))
-        .toThrow('Expected expression but found end of query at position 31')
+        .toThrow('Expected expression after ">" but found end of query at position 31')
     })
 
     it('should throw error when expecting closing paren in WHERE', () => {
@@ -228,7 +248,7 @@ describe('parseSql error handling', () => {
 
     it('should throw error on missing JOIN condition', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users JOIN orders ON' }))
-        .toThrow('Expected expression but found end of query at position 34')
+        .toThrow('Expected expression after "ON" but found end of query at position 34')
     })
 
     it('should throw error on missing JOIN keyword after LEFT', () => {
@@ -255,12 +275,12 @@ describe('parseSql error handling', () => {
 
     it('should throw error on missing column after GROUP BY', () => {
       expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY' }))
-        .toThrow('Expected expression but found end of query at position 35')
+        .toThrow('Expected expression after "BY" but found end of query at position 35')
     })
 
     it('should throw error on missing column after comma in GROUP BY', () => {
       expect(() => parseSql({ query: 'SELECT COUNT(*) FROM users GROUP BY age,' }))
-        .toThrow('Expected expression but found end of query at position 40')
+        .toThrow('Expected expression after "," but found end of query at position 40')
     })
 
     it('should throw error for aggregate function in GROUP BY', () => {
@@ -277,12 +297,12 @@ describe('parseSql error handling', () => {
 
     it('should throw error on missing column after ORDER BY', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY' }))
-        .toThrow('Expected expression but found end of query at position 28')
+        .toThrow('Expected expression after "BY" but found end of query at position 28')
     })
 
     it('should throw error on missing column after comma in ORDER BY', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users ORDER BY age,' }))
-        .toThrow('Expected expression but found end of query at position 33')
+        .toThrow('Expected expression after "," but found end of query at position 33')
     })
 
     it('should throw error for aggregate function in ORDER BY without aggregate context', () => {

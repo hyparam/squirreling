@@ -248,7 +248,7 @@ export function parsePrimary(state) {
     }
   }
 
-  throw new SyntaxError({ expected: 'expression', ...tok })
+  throw parseError(state, 'expression')
 }
 
 /**
