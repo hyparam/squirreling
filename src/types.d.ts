@@ -115,6 +115,7 @@ export type MathFunc =
   | 'EXP'
   | 'LN'
   | 'LOG10'
+  | 'POW'
   | 'POWER'
   | 'SQRT'
   | 'SIN'

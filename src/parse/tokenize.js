@@ -5,7 +5,7 @@ import { InvalidLiteralError, ParseError, UnexpectedCharError } from '../validat
  * @import { Token } from '../types.d.ts'
  */
 
-const NUMBER_REGEX = /^-?(?:\d+n|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/
+const NUMBER_REGEX = /^-?(?:\d+n|(?:\d+\.?\d*|\d*\.\d+)(?:[eE][+-]?\d+)?)/
 
 /**
  * @param {string} query
@@ -32,40 +32,42 @@ export function tokenizeSql(query) {
   }
 
   /**
-   * @param {number} positionStart
    * @returns {Token}
    */
-  function parseNumber(positionStart) {
-    const value = query.slice(i).match(NUMBER_REGEX)?.[0]
-    if (!value) {
-      throw new InvalidLiteralError({ expected: 'number', value: query[i] || 'eof', positionStart, positionEnd: i + 1 })
-    }
+  function parseNumber() {
+    const positionStart = i
+    let value = query.slice(i).match(NUMBER_REGEX)?.[0] ?? ''
     i += value.length
-    const next = peek()
-    if (isAlpha(next) || next === '.') {
-      throw new InvalidLiteralError({ expected: 'number', value: value + next, positionStart, positionEnd: i + 1 })
+    // check for invalid characters immediately following the number
+    const ch = peek()
+    if (!value || isAlphaNumeric(ch) || ch === '.') {
+      const after = query.slice(i).match(/^-?(?:[0-9a-zA-Z_$.]*[0-9][eE][+-]?[0-9])?[0-9a-zA-Z_$.]*/)?.[0] ?? ch
+      value += after
+      i += after.length
+      throw new InvalidLiteralError({ expected: 'number', value, positionStart, positionEnd: i })
     }
     if (value.endsWith('n')) {
       return {
         type: 'number',
         value,
+        numericValue: BigInt(value.slice(0, -1)),
         positionStart,
         positionEnd: i,
-        numericValue: BigInt(value.slice(0, -1)),
       }
     }
     return {
       type: 'number',
       value,
+      numericValue: Number(value),
       positionStart,
       positionEnd: i,
-      numericValue: Number(value),
     }
   }
 
   while (i < len) {
     const positionStart = i
-    const ch = peek()
+    const ch = query[i]
+    const next = query[i + 1]
 
     if (isWhitespace(ch)) {
       i++
@@ -73,7 +75,7 @@ export function tokenizeSql(query) {
     }
 
     // line comment --
-    if (ch === '-' && query[i + 1] === '-') {
+    if (ch === '-' && next === '-') {
       while (i < len && query[i] !== '\n') {
         i++
       }
@@ -81,11 +83,11 @@ export function tokenizeSql(query) {
     }
 
     // block comment /* ... */
-    if (ch === '/' && query[i + 1] === '*') {
-      i += 2
+    if (ch === '/' && next === '*') {
+      i += 3
       while (i < len) {
-        if (query[i] === '*' && query[i + 1] === '/') {
-          i += 2
+        if (query[i - 1] === '*' && query[i] === '/') {
+          i++
           break
         }
         i++
@@ -94,7 +96,7 @@ export function tokenizeSql(query) {
     }
 
     // negative numbers (when not subtraction)
-    if (ch === '-' && isDigit(query[i + 1])) {
+    if (ch === '-' && (isDigit(next) || next === '.' && isDigit(query[i + 2]))) {
       const lastToken = tokens[tokens.length - 1]
       const isValueBefore = lastToken && (
         lastToken.type === 'identifier' ||
@@ -103,23 +105,23 @@ export function tokenizeSql(query) {
         lastToken.type === 'paren' && lastToken.value === ')'
       )
       if (!isValueBefore) {
-        tokens.push(parseNumber(positionStart))
+        tokens.push(parseNumber())
         continue
       }
     }
 
     // numbers
-    if (isDigit(ch)) {
-      tokens.push(parseNumber(positionStart))
+    if (isDigit(ch) || ch === '.' && isDigit(next)) {
+      tokens.push(parseNumber())
       continue
     }
 
     // identifiers / keywords
     if (isAlpha(ch)) {
-      let value = ''
-      while (isAlphaNumeric(peek())) {
-        value += nextChar()
-      }
+      do {
+        i++
+      } while (isAlphaNumeric(query[i]))
+      const value = query.slice(positionStart, i)
       const upper = value.toUpperCase()
       if (KEYWORDS.has(upper)) {
         tokens.push({
@@ -173,7 +175,7 @@ export function tokenizeSql(query) {
     // operators
     if ('<>!=+-*/%'.includes(ch)) {
       let op = nextChar()
-      if ((op === '<' || op === '>' || op === '!') && peek() === '=') {
+      if ((op === '<' || op === '>' || op === '!' || op === '=') && peek() === '=') {
         op += nextChar()
       } else if (op === '<' && peek() === '>') {
         op += nextChar()

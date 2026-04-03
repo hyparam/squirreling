@@ -16,6 +16,12 @@ describe('WHERE clause', () => {
     expect(result[0].name).toBe('Alice')
   })
 
+  it('should filter with equality using == operator', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name == \'Alice\'' }))
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('Alice')
+  })
+
   it('should filter with comparison operators', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE age > 30' }))
     expect(result).toHaveLength(1)

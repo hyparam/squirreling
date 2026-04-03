@@ -63,10 +63,12 @@ export class InvalidLiteralError extends ParseError {
    * @param {number} options.positionStart
    * @param {number} options.positionEnd
    * @param {string} [options.validValues] - List of valid values (for enums like interval units)
+   * @param {string} [options.after] - What token came before (for context)
    */
-  constructor({ expected, value, positionStart, positionEnd, validValues }) {
+  constructor({ expected, value, positionStart, positionEnd, validValues, after }) {
     const suffix = validValues ? `. Valid values: ${validValues}` : ''
-    super({ message: `Invalid ${expected} ${value} at position ${positionStart}${suffix}`, positionStart, positionEnd })
+    const afterStr = after ? ` after "${after}"` : ''
+    super({ message: `Invalid ${expected} ${value}${afterStr} at position ${positionStart}${suffix}`, positionStart, positionEnd })
   }
 }
 

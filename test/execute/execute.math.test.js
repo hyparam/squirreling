@@ -442,6 +442,14 @@ describe('math functions', () => {
       }))
       expect(result[0].power_val).toBe(81)
     })
+
+    it('should work with POW alias', async () => {
+      const result = await collect(executeSql({
+        tables: { data: singleRow },
+        query: 'SELECT POW(3, 4) AS power_val FROM data',
+      }))
+      expect(result[0].power_val).toBe(81)
+    })
   })
 
   describe('SQRT', () => {

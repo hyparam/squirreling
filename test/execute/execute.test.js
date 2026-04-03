@@ -72,7 +72,7 @@ describe('executeSql', () => {
     it('should error on qualified star with wrong table name', async () => {
       await expect(async () => {
         await collect(executeSql({ tables: { users }, query: 'SELECT orders.* FROM users' }))
-      }).rejects.toThrow('Table "orders" not found. Available tables: users')
+      }).rejects.toThrow('Table "orders" not found in "orders.*". Available tables: users')
     })
 
     it('should error on qualified column with original table name when aliased', async () => {

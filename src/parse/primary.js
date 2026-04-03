@@ -4,13 +4,15 @@ import { RESERVED_KEYWORDS } from '../validation/keywords.js'
 import { parseExpression } from './expression.js'
 import { parseFunctionCall } from './functions.js'
 import { parseStatement } from './parse.js'
-import { consume, current, expect, match, peekToken } from './state.js'
+import { consume, current, expect, match, parseError, peekToken } from './state.js'
 
 /**
  * @import { ExprNode, IntervalNode, ParserState, WhenClause } from '../types.js'
  */
 
 /**
+ * Parse a primary expression, which is the innermost order of operations.
+ *
  * @param {ParserState} state
  * @returns {ExprNode}
  */
@@ -257,19 +259,20 @@ function parseInterval(state) {
   const { positionStart } = expect(state, 'keyword', 'INTERVAL')
 
   // Get value (number or quoted string)
-  const valueTok = consume(state)
+  const valueTok = current(state)
   /** @type {number} */
   let value
   if (valueTok.type === 'number') {
     value = Number(valueTok.numericValue)
-  } else if (valueTok.type === 'string') {
-    value = parseFloat(valueTok.value)
-    if (isNaN(value)) {
-      throw new InvalidLiteralError({ expected: 'interval value', ...valueTok })
-    }
+  } else if (valueTok.type === 'string' && valueTok.value.trim() !== '') {
+    value = Number(valueTok.value)
   } else {
-    throw new SyntaxError({ expected: 'interval value (number)', ...valueTok })
+    throw parseError(state, 'interval value (number)')
   }
+  if (isNaN(value)) {
+    throw new InvalidLiteralError({ expected: 'interval value', ...valueTok })
+  }
+  consume(state)
 
   // Get unit keyword
   const unitTok = consume(state)

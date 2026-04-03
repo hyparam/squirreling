@@ -167,7 +167,7 @@ describe('parseSql error handling', () => {
 
     it('should suggest similar functions by edit distance', () => {
       expect(() => parseSql({ query: 'SELECT UPER(name) FROM users' }))
-        .toThrow('Unknown function "UPER" at position 7. Did you mean UPPER, LOWER, POWER, PI?')
+        .toThrow('Unknown function "UPER" at position 7. Did you mean UPPER, LOWER, POWER, POW?')
     })
   })
 

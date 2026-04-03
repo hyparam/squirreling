@@ -30,7 +30,7 @@ export function applyBinaryOp(op, a, b) {
   if (op === 'AND') return Boolean(a) && Boolean(b)
   if (op === 'OR') return Boolean(a) || Boolean(b)
   if (op === '!=' || op === '<>') return a != b
-  if (op === '=') return a == b
+  if (op === '=' || op === '==') return a == b
   if (op === '<') return a < b
   if (op === '<=') return a <= b
   if (op === '>') return a > b

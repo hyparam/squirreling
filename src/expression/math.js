@@ -27,7 +27,7 @@ export function evaluateMathFunc({ funcName, args }) {
     return Number(dividend) % Number(divisor)
   }
 
-  if (funcName === 'POWER') {
+  if (funcName === 'POWER' || funcName === 'POW') {
     const [base, exponent] = args
     if (base == null || exponent == null) return null
     return Number(base) ** Number(exponent)

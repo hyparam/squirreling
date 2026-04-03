@@ -1,4 +1,4 @@
-import { ColumnNotFoundError, TableNotFoundError } from './planErrors.js'
+import { ExecutionError } from './executionErrors.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, ScanOptions } from '../types.js'
@@ -7,15 +7,16 @@ import { ColumnNotFoundError, TableNotFoundError } from './planErrors.js'
 /**
  * @param {Object} options
  * @param {string} options.table - The name of the table to validate
+ * @param {string} [options.qualified] - The qualified identifier used in the query (for error messages)
  * @param {Record<string, AsyncDataSource>} options.tables - Object mapping table names to data sources
  * @param {number} [options.positionStart] - Optional start position for error reporting
  * @param {number} [options.positionEnd] - Optional end position for error reporting
  * @returns {AsyncDataSource}
  */
-export function validateTable({ table, tables, positionStart, positionEnd } ) {
+export function validateTable({ table, qualified, tables, positionStart, positionEnd } ) {
   const resolved = tables[table]
   if (!resolved) {
-    throw new TableNotFoundError({ table, tables, positionStart, positionEnd })
+    throw new TableNotFoundError({ table, qualified, tables, positionStart, positionEnd })
   }
   return resolved
 }
@@ -84,5 +85,55 @@ export function validateTableRefs(expr, tables) {
       validateTableRefs(w.result, tables)
     }
     validateTableRefs(expr.elseResult, tables)
+  }
+}
+
+/**
+ * Error for missing table references.
+ */
+export class TableNotFoundError extends ExecutionError {
+  /**
+   * @param {Object} options
+   * @param {string} options.table - The missing table name
+   * @param {string} [options.qualified] - The identifier used in the query
+   * @param {Record<string, any>} options.tables - Available tables object
+   * @param {number} [options.positionStart]
+   * @param {number} [options.positionEnd]
+   */
+  constructor({ table, qualified, tables, positionStart, positionEnd }) {
+    const usage = qualified ? ` in "${qualified}"` : ''
+    const available = tables
+      ? `. Available tables: ${Object.keys(tables).join(', ')}`
+      : ''
+    super({
+      message: `Table "${table}" not found${usage}${available}`,
+      positionStart,
+      positionEnd,
+    })
+  }
+}
+
+/**
+ * Error for missing column references.
+ */
+export class ColumnNotFoundError extends ExecutionError {
+  /**
+   * @param {Object} options
+   * @param {string} options.missingColumn - The missing column name
+   * @param {string[]} options.availableColumns - List of available column names
+   * @param {number} options.positionStart
+   * @param {number} options.positionEnd
+   * @param {number} [options.rowIndex] - 1-based row number where error occurred
+   */
+  constructor({ missingColumn, availableColumns, positionStart, positionEnd, rowIndex }) {
+    const available = availableColumns.length > 0
+      ? `. Available columns: ${availableColumns.join(', ')}`
+      : ''
+    super({
+      message: `Column "${missingColumn}" not found${available}`,
+      positionStart,
+      positionEnd,
+      rowIndex,
+    })
   }
 }

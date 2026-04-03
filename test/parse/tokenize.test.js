@@ -13,17 +13,67 @@ describe('tokenize', () => {
     ])
   })
 
-  it('should tokenize numbers', () => {
-    const tokens = tokenizeSql('-1 0 123 45.67 0.2e2 1.2e10 3E-5')
-    expect(tokens).toHaveLength(8)
-    expect(tokens[0]).toMatchObject({ type: 'number', value: '-1', numericValue: -1 })
-    expect(tokens[1]).toMatchObject({ type: 'number', value: '0', numericValue: 0 })
-    expect(tokens[2]).toMatchObject({ type: 'number', value: '123', numericValue: 123 })
-    expect(tokens[3]).toMatchObject({ type: 'number', value: '45.67', numericValue: 45.67 })
-    expect(tokens[4]).toMatchObject({ type: 'number', value: '0.2e2', numericValue: 20 })
-    expect(tokens[5]).toMatchObject({ type: 'number', value: '1.2e10', numericValue: 1.2e10 })
-    expect(tokens[6]).toMatchObject({ type: 'number', value: '3E-5', numericValue: 3e-5 })
-    expect(tokens[7]).toMatchObject({ type: 'eof' })
+  describe('tokenize numbers', () => {
+    it('should tokenize numbers', () => {
+      const tokens = tokenizeSql('-1 0 123 45.67 0.2e2 1.2e10 3E-5')
+      expect(tokens[0]).toMatchObject({ type: 'number', value: '-1', numericValue: -1 })
+      expect(tokens[1]).toMatchObject({ type: 'number', value: '0', numericValue: 0 })
+      expect(tokens[2]).toMatchObject({ type: 'number', value: '123', numericValue: 123 })
+      expect(tokens[3]).toMatchObject({ type: 'number', value: '45.67', numericValue: 45.67 })
+      expect(tokens[4]).toMatchObject({ type: 'number', value: '0.2e2', numericValue: 20 })
+      expect(tokens[5]).toMatchObject({ type: 'number', value: '1.2e10', numericValue: 1.2e10 })
+      expect(tokens[6]).toMatchObject({ type: 'number', value: '3E-5', numericValue: 3e-5 })
+      expect(tokens[7]).toMatchObject({ type: 'eof' })
+      expect(tokens).toHaveLength(8)
+    })
+
+    it('should tokenize negative number with leading decimal', () => {
+      const tokens = tokenizeSql('-.1')
+      expect(tokens[0]).toMatchObject({ type: 'number', value: '-.1', numericValue: -0.1 })
+      expect(tokens[1]).toMatchObject({ type: 'eof' })
+      expect(tokens).toHaveLength(2)
+    })
+
+    it('should tokenize numbers with leading and trailing dots', () => {
+      const tokens = tokenizeSql('-.1 .2 3. .4e2 5.e-1')
+      expect(tokens[0]).toMatchObject({ type: 'number', value: '-.1', numericValue: -0.1 })
+      expect(tokens[1]).toMatchObject({ type: 'number', value: '.2', numericValue: 0.2 })
+      expect(tokens[2]).toMatchObject({ type: 'number', value: '3.', numericValue: 3 })
+      expect(tokens[3]).toMatchObject({ type: 'number', value: '.4e2', numericValue: 40 })
+      expect(tokens[4]).toMatchObject({ type: 'number', value: '5.e-1', numericValue: 0.5 })
+      expect(tokens[5]).toMatchObject({ type: 'eof' })
+      expect(tokens).toHaveLength(6)
+    })
+
+    // Special bigint case <3 JavaScript
+    it('should tokenize a bigint', () => {
+      const tokens = tokenizeSql('-1234n 1234n 90000000000000009n 90000000000000009')
+      expect(tokens).toMatchObject([
+        { type: 'number', value: '-1234n', numericValue: -1234n },
+        { type: 'number', value: '1234n', numericValue: 1234n },
+        // Exact bigint:
+        { type: 'number', value: '90000000000000009n', numericValue: 90000000000000009n },
+        // Round number:
+        { type: 'number', value: '90000000000000009', numericValue: 90000000000000020 },
+        { type: 'eof' },
+      ])
+      expect(tokens).toHaveLength(5)
+    })
+
+    it('should throw error on invalid number', () => {
+      expect(() => tokenizeSql('1234nn')).toThrow('Invalid number 1234nn at position 0')
+      expect(() => tokenizeSql('1234n0')).toThrow('Invalid number 1234n0 at position 0')
+      expect(() => tokenizeSql('12.34n')).toThrow('Invalid number 12.34n at position 0')
+      expect(() => tokenizeSql('12.34x')).toThrow('Invalid number 12.34x at position 0')
+      expect(() => tokenizeSql('12.34$')).toThrow('Invalid number 12.34$ at position 0')
+      expect(() => tokenizeSql('1e')).toThrow('Invalid number 1e at position 0')
+      expect(() => tokenizeSql('2e2.2')).toThrow('Invalid number 2e2.2 at position 0')
+      expect(() => tokenizeSql('0x1e-1')).toThrow('Invalid number 0x1e-1 at position 0')
+      expect(() => tokenizeSql('3_000')).toThrow('Invalid number 3_000 at position 0')
+      expect(() => tokenizeSql('0x33')).toThrow('Invalid number 0x33 at position 0')
+      expect(() => tokenizeSql('0xff')).toThrow('Invalid number 0xff at position 0')
+      expect(() => tokenizeSql('1.2.3')).toThrow('Invalid number 1.2.3 at position 0')
+    })
   })
 
   it('should tokenize negative numbers and expressions', () => {
@@ -46,6 +96,13 @@ describe('tokenize', () => {
     expect(tokenizeSql('- x')).toMatchObject([
       { type: 'operator', value: '-' },
       { type: 'identifier', value: 'x' },
+      { type: 'eof' },
+    ])
+    // Keywords can sometimes be identifiers
+    expect(tokenizeSql('order - 42')).toMatchObject([
+      { type: 'keyword', value: 'ORDER', originalValue: 'order' },
+      { type: 'operator', value: '-' },
+      { type: 'number', value: '42', numericValue: 42 },
       { type: 'eof' },
     ])
   })
@@ -81,8 +138,8 @@ describe('tokenize', () => {
   })
 
   it('should tokenize operators', () => {
-    const tokens = tokenizeSql('= != <> < > <= >= + - * / %')
-    expect(tokens.map(t => t.value)).toEqual(['=', '!=', '<>', '<', '>', '<=', '>=', '+', '-', '*', '/', '%', ''])
+    const tokens = tokenizeSql('= == != <> < > <= >= + - * / % // !!')
+    expect(tokens.map(t => t.value)).toEqual(['=', '==', '!=', '<>', '<', '>', '<=', '>=', '+', '-', '*', '/', '%', '/', '/', '!', '!', ''])
   })
 
   it('should skip whitespace', () => {
@@ -104,8 +161,12 @@ describe('tokenize', () => {
   })
 
   it('should skip block comments', () => {
-    const tokens = tokenizeSql('SELECT /* comment */ name')
-    expect(tokens).toMatchObject([
+    expect(tokenizeSql('SELECT /* comment */ name')).toMatchObject([
+      { type: 'keyword', value: 'SELECT' },
+      { type: 'identifier', value: 'name' },
+      { type: 'eof' },
+    ])
+    expect(tokenizeSql('SELECT /**/ name')).toMatchObject([
       { type: 'keyword', value: 'SELECT' },
       { type: 'identifier', value: 'name' },
       { type: 'eof' },
@@ -199,20 +260,6 @@ describe('tokenize', () => {
     ])
   })
 
-  // Special bigint case <3 JavaScript
-  it('should tokenize a bigint', () => {
-    const tokens = tokenizeSql('-1234n 1234n 90000000000000009n 90000000000000009')
-    expect(tokens).toMatchObject([
-      { type: 'number', value: '-1234n', numericValue: -1234n },
-      { type: 'number', value: '1234n', numericValue: 1234n },
-      // Exact bigint:
-      { type: 'number', value: '90000000000000009n', numericValue: 90000000000000009n },
-      // Round number:
-      { type: 'number', value: '90000000000000009', numericValue: 90000000000000020 },
-      { type: 'eof' },
-    ])
-  })
-
   it('should throw error on unterminated string literal', () => {
     expect(() => tokenizeSql('\'unterminated string')).toThrow('Unterminated string starting at position 0')
   })
@@ -226,17 +273,17 @@ describe('tokenize', () => {
     expect(() => tokenizeSql('SELECT `backtick` FROM table')).toThrow('Unexpected character "`" at position 7')
   })
 
-  it('should throw error on invalid number', () => {
-    expect(() => tokenizeSql('1.2.3')).toThrow('Invalid number 1.2. at position 0')
-    expect(() => tokenizeSql('1234nn')).toThrow('Invalid number 1234nn at position 0')
-    expect(() => tokenizeSql('12.34n')).toThrow('Invalid number 12.34n at position 0')
-    expect(() => tokenizeSql('12.34x')).toThrow('Invalid number 12.34x at position 0')
-    expect(() => tokenizeSql('1e')).toThrow('Invalid number 1e at position 0')
-  })
-
   it('should throw error on unexpected character', () => {
-    expect(() => tokenizeSql('@invalid')).toThrow('Expected SELECT but found "@" at position 0')
-    expect(() => tokenizeSql(' #invalid')).toThrow('Expected SELECT but found "#" at position 1')
+    expect(() => tokenizeSql('invalid^')).toThrow('Unexpected character "^" at position 7')
+    expect(() => tokenizeSql(' invalid @ ')).toThrow('Unexpected character "@" at position 9')
+    expect(() => tokenizeSql('invalid \\')).toThrow('Unexpected character "\\" at position 8')
+    expect(() => tokenizeSql('invalid &')).toThrow('Unexpected character "&" at position 8')
+    expect(() => tokenizeSql('invalid |')).toThrow('Unexpected character "|" at position 8')
+    expect(() => tokenizeSql('invalid ^')).toThrow('Unexpected character "^" at position 8')
+    expect(() => tokenizeSql('1@')).toThrow('Unexpected character "@" at position 1')
+    expect(() => tokenizeSql('invalid ~')).toThrow('Unexpected character "~" at position 8')
+    expect(() => tokenizeSql('SELECT @invalid')).toThrow('Unexpected character "@" at position 7')
+    expect(() => tokenizeSql('SELECT #invalid')).toThrow('Unexpected character "#" at position 7')
   })
 
   it('should tokenize subquery in FROM clause', () => {

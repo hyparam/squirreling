@@ -64,7 +64,7 @@ export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'
 
 export type BinaryOp = 'AND' | 'OR' | 'LIKE' | ComparisonOp | ArithmeticOp
 
-export type ComparisonOp = '=' | '!=' | '<>' | '<' | '>' | '<=' | '>='
+export type ComparisonOp = '=' | '==' | '!=' | '<>' | '<' | '>' | '<=' | '>='
 
 export interface LiteralNode extends AstBase {
   type: 'literal'

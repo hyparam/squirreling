@@ -1,7 +1,7 @@
 import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
-import { ColumnNotFoundError, TableNotFoundError } from '../validation/planErrors.js'
+import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateScan, validateTableRefs } from '../validation/tables.js'
 import { extractColumns, fromAlias, inferStatementColumns } from './columns.js'
 
@@ -113,7 +113,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   // Source alias for FROM clause
   const sourceAlias = fromAlias(select.from)
 
-  // Validate qualified references and resolve aliases
+  // Resolve aliases (and validate qualified references)
   const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table)].map(a => [a, true]))
   /** @type {Map<string, ExprNode>} */
   const aliases = new Map()
@@ -128,7 +128,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     }
     // Validate qualified references
     if (col.table && !(col.table in scopeTables)) {
-      throw new TableNotFoundError({ table: col.table, tables: scopeTables })
+      const qualified = col.table + '.*'
+      throw new TableNotFoundError({ table: col.table, qualified, tables: scopeTables, ...col })
     }
     return col
   })

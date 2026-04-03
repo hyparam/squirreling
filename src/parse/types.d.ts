@@ -23,8 +23,8 @@ export type TokenType =
 export interface Token {
   type: TokenType
   value: string
+  numericValue?: number | bigint // only for type number
+  originalValue?: string // keywords are uppercased, this keeps the original case
   positionStart: number
   positionEnd: number
-  numericValue?: number | bigint
-  originalValue?: string
 }

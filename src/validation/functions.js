@@ -20,7 +20,7 @@ export function isAggregateFunc(name) {
  */
 export function isMathFunc(name) {
   return [
-    'FLOOR', 'CEIL', 'CEILING', 'ROUND', 'ABS', 'SIGN', 'MOD', 'EXP', 'LN', 'LOG10', 'POWER', 'SQRT',
+    'FLOOR', 'CEIL', 'CEILING', 'ROUND', 'ABS', 'SIGN', 'MOD', 'EXP', 'LN', 'LOG10', 'POW', 'POWER', 'SQRT',
     'SIN', 'COS', 'TAN', 'COT', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'DEGREES', 'RADIANS', 'PI',
     'RAND', 'RANDOM',
   ].includes(name)
@@ -87,7 +87,7 @@ export function isStringFunc(name) {
  * @returns {op is BinaryOp}
  */
 export function isBinaryOp(op) {
-  return ['AND', 'OR', 'LIKE', '=', '!=', '<>', '<', '>', '<=', '>='].includes(op)
+  return ['AND', 'OR', 'LIKE', '=', '==', '!=', '<>', '<', '>', '<=', '>='].includes(op)
 }
 
 /**
@@ -135,6 +135,7 @@ export const FUNCTION_SIGNATURES = {
   LN: { min: 1, max: 1, signature: 'number' },
   LOG10: { min: 1, max: 1, signature: 'number' },
   POWER: { min: 2, max: 2, signature: 'base, exponent' },
+  POW: { min: 2, max: 2, signature: 'base, exponent' },
   SQRT: { min: 1, max: 1, signature: 'number' },
   SIN: { min: 1, max: 1, signature: 'radians' },
   COS: { min: 1, max: 1, signature: 'radians' },
