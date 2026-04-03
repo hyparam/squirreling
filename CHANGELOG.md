@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.11.4]
+ - Fix column and table resolution for names with dot
+
 ## [0.11.3]
  - Support duckdb-style shorthand `FROM table` syntax
  - Fix GROUP BY and ORDER BY expressions with aliases
