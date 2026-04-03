@@ -21,6 +21,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 18,
         },
+        positionStart: 7,
+        positionEnd: 18,
       },
     ])
   })
@@ -44,6 +46,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 19,
         },
+        positionStart: 7,
+        positionEnd: 19,
       },
     ])
   })
@@ -67,6 +71,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 19,
         },
+        positionStart: 7,
+        positionEnd: 19,
       },
     ])
   })
@@ -90,6 +96,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 17,
         },
+        positionStart: 7,
+        positionEnd: 17,
       },
     ])
   })
@@ -119,6 +127,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 36,
         },
+        positionStart: 7,
+        positionEnd: 36,
       },
     ])
   })
@@ -149,6 +159,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 41,
         },
+        positionStart: 7,
+        positionEnd: 41,
       },
     ])
   })
@@ -174,6 +186,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 28,
         },
+        positionStart: 7,
+        positionEnd: 28,
       },
     ])
   })
@@ -198,6 +212,8 @@ describe('parseSql - string functions', () => {
           positionEnd: 18,
         },
         alias: 'upper_name',
+        positionStart: 7,
+        positionEnd: 32,
       },
     ])
   })
@@ -222,6 +238,8 @@ describe('parseSql - string functions', () => {
           positionEnd: 19,
         },
         alias: 'user_email',
+        positionStart: 7,
+        positionEnd: 30,
       },
     ])
   })
@@ -245,6 +263,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 24,
         },
+        positionStart: 7,
+        positionEnd: 24,
       },
       {
         type: 'derived',
@@ -262,6 +282,8 @@ describe('parseSql - string functions', () => {
           positionStart: 26,
           positionEnd: 42,
         },
+        positionStart: 26,
+        positionEnd: 42,
       },
       {
         type: 'derived',
@@ -279,6 +301,8 @@ describe('parseSql - string functions', () => {
           positionStart: 44,
           positionEnd: 57,
         },
+        positionStart: 44,
+        positionEnd: 57,
       },
     ])
   })
@@ -303,6 +327,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 24,
         },
+        positionStart: 7,
+        positionEnd: 24,
       },
     ])
   })
@@ -313,6 +339,8 @@ describe('parseSql - string functions', () => {
       {
         type: 'derived',
         expr: { type: 'identifier', name: 'id', positionStart: 7, positionEnd: 9 },
+        positionStart: 7,
+        positionEnd: 9,
       },
       {
         type: 'derived',
@@ -330,6 +358,8 @@ describe('parseSql - string functions', () => {
           positionStart: 11,
           positionEnd: 22,
         },
+        positionStart: 11,
+        positionEnd: 22,
       },
       {
         type: 'derived',
@@ -339,6 +369,8 @@ describe('parseSql - string functions', () => {
           positionStart: 24,
           positionEnd: 29,
         },
+        positionStart: 24,
+        positionEnd: 29,
       },
     ])
   })
@@ -362,6 +394,8 @@ describe('parseSql - string functions', () => {
           positionStart: 7,
           positionEnd: 18,
         },
+        positionStart: 7,
+        positionEnd: 18,
       },
       {
         type: 'derived',
@@ -372,6 +406,8 @@ describe('parseSql - string functions', () => {
           positionStart: 20,
           positionEnd: 28,
         },
+        positionStart: 20,
+        positionEnd: 28,
       },
     ])
   })

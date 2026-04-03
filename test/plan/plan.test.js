@@ -25,6 +25,8 @@ describe('planSql', () => {
               positionStart: 7,
               positionEnd: 11,
             },
+            positionStart: 7,
+            positionEnd: 11,
           },
         ],
         child: {
@@ -50,6 +52,8 @@ describe('planSql', () => {
               positionStart: 7,
               positionEnd: 11,
             },
+            positionStart: 7,
+            positionEnd: 11,
           },
           {
             type: 'derived',
@@ -59,6 +63,8 @@ describe('planSql', () => {
               positionStart: 13,
               positionEnd: 16,
             },
+            positionStart: 13,
+            positionEnd: 16,
           },
         ],
         child: {
@@ -126,6 +132,8 @@ describe('planSql', () => {
               positionEnd: 33,
             },
             direction: 'ASC',
+            positionStart: 0,
+            positionEnd: 33,
           },
         ],
         child: {
@@ -149,6 +157,8 @@ describe('planSql', () => {
               positionStart: 7,
               positionEnd: 11,
             },
+            positionStart: 7,
+            positionEnd: 11,
           },
         ],
         child: {
@@ -162,6 +172,8 @@ describe('planSql', () => {
                 positionEnd: 35,
               },
               direction: 'ASC',
+              positionStart: 0,
+              positionEnd: 35,
             },
           ],
           child: {
@@ -192,6 +204,8 @@ describe('planSql', () => {
                 positionStart: 16,
                 positionEnd: 20,
               },
+              positionStart: 16,
+              positionEnd: 20,
             },
           ],
           child: {
@@ -258,6 +272,8 @@ describe('planSql', () => {
               positionStart: 7,
               positionEnd: 17,
             },
+            positionStart: 7,
+            positionEnd: 17,
           },
           {
             type: 'derived',
@@ -274,6 +290,8 @@ describe('planSql', () => {
               positionStart: 19,
               positionEnd: 27,
             },
+            positionStart: 19,
+            positionEnd: 27,
           },
         ],
         child: {
@@ -307,6 +325,8 @@ describe('planSql', () => {
               positionStart: 7,
               positionEnd: 15,
             },
+            positionStart: 7,
+            positionEnd: 15,
           },
         ],
       })
@@ -345,6 +365,8 @@ describe('planSql', () => {
               positionStart: 7,
               positionEnd: 17,
             },
+            positionStart: 7,
+            positionEnd: 17,
           },
           {
             type: 'derived',
@@ -361,6 +383,8 @@ describe('planSql', () => {
               positionStart: 19,
               positionEnd: 27,
             },
+            positionStart: 19,
+            positionEnd: 27,
           },
         ],
         having: {
@@ -404,7 +428,7 @@ describe('planSql', () => {
       const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
       expect(plan).toEqual({
         type: 'Project',
-        columns: [{ type: 'star' }],
+        columns: [{ type: 'star', positionStart: 7, positionEnd: 8 }],
         child: {
           type: 'HashJoin',
           joinType: 'INNER',
@@ -442,7 +466,7 @@ describe('planSql', () => {
       const plan = planSql({ query: 'SELECT * FROM a POSITIONAL JOIN b' })
       expect(plan).toEqual({
         type: 'Project',
-        columns: [{ type: 'star' }],
+        columns: [{ type: 'star', positionStart: 7, positionEnd: 8 }],
         child: {
           type: 'PositionalJoin',
           leftAlias: 'a',
@@ -465,7 +489,7 @@ describe('planSql', () => {
       const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id > orders.user_id' })
       expect(plan).toEqual({
         type: 'Project',
-        columns: [{ type: 'star' }],
+        columns: [{ type: 'star', positionStart: 7, positionEnd: 8 }],
         child: {
           type: 'NestedLoopJoin',
           joinType: 'INNER',
@@ -509,7 +533,7 @@ describe('planSql', () => {
       const plan = planSql({ query: 'SELECT * FROM users LEFT JOIN orders ON users.id = orders.user_id' })
       expect(plan).toEqual({
         type: 'Project',
-        columns: [{ type: 'star' }],
+        columns: [{ type: 'star', positionStart: 7, positionEnd: 8 }],
         child: {
           type: 'HashJoin',
           joinType: 'LEFT',
@@ -558,6 +582,8 @@ describe('planSql', () => {
               positionStart: 23,
               positionEnd: 25,
             },
+            positionStart: 23,
+            positionEnd: 25,
           },
         ],
         child: {
@@ -606,6 +632,8 @@ describe('planSql', () => {
                 positionStart: 7,
                 positionEnd: 11,
               },
+              positionStart: 7,
+              positionEnd: 11,
             },
           ],
           child: {
@@ -619,6 +647,8 @@ describe('planSql', () => {
                   positionEnd: 51,
                 },
                 direction: 'ASC',
+                positionStart: 0,
+                positionEnd: 51,
               },
             ],
             child: {
@@ -667,6 +697,8 @@ describe('planSql', () => {
                 positionEnd: 98,
               },
               direction: 'ASC',
+              positionStart: 0,
+              positionEnd: 98,
             },
           ],
           child: {
@@ -688,6 +720,8 @@ describe('planSql', () => {
                   positionStart: 7,
                   positionEnd: 17,
                 },
+                positionStart: 7,
+                positionEnd: 17,
               },
               {
                 type: 'derived',
@@ -705,6 +739,8 @@ describe('planSql', () => {
                   positionEnd: 27,
                 },
                 alias: 'cnt',
+                positionStart: 19,
+                positionEnd: 34,
               },
             ],
             having: {

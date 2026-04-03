@@ -17,6 +17,8 @@ describe('column pushdown', () => {
             positionStart: 7,
             positionEnd: 9,
           },
+          positionStart: 7,
+          positionEnd: 9,
         },
       ],
       child: {
@@ -48,6 +50,8 @@ describe('column pushdown', () => {
             positionStart: 7,
             positionEnd: 16,
           },
+          positionStart: 7,
+          positionEnd: 16,
         },
       ],
       child: {
@@ -62,6 +66,8 @@ describe('column pushdown', () => {
               positionEnd: 38,
             },
             alias: 'full_name',
+            positionStart: 34,
+            positionEnd: 51,
           },
         ],
         child: {
@@ -93,6 +99,8 @@ describe('column pushdown', () => {
             positionEnd: 9,
           },
           alias: 'a',
+          positionStart: 7,
+          positionEnd: 14,
         },
         {
           type: 'derived',
@@ -115,6 +123,8 @@ describe('column pushdown', () => {
             positionEnd: 21,
           },
           alias: 'b',
+          positionStart: 16,
+          positionEnd: 26,
         },
       ],
       child: {
@@ -140,6 +150,8 @@ describe('column pushdown', () => {
             positionStart: 7,
             positionEnd: 9,
           },
+          positionStart: 7,
+          positionEnd: 9,
         },
       ],
       child: {
@@ -184,6 +196,8 @@ describe('column pushdown', () => {
             positionStart: 7,
             positionEnd: 17,
           },
+          positionStart: 7,
+          positionEnd: 17,
         },
         {
           type: 'derived',
@@ -194,6 +208,8 @@ describe('column pushdown', () => {
             positionStart: 19,
             positionEnd: 31,
           },
+          positionStart: 19,
+          positionEnd: 31,
         },
       ],
       child: {
@@ -233,7 +249,7 @@ describe('column pushdown', () => {
     const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
     expect(plan).toEqual({
       type: 'Project',
-      columns: [{ type: 'star' }],
+      columns: [{ type: 'star', positionStart: 7, positionEnd: 8 }],
       child: {
         type: 'HashJoin',
         joinType: 'INNER',

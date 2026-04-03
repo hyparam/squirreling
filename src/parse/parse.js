@@ -175,7 +175,7 @@ function parseSelect(state) {
 
   // Support duckdb-style shorthand "FROM table"
   if (match(state, 'keyword', 'FROM')) {
-    columns = [{ type: 'star' }]
+    columns = [{ type: 'star', positionStart, positionEnd: positionStart }]
   } else {
     expect(state, 'keyword', 'SELECT')
     distinct = match(state, 'keyword', 'DISTINCT')
@@ -283,6 +283,9 @@ function parseSelect(state) {
         expr,
         direction,
         nulls,
+        positionStart,
+        positionEnd: state.lastPos,
+
       })
       if (!match(state, 'comma')) break
     }
@@ -339,17 +342,17 @@ function parseSelectList(state) {
   const cols = []
 
   while (true) {
-    const tok = current(state)
+    const { positionStart, type } = current(state)
 
     // Check for qualified asterisk (table.*)
-    if (tok.type === 'identifier') {
+    if (type === 'identifier') {
       const next = peekToken(state, 1)
       const nextNext = peekToken(state, 2)
       if (next.type === 'dot' && nextNext.type === 'operator' && nextNext.value === '*') {
         const table = consume(state).value
         consume(state) // consume dot
         consume(state) // consume asterisk
-        cols.push({ type: 'star', table })
+        cols.push({ type: 'star', table, positionStart, positionEnd: state.lastPos })
         if (!match(state, 'comma')) break
         continue
       }
@@ -357,7 +360,7 @@ function parseSelectList(state) {
 
     // Check for unqualified asterisk (*)
     if (match(state, 'operator', '*')) {
-      cols.push({ type: 'star' })
+      cols.push({ type: 'star', positionStart, positionEnd: state.lastPos })
       if (!match(state, 'comma')) break
       continue
     }
@@ -365,7 +368,7 @@ function parseSelectList(state) {
     // Parse derived column with optional alias
     const expr = parseExpression(state)
     const alias = parseAs(state)
-    cols.push({ type: 'derived', expr, alias })
+    cols.push({ type: 'derived', expr, alias, positionStart, positionEnd: state.lastPos })
 
     if (!match(state, 'comma')) break
   }

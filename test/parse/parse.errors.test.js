@@ -408,6 +408,8 @@ describe('ParseError structure', () => {
             positionStart: 7,
             positionEnd: 16,
           },
+          positionStart: 7,
+          positionEnd: 16,
         },
       ],
       distinct: false,

@@ -13,6 +13,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 33,
         },
         direction: 'ASC',
+        positionStart: 0,
+        positionEnd: 33,
       },
     ])
   })
@@ -28,6 +30,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 33,
         },
         direction: 'ASC',
+        positionStart: 0,
+        positionEnd: 37,
       },
     ])
   })
@@ -43,6 +47,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 32,
         },
         direction: 'DESC',
+        positionStart: 0,
+        positionEnd: 37,
       },
     ])
   })
@@ -58,6 +64,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 33,
         },
         direction: 'ASC',
+        positionStart: 0,
+        positionEnd: 37,
       },
       {
         expr: {
@@ -67,6 +75,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 42,
         },
         direction: 'DESC',
+        positionStart: 0,
+        positionEnd: 47,
       },
     ])
   })
@@ -88,6 +98,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 50,
         },
         direction: 'ASC',
+        positionStart: 0,
+        positionEnd: 50,
       },
     ])
   })
@@ -104,6 +116,8 @@ describe('ORDER BY clause', () => {
         },
         direction: 'ASC',
         nulls: 'FIRST',
+        positionStart: 0,
+        positionEnd: 45,
       },
     ])
   })
@@ -120,6 +134,8 @@ describe('ORDER BY clause', () => {
         },
         direction: 'DESC',
         nulls: 'LAST',
+        positionStart: 0,
+        positionEnd: 48,
       },
     ])
   })
@@ -136,6 +152,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 37,
         },
         direction: 'ASC',
+        positionStart: 0,
+        positionEnd: 37,
       },
     ])
   })
@@ -152,6 +170,8 @@ describe('ORDER BY clause', () => {
           positionEnd: 35,
         },
         direction: 'ASC',
+        positionStart: 0,
+        positionEnd: 35,
       },
     ])
   })

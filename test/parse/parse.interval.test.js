@@ -15,6 +15,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 21,
           },
+          positionStart: 7,
+          positionEnd: 21,
         },
       ])
     })
@@ -31,6 +33,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 23,
           },
+          positionStart: 7,
+          positionEnd: 23,
         },
       ])
     })
@@ -47,6 +51,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 22,
           },
+          positionStart: 7,
+          positionEnd: 22,
         },
       ])
     })
@@ -63,6 +69,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 23,
           },
+          positionStart: 7,
+          positionEnd: 23,
         },
       ])
     })
@@ -79,6 +87,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 25,
           },
+          positionStart: 7,
+          positionEnd: 25,
         },
       ])
     })
@@ -95,6 +105,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 25,
           },
+          positionStart: 7,
+          positionEnd: 25,
         },
       ])
     })
@@ -113,6 +125,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 23,
           },
+          positionStart: 7,
+          positionEnd: 23,
         },
       ])
     })
@@ -129,6 +143,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 26,
           },
+          positionStart: 7,
+          positionEnd: 26,
         },
       ])
     })
@@ -158,6 +174,8 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 34,
         },
+        positionStart: 7,
+        positionEnd: 34,
       }])
     })
 
@@ -184,6 +202,8 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 38,
         },
+        positionStart: 7,
+        positionEnd: 38,
       }])
     })
 
@@ -211,6 +231,8 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 38,
         },
+        positionStart: 7,
+        positionEnd: 38,
       }])
     })
   })
@@ -228,6 +250,8 @@ describe('INTERVAL parsing', () => {
             positionStart: 7,
             positionEnd: 22,
           },
+          positionStart: 7,
+          positionEnd: 22,
         },
       ])
     })
@@ -255,6 +279,8 @@ describe('INTERVAL parsing', () => {
           positionStart: 7,
           positionEnd: 32,
         },
+        positionStart: 7,
+        positionEnd: 32,
       }])
     })
   })

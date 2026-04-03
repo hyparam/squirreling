@@ -167,12 +167,12 @@ export type ExprNode =
   | IntervalNode
   | StarNode
 
-export interface StarColumn {
+export interface StarColumn extends AstBase {
   type: 'star'
   table?: string
 }
 
-export interface DerivedColumn {
+export interface DerivedColumn extends AstBase {
   type: 'derived'
   expr: ExprNode
   alias?: string
@@ -180,7 +180,7 @@ export interface DerivedColumn {
 
 export type SelectColumn = StarColumn | DerivedColumn
 
-export interface OrderByItem {
+export interface OrderByItem extends AstBase {
   expr: ExprNode
   direction: 'ASC' | 'DESC'
   nulls?: 'FIRST' | 'LAST'

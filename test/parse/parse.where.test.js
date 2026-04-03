@@ -658,6 +658,8 @@ describe('parseSql - WHERE clause', () => {
               positionStart: 46,
               positionEnd: 48,
             },
+            positionStart: 46,
+            positionEnd: 48,
           },
         ],
         from: { type: 'table', table: 'users', positionStart: 54, positionEnd: 59 },
@@ -732,7 +734,7 @@ describe('parseSql - WHERE clause', () => {
       subquery: {
         type: 'select',
         distinct: false,
-        columns: [{ type: 'star' }],
+        columns: [{ type: 'star', positionStart: 42, positionEnd: 43 }],
         from: { type: 'table', table: 'users', positionStart: 49, positionEnd: 54 },
         joins: [],
         where: {
@@ -772,7 +774,7 @@ describe('parseSql - WHERE clause', () => {
       subquery: {
         type: 'select',
         distinct: false,
-        columns: [{ type: 'star' }],
+        columns: [{ type: 'star', positionStart: 46, positionEnd: 47 }],
         from: { type: 'table', table: 'users', positionStart: 53, positionEnd: 58 },
         joins: [],
         where: {

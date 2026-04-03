@@ -232,6 +232,8 @@ describe('parseSql - HAVING clause', () => {
           positionEnd: 179,
         },
         direction: 'DESC',
+        positionStart: 7,
+        positionEnd: 184,
       },
     ])
     expect(select.limit).toBe(5)

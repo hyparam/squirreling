@@ -12,7 +12,7 @@ describe('parseSql - CTE (WITH clause)', () => {
     expect(stmt.ctes[0].query).toEqual({
       type: 'select',
       distinct: false,
-      columns: [{ type: 'star' }],
+      columns: [{ type: 'star', positionStart: 20, positionEnd: 21 }],
       from: { type: 'table', table: 'users', positionStart: 27, positionEnd: 32 },
       joins: [],
       groupBy: [],
@@ -23,7 +23,7 @@ describe('parseSql - CTE (WITH clause)', () => {
     expect(stmt.query).toEqual({
       type: 'select',
       distinct: false,
-      columns: [{ type: 'star' }],
+      columns: [{ type: 'star', positionStart: 41, positionEnd: 42 }],
       from: { type: 'table', table: 'cte', positionStart: 48, positionEnd: 51 },
       joins: [],
       groupBy: [],
@@ -41,8 +41,18 @@ describe('parseSql - CTE (WITH clause)', () => {
       type: 'select',
       distinct: false,
       columns: [
-        { type: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 23, positionEnd: 25 } },
-        { type: 'derived', expr: { type: 'identifier', name: 'name', positionStart: 27, positionEnd: 31 } },
+        {
+          type: 'derived',
+          expr: { type: 'identifier', name: 'id', positionStart: 23, positionEnd: 25 },
+          positionStart: 23,
+          positionEnd: 25,
+        },
+        {
+          type: 'derived',
+          expr: { type: 'identifier', name: 'name', positionStart: 27, positionEnd: 31 },
+          positionStart: 27,
+          positionEnd: 31,
+        },
       ],
       from: { type: 'table', table: 'users', positionStart: 37, positionEnd: 42 },
       joins: [],
@@ -68,7 +78,7 @@ describe('parseSql - CTE (WITH clause)', () => {
     expect(stmt.query).toEqual({
       type: 'select',
       distinct: false,
-      columns: [{ type: 'star' }],
+      columns: [{ type: 'star', positionStart: 41, positionEnd: 42 }],
       from: { type: 'table', table: 'cte', alias: 't', positionStart: 48, positionEnd: 56 },
       joins: [],
       groupBy: [],
@@ -87,7 +97,12 @@ describe('parseSql - CTE (WITH clause)', () => {
     expect(stmt.ctes[0].query).toEqual({
       type: 'select',
       distinct: false,
-      columns: [{ type: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 21, positionEnd: 23 } }],
+      columns: [{
+        type: 'derived',
+        expr: { type: 'identifier', name: 'id', positionStart: 21, positionEnd: 23 },
+        positionStart: 21,
+        positionEnd: 23,
+      }],
       from: { type: 'table', table: 'users', positionStart: 29, positionEnd: 34 },
       joins: [],
       groupBy: [],
@@ -99,7 +114,12 @@ describe('parseSql - CTE (WITH clause)', () => {
     expect(stmt.ctes[1].query).toEqual({
       type: 'select',
       distinct: false,
-      columns: [{ type: 'derived', expr: { type: 'identifier', name: 'id', positionStart: 53, positionEnd: 55 } }],
+      columns: [{
+        type: 'derived',
+        expr: { type: 'identifier', name: 'id', positionStart: 53, positionEnd: 55 },
+        positionStart: 53,
+        positionEnd: 55,
+      }],
       from: { type: 'table', table: 'orders', positionStart: 61, positionEnd: 67 },
       joins: [],
       groupBy: [],
@@ -116,7 +136,7 @@ describe('parseSql - CTE (WITH clause)', () => {
     expect(stmt.ctes[1].query).toEqual({
       type: 'select',
       distinct: false,
-      columns: [{ type: 'star' }],
+      columns: [{ type: 'star', positionStart: 57, positionEnd: 58 }],
       from: { type: 'table', table: 'base', positionStart: 64, positionEnd: 68 },
       joins: [],
       where: {
@@ -142,8 +162,25 @@ describe('parseSql - CTE (WITH clause)', () => {
       type: 'select',
       distinct: false,
       columns: [
-        { type: 'derived', expr: { type: 'identifier', name: 'user_id', positionStart: 23, positionEnd: 30 } },
-        { type: 'derived', expr: { type: 'function', funcName: 'SUM', args: [{ type: 'identifier', name: 'amount', positionStart: 36, positionEnd: 42 }], positionStart: 32, positionEnd: 43 }, alias: 'total' },
+        {
+          type: 'derived',
+          expr: { type: 'identifier', name: 'user_id', positionStart: 23, positionEnd: 30 },
+          positionStart: 23,
+          positionEnd: 30,
+        },
+        {
+          type: 'derived',
+          expr: {
+            type: 'function',
+            funcName: 'SUM',
+            args: [{ type: 'identifier', name: 'amount', positionStart: 36, positionEnd: 42 }],
+            positionStart: 32,
+            positionEnd: 43,
+          },
+          alias: 'total',
+          positionStart: 32,
+          positionEnd: 52,
+        },
       ],
       from: { type: 'table', table: 'orders', positionStart: 58, positionEnd: 64 },
       joins: [],
@@ -151,12 +188,23 @@ describe('parseSql - CTE (WITH clause)', () => {
       having: {
         type: 'binary',
         op: '>',
-        left: { type: 'function', funcName: 'SUM', args: [{ type: 'identifier', name: 'amount', positionStart: 93, positionEnd: 99 }], positionStart: 89, positionEnd: 100 },
+        left: {
+          type: 'function',
+          funcName: 'SUM',
+          args: [{ type: 'identifier', name: 'amount', positionStart: 93, positionEnd: 99 }],
+          positionStart: 89,
+          positionEnd: 100,
+        },
         right: { type: 'literal', value: 100, positionStart: 103, positionEnd: 106 },
         positionStart: 89,
         positionEnd: 106,
       },
-      orderBy: [{ expr: { type: 'identifier', name: 'total', positionStart: 116, positionEnd: 121 }, direction: 'DESC' }],
+      orderBy: [{
+        expr: { type: 'identifier', name: 'total', positionStart: 116, positionEnd: 121 },
+        direction: 'DESC',
+        positionStart: 16,
+        positionEnd: 126,
+      }],
       limit: 10,
       positionStart: 16,
       positionEnd: 135,
@@ -171,8 +219,18 @@ describe('parseSql - CTE (WITH clause)', () => {
       type: 'select',
       distinct: false,
       columns: [
-        { type: 'derived', expr: { type: 'identifier', name: 'id', prefix: 'active', positionStart: 45, positionEnd: 54 } },
-        { type: 'derived', expr: { type: 'identifier', name: 'amount', prefix: 'orders', positionStart: 56, positionEnd: 69 } },
+        {
+          type: 'derived',
+          expr: { type: 'identifier', name: 'id', prefix: 'active', positionStart: 45, positionEnd: 54 },
+          positionStart: 45,
+          positionEnd: 54,
+        },
+        {
+          type: 'derived',
+          expr: { type: 'identifier', name: 'amount', prefix: 'orders', positionStart: 56, positionEnd: 69 },
+          positionStart: 56,
+          positionEnd: 69,
+        },
       ],
       from: { type: 'table', table: 'active', positionStart: 75, positionEnd: 81 },
       joins: [{

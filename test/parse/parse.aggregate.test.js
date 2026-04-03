@@ -15,6 +15,8 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 15,
           },
+          positionStart: 7,
+          positionEnd: 15,
         },
       ])
     })
@@ -31,6 +33,8 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 16,
           },
+          positionStart: 7,
+          positionEnd: 16,
         },
       ])
     })
@@ -47,6 +51,8 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 18,
           },
+          positionStart: 7,
+          positionEnd: 18,
         },
       ])
     })
@@ -63,6 +69,8 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 17,
           },
+          positionStart: 7,
+          positionEnd: 17,
         },
       ])
     })
@@ -79,6 +87,8 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 17,
           },
+          positionStart: 7,
+          positionEnd: 17,
         },
         {
           type: 'derived',
@@ -89,6 +99,8 @@ describe('parseSql', () => {
             positionStart: 19,
             positionEnd: 29,
           },
+          positionStart: 19,
+          positionEnd: 29,
         },
       ])
     })
@@ -106,6 +118,8 @@ describe('parseSql', () => {
             positionEnd: 15,
           },
           alias: 'total',
+          positionStart: 7,
+          positionEnd: 24,
         },
       ])
     })

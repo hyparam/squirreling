@@ -37,6 +37,8 @@ describe('parseSql', () => {
             positionEnd: 27,
           },
           alias: 'max_problem_len',
+          positionStart: 7,
+          positionEnd: 46,
         },
       ])
     })
@@ -55,6 +57,8 @@ describe('parseSql', () => {
             positionEnd: 33,
           },
           alias: 'n_unique_problems',
+          positionStart: 7,
+          positionEnd: 54,
         },
       ])
     })
@@ -71,6 +75,8 @@ describe('parseSql', () => {
             positionStart: 7,
             positionEnd: 28,
           },
+          positionStart: 7,
+          positionEnd: 28,
         },
       ])
     })
