@@ -1,5 +1,5 @@
 /**
- * @import { AsyncRow, OrderByItem, SqlPrimitive } from '../types.js'
+ * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -38,17 +38,17 @@ export function compareForTerm(a, b, term) {
 }
 
 /**
- * Collects and materialize all results from an async row generator into an array
+ * Collects and materialize all results from query results into an array
  *
- * @param {AsyncGenerator<AsyncRow>} asyncRows
+ * @param {QueryResults} results
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
-export async function collect(asyncRows) {
+export async function collect(results) {
   // Collect all rows first, then materialize cells concurrently
   // This enables dataloader-style batching of cell accessors
   /** @type {AsyncRow[]} */
   const rows = []
-  for await (const asyncRow of asyncRows) {
+  for await (const asyncRow of results.rows()) {
     rows.push(asyncRow)
   }
   return Promise.all(rows.map(async asyncRow => {

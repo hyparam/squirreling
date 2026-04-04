@@ -155,12 +155,12 @@ describe('spatial predicates', () => {
       expect(result[0].geom).toEqual({ type: 'Point', coordinates: [1, 2] })
     })
 
-    it('should throw with wrong argument count', async () => {
+    it('should throw with wrong argument count', () => {
       const data = [{ id: 1 }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT ST_GeomFromText() AS geom FROM data',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
   })
 
@@ -195,12 +195,12 @@ describe('spatial predicates', () => {
       expect(result[0].result).toBe(true)
     })
 
-    it('should throw with wrong argument count', async () => {
+    it('should throw with wrong argument count', () => {
       const data = [{ id: 1 }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT ST_MakeEnvelope(0, 0, 10) AS geom FROM data',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
   })
 
@@ -250,12 +250,12 @@ describe('spatial predicates', () => {
       expect(result[0].wkt).toBeNull()
     })
 
-    it('should throw with wrong argument count', async () => {
+    it('should throw with wrong argument count', () => {
       const data = [{ id: 1, a: point(1, 2), b: point(3, 4) }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT ST_AsText(a, b) AS wkt FROM data',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
   })
 
@@ -804,20 +804,20 @@ describe('spatial predicates', () => {
   })
 
   describe('wrong argument count', () => {
-    it('should throw for ST_Intersects with wrong args', async () => {
+    it('should throw for ST_Intersects with wrong args', () => {
       const data = [{ id: 1, geom: square }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT ST_Intersects(geom) AS result FROM data',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
 
-    it('should throw for ST_DWithin with wrong args', async () => {
+    it('should throw for ST_DWithin with wrong args', () => {
       const data = [{ id: 1, a: point(0, 0), b: point(1, 1) }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT ST_DWithin(a, b) AS result FROM data',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
   })
 

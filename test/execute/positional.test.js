@@ -96,11 +96,11 @@ describe('POSITIONAL JOIN', () => {
     expect(result.every(r => r.code === null)).toBe(true)
   })
 
-  it('should throw error for non-existent column in POSITIONAL JOIN', async () => {
-    await expect(collect(executeSql({
+  it('should throw error for non-existent column in POSITIONAL JOIN', () => {
+    expect(() => executeSql({
       tables: { tableA, tableB },
       query: 'SELECT tableA.nonexistent FROM tableA POSITIONAL JOIN tableB',
-    }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name')
+    })).toThrow('Column "nonexistent" not found. Available columns: id, name')
   })
 
   it('should work with table aliases', async () => {

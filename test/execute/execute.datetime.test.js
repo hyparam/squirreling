@@ -217,11 +217,11 @@ describe('date/time functions', () => {
       expect(result[0].y).toBe(null)
     })
 
-    it('should throw for wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for wrong argument count', () => {
+      expect(() => executeSql({
         tables: { events },
         query: 'SELECT DATE_PART(\'year\') AS y FROM events',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
   })
 
@@ -304,11 +304,11 @@ describe('date/time functions', () => {
       expect(result[0].t).toBe('2024-07-01T00:00:00.000Z')
     })
 
-    it('should throw for wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for wrong argument count', () => {
+      expect(() => executeSql({
         tables: { events },
         query: 'SELECT DATE_TRUNC(\'month\') AS t FROM events',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
 
     it('should work with GROUP BY', async () => {

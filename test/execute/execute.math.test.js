@@ -545,74 +545,74 @@ describe('math functions', () => {
   })
 
   describe('error handling', () => {
-    it('should throw for FLOOR with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for FLOOR with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT FLOOR(value, 2) FROM data',
-      }))).rejects.toThrow('FLOOR(number) function requires 1 argument, got 2')
+      })).toThrow('FLOOR(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for MOD with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for MOD with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT MOD(value) FROM data',
-      }))).rejects.toThrow('MOD(dividend, divisor) function requires 2 arguments, got 1')
+      })).toThrow('MOD(dividend, divisor) function requires 2 arguments, got 1')
     })
 
-    it('should throw for POWER with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for POWER with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT POWER(value) FROM data',
-      }))).rejects.toThrow('POWER(base, exponent) function requires 2 arguments, got 1')
+      })).toThrow('POWER(base, exponent) function requires 2 arguments, got 1')
     })
 
-    it('should throw for CEIL with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for CEIL with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT CEIL(value, 2) FROM data',
-      }))).rejects.toThrow('CEIL(number) function requires 1 argument, got 2')
+      })).toThrow('CEIL(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for LN with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for LN with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT LN(value, 2) FROM data',
-      }))).rejects.toThrow('LN(number) function requires 1 argument, got 2')
+      })).toThrow('LN(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for ABS with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for ABS with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT ABS(value, 2) FROM data',
-      }))).rejects.toThrow('ABS(number) function requires 1 argument, got 2')
+      })).toThrow('ABS(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for EXP with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for EXP with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT EXP(value, 2) FROM data',
-      }))).rejects.toThrow('EXP(number) function requires 1 argument, got 2')
+      })).toThrow('EXP(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for LOG10 with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for LOG10 with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT LOG10(value, 2) FROM data',
-      }))).rejects.toThrow('LOG10(number) function requires 1 argument, got 2')
+      })).toThrow('LOG10(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for SQRT with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for SQRT with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT SQRT(value, 2) FROM data',
-      }))).rejects.toThrow('SQRT(number) function requires 1 argument, got 2')
+      })).toThrow('SQRT(number) function requires 1 argument, got 2')
     })
 
-    it('should throw for ROUND with wrong argument count', async () => {
-      await expect(collect(executeSql({
+    it('should throw for ROUND with wrong argument count', () => {
+      expect(() => executeSql({
         tables: { data: errorData },
         query: 'SELECT ROUND(value, 2, 3) FROM data',
-      }))).rejects.toThrow('ROUND(number[, decimals]) function requires 1-2 arguments, got 3')
+      })).toThrow('ROUND(number[, decimals]) function requires 1-2 arguments, got 3')
     })
   })
 })

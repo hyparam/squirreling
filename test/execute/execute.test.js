@@ -207,7 +207,7 @@ describe('executeSql', () => {
       const { value } = await executeSql({
         tables: { users },
         query: 'SELECT 1 as one, 2 FROM users',
-      }).next()
+      }).rows().next()
       expect(value.columns).toEqual(['one', '2'])
       await expect(value.cells['one']()).resolves.toBe(1)
       await expect(value.cells['2']()).resolves.toBe(2)
@@ -217,7 +217,7 @@ describe('executeSql', () => {
       const { value } = await executeSql({
         tables: { users },
         query: 'SELECT name, name FROM users',
-      }).next()
+      }).rows().next()
       expect(value.columns).toEqual(['name', 'name'])
       await expect(value.cells['name']()).resolves.toBe('Alice')
     })

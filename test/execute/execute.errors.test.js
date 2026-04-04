@@ -13,91 +13,91 @@ const NULL = null
 
 describe('executeSql error handling', () => {
   describe('table not found errors', () => {
-    it('should throw error when table does not exist', async () => {
-      await expect(collect(executeSql({
+    it('should throw error when table does not exist', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT * FROM nonexistent',
-      }))).rejects.toThrow('Table "nonexistent" not found')
+      })).toThrow('Table "nonexistent" not found')
     })
 
-    it('should throw error for missing JOIN table', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for missing JOIN table', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Table "orders" not found')
+      })).toThrow('Table "orders" not found')
     })
   })
 
   describe('function argument count errors', () => {
-    it('should throw error for UPPER with wrong arg count', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for UPPER with wrong arg count', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT UPPER(name, age) FROM users',
-      }))).rejects.toThrow('UPPER(string) function requires 1 argument, got 2')
+      })).toThrow('UPPER(string) function requires 1 argument, got 2')
     })
 
-    it('should throw error for LOWER with wrong arg count', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for LOWER with wrong arg count', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT LOWER(name, age) FROM users',
-      }))).rejects.toThrow('LOWER(string) function requires 1 argument, got 2')
+      })).toThrow('LOWER(string) function requires 1 argument, got 2')
     })
 
-    it('should throw error for LENGTH with wrong arg count', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for LENGTH with wrong arg count', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT LENGTH(name, age) FROM users',
-      }))).rejects.toThrow('LENGTH(string) function requires 1 argument, got 2')
+      })).toThrow('LENGTH(string) function requires 1 argument, got 2')
     })
 
-    it('should throw error for TRIM with wrong arg count', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for TRIM with wrong arg count', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT TRIM(name, age) FROM users',
-      }))).rejects.toThrow('TRIM(string) function requires 1 argument, got 2')
+      })).toThrow('TRIM(string) function requires 1 argument, got 2')
     })
 
-    it('should throw error for REPLACE with wrong arg count', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for REPLACE with wrong arg count', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT REPLACE(name, \'a\') FROM users',
-      }))).rejects.toThrow('REPLACE(string, search, replacement) function requires 3 arguments, got 2')
+      })).toThrow('REPLACE(string, search, replacement) function requires 3 arguments, got 2')
     })
 
-    it('should throw error for SUBSTRING with wrong arg count', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for SUBSTRING with wrong arg count', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT SUBSTRING(name) FROM users',
-      }))).rejects.toThrow('SUBSTRING(string, start[, length]) function requires 2-3 arguments, got 1')
+      })).toThrow('SUBSTRING(string, start[, length]) function requires 2-3 arguments, got 1')
     })
 
-    it('should throw error for CONCAT with no args', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for CONCAT with no args', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT CONCAT() FROM users',
-      }))).rejects.toThrow('CONCAT(value1, value2[, ...]) function requires at least 1 argument, got 0')
+      })).toThrow('CONCAT(value1, value2[, ...]) function requires at least 1 argument, got 0')
     })
 
-    it('should throw error for RANDOM with args', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for RANDOM with args', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT RANDOM(1) FROM users',
-      }))).rejects.toThrow('RANDOM() function requires 0 arguments, got 1')
+      })).toThrow('RANDOM() function requires 0 arguments, got 1')
     })
 
-    it('should throw error for CURRENT_DATE with args', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for CURRENT_DATE with args', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT CURRENT_DATE(1) FROM users',
-      }))).rejects.toThrow('CURRENT_DATE() function requires 0 arguments, got 1')
+      })).toThrow('CURRENT_DATE() function requires 0 arguments, got 1')
     })
 
-    it('should throw error for JSON_VALUE with wrong arg count', async () => {
+    it('should throw error for JSON_VALUE with wrong arg count', () => {
       const data = [{ json: '{"a":1}' }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT JSON_VALUE(json) FROM data',
-      }))).rejects.toThrow('JSON_VALUE(expression, path) function requires 2 arguments, got 1')
+      })).toThrow('JSON_VALUE(expression, path) function requires 2 arguments, got 1')
     })
   })
 
@@ -150,11 +150,11 @@ describe('executeSql error handling', () => {
   })
 
   describe('CAST errors', () => {
-    it('should throw error for unsupported CAST type', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for unsupported CAST type', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT CAST(age AS BINARY) FROM users',
-      }))).rejects.toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) after "AS" but found "BINARY"')
+      })).toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) after "AS" but found "BINARY"')
     })
 
     it('should throw error when casting object to non-string type', async () => {
@@ -174,11 +174,11 @@ describe('executeSql error handling', () => {
       }))).rejects.toThrow('INTERVAL can only be used with date arithmetic (+ or -')
     })
 
-    it('should throw error for invalid INTERVAL unit', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for invalid INTERVAL unit', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT CURRENT_DATE + INTERVAL 1 FORTNIGHT FROM users',
-      }))).rejects.toThrow('Invalid interval unit FORTNIGHT at position 33. Valid values: DAY, MONTH, YEAR, HOUR, MINUTE, SECOND')
+      })).toThrow('Invalid interval unit FORTNIGHT at position 33. Valid values: DAY, MONTH, YEAR, HOUR, MINUTE, SECOND')
     })
   })
 
@@ -224,11 +224,11 @@ describe('executeSql error handling', () => {
   })
 
   describe('column not found errors', () => {
-    it('should throw error for non-existent column in SELECT', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for non-existent column in SELECT', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT nonexistent FROM users',
-      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age')
+      })).toThrow('Column "nonexistent" not found. Available columns: id, name, age')
     })
 
     it('should throw error for non-existent column in WHERE', async () => {

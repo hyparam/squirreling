@@ -34,20 +34,23 @@ const users = [
 ]
 
 // Squirreling return types
+interface QueryResults {
+  rows: () => AsyncGenerator<AsyncRow>
+}
 interface AsyncRow {
   columns: string[]
   cells: Record<string, AsyncCell>
 }
 type AsyncCell = () => Promise<SqlPrimitive>
 
-// Returns an AsyncIterable of rows with async cell loading
-const asyncRows: AsyncIterable<AsyncRow> = executeSql({
+// Returns a QueryResults object with streaming rows
+const { rows } = executeSql({
   tables: { users },
   query: 'SELECT * FROM users',
 })
 
 // Process rows as they arrive (streaming)
-for await (const { cells } of asyncRows) {
+for await (const { cells } of rows()) {
   console.log(`User id=${await cells.id()}, name=${await cells.name()}`)
 }
 ```

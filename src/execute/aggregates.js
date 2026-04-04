@@ -4,7 +4,7 @@ import { executePlan } from './execute.js'
 import { keyify } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, SelectColumn, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  */
 
@@ -55,52 +55,57 @@ function projectAggregateColumns(selectColumns, group, context) {
  *
  * @param {HashAggregateNode} plan
  * @param {ExecuteContext} context
- * @yields {AsyncRow}
+ * @returns {QueryResults}
  */
-export async function* executeHashAggregate(plan, context) {
-  // Collect all rows
-  /** @type {AsyncRow[]} */
-  const allRows = []
-  for await (const row of executePlan({ plan: plan.child, context })) {
-    if (context.signal?.aborted) return
-    allRows.push(row)
-  }
-
-  // Group rows by GROUP BY keys
-  /** @type {Map<any, AsyncRow[]>} */
-  const groups = new Map()
-
-  for (const row of allRows) {
-    const key = keyify(...await Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context }))))
-    let group = groups.get(key)
-    if (!group) {
-      group = []
-      groups.set(key, group)
-    }
-    group.push(row)
-  }
-
-  // Yield one row per group
-  for (const group of groups.values()) {
-    const asyncRow = projectAggregateColumns(plan.columns, group, context)
-
-    // Apply HAVING filter
-    if (plan.having) {
-      /** @type {AsyncRow} */
-      const havingRow = {
-        columns: [...group[0].columns, ...asyncRow.columns],
-        cells: { ...group[0].cells, ...asyncRow.cells },
+export function executeHashAggregate(plan, context) {
+  const child = executePlan({ plan: plan.child, context })
+  return {
+    async *rows () {
+      // Collect all rows
+      /** @type {AsyncRow[]} */
+      const allRows = []
+      for await (const row of child.rows()) {
+        if (context.signal?.aborted) return
+        allRows.push(row)
       }
-      const passes = await evaluateExpr({
-        node: plan.having,
-        row: havingRow,
-        rows: group,
-        context,
-      })
-      if (!passes) continue
-    }
 
-    yield asyncRow
+      // Group rows by GROUP BY keys
+      /** @type {Map<any, AsyncRow[]>} */
+      const groups = new Map()
+
+      for (const row of allRows) {
+        const key = keyify(...await Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context }))))
+        let group = groups.get(key)
+        if (!group) {
+          group = []
+          groups.set(key, group)
+        }
+        group.push(row)
+      }
+
+      // Yield one row per group
+      for (const group of groups.values()) {
+        const asyncRow = projectAggregateColumns(plan.columns, group, context)
+
+        // Apply HAVING filter
+        if (plan.having) {
+          /** @type {AsyncRow} */
+          const havingRow = {
+            columns: [...group[0].columns, ...asyncRow.columns],
+            cells: { ...group[0].cells, ...asyncRow.cells },
+          }
+          const passes = await evaluateExpr({
+            node: plan.having,
+            row: havingRow,
+            rows: group,
+            context,
+          })
+          if (!passes) continue
+        }
+
+        yield asyncRow
+      }
+    },
   }
 }
 
@@ -109,43 +114,50 @@ export async function* executeHashAggregate(plan, context) {
  *
  * @param {ScalarAggregateNode} plan
  * @param {ExecuteContext} context
- * @yields {AsyncRow}
+ * @returns {QueryResults}
  */
-export async function* executeScalarAggregate(plan, context) {
+export function executeScalarAggregate(plan, context) {
   // Fast path: use scanColumn when available
   const fast = tryColumnScanAggregate(plan, context)
   if (fast) {
-    yield* fast
-    return
-  }
-
-  // Collect all rows into single group
-  /** @type {AsyncRow[]} */
-  const group = []
-  for await (const row of executePlan({ plan: plan.child, context })) {
-    if (context.signal?.aborted) return
-    group.push(row)
-  }
-
-  const asyncRow = projectAggregateColumns(plan.columns, group, context)
-
-  // Apply HAVING filter
-  if (plan.having) {
-    /** @type {AsyncRow} */
-    const havingRow = {
-      columns: [...group[0].columns, ...asyncRow.columns],
-      cells: { ...group[0].cells, ...asyncRow.cells },
+    return {
+      rows: fast,
     }
-    const passes = await evaluateExpr({
-      node: plan.having,
-      row: havingRow,
-      rows: group,
-      context,
-    })
-    if (!passes) return
   }
 
-  yield asyncRow
+  const child = executePlan({ plan: plan.child, context })
+  return {
+    async *rows () {
+      // Collect all rows into single group
+      /** @type {AsyncRow[]} */
+      const group = []
+      for await (const row of child.rows()) {
+        if (context.signal?.aborted) return
+        group.push(row)
+      }
+
+      const asyncRow = projectAggregateColumns(plan.columns, group, context)
+
+      // Apply HAVING filter
+      if (plan.having) {
+        const baseRow = group[0] ?? { columns: [], cells: {} }
+        /** @type {AsyncRow} */
+        const havingRow = {
+          columns: [...baseRow.columns, ...asyncRow.columns],
+          cells: { ...baseRow.cells, ...asyncRow.cells },
+        }
+        const passes = await evaluateExpr({
+          node: plan.having,
+          row: havingRow,
+          rows: group,
+          context,
+        })
+        if (!passes) return
+      }
+
+      yield asyncRow
+    },
+  }
 }
 
 /**
@@ -163,7 +175,7 @@ export async function* executeScalarAggregate(plan, context) {
  *
  * @param {ScalarAggregateNode} plan
  * @param {ExecuteContext} context
- * @returns {AsyncGenerator<AsyncRow> | undefined}
+ * @returns {(() => AsyncGenerator<AsyncRow>) | undefined}
  */
 function tryColumnScanAggregate(plan, { tables, signal }) {
   // No HAVING support in fast path
@@ -188,7 +200,7 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
     specs.push(spec)
   }
 
-  return (async function* () {
+  return async function* () {
     /** @type {string[]} */
     const columns = []
     /** @type {AsyncCells} */
@@ -200,7 +212,7 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
     }
 
     yield { columns, cells }
-  })()
+  }
 }
 
 /**
