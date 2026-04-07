@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.1]
+ - `QueryResults` now includes a `columns` field with the list of output column names
+
 ## [0.12.0]
  - `executeSql()` now returns a `QueryResults` object with a `rows()` async generator instead of a bare async iterable
  - `QueryResults` includes `numRows` and `maxRows` fields when known (e.g. for scans with known row counts)
