@@ -1,5 +1,11 @@
 # Squirreling Changelog
 
+## [0.12.0]
+ - `executeSql()` now returns a `QueryResults` object with a `rows()` async generator instead of a bare async iterable
+ - `QueryResults` includes `numRows` and `maxRows` fields when known (e.g. for scans with known row counts)
+ - `ScanResults.rows` is now a function (matching `QueryResults` API) instead of a plain async iterable
+ - `cachedDataSource` gains a `scanColumn()` method for efficient single-column scans
+
 ## [0.11.5]
  - `POW` function and `==` operator support
  - Improved error messages
