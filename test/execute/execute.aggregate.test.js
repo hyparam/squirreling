@@ -693,6 +693,15 @@ describe('executeSql', () => {
       expect(result).toEqual([{ cnt: 5 }])
     })
 
+    it('should return no rows when HAVING filters out a scalar aggregate row', async () => {
+      const results = executeSql({
+        tables: { users },
+        query: 'SELECT COUNT(*) AS cnt FROM users HAVING COUNT(*) > 10',
+      })
+
+      expect(await collect(results)).toEqual([])
+    })
+
     it('should optimize qualified identifiers by scanning the unqualified column name', async () => {
       /** @type {AsyncDataSource} */
       const source = {

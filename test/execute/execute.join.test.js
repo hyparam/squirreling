@@ -122,13 +122,11 @@ describe('JOIN queries', () => {
     expect(result[0]).toHaveProperty('product')
   })
 
-  it('should error when joining non-existent table', async () => {
-    await expect(async () => {
-      await collect(executeSql({
-        tables: { users },
-        query: 'SELECT * FROM users JOIN nonexistent ON users.id = nonexistent.user_id',
-      }))
-    }).rejects.toThrow('Table "nonexistent" not found')
+  it('should error when joining non-existent table', () => {
+    expect(() => executeSql({
+      tables: { users },
+      query: 'SELECT * FROM users JOIN nonexistent ON users.id = nonexistent.user_id',
+    })).toThrow('Table "nonexistent" not found')
   })
 
   // Edge case tests
@@ -210,25 +208,25 @@ describe('JOIN queries', () => {
       expect(result.filter(r => r.product === null)).toHaveLength(6)
     })
 
-    it('should throw error for non-existent column in LEFT JOIN', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for non-existent column in LEFT JOIN', () => {
+      expect(() => executeSql({
         tables: { users, orders },
         query: 'SELECT users.nonexistent FROM users LEFT JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age, city, active')
+      })).toThrow('Column "nonexistent" not found. Available columns: id, name, age, city, active')
     })
 
-    it('should throw error for non-existent column in RIGHT JOIN', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for non-existent column in RIGHT JOIN', () => {
+      expect(() => executeSql({
         tables: { users, orders },
         query: 'SELECT orders.nonexistent FROM users RIGHT JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, user_id, product, amount')
+      })).toThrow('Column "nonexistent" not found. Available columns: id, user_id, product, amount')
     })
 
-    it('should throw error for non-existent column in FULL JOIN', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for non-existent column in FULL JOIN', () => {
+      expect(() => executeSql({
         tables: { users, orders },
         query: 'SELECT users.nonexistent FROM users FULL JOIN orders ON users.id = orders.user_id',
-      }))).rejects.toThrow('Column "nonexistent" not found. Available columns: id, name, age, city, active')
+      })).toThrow('Column "nonexistent" not found. Available columns: id, name, age, city, active')
     })
   })
 

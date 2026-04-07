@@ -54,8 +54,8 @@ export default [
       'object-shorthand': 'error',
       'prefer-const': 'error',
       'prefer-destructuring': ['warn', {
-        object: true,
-        array: false,
+        VariableDeclarator: { object: true, array: false },
+        AssignmentExpression: { object: false, array: false },
       }],
       'prefer-exponentiation-operator': 'error',
       'prefer-promise-reject-errors': 'error',

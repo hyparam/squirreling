@@ -1,4 +1,4 @@
-import type { AsyncDataSource, AsyncRow, SetOperationStatement, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, SelectStatement, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
@@ -9,6 +9,7 @@ export type {
   ParseSqlOptions,
   PlanSqlOptions,
   QueryPlan,
+  QueryResults,
   ScanOptions,
   ScanResults,
   SelectStatement,
@@ -30,7 +31,7 @@ export type {
  * @param options.signal - AbortSignal to cancel the query
  * @returns async generator yielding rows matching the query
  */
-export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
+export function executeSql(options: ExecuteSqlOptions): QueryResults
 
 /**
  * Executes a query plan and yields result rows
@@ -40,7 +41,7 @@ export function executeSql(options: ExecuteSqlOptions): AsyncGenerator<AsyncRow>
  * @param options.context - execution context with tables, functions, and signal
  * @returns async generator yielding result rows
  */
-export function executePlan(options: { plan: QueryPlan, context: ExecuteContext }): AsyncGenerator<AsyncRow>
+export function executePlan(options: { plan: QueryPlan, context: ExecuteContext }): QueryResults
 
 /**
  * Parses a SQL query string into an abstract syntax tree
@@ -77,7 +78,7 @@ export function tokenizeSql(query: string): Token[]
  * @param asyncGen - the async generator
  * @returns array of all yielded values
  */
-export function collect<T>(asyncGen: AsyncGenerator<AsyncRow>): Promise<Record<string, SqlPrimitive>[]>
+export function collect(results: QueryResults): Promise<Record<string, SqlPrimitive>[]>
 
 export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): AsyncRow
 

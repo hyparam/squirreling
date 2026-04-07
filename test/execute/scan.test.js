@@ -119,7 +119,7 @@ describe('join scan hints', () => {
 })
 
 describe('scan results', () => {
-  it('should throw if data source applies limit/offset without where', async () => {
+  it('should throw if data source applies limit/offset without where', () => {
     /** @type {AsyncDataSource} */
     const badSource = {
       columns: ['id'],
@@ -131,10 +131,10 @@ describe('scan results', () => {
         }
       },
     }
-    await expect(collect(executeSql({
+    expect(() => executeSql({
       tables: { data: badSource },
       query: 'SELECT * FROM data WHERE id = 1 LIMIT 5 OFFSET 2',
-    }))).rejects.toThrow('Data source "data" applied limit/offset without applying where')
+    })).toThrow('Data source "data" applied limit/offset without applying where')
   })
 })
 
@@ -168,7 +168,43 @@ describe('scanColumn fast path', () => {
     expect(scanCalled).toBe(false)
     expect(result).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
   })
+
+  it('should use scanColumn fast path with limit and offset', async () => {
+    /** @type {AsyncDataSource} */
+    const source = {
+      numRows: 100,
+      columns: ['id', 'name'],
+      scan() {
+        throw new Error('scan should not be called')
+      },
+      async *scanColumn({ column, limit, offset }) {
+        expect(column).toBe('id')
+        expect(limit).toBe(10)
+        expect(offset).toBe(5)
+        yield [6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      },
+    }
+
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data LIMIT 10 OFFSET 5',
+    })
+
+    expect(await collect(results)).toEqual([
+      { id: 6 },
+      { id: 7 },
+      { id: 8 },
+      { id: 9 },
+      { id: 10 },
+      { id: 11 },
+      { id: 12 },
+      { id: 13 },
+      { id: 14 },
+      { id: 15 },
+    ])
+  })
 })
+
 
 /**
  * Executes a query and captures the hints passed to the data source.

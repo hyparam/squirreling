@@ -99,26 +99,26 @@ describe('UNION execution', () => {
       expect(result).toHaveLength(3)
     })
 
-    it('should reject set operations with mismatched column names', async () => {
-      await expect(collect(executeSql({
+    it('should reject set operations with mismatched column names', () => {
+      expect(() => executeSql({
         tables: { users },
         query: `
           SELECT id AS a FROM users WHERE id = 1
           UNION
           SELECT id AS b FROM users WHERE id = 1
         `,
-      }))).rejects.toThrow('Set operation operands must have identical columns')
+      })).toThrow('Set operation operands must have identical columns')
     })
 
-    it('should reject set operations with mismatched column counts', async () => {
-      await expect(collect(executeSql({
+    it('should reject set operations with mismatched column counts', () => {
+      expect(() => executeSql({
         tables: { users },
         query: `
           SELECT id FROM users
           UNION
           SELECT id, name FROM users
         `,
-      }))).rejects.toThrow('Set operation operands must have identical columns')
+      })).toThrow('Set operation operands must have identical columns')
     })
   })
 
