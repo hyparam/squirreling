@@ -35,7 +35,10 @@ const users = [
 
 // Squirreling return types
 interface QueryResults {
-  rows: () => AsyncGenerator<AsyncRow>
+  columns: string[]
+  numRows?: number
+  maxRows?: number
+  rows(): AsyncGenerator<AsyncRow>
 }
 interface AsyncRow {
   columns: string[]

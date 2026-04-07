@@ -18,6 +18,7 @@ export function executeNestedLoopJoin(plan, context) {
   const left = executePlan({ plan: plan.left, context })
   const right = executePlan({ plan: plan.right, context })
   return {
+    columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows () {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
@@ -93,6 +94,7 @@ export function executePositionalJoin(plan, context) {
   const numRows = left.numRows !== undefined && right.numRows !== undefined
     ? Math.max(left.numRows, right.numRows) : undefined
   return {
+    columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     numRows,
     maxRows: maxBounds(left.maxRows, right.maxRows),
     async *rows () {
@@ -140,6 +142,7 @@ export function executeHashJoin(plan, context) {
   const left = executePlan({ plan: plan.left, context })
   const right = executePlan({ plan: plan.right, context })
   return {
+    columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows () {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
@@ -231,6 +234,22 @@ function createNullRow(columns) {
     cells[col] = () => Promise.resolve(null)
   }
   return { columns, cells }
+}
+
+/**
+ * Merges column name arrays with table prefixes, matching mergeRows logic.
+ *
+ * @param {string[]} leftColumns
+ * @param {string[]} rightColumns
+ * @param {string} leftTable
+ * @param {string} rightTable
+ * @returns {string[]}
+ */
+function mergeColumnNames(leftColumns, rightColumns, leftTable, rightTable) {
+  return [
+    ...leftColumns.map(c => c.includes('.') ? c : `${leftTable}.${c}`),
+    ...rightColumns.map(c => c.includes('.') ? c : `${rightTable}.${c}`),
+  ]
 }
 
 /**

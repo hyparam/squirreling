@@ -10,7 +10,7 @@ import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, QueryResults, Statement } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, QueryResults, SelectColumn, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode } from '../plan/types.js'
  */
 
@@ -88,7 +88,33 @@ export function executePlan({ plan, context }) {
   } else if (plan.type === 'SetOperation') {
     return executeSetOperation(plan, context)
   }
-  return { async *rows () {} }
+  return { columns: [], async *rows () {} }
+}
+
+/**
+ * Derives output column names from SELECT columns and available child columns.
+ *
+ * @param {SelectColumn[]} selectColumns
+ * @param {string[]} childColumns
+ * @returns {string[]}
+ */
+export function selectColumnNames(selectColumns, childColumns) {
+  /** @type {string[]} */
+  const result = []
+  for (const col of selectColumns) {
+    if (col.type === 'star') {
+      const prefix = col.table ? `${col.table}.` : undefined
+      for (const key of childColumns) {
+        if (prefix && !key.startsWith(prefix)) continue
+        const dotIndex = key.indexOf('.')
+        const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+        result.push(outputKey)
+      }
+    } else {
+      result.push(col.alias ?? derivedAlias(col.expr))
+    }
+  }
+  return result
 }
 
 /**
@@ -113,6 +139,7 @@ function executeScan(plan, context) {
     })
     const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
     return {
+      columns: [column],
       numRows: scanRows,
       maxRows: scanRows,
       async *rows () {
@@ -142,6 +169,7 @@ function executeScan(plan, context) {
 
   const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
   return {
+    columns: plan.hints.columns ?? table.columns,
     numRows: !plan.hints.where ? scanRows : undefined,
     maxRows: scanRows,
     async *rows () {
@@ -174,6 +202,7 @@ function executeCount(plan, context) {
   const table = validateTable({ ...plan, tables })
 
   return {
+    columns: plan.columns.map(col => col.alias ?? derivedAlias(col.expr)),
     numRows: 1,
     maxRows: 1,
     async *rows () {
@@ -300,6 +329,7 @@ async function* limitRows(rows, limit, offset, signal) {
 function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: child.columns,
     maxRows: child.maxRows,
     rows: () => filterRows(child.rows(), plan.condition, context),
   }
@@ -315,6 +345,7 @@ function executeFilter(plan, context) {
 function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: selectColumnNames(plan.columns, child.columns),
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows () {
@@ -369,6 +400,7 @@ function executeProject(plan, context) {
 function executeDistinct(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: child.columns,
     maxRows: child.maxRows,
     async *rows () {
       const { signal } = context
@@ -421,6 +453,7 @@ function executeDistinct(plan, context) {
 function executeLimit(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: child.columns,
     numRows: computeScanRows(child.numRows, plan.limit, plan.offset),
     maxRows: computeScanRows(child.maxRows, plan.limit, plan.offset),
     rows: () => limitRows(child.rows(), plan.limit, plan.offset, context.signal),
@@ -442,6 +475,7 @@ function executeSetOperation(plan, context) {
       const left = executePlan({ plan: plan.left, context })
       const right = executePlan({ plan: plan.right, context })
       return {
+        columns: left.columns,
         numRows: addBounds(left.numRows, right.numRows),
         maxRows: addBounds(left.maxRows, right.maxRows),
         async *rows () {
@@ -454,6 +488,7 @@ function executeSetOperation(plan, context) {
       const left = executePlan({ plan: plan.left, context })
       const right = executePlan({ plan: plan.right, context })
       return {
+        columns: left.columns,
         maxRows: addBounds(left.maxRows, right.maxRows),
         async *rows () {
           // UNION: yield deduplicated rows from both sides
@@ -481,6 +516,7 @@ function executeSetOperation(plan, context) {
     const left = executePlan({ plan: plan.left, context })
     const right = executePlan({ plan: plan.right, context })
     return {
+      columns: left.columns,
       maxRows: minBounds(left.maxRows, right.maxRows),
       async *rows () {
         // Materialize right side keys
@@ -522,6 +558,7 @@ function executeSetOperation(plan, context) {
     const left = executePlan({ plan: plan.left, context })
     const right = executePlan({ plan: plan.right, context })
     return {
+      columns: left.columns,
       maxRows: left.maxRows,
       async *rows () {
         // Materialize right side keys

@@ -1,6 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
-import { executePlan } from './execute.js'
+import { executePlan, selectColumnNames } from './execute.js'
 import { keyify } from './utils.js'
 
 /**
@@ -60,6 +60,7 @@ function projectAggregateColumns(selectColumns, group, context) {
 export function executeHashAggregate(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: selectColumnNames(plan.columns, child.columns),
     maxRows: child.maxRows,
     async *rows () {
       // Collect all rows
@@ -119,9 +120,11 @@ export function executeHashAggregate(plan, context) {
  */
 export function executeScalarAggregate(plan, context) {
   // Fast path: use scanColumn when available
+  const scalarColumns = selectColumnNames(plan.columns, [])
   const fast = tryColumnScanAggregate(plan, context)
   if (fast) {
     return {
+      columns: scalarColumns,
       numRows: 1,
       maxRows: 1,
       rows: fast,
@@ -130,6 +133,7 @@ export function executeScalarAggregate(plan, context) {
 
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: selectColumnNames(plan.columns, child.columns),
     numRows: plan.having ? undefined : 1,
     maxRows: 1,
     async *rows () {

@@ -17,6 +17,7 @@ import { compareForTerm } from './utils.js'
 export function executeSort(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    columns: child.columns,
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows () {

@@ -8,6 +8,7 @@ export { QueryPlan } from './plan/types.js'
  * Result of executing a SQL query.
  */
 export interface QueryResults {
+  columns: string[]
   rows(): AsyncGenerator<AsyncRow>
   numRows?: number
   maxRows?: number
@@ -68,7 +69,6 @@ export interface AsyncDataSource {
  */
 export interface ScanResults {
   rows(): AsyncIterable<AsyncRow>
-  numRows?: number // exact row count if known
   appliedWhere: boolean // WHERE filter applied at scan time?
   appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?
 }
