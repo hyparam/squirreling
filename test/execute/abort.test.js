@@ -81,7 +81,7 @@ describe('abort signal', () => {
       controller.abort()
 
       const rows = []
-      for await (const row of source.scan({ signal: controller.signal }).rows) {
+      for await (const row of source.scan({ signal: controller.signal }).rows()) {
         rows.push(row)
       }
       expect(rows).toHaveLength(0)
@@ -94,7 +94,7 @@ describe('abort signal', () => {
       const controller = new AbortController()
 
       const rows = []
-      for await (const row of source.scan({ signal: controller.signal }).rows) {
+      for await (const row of source.scan({ signal: controller.signal }).rows()) {
         rows.push(await row.cells['name']())
         if (rows.length === 2) {
           controller.abort()
@@ -110,7 +110,7 @@ describe('abort signal', () => {
       const controller = new AbortController()
 
       const rows = []
-      for await (const row of source.scan({ signal: controller.signal }).rows) {
+      for await (const row of source.scan({ signal: controller.signal }).rows()) {
         rows.push(await row.cells['name']())
       }
       expect(rows).toHaveLength(5)
@@ -122,7 +122,7 @@ describe('abort signal', () => {
       const { source, getScanCount, getRowCount } = trackingSource(users)
 
       const rows = []
-      for await (const row of source.scan({}).rows) {
+      for await (const row of source.scan({}).rows()) {
         rows.push(await row.cells['name']())
       }
       expect(rows).toHaveLength(5)

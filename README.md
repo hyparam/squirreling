@@ -108,7 +108,7 @@ interface ScanOptions {
 }
 
 interface ScanResults {
-  rows: AsyncIterable<AsyncRow> // async iterable of rows
+  rows(): AsyncIterable<AsyncRow> // async iterable of rows
   appliedWhere: boolean // WHERE filter applied at scan time?
   appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?
 }

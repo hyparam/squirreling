@@ -67,7 +67,7 @@ export interface AsyncDataSource {
  * applied by the data source.
  */
 export interface ScanResults {
-  rows: AsyncIterable<AsyncRow>
+  rows(): AsyncIterable<AsyncRow>
   numRows?: number // exact row count if known
   appliedWhere: boolean // WHERE filter applied at scan time?
   appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?

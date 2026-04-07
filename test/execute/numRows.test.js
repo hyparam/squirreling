@@ -20,7 +20,7 @@ const noNumRowsSource = {
       yield { columns: ['x'], cells: { x: () => Promise.resolve(1) } }
     }
     return {
-      rows: gen(),
+      rows: gen,
       appliedWhere: false,
       appliedLimitOffset: false,
     }

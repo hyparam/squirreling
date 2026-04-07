@@ -145,7 +145,7 @@ function executeScan(plan, context) {
     numRows: !plan.hints.where ? scanRows : undefined,
     maxRows: scanRows,
     async *rows () {
-      let result = scanResult.rows
+      let result = scanResult.rows()
 
       // Apply WHERE if data source did not
       if (!appliedWhere && plan.hints.where) {
@@ -184,7 +184,7 @@ function executeCount(plan, context) {
         count = 0
         const { rows } = table.scan({ signal })
         // eslint-disable-next-line no-unused-vars
-        for await (const _ of rows) {
+        for await (const _ of rows()) {
           if (signal?.aborted) return
           count++
         }

@@ -88,7 +88,7 @@ describe('join scan hints', () => {
       scan(options) {
         usersHints = options
         return {
-          rows: (async function* () {})(),
+          async *rows() {},
           appliedWhere: false,
           appliedLimitOffset: false,
         }
@@ -101,7 +101,7 @@ describe('join scan hints', () => {
       scan(options) {
         ordersHints = options
         return {
-          rows: (async function* () {})(),
+          async *rows() {},
           appliedWhere: false,
           appliedLimitOffset: false,
         }
@@ -125,7 +125,7 @@ describe('scan results', () => {
       columns: ['id'],
       scan() {
         return {
-          rows: (async function* () {})(),
+          async *rows() {},
           appliedWhere: false,
           appliedLimitOffset: true,
         }
@@ -149,7 +149,7 @@ describe('scanColumn fast path', () => {
       scan() {
         scanCalled = true
         return {
-          rows: (async function* () {})(),
+          async *rows() {},
           appliedWhere: false,
           appliedLimitOffset: false,
         }
@@ -221,7 +221,7 @@ async function captureHints(query) {
     scan(options) {
       capturedHints = options
       return {
-        rows: (async function* () {})(),
+        async *rows() {},
         appliedWhere: false,
         appliedLimitOffset: false,
       }
