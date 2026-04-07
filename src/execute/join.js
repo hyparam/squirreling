@@ -1,5 +1,5 @@
 import { evaluateExpr } from '../expression/evaluate.js'
-import { keyify } from './utils.js'
+import { keyify, maxBounds } from './utils.js'
 import { executePlan } from './execute.js'
 
 /**
@@ -90,7 +90,11 @@ export function executeNestedLoopJoin(plan, context) {
 export function executePositionalJoin(plan, context) {
   const left = executePlan({ plan: plan.left, context })
   const right = executePlan({ plan: plan.right, context })
+  const numRows = left.numRows !== undefined && right.numRows !== undefined
+    ? Math.max(left.numRows, right.numRows) : undefined
   return {
+    numRows,
+    maxRows: maxBounds(left.maxRows, right.maxRows),
     async *rows () {
       const { signal } = context
       const leftTable = plan.leftAlias

@@ -60,6 +60,7 @@ function projectAggregateColumns(selectColumns, group, context) {
 export function executeHashAggregate(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    maxRows: child.maxRows,
     async *rows () {
       // Collect all rows
       /** @type {AsyncRow[]} */
@@ -121,12 +122,16 @@ export function executeScalarAggregate(plan, context) {
   const fast = tryColumnScanAggregate(plan, context)
   if (fast) {
     return {
+      numRows: 1,
+      maxRows: 1,
       rows: fast,
     }
   }
 
   const child = executePlan({ plan: plan.child, context })
   return {
+    numRows: plan.having ? undefined : 1,
+    maxRows: 1,
     async *rows () {
       // Collect all rows into single group
       /** @type {AsyncRow[]} */

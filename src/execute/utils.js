@@ -63,6 +63,41 @@ export async function collect(results) {
 }
 
 /**
+ * Adds two optional bounds, returning undefined if either is unknown.
+ *
+ * @param {number | undefined} a
+ * @param {number | undefined} b
+ * @returns {number | undefined}
+ */
+export function addBounds(a, b) {
+  return a !== undefined && b !== undefined ? a + b : undefined
+}
+
+/**
+ * Returns the minimum of two optional bounds, or whichever is defined.
+ *
+ * @param {number | undefined} a
+ * @param {number | undefined} b
+ * @returns {number | undefined}
+ */
+export function minBounds(a, b) {
+  if (a !== undefined && b !== undefined) return Math.min(a, b)
+  return a ?? b
+}
+
+/**
+ * Returns the maximum of two optional bounds, returning undefined if either is unknown.
+ *
+ * @param {number | undefined} a
+ * @param {number | undefined} b
+ * @returns {number | undefined}
+ */
+export function maxBounds(a, b) {
+  if (a !== undefined && b !== undefined) return Math.max(a, b)
+  return a ?? b
+}
+
+/**
  * @param {SqlPrimitive} value
  * @returns {string}
  */

@@ -7,7 +7,7 @@ import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
-import { stableRowKey } from './utils.js'
+import { addBounds, minBounds, stableRowKey } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, QueryResults, Statement } from '../types.js'
@@ -111,7 +111,10 @@ function executeScan(plan, context) {
       offset: plan.hints.offset,
       signal,
     })
+    const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
     return {
+      numRows: scanRows,
+      maxRows: scanRows,
       async *rows () {
         const columns = [column]
         for await (const chunk of chunks) {
@@ -137,7 +140,10 @@ function executeScan(plan, context) {
     throw new Error(`Data source "${plan.table}" applied limit/offset without applying where`)
   }
 
+  const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
   return {
+    numRows: !plan.hints.where ? scanRows : undefined,
+    maxRows: scanRows,
     async *rows () {
       let result = scanResult.rows
 
@@ -168,6 +174,8 @@ function executeCount(plan, context) {
   const table = validateTable({ ...plan, tables })
 
   return {
+    numRows: 1,
+    maxRows: 1,
     async *rows () {
       // Use source numRows if available
       let count = table.numRows
@@ -194,6 +202,20 @@ function executeCount(plan, context) {
       yield { columns, cells }
     },
   }
+}
+
+/**
+ * Computes numRows for a scan when the table provides numRows and there is no WHERE.
+ *
+ * @param {number | undefined} tableNumRows
+ * @param {number} [limit]
+ * @param {number} [offset]
+ * @returns {number | undefined}
+ */
+function computeScanRows(tableNumRows, limit, offset) {
+  if (tableNumRows === undefined) return undefined
+  const afterOffset = Math.max(0, tableNumRows - (offset ?? 0))
+  return limit !== undefined ? Math.min(limit, afterOffset) : afterOffset
 }
 
 /**
@@ -278,6 +300,7 @@ async function* limitRows(rows, limit, offset, signal) {
 function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    maxRows: child.maxRows,
     rows: () => filterRows(child.rows(), plan.condition, context),
   }
 }
@@ -292,6 +315,8 @@ function executeFilter(plan, context) {
 function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    numRows: child.numRows,
+    maxRows: child.maxRows,
     async *rows () {
       let rowIndex = 0
 
@@ -344,6 +369,7 @@ function executeProject(plan, context) {
 function executeDistinct(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    maxRows: child.maxRows,
     async *rows () {
       const { signal } = context
       const MAX_CHUNK = 256
@@ -395,6 +421,8 @@ function executeDistinct(plan, context) {
 function executeLimit(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   return {
+    numRows: computeScanRows(child.numRows, plan.limit, plan.offset),
+    maxRows: computeScanRows(child.maxRows, plan.limit, plan.offset),
     rows: () => limitRows(child.rows(), plan.limit, plan.offset, context.signal),
   }
 }
@@ -414,6 +442,8 @@ function executeSetOperation(plan, context) {
       const left = executePlan({ plan: plan.left, context })
       const right = executePlan({ plan: plan.right, context })
       return {
+        numRows: addBounds(left.numRows, right.numRows),
+        maxRows: addBounds(left.maxRows, right.maxRows),
         async *rows () {
           // UNION ALL: yield all rows from both sides
           yield* left.rows()
@@ -424,6 +454,7 @@ function executeSetOperation(plan, context) {
       const left = executePlan({ plan: plan.left, context })
       const right = executePlan({ plan: plan.right, context })
       return {
+        maxRows: addBounds(left.maxRows, right.maxRows),
         async *rows () {
           // UNION: yield deduplicated rows from both sides
           const seen = new Set()
@@ -450,6 +481,7 @@ function executeSetOperation(plan, context) {
     const left = executePlan({ plan: plan.left, context })
     const right = executePlan({ plan: plan.right, context })
     return {
+      maxRows: minBounds(left.maxRows, right.maxRows),
       async *rows () {
         // Materialize right side keys
         /** @type {Map<any, number>} */
@@ -490,6 +522,7 @@ function executeSetOperation(plan, context) {
     const left = executePlan({ plan: plan.left, context })
     const right = executePlan({ plan: plan.right, context })
     return {
+      maxRows: left.maxRows,
       async *rows () {
         // Materialize right side keys
         /** @type {Map<any, number>} */

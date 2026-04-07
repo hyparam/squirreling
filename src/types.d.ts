@@ -9,6 +9,8 @@ export { QueryPlan } from './plan/types.js'
  */
 export interface QueryResults {
   rows(): AsyncGenerator<AsyncRow>
+  numRows?: number
+  maxRows?: number
 }
 
 // parseSql(options)
