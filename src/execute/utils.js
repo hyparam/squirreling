@@ -10,6 +10,8 @@
  * @param {OrderByItem} term
  * @returns {number}
  */
+const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
+
 export function compareForTerm(a, b, term) {
   const aIsNull = a == null
   const bIsNull = b == null
@@ -24,10 +26,9 @@ export function compareForTerm(a, b, term) {
   // Compare non-null values
   if (a == b) return 0
 
-  const primitives = ['number', 'bigint', 'boolean', 'string']
   let cmp
-  if (primitives.includes(typeof a) && primitives.includes(typeof b)) {
-    cmp = a < b ? -1 : a > b ? 1 : 0
+  if (primitiveTypes.has(typeof a) && primitiveTypes.has(typeof b)) {
+    cmp = a < b ? -1 : 1
   } else {
     const aa = String(a)
     const bb = String(b)
@@ -51,6 +52,29 @@ export async function collect(asyncRows) {
   for await (const asyncRow of asyncRows) {
     rows.push(asyncRow)
   }
+
+  // Fast path: if all rows have pre-materialized data, skip Promise overhead
+  let allMaterialized = rows.length > 0
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i]._data) {
+      allMaterialized = false
+      break
+    }
+  }
+  if (allMaterialized) {
+    const result = new Array(rows.length)
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      /** @type {Record<string, SqlPrimitive>} */
+      const item = {}
+      for (const col of row.columns) {
+        item[col] = row._data[col]
+      }
+      result[i] = item
+    }
+    return result
+  }
+
   return Promise.all(rows.map(async asyncRow => {
     const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
     /** @type {Record<string, SqlPrimitive>} */

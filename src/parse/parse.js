@@ -10,11 +10,26 @@ import { tokenizeSql } from './tokenize.js'
  * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectColumn, SelectStatement, SetOperationStatement, SetOperator, Statement } from '../types.js'
  */
 
+const MAX_PARSE_CACHE = 64
+/** @type {Map<string, Statement>} */
+const parseCache = new Map()
+
 /**
  * @param {ParseSqlOptions} options
  * @returns {Statement}
  */
 export function parseSql({ query, functions }) {
+  // Cache only for simple queries without custom functions
+  if (!functions) {
+    const cached = parseCache.get(query)
+    if (cached) {
+      // LRU touch
+      parseCache.delete(query)
+      parseCache.set(query, cached)
+      return cached
+    }
+  }
+
   const tokens = tokenizeSql(query)
   /** @type {ParserState} */
   const state = { tokens, pos: 0, lastPos: 0, functions }
@@ -25,6 +40,14 @@ export function parseSql({ query, functions }) {
   const tok = current(state)
   if (tok.type !== 'eof') {
     throw parseError(state, 'end of query')
+  }
+
+  if (!functions) {
+    parseCache.set(query, stmt)
+    if (parseCache.size > MAX_PARSE_CACHE) {
+      const oldest = parseCache.keys().next().value
+      if (oldest) parseCache.delete(oldest)
+    }
   }
 
   return stmt

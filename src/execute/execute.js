@@ -24,14 +24,27 @@ export async function* executeSql({ tables, query, functions, signal }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
-  /** @type {Record<string, AsyncDataSource>} */
-  const normalizedTables = {}
-  for (const [name, data] of Object.entries(tables)) {
-    if (Array.isArray(data)) {
-      normalizedTables[name] = memorySource({ data })
-    } else {
-      normalizedTables[name] = data
+  // Fast path: skip normalization when no arrays are present
+  let needsNormalization = false
+  const tableKeys = Object.keys(tables)
+  for (let i = 0; i < tableKeys.length; i++) {
+    if (Array.isArray(tables[tableKeys[i]])) {
+      needsNormalization = true
+      break
     }
+  }
+
+  /** @type {Record<string, AsyncDataSource>} */
+  let normalizedTables
+  if (needsNormalization) {
+    normalizedTables = {}
+    for (let i = 0; i < tableKeys.length; i++) {
+      const name = tableKeys[i]
+      const data = tables[name]
+      normalizedTables[name] = Array.isArray(data) ? memorySource({ data }) : data
+    }
+  } else {
+    normalizedTables = /** @type {Record<string, AsyncDataSource>} */ (tables)
   }
 
   yield* executeStatement({ query: parsed, context: { tables: normalizedTables, functions, signal } })
@@ -271,19 +284,68 @@ async function* executeFilter(plan, context) {
  * @yields {AsyncRow}
  */
 async function* executeProject(plan, context) {
+  // Pre-compute column names for derived columns (avoids per-row derivedAlias calls)
+  const hasStar = plan.columns.some(col => col.type === 'star')
+
+  // For simple identifier projections, map output alias → source column name
+  /** @type {string[] | undefined} */
+  let staticColumns
+  /** @type {{ alias: string, sourceName: string }[] | undefined} */
+  let identifierMap
+  if (!hasStar) {
+    staticColumns = plan.columns.map(col => col.alias ?? derivedAlias(col.expr))
+    // Check if all columns are simple identifier references (no expressions)
+    const allIdentifiers = plan.columns.every(col =>
+      col.expr.type === 'identifier' && !col.expr.prefix
+    )
+    if (allIdentifiers) {
+      identifierMap = plan.columns.map((col, i) => ({
+        alias: staticColumns[i],
+        sourceName: col.expr.name,
+      }))
+    }
+  }
+
   let rowIndex = 0
+  let identifierMapValidated = false
 
   for await (const row of executePlan({ plan: plan.child, context })) {
     if (context.signal?.aborted) return
     rowIndex++
+
+    // Validate identifier fast path on first row (may fail for JOINs with prefixed columns)
+    if (identifierMap && !identifierMapValidated) {
+      identifierMapValidated = true
+      if (!identifierMap.every(m => m.sourceName in row.cells)) {
+        identifierMap = undefined
+      }
+    }
+
+    // Fast path: all columns are simple identifier references
+    if (identifierMap) {
+      /** @type {AsyncCells} */
+      const cells = {}
+      const srcData = row._data
+      const _data = srcData ? {} : undefined
+      for (const { alias, sourceName } of identifierMap) {
+        cells[alias] = row.cells[sourceName]
+        if (_data) _data[alias] = srcData[sourceName]
+      }
+      yield _data
+        ? { columns: staticColumns, cells, _data }
+        : { columns: staticColumns, cells }
+      continue
+    }
+
     const currentRowIndex = rowIndex
 
     /** @type {string[]} */
-    const columns = []
+    const columns = staticColumns ? staticColumns : []
     /** @type {AsyncCells} */
     const cells = {}
 
-    for (const col of plan.columns) {
+    for (let i = 0; i < plan.columns.length; i++) {
+      const col = plan.columns[i]
       if (col.type === 'star') {
         const prefix = col.table ? `${col.table}.` : undefined
         for (const key of row.columns) {
@@ -295,8 +357,8 @@ async function* executeProject(plan, context) {
           cells[outputKey] = row.cells[key]
         }
       } else {
-        const alias = col.alias ?? derivedAlias(col.expr)
-        columns.push(alias)
+        const alias = staticColumns ? staticColumns[i] : (col.alias ?? derivedAlias(col.expr))
+        if (!staticColumns) columns.push(alias)
         cells[alias] = () => evaluateExpr({
           node: col.expr,
           row,
