@@ -31,7 +31,7 @@ export function isMathFunc(name) {
  * @returns {name is RegExpFunction}
  */
 export function isRegexpFunc(name) {
-  return ['REGEXP_SUBSTR', 'REGEXP_EXTRACT', 'REGEXP_REPLACE'].includes(name)
+  return ['REGEXP_SUBSTR', 'REGEXP_EXTRACT', 'REGEXP_REPLACE', 'REGEXP_MATCHES'].includes(name)
 }
 
 /**
@@ -112,6 +112,7 @@ export const FUNCTION_SIGNATURES = {
   REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
   REGEXP_EXTRACT: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
   REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, occurrence]]' },
+  REGEXP_MATCHES: { min: 2, max: 2, signature: 'string, pattern' },
 
   // Date/time functions
   RANDOM: { min: 0, max: 0, signature: '' },
