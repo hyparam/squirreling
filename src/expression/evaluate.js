@@ -337,6 +337,20 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return val1 == await val2 ? null : val1
     }
 
+    if (funcName === 'GREATEST' || funcName === 'LEAST') {
+      // Skip nulls; return null if all inputs are null
+      const isGreatest = funcName === 'GREATEST'
+      /** @type {SqlPrimitive} */
+      let best = null
+      for (const arg of args) {
+        if (arg == null) continue
+        if (best == null || (isGreatest ? arg > best : arg < best)) {
+          best = arg
+        }
+      }
+      return best
+    }
+
     if (funcName === 'DATE_TRUNC') {
       return dateTrunc(args[0], args[1])
     }

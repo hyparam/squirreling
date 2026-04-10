@@ -167,6 +167,8 @@ export const FUNCTION_SIGNATURES = {
   // Conditional functions
   COALESCE: { min: 1, signature: 'value1, value2[, ...]' },
   NULLIF: { min: 2, max: 2, signature: 'value1, value2' },
+  GREATEST: { min: 1, signature: 'value1[, value2, ...]' },
+  LEAST: { min: 1, signature: 'value1[, value2, ...]' },
 
   // Aggregate functions
   COUNT: { min: 1, max: 1, signature: 'expression' },
