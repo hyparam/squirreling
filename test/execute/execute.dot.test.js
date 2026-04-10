@@ -55,12 +55,12 @@ describe('columns with dots in names', () => {
       ])
     })
 
-    it('should select a dotted column without quotes (ambiguous with table.column)', async () => {
+    it('should select a dotted column without quotes (ambiguous with table.column)', () => {
       // Unquoted user.name is parsed as table "user", column "name"
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT user.name FROM data',
-      }))).rejects.toThrow('Table "user" not found in "user.name". Available tables: data')
+      })).toThrow('Table "user" not found in "user.name". Available tables: data')
     })
   })
 
@@ -231,74 +231,74 @@ describe('columns with dots in names', () => {
       { id: 2, name: 'Bob' },
     ]
 
-    it('should error for unquoted dotted table name in FROM', async () => {
-      await expect(collect(executeSql({
+    it('should error for unquoted dotted table name in FROM', () => {
+      expect(() => executeSql({
         tables: { 'dataset.parquet': rows },
         query: 'SELECT * FROM dataset.parquet',
-      }))).rejects.toThrow('Unexpected "." in "dataset.parquet". If this is an identifier, use double quotes: "dataset.parquet"')
+      })).toThrow('Unexpected "." in "dataset.parquet". If this is an identifier, use double quotes: "dataset.parquet"')
     })
 
-    it('should error for unquoted dotted column in SELECT', async () => {
-      await expect(collect(executeSql({
+    it('should error for unquoted dotted column in SELECT', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT user.name FROM data',
-      }))).rejects.toThrow('Table "user" not found in "user.name". Available tables: data')
+      })).toThrow('Table "user" not found in "user.name". Available tables: data')
     })
 
-    it('should error for unquoted dotted column in SELECT with aggregation', async () => {
-      await expect(collect(executeSql({
+    it('should error for unquoted dotted column in SELECT with aggregation', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT user.name, COUNT(*) FROM data GROUP BY user.name',
-      }))).rejects.toThrow('Table "user" not found in "user.name". Available tables: data')
+      })).toThrow('Table "user" not found in "user.name". Available tables: data')
     })
 
-    it('should error for qualified column on nonexistent table', async () => {
-      await expect(collect(executeSql({
+    it('should error for qualified column on nonexistent table', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT foo.id FROM data',
-      }))).rejects.toThrow('Table "foo" not found in "foo.id". Available tables: data')
+      })).toThrow('Table "foo" not found in "foo.id". Available tables: data')
     })
 
-    it('should error for double-dotted identifier', async () => {
-      await expect(collect(executeSql({
+    it('should error for double-dotted identifier', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT a.b.c FROM data',
-      }))).rejects.toThrow('Unexpected "." in "b.c". If this is an identifier, use double quotes: "b.c"')
+      })).toThrow('Unexpected "." in "b.c". If this is an identifier, use double quotes: "b.c"')
     })
 
-    it('should error for nonexistent table in WHERE with table qualifier', async () => {
-      await expect(collect(executeSql({
+    it('should error for nonexistent table in WHERE with table qualifier', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT * FROM data WHERE fake.col = 1',
-      }))).rejects.toThrow('Table "fake" not found in "fake.col". Available tables: data')
+      })).toThrow('Table "fake" not found in "fake.col". Available tables: data')
     })
 
-    it('should error for nonexistent table in HAVING', async () => {
-      await expect(collect(executeSql({
+    it('should error for nonexistent table in HAVING', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT id FROM data GROUP BY id HAVING fake.col > 1',
-      }))).rejects.toThrow('Table "fake" not found in "fake.col". Available tables: data')
+      })).toThrow('Table "fake" not found in "fake.col". Available tables: data')
     })
 
-    it('should error for nonexistent table in GROUP BY', async () => {
-      await expect(collect(executeSql({
+    it('should error for nonexistent table in GROUP BY', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT COUNT(*) FROM data GROUP BY fake.col',
-      }))).rejects.toThrow('Table "fake" not found in "fake.col". Available tables: data')
+      })).toThrow('Table "fake" not found in "fake.col". Available tables: data')
     })
 
-    it('should error for nonexistent table in ORDER BY', async () => {
-      await expect(collect(executeSql({
+    it('should error for nonexistent table in ORDER BY', () => {
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT * FROM data ORDER BY fake.col',
-      }))).rejects.toThrow('Table "fake" not found in "fake.col". Available tables: data')
+      })).toThrow('Table "fake" not found in "fake.col". Available tables: data')
     })
 
-    it('should error for nonexistent table in JOIN ON', async () => {
-      await expect(collect(executeSql({
+    it('should error for nonexistent table in JOIN ON', () => {
+      expect(() => executeSql({
         tables: { data, data2: data },
         query: 'SELECT * FROM data JOIN data2 ON fake.col = data.id',
-      }))).rejects.toThrow('Table "fake" not found in "fake.col". Available tables: data, data2')
+      })).toThrow('Table "fake" not found in "fake.col". Available tables: data, data2')
     })
   })
 })

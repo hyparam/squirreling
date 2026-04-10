@@ -183,8 +183,8 @@ function countingDataSource(data, expensiveColumns) {
     scan(options) {
       const { rows, appliedWhere, appliedLimitOffset } = source.scan(options)
       return {
-        rows: (async function* () {
-          for await (const row of rows) {
+        async *rows() {
+          for await (const row of rows()) {
             if (options.signal?.aborted) break
             /** @type {AsyncCells} */
             const cells = {}
@@ -202,7 +202,7 @@ function countingDataSource(data, expensiveColumns) {
             }
             yield { columns: row.columns, cells }
           }
-        })(),
+        },
         appliedWhere,
         appliedLimitOffset,
       }

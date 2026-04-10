@@ -1,5 +1,5 @@
 /**
- * @import { AsyncRow, OrderByItem, SqlPrimitive } from '../types.js'
+ * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  */
 
 const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
@@ -39,17 +39,17 @@ export function compareForTerm(a, b, term) {
 }
 
 /**
- * Collects and materialize all results from an async row generator into an array
+ * Collects and materialize all results from query results into an array
  *
- * @param {AsyncGenerator<AsyncRow>} asyncRows
+ * @param {QueryResults} results
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
-export async function collect(asyncRows) {
+export async function collect(results) {
   // Collect all rows first, then materialize cells concurrently
   // This enables dataloader-style batching of cell accessors
   /** @type {AsyncRow[]} */
   const rows = []
-  for await (const asyncRow of asyncRows) {
+  for await (const asyncRow of results.rows()) {
     rows.push(asyncRow)
   }
 
@@ -84,6 +84,41 @@ export async function collect(asyncRows) {
     }
     return item
   }))
+}
+
+/**
+ * Adds two optional bounds, returning undefined if either is unknown.
+ *
+ * @param {number | undefined} a
+ * @param {number | undefined} b
+ * @returns {number | undefined}
+ */
+export function addBounds(a, b) {
+  return a !== undefined && b !== undefined ? a + b : undefined
+}
+
+/**
+ * Returns the minimum of two optional bounds, or whichever is defined.
+ *
+ * @param {number | undefined} a
+ * @param {number | undefined} b
+ * @returns {number | undefined}
+ */
+export function minBounds(a, b) {
+  if (a !== undefined && b !== undefined) return Math.min(a, b)
+  return a ?? b
+}
+
+/**
+ * Returns the maximum of two optional bounds, returning undefined if either is unknown.
+ *
+ * @param {number | undefined} a
+ * @param {number | undefined} b
+ * @returns {number | undefined}
+ */
+export function maxBounds(a, b) {
+  if (a !== undefined && b !== undefined) return Math.max(a, b)
+  return a ?? b
 }
 
 /**

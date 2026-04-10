@@ -27,13 +27,13 @@ export function trackingSource(data) {
         scanCount++
         const { rows, appliedWhere, appliedLimitOffset } = inner.scan(options)
         return {
-          rows: (async function* () {
-            for await (const row of rows) {
+          async *rows() {
+            for await (const row of rows()) {
               if (options.signal?.aborted) break
               rowCount++
               yield row
             }
-          })(),
+          },
           appliedWhere,
           appliedLimitOffset,
         }

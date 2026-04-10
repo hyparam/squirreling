@@ -140,15 +140,15 @@ describe('user-defined functions', () => {
   })
 
   describe('unknown function error', () => {
-    it('should throw error for unknown function when no UDFs provided', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for unknown function when no UDFs provided', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT UNKNOWN_FUNC(score) FROM users',
-      }))).rejects.toThrow('Unknown function "UNKNOWN_FUNC" at position 7.')
+      })).toThrow('Unknown function "UNKNOWN_FUNC" at position 7.')
     })
 
-    it('should throw error for unknown function when UDFs provided but not matching', async () => {
-      await expect(collect(executeSql({
+    it('should throw error for unknown function when UDFs provided but not matching', () => {
+      expect(() => executeSql({
         tables: { users },
         query: 'SELECT UNKNOWN_FUNC(score) FROM users',
         functions: {
@@ -157,7 +157,7 @@ describe('user-defined functions', () => {
             arguments: { min: 1, max: 1 },
           },
         },
-      }))).rejects.toThrow('Unknown function "UNKNOWN_FUNC" at position 7.')
+      })).toThrow('Unknown function "UNKNOWN_FUNC" at position 7.')
     })
   })
 

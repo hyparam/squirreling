@@ -37,12 +37,12 @@ describe('array functions', () => {
       expect(result).toEqual([{ len: null }])
     })
 
-    it('should throw for wrong argument count', async () => {
+    it('should throw for wrong argument count', () => {
       const data = [{ id: 1, items: [1, 2] }]
-      await expect(collect(executeSql({
+      expect(() => executeSql({
         tables: { data },
         query: 'SELECT ARRAY_LENGTH(items, 1) FROM data',
-      }))).rejects.toThrow()
+      })).toThrow()
     })
   })
 

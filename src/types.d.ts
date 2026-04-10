@@ -4,6 +4,16 @@ export * from './ast.js'
 export { ParserState, Token, TokenType } from './parse/types.js'
 export { QueryPlan } from './plan/types.js'
 
+/**
+ * Result of executing a SQL query.
+ */
+export interface QueryResults {
+  columns: string[]
+  rows(): AsyncGenerator<AsyncRow>
+  numRows?: number
+  maxRows?: number
+}
+
 // parseSql(options)
 export interface ParseSqlOptions {
   query: string
@@ -59,7 +69,7 @@ export interface AsyncDataSource {
  * applied by the data source.
  */
 export interface ScanResults {
-  rows: AsyncIterable<AsyncRow>
+  rows(): AsyncIterable<AsyncRow>
   appliedWhere: boolean // WHERE filter applied at scan time?
   appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?
 }
@@ -67,7 +77,7 @@ export interface ScanResults {
 /**
  * Scan options passed to data sources for query optimization.
  * Sources may ignore these hints, but if they are applied, must set the applied
- * flags in ScanResults to inform the engine.
+ * flags in ScanResult to inform the engine.
  */
 export interface ScanOptions {
   columns?: string[] // columns needed (undefined means all columns)

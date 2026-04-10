@@ -34,20 +34,26 @@ const users = [
 ]
 
 // Squirreling return types
+interface QueryResults {
+  columns: string[]
+  numRows?: number
+  maxRows?: number
+  rows(): AsyncGenerator<AsyncRow>
+}
 interface AsyncRow {
   columns: string[]
   cells: Record<string, AsyncCell>
 }
 type AsyncCell = () => Promise<SqlPrimitive>
 
-// Returns an AsyncIterable of rows with async cell loading
-const asyncRows: AsyncIterable<AsyncRow> = executeSql({
+// Returns a QueryResults object with streaming rows
+const { rows } = executeSql({
   tables: { users },
   query: 'SELECT * FROM users',
 })
 
 // Process rows as they arrive (streaming)
-for await (const { cells } of asyncRows) {
+for await (const { cells } of rows()) {
   console.log(`User id=${await cells.id()}, name=${await cells.name()}`)
 }
 ```
@@ -105,7 +111,7 @@ interface ScanOptions {
 }
 
 interface ScanResults {
-  rows: AsyncIterable<AsyncRow> // async iterable of rows
+  rows(): AsyncIterable<AsyncRow> // async iterable of rows
   appliedWhere: boolean // WHERE filter applied at scan time?
   appliedLimitOffset: boolean // LIMIT and OFFSET applied at scan time?
 }

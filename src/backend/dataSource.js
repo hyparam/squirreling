@@ -1,5 +1,5 @@
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ScanColumnOptions, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -57,12 +57,12 @@ export function memorySource({ data, columns }) {
       const end = !where && limit !== undefined ? start + limit : data.length
       const rowColumns = scanColumns ?? columns
       return {
-        rows: (async function* () {
+        async *rows() {
           for (let i = start; i < end && i < data.length; i++) {
             if (signal?.aborted) break
             yield asyncRow(data[i], rowColumns)
           }
-        })(),
+        },
         appliedWhere: false,
         appliedLimitOffset: !where,
       }
@@ -94,9 +94,9 @@ export function cachedDataSource(source) {
       const indexOffset = appliedLimitOffset && options.offset ? options.offset : 0
 
       return {
-        rows: (async function* () {
+        async *rows() {
           let index = 0
-          for await (const row of rows) {
+          for await (const row of rows()) {
             if (options.signal?.aborted) break
             const rowIndex = index + indexOffset
             /** @type {AsyncCells} */
@@ -117,10 +117,41 @@ export function cachedDataSource(source) {
             yield { columns: row.columns, cells }
             index++
           }
-        })(),
+        },
         appliedWhere,
         appliedLimitOffset,
       }
+    },
+    ...source.scanColumn && {
+      /**
+       * @param {ScanColumnOptions} options
+       * @returns {AsyncIterable<ArrayLike<SqlPrimitive>>}
+       */
+      scanColumn(options) {
+        const inner = source.scanColumn(options)
+        const indexOffset = options.offset ?? 0
+        return (async function* () {
+          let chunkStart = 0
+          for await (const chunk of inner) {
+            if (options.signal?.aborted) break
+            /** @type {SqlPrimitive[]} */
+            const cached = new Array(chunk.length)
+            for (let i = 0; i < chunk.length; i++) {
+              const cacheKey = `${chunkStart + i + indexOffset}:${options.column}`
+              const existing = cache.get(cacheKey)
+              if (existing) {
+                cached[i] = await existing
+              } else {
+                const value = chunk[i]
+                cache.set(cacheKey, Promise.resolve(value))
+                cached[i] = value
+              }
+            }
+            yield cached
+            chunkStart += chunk.length
+          }
+        })()
+      },
     },
   }
 }
