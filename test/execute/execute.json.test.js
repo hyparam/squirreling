@@ -198,6 +198,68 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_ARRAY_LENGTH', () => {
+    it('should return the length of a JSON array', async () => {
+      const data = [{ id: 1, json: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_ARRAY_LENGTH(json) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 3 }])
+    })
+
+    it('should return 0 for an empty array', async () => {
+      const result = await collect(executeSql({
+        tables: { data: [{ id: 1, json: [] }] },
+        query: 'SELECT JSON_ARRAY_LENGTH(json) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 0 }])
+    })
+
+    it('should parse a JSON string array', async () => {
+      const data = [{ id: 1, json: '[1,2,3,4]' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_ARRAY_LENGTH(json) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 4 }])
+    })
+
+    it('should return null when input is null', async () => {
+      const data = [{ id: 1, json: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_ARRAY_LENGTH(json) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+
+    it('should return null when input is an object, not an array', async () => {
+      const data = [{ id: 1, json: { a: 1 } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_ARRAY_LENGTH(json) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+
+    it('should throw for invalid JSON string', async () => {
+      const data = [{ id: 1, json: 'not valid json' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_ARRAY_LENGTH(json) AS len FROM data' })))
+        .rejects.toThrow('JSON_ARRAY_LENGTH(array): invalid JSON string')
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT JSON_ARRAY_LENGTH() FROM data',
+      })).toThrow('JSON_ARRAY_LENGTH(array) function requires 1 argument, got 0')
+    })
+  })
+
   describe('JSON_OBJECT', () => {
     it('should create an object with string key and value', async () => {
       const data = [{ id: 1 }]

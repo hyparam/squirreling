@@ -159,7 +159,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
 - Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `DATE_PART`, `DATE_TRUNC`, `EXTRACT`, `INTERVAL`
-- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_OBJECT`
+- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_OBJECT`, `JSON_ARRAY_LENGTH`
 - Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_SORT`, `CARDINALITY`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_EXTRACT`, `REGEXP_REPLACE`
 - Spatial: `ST_GeomFromText`, `ST_MakeEnvelope`, `ST_AsText`, `ST_Intersects`, `ST_Contains`, `ST_ContainsProperly`, `ST_Within`, `ST_Overlaps`, `ST_Touches`, `ST_Equals`, `ST_Crosses`, `ST_Covers`, `ST_CoveredBy`, `ST_DWithin`

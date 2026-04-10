@@ -383,6 +383,25 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return result
     }
 
+    if (funcName === 'JSON_ARRAY_LENGTH') {
+      let arr = args[0]
+      if (arr == null) return null
+      if (typeof arr === 'string') {
+        try {
+          arr = JSON.parse(arr)
+        } catch {
+          throw new ArgValueError({
+            ...node,
+            message: 'invalid JSON string',
+            hint: 'Argument must be valid JSON.',
+            rowIndex,
+          })
+        }
+      }
+      if (!Array.isArray(arr)) return null
+      return arr.length
+    }
+
     if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY') {
       const arr = args[0]
       if (!Array.isArray(arr)) return null

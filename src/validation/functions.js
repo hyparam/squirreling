@@ -154,6 +154,7 @@ export const FUNCTION_SIGNATURES = {
   JSON_QUERY: { min: 2, max: 2, signature: 'expression, path' },
   JSON_EXTRACT: { min: 2, max: 2, signature: 'expression, path' },
   JSON_OBJECT: { min: 0, signature: 'key1, value1[, ...]' },
+  JSON_ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
   JSON_ARRAYAGG: { min: 1, max: 1, signature: 'expression' },
 
   // Array functions
