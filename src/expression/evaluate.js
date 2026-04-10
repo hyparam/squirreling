@@ -272,6 +272,32 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           ))
         }
       }
+
+      if (funcName === 'STRING_AGG') {
+        const separatorNode = node.args[1]
+        const separator = String(await evaluateExpr({ node: separatorNode, row: filteredRows[0] ?? { columns: [], cells: {} }, context }))
+        /** @type {string[]} */
+        const values = []
+        if (node.distinct) {
+          const seen = new Set()
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, context })
+            if (v == null) continue
+            const str = String(v)
+            const key = keyify(str)
+            if (!seen.has(key)) {
+              seen.add(key)
+              values.push(str)
+            }
+          }
+        } else {
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, context })
+            if (v != null) values.push(String(v))
+          }
+        }
+        return values.length === 0 ? null : values.join(separator)
+      }
     }
 
     /** @type {SqlPrimitive[]} */
