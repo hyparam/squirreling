@@ -10,7 +10,7 @@ import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, QueryResults, SelectColumn, Statement } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode } from '../plan/types.js'
  */
 
@@ -101,7 +101,7 @@ export function executePlan({ plan, context }) {
   } else if (plan.type === 'SetOperation') {
     return executeSetOperation(plan, context)
   }
-  return { columns: [], async *rows () {} }
+  return { columns: [], async *rows() {} }
 }
 
 /**
@@ -155,7 +155,7 @@ function executeScan(plan, context) {
       columns: [column],
       numRows: scanRows,
       maxRows: scanRows,
-      async *rows () {
+      async *rows() {
         const columns = [column]
         for await (const chunk of chunks) {
           if (signal?.aborted) return
@@ -185,7 +185,7 @@ function executeScan(plan, context) {
     columns: plan.hints.columns ?? table.columns,
     numRows: !plan.hints.where ? scanRows : undefined,
     maxRows: scanRows,
-    async *rows () {
+    async *rows() {
       let result = scanResult.rows()
 
       // Apply WHERE if data source did not
@@ -218,7 +218,7 @@ function executeCount(plan, context) {
     columns: plan.columns.map(col => col.alias ?? derivedAlias(col.expr)),
     numRows: 1,
     maxRows: 1,
-    async *rows () {
+    async *rows() {
       // Use source numRows if available
       let count = table.numRows
       if (count === undefined) {
@@ -366,8 +366,7 @@ function executeProject(plan, context) {
   /** @type {{ alias: string, sourceName: string }[] | undefined} */
   let identifierMap
   if (!hasStar) {
-    /** @type {import('../types.js').DerivedColumn[]} */
-    const derived = /** @type {any} */ (plan.columns)
+    const derived = /** @type {DerivedColumn[]} */ (plan.columns)
     staticColumns = derived.map(col => col.alias ?? derivedAlias(col.expr))
     const allIdentifiers = derived.every(col =>
       col.expr.type === 'identifier' && !col.expr.prefix
@@ -375,7 +374,7 @@ function executeProject(plan, context) {
     if (allIdentifiers) {
       identifierMap = derived.map((col, i) => ({
         alias: staticColumns[i],
-        sourceName: /** @type {import('../types.js').IdentifierNode} */ (col.expr).name,
+        sourceName: /** @type {IdentifierNode} */ (col.expr).name,
       }))
     }
   }
@@ -384,7 +383,7 @@ function executeProject(plan, context) {
     columns: selectColumnNames(plan.columns, child.columns),
     numRows: child.numRows,
     maxRows: child.maxRows,
-    async *rows () {
+    async *rows() {
       let rowIndex = 0
       let identifierMapValidated = false
 
@@ -404,15 +403,15 @@ function executeProject(plan, context) {
         if (identifierMap) {
           /** @type {AsyncCells} */
           const cells = {}
-          const srcData = row._data
-          /** @type {Record<string, import('../types.js').SqlPrimitive> | undefined} */
-          const _data = srcData ? {} : undefined
+          const source = row.resolved
+          /** @type {Record<string, SqlPrimitive> | undefined} */
+          const resolved = source ? {} : undefined
           for (const { alias, sourceName } of identifierMap) {
             cells[alias] = row.cells[sourceName]
-            if (_data && srcData) _data[alias] = srcData[sourceName]
+            if (resolved && source) resolved[alias] = source[sourceName]
           }
-          yield _data
-            ? { columns: staticColumns, cells, _data }
+          yield resolved
+            ? { columns: staticColumns, cells, resolved }
             : { columns: staticColumns, cells }
           continue
         }
@@ -420,7 +419,7 @@ function executeProject(plan, context) {
         const currentRowIndex = rowIndex
 
         /** @type {string[]} */
-        const columns = staticColumns ? staticColumns : []
+        const columns = staticColumns ?? []
         /** @type {AsyncCells} */
         const cells = {}
 
@@ -465,7 +464,7 @@ function executeDistinct(plan, context) {
   return {
     columns: child.columns,
     maxRows: child.maxRows,
-    async *rows () {
+    async *rows() {
       const { signal } = context
       const MAX_CHUNK = 256
 
@@ -541,7 +540,7 @@ function executeSetOperation(plan, context) {
         columns: left.columns,
         numRows: addBounds(left.numRows, right.numRows),
         maxRows: addBounds(left.maxRows, right.maxRows),
-        async *rows () {
+        async *rows() {
           // UNION ALL: yield all rows from both sides
           yield* left.rows()
           yield* right.rows()
@@ -553,7 +552,7 @@ function executeSetOperation(plan, context) {
       return {
         columns: left.columns,
         maxRows: addBounds(left.maxRows, right.maxRows),
-        async *rows () {
+        async *rows() {
           // UNION: yield deduplicated rows from both sides
           const seen = new Set()
           for await (const row of left.rows()) {
@@ -581,7 +580,7 @@ function executeSetOperation(plan, context) {
     return {
       columns: left.columns,
       maxRows: minBounds(left.maxRows, right.maxRows),
-      async *rows () {
+      async *rows() {
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
@@ -623,7 +622,7 @@ function executeSetOperation(plan, context) {
     return {
       columns: left.columns,
       maxRows: left.maxRows,
-      async *rows () {
+      async *rows() {
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()

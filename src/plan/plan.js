@@ -10,20 +10,6 @@ import { extractColumns, fromAlias, inferStatementColumns } from './columns.js'
  * @import { QueryPlan } from './types.d.ts'
  */
 
-/** @type {WeakMap<Statement, { plan: QueryPlan, tablesKey: string }>} */
-const planCache = new WeakMap()
-
-/**
- * @param {Record<string, AsyncDataSource> | undefined} tables
- * @returns {string}
- */
-function tablesKey(tables) {
-  if (!tables) return ''
-  const keys = Object.keys(tables)
-  keys.sort()
-  return keys.join(',')
-}
-
 /**
  * Builds a query plan from a statement AST.
  * Resolves CTEs at plan time so no planning occurs during execution.
@@ -34,20 +20,7 @@ function tablesKey(tables) {
 export function planSql({ query, functions, tables }) {
   /** @type {Statement} */
   const stmt = typeof query === 'string' ? parseSql({ query, functions }) : query
-
-  const key = !functions ? tablesKey(tables) : undefined
-  if (key !== undefined) {
-    const cached = planCache.get(stmt)
-    if (cached && cached.tablesKey === key) return cached.plan
-  }
-
-  const plan = planStatement({ stmt, tables })
-
-  if (key !== undefined) {
-    planCache.set(stmt, { plan, tablesKey: key })
-  }
-
-  return plan
+  return planStatement({ stmt, tables })
 }
 
 /**

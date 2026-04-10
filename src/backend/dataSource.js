@@ -15,7 +15,7 @@ export function asyncRow(obj, columns) {
   for (const key of columns) {
     cells[key] = () => Promise.resolve(obj[key])
   }
-  return { columns, cells, _data: obj }
+  return { columns, cells, resolved: obj }
 }
 
 /**

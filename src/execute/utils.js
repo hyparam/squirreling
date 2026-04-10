@@ -56,7 +56,7 @@ export async function collect(results) {
   // Fast path: if all rows have pre-materialized data, skip Promise overhead
   let allMaterialized = rows.length > 0
   for (let i = 0; i < rows.length; i++) {
-    if (!rows[i]._data) {
+    if (!rows[i].resolved) {
       allMaterialized = false
       break
     }
@@ -68,7 +68,7 @@ export async function collect(results) {
       /** @type {Record<string, SqlPrimitive>} */
       const item = {}
       for (const col of row.columns) {
-        item[col] = row._data[col]
+        item[col] = row.resolved[col]
       }
       result[i] = item
     }
