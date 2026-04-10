@@ -1,5 +1,12 @@
 # Squirreling Changelog
 
+## [0.12.2]
+ - `GREATEST` and `LEAST` functions
+ - `REGEXP_MATCHES` function
+ - `JSON_ARRAY_LENGTH` function
+ - `STRING_AGG` aggregate function
+ - Optimize SQL execution pipeline for repeated queries
+
 ## [0.12.1]
  - `QueryResults` now includes a `columns` field with the list of output column names
 
