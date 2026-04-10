@@ -2,6 +2,8 @@
  * @import { AsyncRow, OrderByItem, SqlPrimitive } from '../types.js'
  */
 
+const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
+
 /**
  * Compares two values for a single ORDER BY term, handling nulls and direction
  *
@@ -10,8 +12,6 @@
  * @param {OrderByItem} term
  * @returns {number}
  */
-const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
-
 export function compareForTerm(a, b, term) {
   const aIsNull = a == null
   const bIsNull = b == null

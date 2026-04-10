@@ -36,6 +36,7 @@ export interface ExecuteContext {
 export interface AsyncRow {
   columns: string[]
   cells: AsyncCells
+  _data?: Record<string, SqlPrimitive>
 }
 export type AsyncCells = Record<string, AsyncCell>
 export type AsyncCell = () => Promise<SqlPrimitive>

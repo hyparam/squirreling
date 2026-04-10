@@ -293,15 +293,17 @@ async function* executeProject(plan, context) {
   /** @type {{ alias: string, sourceName: string }[] | undefined} */
   let identifierMap
   if (!hasStar) {
-    staticColumns = plan.columns.map(col => col.alias ?? derivedAlias(col.expr))
+    /** @type {import('../types.js').DerivedColumn[]} */
+    const derived = /** @type {any} */ (plan.columns)
+    staticColumns = derived.map(col => col.alias ?? derivedAlias(col.expr))
     // Check if all columns are simple identifier references (no expressions)
-    const allIdentifiers = plan.columns.every(col =>
+    const allIdentifiers = derived.every(col =>
       col.expr.type === 'identifier' && !col.expr.prefix
     )
     if (allIdentifiers) {
-      identifierMap = plan.columns.map((col, i) => ({
+      identifierMap = derived.map((col, i) => ({
         alias: staticColumns[i],
-        sourceName: col.expr.name,
+        sourceName: /** @type {import('../types.js').IdentifierNode} */ (col.expr).name,
       }))
     }
   }
@@ -326,10 +328,11 @@ async function* executeProject(plan, context) {
       /** @type {AsyncCells} */
       const cells = {}
       const srcData = row._data
+      /** @type {Record<string, import('../types.js').SqlPrimitive> | undefined} */
       const _data = srcData ? {} : undefined
       for (const { alias, sourceName } of identifierMap) {
         cells[alias] = row.cells[sourceName]
-        if (_data) _data[alias] = srcData[sourceName]
+        if (_data && srcData) _data[alias] = srcData[sourceName]
       }
       yield _data
         ? { columns: staticColumns, cells, _data }
