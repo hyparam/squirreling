@@ -20,7 +20,7 @@ export function executeSort(plan, context) {
     columns: child.columns,
     numRows: child.numRows,
     maxRows: child.maxRows,
-    async *rows () {
+    async *rows() {
       // Buffer all rows
       /** @type {AsyncRow[]} */
       const rows = []

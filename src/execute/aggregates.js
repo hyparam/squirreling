@@ -62,7 +62,7 @@ export function executeHashAggregate(plan, context) {
   return {
     columns: selectColumnNames(plan.columns, child.columns),
     maxRows: child.maxRows,
-    async *rows () {
+    async *rows() {
       // Collect all rows
       /** @type {AsyncRow[]} */
       const allRows = []
@@ -136,7 +136,7 @@ export function executeScalarAggregate(plan, context) {
     columns: selectColumnNames(plan.columns, child.columns),
     numRows: plan.having ? undefined : 1,
     maxRows: 1,
-    async *rows () {
+    async *rows() {
       // Collect all rows into single group
       /** @type {AsyncRow[]} */
       const group = []

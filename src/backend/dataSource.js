@@ -15,7 +15,7 @@ export function asyncRow(obj, columns) {
   for (const key of columns) {
     cells[key] = () => Promise.resolve(obj[key])
   }
-  return { columns, cells }
+  return { columns, cells, resolved: obj }
 }
 
 /**
@@ -34,13 +34,14 @@ export function memorySource({ data, columns }) {
     }
     const firstColumns = Object.keys(data[0])
     // Check first 1000 rows for consistent columns
+    const firstColSet = new Set(firstColumns)
     for (let i = 1; i < data.length && i < 1000; i++) {
       const rowColumns = Object.keys(data[i])
       const missing = firstColumns.find(col => !rowColumns.includes(col))
       if (missing) {
         throw new Error(`Inconsistent data, column "${missing}" not found in row ${i}`)
       }
-      const extra = rowColumns.find(col => !firstColumns.includes(col))
+      const extra = rowColumns.find(col => !firstColSet.has(col))
       if (extra) {
         throw new Error(`Inconsistent data, unexpected column "${extra}" found in row ${i}`)
       }
@@ -54,11 +55,12 @@ export function memorySource({ data, columns }) {
       // Only apply offset and limit if no where clause
       const start = !where ? offset ?? 0 : 0
       const end = !where && limit !== undefined ? start + limit : data.length
+      const rowColumns = scanColumns ?? columns
       return {
         async *rows() {
           for (let i = start; i < end && i < data.length; i++) {
             if (signal?.aborted) break
-            yield asyncRow(data[i], scanColumns ?? columns)
+            yield asyncRow(data[i], rowColumns)
           }
         },
         appliedWhere: false,

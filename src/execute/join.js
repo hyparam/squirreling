@@ -19,7 +19,7 @@ export function executeNestedLoopJoin(plan, context) {
   const right = executePlan({ plan: plan.right, context })
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
-    async *rows () {
+    async *rows() {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
 
@@ -97,7 +97,7 @@ export function executePositionalJoin(plan, context) {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     numRows,
     maxRows: maxBounds(left.maxRows, right.maxRows),
-    async *rows () {
+    async *rows() {
       const { signal } = context
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
@@ -143,7 +143,7 @@ export function executeHashJoin(plan, context) {
   const right = executePlan({ plan: plan.right, context })
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
-    async *rows () {
+    async *rows() {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
 

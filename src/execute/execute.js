@@ -10,7 +10,7 @@ import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, QueryResults, SelectColumn, Statement } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode } from '../plan/types.js'
  */
 
@@ -24,14 +24,27 @@ export function executeSql({ tables, query, functions, signal }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
-  /** @type {Record<string, AsyncDataSource>} */
-  const normalizedTables = {}
-  for (const [name, data] of Object.entries(tables)) {
-    if (Array.isArray(data)) {
-      normalizedTables[name] = memorySource({ data })
-    } else {
-      normalizedTables[name] = data
+  // Fast path: skip normalization when no arrays are present
+  let needsNormalization = false
+  const tableKeys = Object.keys(tables)
+  for (let i = 0; i < tableKeys.length; i++) {
+    if (Array.isArray(tables[tableKeys[i]])) {
+      needsNormalization = true
+      break
     }
+  }
+
+  /** @type {Record<string, AsyncDataSource>} */
+  let normalizedTables
+  if (needsNormalization) {
+    normalizedTables = {}
+    for (let i = 0; i < tableKeys.length; i++) {
+      const name = tableKeys[i]
+      const data = tables[name]
+      normalizedTables[name] = Array.isArray(data) ? memorySource({ data }) : data
+    }
+  } else {
+    normalizedTables = /** @type {Record<string, AsyncDataSource>} */ (tables)
   }
 
   const context = { tables: normalizedTables, functions, signal }
@@ -88,7 +101,7 @@ export function executePlan({ plan, context }) {
   } else if (plan.type === 'SetOperation') {
     return executeSetOperation(plan, context)
   }
-  return { columns: [], async *rows () {} }
+  return { columns: [], async *rows() {} }
 }
 
 /**
@@ -142,7 +155,7 @@ function executeScan(plan, context) {
       columns: [column],
       numRows: scanRows,
       maxRows: scanRows,
-      async *rows () {
+      async *rows() {
         const columns = [column]
         for await (const chunk of chunks) {
           if (signal?.aborted) return
@@ -172,7 +185,7 @@ function executeScan(plan, context) {
     columns: plan.hints.columns ?? table.columns,
     numRows: !plan.hints.where ? scanRows : undefined,
     maxRows: scanRows,
-    async *rows () {
+    async *rows() {
       let result = scanResult.rows()
 
       // Apply WHERE if data source did not
@@ -205,7 +218,7 @@ function executeCount(plan, context) {
     columns: plan.columns.map(col => col.alias ?? derivedAlias(col.expr)),
     numRows: 1,
     maxRows: 1,
-    async *rows () {
+    async *rows() {
       // Use source numRows if available
       let count = table.numRows
       if (count === undefined) {
@@ -344,37 +357,86 @@ function executeFilter(plan, context) {
  */
 function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+
+  // Pre-compute column names for derived columns (avoids per-row derivedAlias calls)
+  const hasStar = plan.columns.some(col => col.type === 'star')
+
+  /** @type {string[] | undefined} */
+  let staticColumns
+  /** @type {{ alias: string, sourceName: string }[] | undefined} */
+  let identifierMap
+  if (!hasStar) {
+    const derived = /** @type {DerivedColumn[]} */ (plan.columns)
+    staticColumns = derived.map(col => col.alias ?? derivedAlias(col.expr))
+    const allIdentifiers = derived.every(col =>
+      col.expr.type === 'identifier' && !col.expr.prefix
+    )
+    if (allIdentifiers) {
+      identifierMap = derived.map((col, i) => ({
+        alias: staticColumns[i],
+        sourceName: /** @type {IdentifierNode} */ (col.expr).name,
+      }))
+    }
+  }
+
   return {
     columns: selectColumnNames(plan.columns, child.columns),
     numRows: child.numRows,
     maxRows: child.maxRows,
-    async *rows () {
+    async *rows() {
       let rowIndex = 0
+      let identifierMapValidated = false
 
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
         rowIndex++
+
+        // Validate identifier fast path on first row (may fail for JOINs with prefixed columns)
+        if (identifierMap && !identifierMapValidated) {
+          identifierMapValidated = true
+          if (!identifierMap.every(m => m.sourceName in row.cells)) {
+            identifierMap = undefined
+          }
+        }
+
+        // Fast path: all columns are simple identifier references
+        if (identifierMap) {
+          /** @type {AsyncCells} */
+          const cells = {}
+          const source = row.resolved
+          /** @type {Record<string, SqlPrimitive> | undefined} */
+          const resolved = source ? {} : undefined
+          for (const { alias, sourceName } of identifierMap) {
+            cells[alias] = row.cells[sourceName]
+            if (resolved && source) resolved[alias] = source[sourceName]
+          }
+          yield resolved
+            ? { columns: staticColumns, cells, resolved }
+            : { columns: staticColumns, cells }
+          continue
+        }
+
         const currentRowIndex = rowIndex
 
         /** @type {string[]} */
-        const columns = []
+        const columns = staticColumns ?? []
         /** @type {AsyncCells} */
         const cells = {}
 
-        for (const col of plan.columns) {
+        for (let i = 0; i < plan.columns.length; i++) {
+          const col = plan.columns[i]
           if (col.type === 'star') {
             const prefix = col.table ? `${col.table}.` : undefined
             for (const key of row.columns) {
               if (prefix && !key.startsWith(prefix)) continue
-              // Strip table prefix for output column names
               const dotIndex = key.indexOf('.')
               const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
               columns.push(outputKey)
               cells[outputKey] = row.cells[key]
             }
           } else {
-            const alias = col.alias ?? derivedAlias(col.expr)
-            columns.push(alias)
+            const alias = staticColumns ? staticColumns[i] : (col.alias ?? derivedAlias(col.expr))
+            if (!staticColumns) columns.push(alias)
             cells[alias] = () => evaluateExpr({
               node: col.expr,
               row,
@@ -402,7 +464,7 @@ function executeDistinct(plan, context) {
   return {
     columns: child.columns,
     maxRows: child.maxRows,
-    async *rows () {
+    async *rows() {
       const { signal } = context
       const MAX_CHUNK = 256
 
@@ -478,7 +540,7 @@ function executeSetOperation(plan, context) {
         columns: left.columns,
         numRows: addBounds(left.numRows, right.numRows),
         maxRows: addBounds(left.maxRows, right.maxRows),
-        async *rows () {
+        async *rows() {
           // UNION ALL: yield all rows from both sides
           yield* left.rows()
           yield* right.rows()
@@ -490,7 +552,7 @@ function executeSetOperation(plan, context) {
       return {
         columns: left.columns,
         maxRows: addBounds(left.maxRows, right.maxRows),
-        async *rows () {
+        async *rows() {
           // UNION: yield deduplicated rows from both sides
           const seen = new Set()
           for await (const row of left.rows()) {
@@ -518,7 +580,7 @@ function executeSetOperation(plan, context) {
     return {
       columns: left.columns,
       maxRows: minBounds(left.maxRows, right.maxRows),
-      async *rows () {
+      async *rows() {
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
@@ -560,7 +622,7 @@ function executeSetOperation(plan, context) {
     return {
       columns: left.columns,
       maxRows: left.maxRows,
-      async *rows () {
+      async *rows() {
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()

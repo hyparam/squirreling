@@ -46,6 +46,9 @@ export interface ExecuteContext {
 export interface AsyncRow {
   columns: string[]
   cells: AsyncCells
+  // Optional pre-materialized row values keyed by output column name.
+  // When present, consumers can skip the AsyncCell Promise roundtrip.
+  resolved?: Record<string, SqlPrimitive>
 }
 export type AsyncCells = Record<string, AsyncCell>
 export type AsyncCell = () => Promise<SqlPrimitive>
