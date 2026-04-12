@@ -140,7 +140,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 
 - `SELECT` statements with `DISTINCT`, `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
 - `WITH` clause for Common Table Expressions (CTEs)
-- Subqueries in `SELECT`, `FROM`, and `WHERE` clauses
+- Subqueries in `SELECT`, `FROM`, `WHERE`, and correlated subqueries
 - `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN`, `POSITIONAL JOIN`
 - `GROUP BY` and `HAVING` clauses
 - Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
