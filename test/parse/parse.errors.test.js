@@ -164,6 +164,58 @@ describe('parseSql error handling', () => {
     })
   })
 
+  describe('window function errors', () => {
+    it('should throw error for COUNT with OVER', () => {
+      expect(() => parseSql({ query: 'SELECT COUNT(*) OVER () FROM t' }))
+        .toThrow('Window functions are not supported: COUNT(...) OVER (...)')
+    })
+
+    it('should throw error for SUM with OVER', () => {
+      expect(() => parseSql({ query: 'SELECT SUM(x) OVER () FROM t' }))
+        .toThrow('Window functions are not supported: SUM(...) OVER (...)')
+    })
+
+    it('should throw error for AVG with OVER and PARTITION BY', () => {
+      expect(() => parseSql({ query: 'SELECT AVG(x) OVER (PARTITION BY y) FROM t' }))
+        .toThrow('Window functions are not supported: AVG(...) OVER (...)')
+    })
+
+    it('should throw error for OVER after FILTER', () => {
+      expect(() => parseSql({ query: 'SELECT COUNT(*) FILTER (WHERE x > 0) OVER () FROM t' }))
+        .toThrow('Window functions are not supported: COUNT(...) OVER (...)')
+    })
+
+    it('should throw error for ROW_NUMBER window function', () => {
+      expect(() => parseSql({ query: 'SELECT ROW_NUMBER() OVER (ORDER BY id) FROM t' }))
+        .toThrow('Window function "ROW_NUMBER" is not supported')
+    })
+
+    it('should throw error for RANK window function', () => {
+      expect(() => parseSql({ query: 'SELECT RANK() OVER (ORDER BY id) FROM t' }))
+        .toThrow('Window function "RANK" is not supported')
+    })
+
+    it('should throw error for DENSE_RANK window function', () => {
+      expect(() => parseSql({ query: 'SELECT DENSE_RANK() OVER (ORDER BY id) FROM t' }))
+        .toThrow('Window function "DENSE_RANK" is not supported')
+    })
+
+    it('should throw error for LAG window function', () => {
+      expect(() => parseSql({ query: 'SELECT LAG(x) OVER (ORDER BY id) FROM t' }))
+        .toThrow('Window function "LAG" is not supported')
+    })
+
+    it('should throw error for LEAD window function', () => {
+      expect(() => parseSql({ query: 'SELECT LEAD(x) OVER (ORDER BY id) FROM t' }))
+        .toThrow('Window function "LEAD" is not supported')
+    })
+
+    it('should throw error for NTILE window function', () => {
+      expect(() => parseSql({ query: 'SELECT NTILE(4) OVER (ORDER BY id) FROM t' }))
+        .toThrow('Window function "NTILE" is not supported')
+    })
+  })
+
   describe('string function errors', () => {
     it('should throw error on missing opening paren in string function', () => {
       expect(() => parseSql({ query: 'SELECT UPPER name myalias FROM users' }))
