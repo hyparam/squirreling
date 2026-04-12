@@ -618,62 +618,60 @@ describe('planSql', () => {
   describe('complex queries', () => {
     it('plan for query with WHERE, ORDER BY, LIMIT', () => {
       const plan = planSql({ query: 'SELECT name FROM users WHERE age > 21 ORDER BY name LIMIT 10' })
+      // TopN fuses Sort+Limit: Limit(Project(Sort(Scan))) → Project(TopN(Scan))
       expect(plan).toEqual({
-        type: 'Limit',
-        limit: 10,
-        child: {
-          type: 'Project',
-          columns: [
-            {
-              type: 'derived',
-              expr: {
-                type: 'identifier',
-                name: 'name',
-                positionStart: 7,
-                positionEnd: 11,
-              },
+        type: 'Project',
+        columns: [
+          {
+            type: 'derived',
+            expr: {
+              type: 'identifier',
+              name: 'name',
               positionStart: 7,
               positionEnd: 11,
             },
-          ],
-          child: {
-            type: 'Sort',
-            orderBy: [
-              {
-                expr: {
-                  type: 'identifier',
-                  name: 'name',
-                  positionStart: 47,
-                  positionEnd: 51,
-                },
-                direction: 'ASC',
-                positionStart: 0,
+            positionStart: 7,
+            positionEnd: 11,
+          },
+        ],
+        child: {
+          type: 'TopN',
+          limit: 10,
+          orderBy: [
+            {
+              expr: {
+                type: 'identifier',
+                name: 'name',
+                positionStart: 47,
                 positionEnd: 51,
               },
-            ],
-            child: {
-              type: 'Scan',
-              table: 'users',
-              hints: {
-                columns: ['name', 'age'],
-                where: {
-                  type: 'binary',
-                  op: '>',
-                  left: {
-                    type: 'identifier',
-                    name: 'age',
-                    positionStart: 29,
-                    positionEnd: 32,
-                  },
-                  right: {
-                    type: 'literal',
-                    value: 21,
-                    positionStart: 35,
-                    positionEnd: 37,
-                  },
+              direction: 'ASC',
+              positionStart: 0,
+              positionEnd: 51,
+            },
+          ],
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: {
+              columns: ['name', 'age'],
+              where: {
+                type: 'binary',
+                op: '>',
+                left: {
+                  type: 'identifier',
+                  name: 'age',
                   positionStart: 29,
+                  positionEnd: 32,
+                },
+                right: {
+                  type: 'literal',
+                  value: 21,
+                  positionStart: 35,
                   positionEnd: 37,
                 },
+                positionStart: 29,
+                positionEnd: 37,
               },
             },
           },
@@ -683,102 +681,63 @@ describe('planSql', () => {
 
     it('plan for grouped query with HAVING and ORDER BY', () => {
       const plan = planSql({ query: 'SELECT department, COUNT(*) as cnt FROM users GROUP BY department HAVING COUNT(*) > 5 ORDER BY cnt LIMIT 10' })
+      // TopN fuses Sort+Limit: Limit(Sort(HashAggregate)) → TopN(HashAggregate)
       expect(plan).toEqual({
-        type: 'Limit',
+        type: 'TopN',
         limit: 10,
+        orderBy: [{
+          expr: { type: 'identifier', name: 'cnt', positionStart: 95, positionEnd: 98 },
+          direction: 'ASC',
+          positionStart: 0,
+          positionEnd: 98,
+        }],
         child: {
-          type: 'Sort',
-          orderBy: [
-            {
-              expr: {
-                type: 'identifier',
-                name: 'cnt',
-                positionStart: 95,
-                positionEnd: 98,
-              },
-              direction: 'ASC',
-              positionStart: 0,
-              positionEnd: 98,
-            },
+          type: 'HashAggregate',
+          groupBy: [
+            { type: 'identifier', name: 'department', positionStart: 55, positionEnd: 65 },
           ],
-          child: {
-            type: 'HashAggregate',
-            groupBy: [
-              {
-                type: 'identifier',
-                name: 'department',
-                positionStart: 55,
-                positionEnd: 65,
-              },
-            ],
-            columns: [
-              {
-                type: 'derived',
-                expr: {
-                  type: 'identifier',
-                  name: 'department',
-                  positionStart: 7,
-                  positionEnd: 17,
-                },
-                positionStart: 7,
-                positionEnd: 17,
-              },
-              {
-                type: 'derived',
-                expr: {
-                  type: 'function',
-                  funcName: 'COUNT',
-                  args: [
-                    {
-                      type: 'star',
-                      positionStart: 25,
-                      positionEnd: 26,
-                    },
-                  ],
-                  positionStart: 19,
-                  positionEnd: 27,
-                },
-                alias: 'cnt',
-                positionStart: 19,
-                positionEnd: 34,
-              },
-            ],
-            having: {
-              type: 'binary',
-              op: '>',
-              left: {
+          columns: [
+            {
+              type: 'derived',
+              expr: { type: 'identifier', name: 'department', positionStart: 7, positionEnd: 17 },
+              positionStart: 7,
+              positionEnd: 17,
+            },
+            {
+              type: 'derived',
+              expr: {
                 type: 'function',
                 funcName: 'COUNT',
-                args: [
-                  {
-                    type: 'star',
-                    positionStart: 79,
-                    positionEnd: 80,
-                  },
-                ],
-                positionStart: 73,
-                positionEnd: 81,
+                args: [{ type: 'star', positionStart: 25, positionEnd: 26 }],
+                positionStart: 19,
+                positionEnd: 27,
               },
-              right: {
-                type: 'literal',
-                value: 5,
-                positionStart: 84,
-                positionEnd: 85,
-              },
+              alias: 'cnt',
+              positionStart: 19,
+              positionEnd: 34,
+            },
+          ],
+          having: {
+            type: 'binary',
+            op: '>',
+            left: {
+              type: 'function',
+              funcName: 'COUNT',
+              args: [{ type: 'star', positionStart: 79, positionEnd: 80 }],
               positionStart: 73,
-              positionEnd: 85,
+              positionEnd: 81,
             },
-            child: {
-              type: 'Scan',
-              table: 'users',
-              hints: {
-                columns: ['department'],
-              },
-            },
+            right: { type: 'literal', value: 5, positionStart: 84, positionEnd: 85 },
+            positionStart: 73,
+            positionEnd: 85,
+          },
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: { columns: ['department'] },
           },
         },
       })
     })
   })
-
 })
