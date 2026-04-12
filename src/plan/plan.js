@@ -47,7 +47,7 @@ function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns }) {
     return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables, parentColumns })
   }
   if (stmt.type === 'compound') {
-    return planSetOperation({ compound: stmt, ctePlans, cteColumns, tables })
+    return planSetOperation({ compound: stmt, ctePlans, cteColumns, tables, parentColumns })
   }
   return planSelect({ select: stmt, ctePlans, cteColumns, tables, parentColumns })
 }
@@ -60,11 +60,12 @@ function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns }) {
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query
  * @returns {QueryPlan}
  */
-function planSetOperation({ compound, ctePlans, cteColumns, tables }) {
-  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables })
-  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables })
+function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumns }) {
+  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
+  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns })
   const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
   const rightColumns = inferStatementColumns({ stmt: compound.right, cteColumns, tables })
 
