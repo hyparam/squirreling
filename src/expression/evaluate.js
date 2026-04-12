@@ -39,6 +39,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (qualified in row.cells) {
         return row.cells[qualified]()
       }
+      // Check outer row for correlated subquery references
+      if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
+        return context.outerRow.cells[node.name]()
+      }
       // Fall back to just the column part
       if (node.name in row.cells) {
         return row.cells[node.name]()
@@ -66,7 +70,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const gen = executeStatement({ query: node.subquery, context }).rows()
+    const outerScope = context.scope
+    const subContext = outerScope
+      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+      : context
+    const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
     const { value } = await gen.next()
     gen.return(undefined)
     if (!value) return null

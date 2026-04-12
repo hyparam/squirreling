@@ -40,6 +40,12 @@ export interface ExecuteContext {
   tables: Record<string, AsyncDataSource>
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
+  // current query's FROM + JOIN aliases (e.g. ['a', 'b'])
+  scope?: string[]
+  // the enclosing query's current row, for resolving correlated references
+  outerRow?: AsyncRow
+  // aliases from the enclosing query that are valid correlated references
+  outerAliases?: Set<string>
 }
 
 // AsyncRow represents a row with async cell values

@@ -32,9 +32,10 @@ export function planSql({ query, functions, tables }) {
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
+ * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns }) {
+export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
   if (stmt.type === 'with') {
     // Build CTE plans in order (each CTE can reference preceding CTEs)
     ctePlans ??= new Map()
@@ -44,12 +45,12 @@ function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns }) {
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
       cteColumns.set(cte.name.toLowerCase(), inferStatementColumns({ stmt: cte.query, cteColumns, tables }))
     }
-    return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables, parentColumns })
+    return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables, parentColumns, outerScope })
   }
   if (stmt.type === 'compound') {
     return planSetOperation({ compound: stmt, ctePlans, cteColumns, tables })
   }
-  return planSelect({ select: stmt, ctePlans, cteColumns, tables, parentColumns })
+  return planSelect({ select: stmt, ctePlans, cteColumns, tables, parentColumns, outerScope })
 }
 
 /**
@@ -100,9 +101,10 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables }) {
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query (for subquery pushdown)
+ * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
+function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.type === 'derived' && findAggregate(col.expr)
@@ -114,7 +116,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   const sourceAlias = fromAlias(select.from)
 
   // Resolve aliases (and validate qualified references)
-  const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table)].map(a => [a, true]))
+  // Include outerScope aliases so correlated references pass validation
+  const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table), ...outerScope ?? []].map(a => [a, true]))
   /** @type {Map<string, ExprNode>} */
   const aliases = new Map()
   const columns = select.columns.map(col => {
@@ -168,7 +171,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
 
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
-  let plan = planFrom({ select, ctePlans, cteColumns, hints, tables })
+  let plan = planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope })
 
   // Add JOINs
   if (select.joins.length) {
@@ -260,9 +263,10 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {ScanOptions} options.hints
  * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {string[]} [options.outerScope]
  * @returns {QueryPlan}
  */
-function planFrom({ select, ctePlans, cteColumns, hints, tables }) {
+function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
   if (select.from.type === 'table') {
     const ctePlan = ctePlans?.get(select.from.table.toLowerCase())
     if (ctePlan) {
@@ -276,6 +280,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables }) {
       ctePlans,
       cteColumns,
       tables,
+      outerScope,
       parentColumns: hints.columns?.map(name => ({ type: 'identifier', name, positionStart: 0, positionEnd: 0 })),
     })
     // Validate that requested columns exist in subquery output
