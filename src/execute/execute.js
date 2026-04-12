@@ -6,7 +6,7 @@ import { planSql } from '../plan/plan.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
-import { executeSort } from './sort.js'
+import { executeSort, executeTopN } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 
 /**
@@ -94,6 +94,8 @@ export function executePlan({ plan, context }) {
     return executeScalarAggregate(plan, context)
   } else if (plan.type === 'Sort') {
     return executeSort(plan, context)
+  } else if (plan.type === 'TopN') {
+    return executeTopN(plan, context)
   } else if (plan.type === 'Distinct') {
     return executeDistinct(plan, context)
   } else if (plan.type === 'Limit') {

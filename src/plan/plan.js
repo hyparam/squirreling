@@ -245,6 +245,22 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
     }
   }
 
+  // Fuse Sort+Limit into TopN for O(limit) memory instead of O(n)
+  if (plan.type === 'Limit' && plan.limit !== undefined && !plan.offset) {
+    if (plan.child.type === 'Sort') {
+      // Limit(Sort(child)) → TopN(child)
+      plan = { type: 'TopN', limit: plan.limit, orderBy: plan.child.orderBy, child: plan.child.child }
+    } else if (plan.child.type === 'Project' && plan.child.child.type === 'Sort') {
+      // Limit(Project(Sort(child))) → Project(TopN(child))
+      const sort = plan.child.child
+      plan = {
+        type: 'Project',
+        columns: plan.child.columns,
+        child: { type: 'TopN', limit: plan.limit, orderBy: sort.orderBy, child: sort.child },
+      }
+    }
+  }
+
   return plan
 }
 
