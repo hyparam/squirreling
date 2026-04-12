@@ -2,7 +2,8 @@ import { memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
-import { planSql } from '../plan/plan.js'
+import { planSql, planStatement } from '../plan/plan.js'
+import { fromAlias } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
@@ -34,7 +35,8 @@ export function executeSql({ tables, query, functions, signal }) {
     }
   }
 
-  const context = { tables: normalizedTables, functions, signal }
+  const scope = statementScope(parsed)
+  const context = { tables: normalizedTables, functions, signal, scope }
   const plan = planSql({ query: parsed, functions, tables: normalizedTables })
   return executePlan({ plan, context })
 }
@@ -45,11 +47,26 @@ export function executeSql({ tables, query, functions, signal }) {
  * @param {Object} options
  * @param {Statement} options.query
  * @param {ExecuteContext} options.context
+ * @param {string[]} [options.outerScope] - outer query aliases for correlated subqueries
  * @returns {QueryResults}
  */
-export function executeStatement({ query, context }) {
-  const plan = planSql({ query, functions: context.functions, tables: context.tables })
-  return executePlan({ plan, context })
+export function executeStatement({ query, context, outerScope }) {
+  const plan = planStatement({ stmt: query, tables: context.tables, outerScope })
+  // Compute this query's scope (FROM alias + JOIN aliases) for nested correlated subqueries
+  const scope = statementScope(query)
+  return executePlan({ plan, context: scope ? { ...context, scope } : context })
+}
+
+/**
+ * Extracts the table aliases from a statement's FROM and JOIN clauses.
+ *
+ * @param {Statement} stmt
+ * @returns {string[] | undefined}
+ */
+function statementScope(stmt) {
+  if (stmt.type === 'with') return statementScope(stmt.query)
+  if (stmt.type === 'compound') return undefined
+  return [fromAlias(stmt.from), ...stmt.joins.map(j => j.alias ?? j.table)]
 }
 
 /**

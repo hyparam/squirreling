@@ -457,23 +457,192 @@ describe('subqueries', () => {
       expect(charlie?.max_age).toBe(35)
     })
 
-    // it('should handle correlated scalar subquery', async () => {
-    //   const result = await collect(executeSql({
-    //     tables: { users, orders },
-    //     query: `
-    //       SELECT
-    //         name,
-    //         (SELECT SUM(amount) FROM orders WHERE user_id = users.id) AS total_orders
-    //       FROM users
-    //     `,
-    //   }))
-    //   expect(result).toHaveLength(3)
-    //   const alice = result.find(r => r.name === 'Alice')
-    //   const bob = result.find(r => r.name === 'Bob')
-    //   const charlie = result.find(r => r.name === 'Charlie')
-    //   expect(alice?.total_orders).toBe(250)
-    //   expect(bob?.total_orders).toBe(200)
-    //   expect(charlie?.total_orders).toBeNull()
-    // })
+    it('should handle correlated scalar subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT
+            name,
+            (SELECT SUM(amount) FROM orders WHERE user_id = users.id) AS total_orders
+          FROM users
+        `,
+      }))
+      expect(result).toHaveLength(3)
+      const alice = result.find(r => r.name === 'Alice')
+      const bob = result.find(r => r.name === 'Bob')
+      const charlie = result.find(r => r.name === 'Charlie')
+      expect(alice?.total_orders).toBe(250)
+      expect(bob?.total_orders).toBe(200)
+      expect(charlie?.total_orders).toBeNull()
+    })
+
+    it('should handle correlated scalar subquery with ORDER BY and LIMIT', async () => {
+      const messages = [
+        { session_id: 1, role: 'user', content: 'hello', timestamp: 1 },
+        { session_id: 1, role: 'assistant', content: 'hi there', timestamp: 2 },
+        { session_id: 1, role: 'user', content: 'how are you', timestamp: 3 },
+        { session_id: 1, role: 'assistant', content: 'doing well', timestamp: 4 },
+        { session_id: 2, role: 'user', content: 'hey', timestamp: 5 },
+        { session_id: 2, role: 'assistant', content: 'howdy', timestamp: 6 },
+      ]
+      const result = await collect(executeSql({
+        tables: { messages },
+        query: `
+          SELECT
+            a.session_id,
+            a.timestamp,
+            a.content AS assistant_content,
+            (SELECT u.content FROM messages u
+             WHERE u.session_id = a.session_id
+               AND u.role = 'user'
+               AND u.timestamp < a.timestamp
+             ORDER BY u.timestamp DESC
+             LIMIT 1) AS prior_user
+          FROM messages a
+          WHERE a.role = 'assistant'
+          ORDER BY a.timestamp
+        `,
+      }))
+      expect(result).toEqual([
+        { session_id: 1, timestamp: 2, assistant_content: 'hi there', prior_user: 'hello' },
+        { session_id: 1, timestamp: 4, assistant_content: 'doing well', prior_user: 'how are you' },
+        { session_id: 2, timestamp: 6, assistant_content: 'howdy', prior_user: 'hey' },
+      ])
+    })
+
+    it('should return null when correlated subquery matches no rows', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT name, (SELECT amount FROM orders WHERE user_id = users.id AND amount > 9999) AS big_order
+          FROM users
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', big_order: null },
+        { name: 'Bob', big_order: null },
+        { name: 'Charlie', big_order: null },
+      ])
+    })
+
+    it('should handle multiple correlated subqueries in same SELECT', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT
+            name,
+            (SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count,
+            (SELECT MAX(amount) FROM orders WHERE user_id = users.id) AS max_order
+          FROM users
+          ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', order_count: 2, max_order: 150 },
+        { name: 'Bob', order_count: 1, max_order: 200 },
+        { name: 'Charlie', order_count: 0, max_order: null },
+      ])
+    })
+
+    it('should disambiguate inner vs outer columns with same name', async () => {
+      // Both tables have 'id' — outer users.id vs inner orders.id
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT name, (SELECT MIN(id) FROM orders WHERE user_id = users.id) AS first_order_id
+          FROM users
+          ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', first_order_id: 1 },
+        { name: 'Bob', first_order_id: 2 },
+        { name: 'Charlie', first_order_id: null },
+      ])
+    })
+
+    it('should handle correlated subquery with aliased outer table', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT u.name, (SELECT SUM(amount) FROM orders o WHERE o.user_id = u.id) AS total
+          FROM users u
+          ORDER BY u.name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', total: 250 },
+        { name: 'Bob', total: 200 },
+        { name: 'Charlie', total: null },
+      ])
+    })
+
+    it('should handle correlated subquery referencing outer WHERE-filtered rows', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT name, (SELECT SUM(amount) FROM orders WHERE user_id = users.id) AS total
+          FROM users
+          WHERE active = TRUE
+          ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', total: 250 },
+        { name: 'Bob', total: 200 },
+      ])
+    })
+
+    it('should handle correlated subquery with self-join pattern', async () => {
+      // Find users whose age is above the average of all other users
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT u.name, u.age,
+            (SELECT AVG(age) FROM users WHERE id != u.id) AS others_avg
+          FROM users u
+          ORDER BY u.name
+        `,
+      }))
+      expect(result).toHaveLength(3)
+      const alice = result.find(r => r.name === 'Alice')
+      expect(alice?.others_avg).toBe(30) // avg(25, 35)
+    })
+
+    it('should handle correlated subquery in expression context', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT
+            name,
+            age - (SELECT AVG(age) FROM users) AS age_diff
+          FROM users
+          ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', age_diff: 0 },
+        { name: 'Bob', age_diff: -5 },
+        { name: 'Charlie', age_diff: 5 },
+      ])
+    })
+
+    it('should handle correlated subquery nested inside FROM subquery', async () => {
+      // The correlated ref (users.id) is inside a FROM-clause subquery
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT name,
+            (SELECT max_amt FROM (SELECT MAX(amount) AS max_amt FROM orders WHERE user_id = users.id) AS sub) AS biggest
+          FROM users
+          ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', biggest: 150 },
+        { name: 'Bob', biggest: 200 },
+        { name: 'Charlie', biggest: null },
+      ])
+    })
   })
 })
