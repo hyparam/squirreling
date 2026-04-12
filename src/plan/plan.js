@@ -153,6 +153,11 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns }) {
   const hints = {}
   const perTableColumns = extractColumns({ select, parentColumns })
   hints.columns = perTableColumns.get(sourceAlias)
+  // Empty columns array means no columns were referenced, but a FROM subquery
+  // still needs its own columns (e.g. for DISTINCT). Treat empty as unrestricted.
+  if (hints.columns?.length === 0 && select.from.type === 'subquery') {
+    hints.columns = undefined
+  }
   if (!select.joins.length) {
     hints.where = select.where
     if (!needsBuffering && !select.distinct) {

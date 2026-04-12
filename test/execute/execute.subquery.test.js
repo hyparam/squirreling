@@ -423,6 +423,19 @@ describe('subqueries', () => {
     })
   })
 
+  it('should preserve columns needed by DISTINCT through COUNT(*) pushdown', async () => {
+    const items = [
+      { group: 'a', value: 1 },
+      { group: 'a', value: 1 },
+      { group: 'a', value: 2 },
+    ]
+    const result = await collect(executeSql({
+      tables: { items },
+      query: 'SELECT COUNT(*) AS n FROM (SELECT DISTINCT value FROM items) AS d',
+    }))
+    expect(result).toEqual([{ n: 2 }])
+  })
+
   // scalar subqueries
   describe('scalar subqueries', () => {
     it('should handle simple scalar subquery in SELECT', async () => {
