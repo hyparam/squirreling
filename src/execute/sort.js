@@ -165,6 +165,7 @@ export function executeTopN(plan, context) {
       const heap = []
       const limit = plan.limit
 
+      /** @param {number} i */
       function siftDown(i) {
         const n = heap.length
         while (true) {
@@ -181,6 +182,7 @@ export function executeTopN(plan, context) {
         }
       }
 
+      /** @param {number} i */
       function siftUp(i) {
         while (i > 0) {
           const parent = (i - 1) >> 1
