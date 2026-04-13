@@ -1,5 +1,12 @@
 import { FUNCTION_SIGNATURES } from './functions.js'
 
+/** Well-known window functions that are not supported */
+const WINDOW_FUNCTIONS = new Set([
+  'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'NTILE',
+  'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE', 'NTH_VALUE',
+  'CUME_DIST', 'PERCENT_RANK',
+])
+
 /**
  * Structured parse error with position range.
  */
@@ -103,10 +110,16 @@ export class UnknownFunctionError extends ParseError {
    * @param {number} options.positionEnd
    */
   constructor({ funcName, positionStart, positionEnd }) {
-    const suggestions = suggestFunctions(funcName)
-    let message = `Unknown function "${funcName}" at position ${positionStart}.`
-    if (suggestions.length) {
-      message += ` Did you mean ${suggestions.join(', ')}?`
+    const upper = funcName.toUpperCase()
+    let message
+    if (WINDOW_FUNCTIONS.has(upper)) {
+      message = `Window function "${funcName}" is not supported at position ${positionStart}`
+    } else {
+      const suggestions = suggestFunctions(funcName)
+      message = `Unknown function "${funcName}" at position ${positionStart}.`
+      if (suggestions.length) {
+        message += ` Did you mean ${suggestions.join(', ')}?`
+      }
     }
     super({ message, positionStart, positionEnd })
   }

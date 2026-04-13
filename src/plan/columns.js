@@ -163,7 +163,54 @@ function collectColumnsFromExpr(expr, columns, aliases) {
       collectColumnsFromExpr(expr.elseResult, columns, aliases)
     }
   }
-  // No columns: count(*), literal, interval, exists, not exists, subquery
+  // Subqueries: collect prefixed identifiers for correlated column detection.
+  // Only prefixed identifiers are collected because correlated outer references
+  // are always qualified (e.g. users.id, a.session_id). Unprefixed identifiers
+  // from the inner query would incorrectly be attributed to the outer table.
+  if (expr.type === 'subquery' || expr.type === 'in' || expr.type === 'exists' || expr.type === 'not exists') {
+    if (expr.type === 'in') {
+      collectColumnsFromExpr(expr.expr, columns, aliases)
+    }
+    const sub = expr.subquery
+    if (sub) {
+      /** @type {IdentifierNode[]} */
+      const inner = []
+      collectColumnsFromStatement(sub, inner)
+      for (const id of inner) {
+        if (id.prefix) columns.push(id)
+      }
+    }
+  }
+  // No columns: count(*), literal, interval
+}
+
+/**
+ * Collects identifiers from a subquery statement for correlated column detection.
+ *
+ * @param {Statement} stmt
+ * @param {IdentifierNode[]} columns
+ */
+function collectColumnsFromStatement(stmt, columns) {
+  if (stmt.type === 'compound') {
+    collectColumnsFromStatement(stmt.left, columns)
+    collectColumnsFromStatement(stmt.right, columns)
+    return
+  }
+  if (stmt.type === 'with') {
+    collectColumnsFromStatement(stmt.query, columns)
+    return
+  }
+  for (const col of stmt.columns) {
+    if (col.type === 'derived') collectColumnsFromExpr(col.expr, columns)
+  }
+  collectColumnsFromExpr(stmt.where, columns)
+  if (stmt.from?.type === 'subquery') {
+    collectColumnsFromStatement(stmt.from.query, columns)
+  }
+  for (const join of stmt.joins) collectColumnsFromExpr(join.on, columns)
+  for (const expr of stmt.groupBy) collectColumnsFromExpr(expr, columns)
+  collectColumnsFromExpr(stmt.having, columns)
+  for (const item of stmt.orderBy) collectColumnsFromExpr(item.expr, columns)
 }
 
 /**
