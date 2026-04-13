@@ -78,6 +78,27 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     return null
   }
 
+  if (funcName === 'REGEXP_MATCHES') {
+    const str = args[0]
+    const pattern = args[1]
+    if (str == null || pattern == null) return null
+    const strVal = String(str)
+    const patternStr = String(pattern)
+
+    let regex
+    try {
+      regex = new RegExp(patternStr)
+    } catch (/** @type {any} */ error) {
+      throw new ArgValueError({
+        ...node,
+        message: `invalid regex pattern: ${error.message}`,
+        rowIndex,
+      })
+    }
+
+    return regex.test(strVal)
+  }
+
   if (funcName === 'REGEXP_REPLACE') {
     const str = args[0]
     const pattern = args[1]

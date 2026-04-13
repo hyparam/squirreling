@@ -965,6 +965,119 @@ describe('string functions', () => {
     })
   })
 
+  describe('GREATEST', () => {
+    it('should return the largest numeric value', async () => {
+      const data = [
+        { id: 1, a: 3, b: 7, c: 5 },
+        { id: 2, a: 10, b: 2, c: 8 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT GREATEST(a, b, c) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: 7 },
+        { result: 10 },
+      ])
+    })
+
+    it('should return the largest string value', async () => {
+      const data = [{ id: 1, a: 'apple', b: 'banana', c: 'cherry' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT GREATEST(a, b, c) AS result FROM data',
+      }))
+      expect(result[0].result).toBe('cherry')
+    })
+
+    it('should skip null values', async () => {
+      const data = [{ id: 1, a: NULL, b: 3, c: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT GREATEST(a, b, c) AS result FROM data',
+      }))
+      expect(result[0].result).toBe(3)
+    })
+
+    it('should return null when all arguments are null', async () => {
+      const data = [{ id: 1, a: NULL, b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT GREATEST(a, b) AS result FROM data',
+      }))
+      expect(result[0].result).toBeNull()
+    })
+
+    it('should work with a single argument', async () => {
+      const data = [{ id: 1, a: 42 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT GREATEST(a) AS result FROM data',
+      }))
+      expect(result[0].result).toBe(42)
+    })
+
+    it('should throw when called with no arguments', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT GREATEST() FROM data',
+      })).toThrow(/GREATEST/)
+    })
+  })
+
+  describe('LEAST', () => {
+    it('should return the smallest numeric value', async () => {
+      const data = [
+        { id: 1, a: 3, b: 7, c: 5 },
+        { id: 2, a: 10, b: 2, c: 8 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEAST(a, b, c) AS result FROM data',
+      }))
+      expect(result).toEqual([
+        { result: 3 },
+        { result: 2 },
+      ])
+    })
+
+    it('should return the smallest string value', async () => {
+      const data = [{ id: 1, a: 'apple', b: 'banana', c: 'cherry' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEAST(a, b, c) AS result FROM data',
+      }))
+      expect(result[0].result).toBe('apple')
+    })
+
+    it('should skip null values', async () => {
+      const data = [{ id: 1, a: NULL, b: 3, c: 1 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEAST(a, b, c) AS result FROM data',
+      }))
+      expect(result[0].result).toBe(1)
+    })
+
+    it('should return null when all arguments are null', async () => {
+      const data = [{ id: 1, a: NULL, b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEAST(a, b) AS result FROM data',
+      }))
+      expect(result[0].result).toBeNull()
+    })
+
+    it('should throw when called with no arguments', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT LEAST() FROM data',
+      })).toThrow(/LEAST/)
+    })
+  })
+
   describe('combined string functions', () => {
     it('should use multiple different string functions in one query', async () => {
       const result = await collect(executeSql({

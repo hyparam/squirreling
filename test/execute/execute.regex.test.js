@@ -184,6 +184,85 @@ describe('regex functions', () => {
     })
   })
 
+  describe('REGEXP_MATCHES', () => {
+    it('should return true when string matches pattern', async () => {
+      const data = [
+        { id: 1, text: 'Hello World 123' },
+        { id: 2, text: 'no digits here' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_MATCHES(text, \'[0-9]+\') AS has_num FROM data',
+      }))
+      expect(result).toEqual([
+        { has_num: true },
+        { has_num: false },
+      ])
+    })
+
+    it('should support anchored patterns', async () => {
+      const data = [
+        { id: 1, code: 'ABC-123' },
+        { id: 2, code: 'XYZ-456' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_MATCHES(code, \'^ABC\') AS m FROM data',
+      }))
+      expect(result).toEqual([
+        { m: true },
+        { m: false },
+      ])
+    })
+
+    it('should handle null string value', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_MATCHES(text, \'[a-z]+\') AS m FROM data',
+      }))
+      expect(result[0].m).toBeNull()
+    })
+
+    it('should handle null pattern value', async () => {
+      const data = [{ id: 1, text: 'hello', pattern: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_MATCHES(text, pattern) AS m FROM data',
+      }))
+      expect(result[0].m).toBeNull()
+    })
+
+    it('should throw for invalid regex pattern', async () => {
+      const data = [{ id: 1, text: 'hello' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_MATCHES(text, \'[\') FROM data',
+      }))).rejects.toThrow('invalid regex pattern')
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1, text: 'hello' }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT REGEXP_MATCHES(text) FROM data',
+      })).toThrow('REGEXP_MATCHES')
+    })
+
+    it('should work in WHERE clause', async () => {
+      const data = [
+        { id: 1, text: 'abc123' },
+        { id: 2, text: 'abcdef' },
+        { id: 3, text: 'xyz789' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE REGEXP_MATCHES(text, \'[0-9]+\')',
+      }))
+      expect(result).toEqual([{ id: 1 }, { id: 3 }])
+    })
+  })
+
   describe('REGEXP_REPLACE', () => {
     it('should replace all matches by default', async () => {
       const data = [{ id: 1, text: 'abc 123 def 456' }]

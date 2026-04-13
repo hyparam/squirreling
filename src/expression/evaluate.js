@@ -39,6 +39,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (qualified in row.cells) {
         return row.cells[qualified]()
       }
+      // Check outer row for correlated subquery references
+      if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
+        return context.outerRow.cells[node.name]()
+      }
       // Fall back to just the column part
       if (node.name in row.cells) {
         return row.cells[node.name]()
@@ -66,7 +70,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const gen = executeStatement({ query: node.subquery, context }).rows()
+    const outerScope = context.scope
+    const subContext = outerScope
+      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+      : context
+    const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
     const { value } = await gen.next()
     gen.return(undefined)
     if (!value) return null
@@ -272,6 +280,32 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           ))
         }
       }
+
+      if (funcName === 'STRING_AGG') {
+        const separatorNode = node.args[1]
+        const separator = String(await evaluateExpr({ node: separatorNode, row: filteredRows[0] ?? { columns: [], cells: {} }, context }))
+        /** @type {string[]} */
+        const values = []
+        if (node.distinct) {
+          const seen = new Set()
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, context })
+            if (v == null) continue
+            const str = String(v)
+            const key = keyify(str)
+            if (!seen.has(key)) {
+              seen.add(key)
+              values.push(str)
+            }
+          }
+        } else {
+          for (const row of filteredRows) {
+            const v = await evaluateExpr({ node: argNode, row, context })
+            if (v != null) values.push(String(v))
+          }
+        }
+        return values.length === 0 ? null : values.join(separator)
+      }
     }
 
     /** @type {SqlPrimitive[]} */
@@ -309,6 +343,20 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       const val2 = evaluateExpr({ node: node.args[1], row, rowIndex, rows, context })
       const val1 = await evaluateExpr({ node: node.args[0], row, rowIndex, rows, context })
       return val1 == await val2 ? null : val1
+    }
+
+    if (funcName === 'GREATEST' || funcName === 'LEAST') {
+      // Skip nulls; return null if all inputs are null
+      const isGreatest = funcName === 'GREATEST'
+      /** @type {SqlPrimitive} */
+      let best = null
+      for (const arg of args) {
+        if (arg == null) continue
+        if (best == null || (isGreatest ? arg > best : arg < best)) {
+          best = arg
+        }
+      }
+      return best
     }
 
     if (funcName === 'DATE_TRUNC') {
@@ -355,6 +403,25 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         result[String(key)] = value
       }
       return result
+    }
+
+    if (funcName === 'JSON_ARRAY_LENGTH') {
+      let arr = args[0]
+      if (arr == null) return null
+      if (typeof arr === 'string') {
+        try {
+          arr = JSON.parse(arr)
+        } catch {
+          throw new ArgValueError({
+            ...node,
+            message: 'invalid JSON string',
+            hint: 'Argument must be valid JSON.',
+            rowIndex,
+          })
+        }
+      }
+      if (!Array.isArray(arr)) return null
+      return arr.length
     }
 
     if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY') {
