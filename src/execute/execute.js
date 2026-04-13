@@ -25,27 +25,14 @@ export function executeSql({ tables, query, functions, signal }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
-  // Fast path: skip normalization when no arrays are present
-  let needsNormalization = false
-  const tableKeys = Object.keys(tables)
-  for (let i = 0; i < tableKeys.length; i++) {
-    if (Array.isArray(tables[tableKeys[i]])) {
-      needsNormalization = true
-      break
-    }
-  }
-
   /** @type {Record<string, AsyncDataSource>} */
-  let normalizedTables
-  if (needsNormalization) {
-    normalizedTables = {}
-    for (let i = 0; i < tableKeys.length; i++) {
-      const name = tableKeys[i]
-      const data = tables[name]
-      normalizedTables[name] = Array.isArray(data) ? memorySource({ data }) : data
+  const normalizedTables = {}
+  for (const [name, data] of Object.entries(tables)) {
+    if (Array.isArray(data)) {
+      normalizedTables[name] = memorySource({ data })
+    } else {
+      normalizedTables[name] = data
     }
-  } else {
-    normalizedTables = /** @type {Record<string, AsyncDataSource>} */ (tables)
   }
 
   const scope = statementScope(parsed)
