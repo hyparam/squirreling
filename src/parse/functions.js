@@ -104,6 +104,16 @@ export function parseFunctionCall(state, positionStart) {
     expect(state, 'paren', ')')
   }
 
+  // Check for OVER clause (window functions not supported)
+  const overTok = current(state)
+  if (overTok.type === 'identifier' && overTok.value.toUpperCase() === 'OVER') {
+    throw new ParseError({
+      message: `Window functions are not supported: ${funcName}(...) OVER (...)`,
+      positionStart,
+      positionEnd: overTok.positionEnd,
+    })
+  }
+
   return {
     type: 'function',
     funcName,

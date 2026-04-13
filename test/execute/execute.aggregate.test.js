@@ -388,6 +388,77 @@ describe('executeSql', () => {
 
   })
 
+  describe('STRING_AGG', () => {
+    it('should aggregate strings with STRING_AGG', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT STRING_AGG(name, \', \') AS names FROM users',
+      }))
+      expect(result).toEqual([{ names: 'Alice, Bob, Charlie, Diana, Eve' }])
+    })
+
+    it('should handle STRING_AGG with GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, STRING_AGG(name, \'|\') AS names FROM users GROUP BY city ORDER BY city',
+      }))
+      expect(result).toEqual([
+        { city: 'LA', names: 'Bob|Diana' },
+        { city: 'NYC', names: 'Alice|Charlie|Eve' },
+      ])
+    })
+
+    it('should handle STRING_AGG DISTINCT', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT STRING_AGG(DISTINCT city, \', \') AS cities FROM users',
+      }))
+      expect(result[0].cities).toBeTypeOf('string')
+      const cities = String(result[0].cities).split(', ')
+      expect(cities).toHaveLength(2)
+      expect(cities).toContain('NYC')
+      expect(cities).toContain('LA')
+    })
+
+    it('should skip nulls in STRING_AGG', async () => {
+      const data = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: null },
+        { id: 3, name: 'Charlie' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_AGG(name, \', \') AS names FROM data',
+      }))
+      expect(result).toEqual([{ names: 'Alice, Charlie' }])
+    })
+
+    it('should return null for STRING_AGG of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { empty },
+        query: 'SELECT STRING_AGG(name, \', \') AS names FROM empty',
+      }))
+      expect(result).toEqual([{ names: null }])
+    })
+
+    it('should handle STRING_AGG with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT STRING_AGG(name, \', \') FILTER (WHERE city = \'NYC\') AS nyc_names FROM users',
+      }))
+      expect(result).toEqual([{ nyc_names: 'Alice, Charlie, Eve' }])
+    })
+
+    it('should throw for wrong argument count', async () => {
+      await expect(async () => {
+        await collect(executeSql({
+          tables: { users },
+          query: 'SELECT STRING_AGG(name) FROM users',
+        }))
+      }).rejects.toThrow()
+    })
+  })
+
   describe('null handling in aggregates', () => {
     it('should handle null in aggregate functions correctly', async () => {
       const data = [

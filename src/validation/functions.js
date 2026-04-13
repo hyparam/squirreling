@@ -11,7 +11,7 @@ export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP'
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE'].includes(name)
+  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG'].includes(name)
 }
 
 /**
@@ -31,7 +31,7 @@ export function isMathFunc(name) {
  * @returns {name is RegExpFunction}
  */
 export function isRegexpFunc(name) {
-  return ['REGEXP_SUBSTR', 'REGEXP_EXTRACT', 'REGEXP_REPLACE'].includes(name)
+  return ['REGEXP_SUBSTR', 'REGEXP_EXTRACT', 'REGEXP_REPLACE', 'REGEXP_MATCHES'].includes(name)
 }
 
 /**
@@ -112,6 +112,7 @@ export const FUNCTION_SIGNATURES = {
   REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
   REGEXP_EXTRACT: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
   REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, occurrence]]' },
+  REGEXP_MATCHES: { min: 2, max: 2, signature: 'string, pattern' },
 
   // Date/time functions
   RANDOM: { min: 0, max: 0, signature: '' },
@@ -154,6 +155,7 @@ export const FUNCTION_SIGNATURES = {
   JSON_QUERY: { min: 2, max: 2, signature: 'expression, path' },
   JSON_EXTRACT: { min: 2, max: 2, signature: 'expression, path' },
   JSON_OBJECT: { min: 0, signature: 'key1, value1[, ...]' },
+  JSON_ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
   JSON_ARRAYAGG: { min: 1, max: 1, signature: 'expression' },
 
   // Array functions
@@ -165,6 +167,8 @@ export const FUNCTION_SIGNATURES = {
   // Conditional functions
   COALESCE: { min: 1, signature: 'value1, value2[, ...]' },
   NULLIF: { min: 2, max: 2, signature: 'value1, value2' },
+  GREATEST: { min: 1, signature: 'value1[, value2, ...]' },
+  LEAST: { min: 1, signature: 'value1[, value2, ...]' },
 
   // Aggregate functions
   COUNT: { min: 1, max: 1, signature: 'expression' },
@@ -177,6 +181,7 @@ export const FUNCTION_SIGNATURES = {
   MEDIAN: { min: 1, max: 1, signature: 'expression' },
   PERCENTILE_CONT: { min: 2, max: 2, signature: 'fraction, expression' },
   APPROX_QUANTILE: { min: 2, max: 2, signature: 'expression, fraction' },
+  STRING_AGG: { min: 2, max: 2, signature: 'expression, separator' },
 
   // Spatial functions
   ST_INTERSECTS: { min: 2, max: 2, signature: 'geometry, geometry' },
