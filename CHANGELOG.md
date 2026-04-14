@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.4]
+ - Push column projection through `UNION ALL` branches
+
 ## [0.12.3]
  - Correlated subqueries
  - Fix `count(*)` when `FROM` is a subquery
