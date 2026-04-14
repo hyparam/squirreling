@@ -8,31 +8,6 @@ import { compareForTerm } from './utils.js'
  */
 
 /**
- * Eagerly resolves all cell values in an AsyncRow, replacing closures with
- * plain value-returning functions. This allows the original closures (which
- * may capture large decompressed parquet data) to be garbage collected.
- *
- * @param {AsyncRow} row
- * @returns {Promise<AsyncRow>}
- */
-async function materializeRow(row) {
-  if (row.resolved) return row
-  const { columns } = row
-  /** @type {Record<string, SqlPrimitive>} */
-  const resolved = {}
-  await Promise.all(columns.map(async col => {
-    resolved[col] = await row.cells[col]()
-  }))
-  /** @type {AsyncCells} */
-  const cells = {}
-  for (const col of columns) {
-    const val = resolved[col]
-    cells[col] = () => Promise.resolve(val)
-  }
-  return { columns, cells, resolved }
-}
-
-/**
  * Executes a sort operation (ORDER BY)
  *
  * @param {SortNode} plan
@@ -46,12 +21,12 @@ export function executeSort(plan, context) {
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
-      // Buffer all rows, materializing cells to release closures over parquet data
+      // Buffer all rows (cells stay lazy — see multi-pass below)
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
-        rows.push(await materializeRow(row))
+        rows.push(row)
       }
 
       if (rows.length === 0) return
@@ -127,24 +102,80 @@ export function executeSort(plan, context) {
 }
 
 /**
- * Compares two entries by their sort keys across all ORDER BY terms.
- *
- * @param {SqlPrimitive[]} aKeys
- * @param {SqlPrimitive[]} bKeys
- * @param {OrderByItem[]} orderBy
- * @returns {number}
+ * @typedef {{ row: AsyncRow, keys: SqlPrimitive[] }} HeapEntry
+ * `keys` grows lazily: keys[i] is populated only when the i-th ORDER BY term
+ * is actually needed for a comparison involving this entry.
  */
-function compareKeys(aKeys, bKeys, orderBy) {
+
+/**
+ * Resolves the i-th sort key for a heap entry, memoizing it on the entry.
+ * Fills any earlier unresolved positions to keep keys.length === resolved count.
+ *
+ * @param {HeapEntry} entry
+ * @param {number} i
+ * @param {OrderByItem[]} orderBy
+ * @param {ExecuteContext} context
+ * @returns {Promise<SqlPrimitive>}
+ */
+async function resolveKey(entry, i, orderBy, context) {
+  while (entry.keys.length <= i) {
+    const idx = entry.keys.length
+    entry.keys.push(await evaluateExpr({ node: orderBy[idx].expr, row: entry.row, context }))
+  }
+  return entry.keys[i]
+}
+
+/**
+ * Compares two heap entries lazily across ORDER BY terms: resolves the i-th
+ * key for each entry only when earlier terms have tied. Already-resolved keys
+ * are reused via the entry's `keys` cache.
+ *
+ * @param {HeapEntry} a
+ * @param {HeapEntry} b
+ * @param {OrderByItem[]} orderBy
+ * @param {ExecuteContext} context
+ * @returns {Promise<number>}
+ */
+async function compareLazy(a, b, orderBy, context) {
   for (let i = 0; i < orderBy.length; i++) {
-    const cmp = compareForTerm(aKeys[i], bKeys[i], orderBy[i])
+    const av = await resolveKey(a, i, orderBy, context)
+    const bv = await resolveKey(b, i, orderBy, context)
+    const cmp = compareForTerm(av, bv, orderBy[i])
     if (cmp !== 0) return cmp
   }
   return 0
 }
 
 /**
+ * Splices already-resolved sort keys back into the row's cells so downstream
+ * consumers reading the sort-key columns don't re-evaluate them. Only safe
+ * for identifier terms whose name is an output column of the row.
+ *
+ * @param {AsyncRow} row
+ * @param {OrderByItem[]} orderBy
+ * @param {SqlPrimitive[]} keys
+ * @returns {AsyncRow}
+ */
+function withResolvedKeys(row, orderBy, keys) {
+  /** @type {AsyncCells | undefined} */
+  let cells
+  for (let i = 0; i < orderBy.length && i < keys.length; i++) {
+    const { expr } = orderBy[i]
+    if (expr.type === 'identifier' && row.columns.includes(expr.name)) {
+      if (!cells) cells = { ...row.cells }
+      const val = keys[i]
+      cells[expr.name] = () => Promise.resolve(val)
+    }
+  }
+  return cells ? { columns: row.columns, cells } : row
+}
+
+/**
  * Executes a TopN operation (ORDER BY + LIMIT fused) using a bounded heap.
- * Memory usage is O(limit) instead of O(total rows).
+ * Memory usage is O(limit) instead of O(total rows). Sort keys are evaluated
+ * lazily per-entry, so multi-column ORDER BY only pays for later terms when
+ * earlier terms tie. Non-sort cells are never materialized by TopN — they
+ * stay lazy for the downstream consumer.
  *
  * @param {TopNNode} plan
  * @param {ExecuteContext} context
@@ -162,20 +193,20 @@ export function executeTopN(plan, context) {
     async *rows() {
       if (limit <= 0) return
 
-      // Bounded max-heap: heap[0] is the worst (largest for ASC) entry.
-      // When a new row is better than the worst, replace it.
-      /** @type {{ row: AsyncRow, keys: SqlPrimitive[] }[]} */
+      // Bounded max-heap: heap[0] is the worst entry (largest for ASC).
+      // When a new row beats the worst, replace it.
+      /** @type {HeapEntry[]} */
       const heap = []
 
       /** @param {number} i */
-      function siftDown(i) {
+      async function siftDown(i) {
         const n = heap.length
         while (true) {
           let worst = i
           const left = 2 * i + 1
           const right = 2 * i + 2
-          if (left < n && compareKeys(heap[left].keys, heap[worst].keys, orderBy) > 0) worst = left
-          if (right < n && compareKeys(heap[right].keys, heap[worst].keys, orderBy) > 0) worst = right
+          if (left < n && await compareLazy(heap[left], heap[worst], orderBy, context) > 0) worst = left
+          if (right < n && await compareLazy(heap[right], heap[worst], orderBy, context) > 0) worst = right
           if (worst === i) break
           const tmp = heap[i]
           heap[i] = heap[worst]
@@ -185,10 +216,10 @@ export function executeTopN(plan, context) {
       }
 
       /** @param {number} i */
-      function siftUp(i) {
+      async function siftUp(i) {
         while (i > 0) {
           const parent = i - 1 >> 1
-          if (compareKeys(heap[i].keys, heap[parent].keys, orderBy) <= 0) break
+          if (await compareLazy(heap[i], heap[parent], orderBy, context) <= 0) break
           const tmp = heap[i]
           heap[i] = heap[parent]
           heap[parent] = tmp
@@ -199,25 +230,37 @@ export function executeTopN(plan, context) {
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
 
-        const keys = await Promise.all(orderBy.map(term =>
-          evaluateExpr({ node: term.expr, row, context })
-        ))
+        /** @type {HeapEntry} */
+        const entry = { row, keys: [] }
 
         if (heap.length < limit) {
-          heap.push({ row: await materializeRow(row), keys })
-          siftUp(heap.length - 1)
-        } else if (compareKeys(keys, heap[0].keys, orderBy) < 0) {
+          heap.push(entry)
+          await siftUp(heap.length - 1)
+        } else if (await compareLazy(entry, heap[0], orderBy, context) < 0) {
           // New row sorts before the worst in heap — replace it
-          heap[0] = { row: await materializeRow(row), keys }
-          siftDown(0)
+          heap[0] = entry
+          await siftDown(0)
         }
         // Otherwise discard — worse than everything in the heap
       }
 
-      // Extract in sorted order
-      const sorted = heap.sort((a, b) => compareKeys(a.keys, b.keys, orderBy))
-      for (const entry of sorted) {
-        yield entry.row
+      // Final sort of survivors. Resolve any keys still missing so we can
+      // use a synchronous comparator.
+      for (const entry of heap) {
+        for (let i = 0; i < orderBy.length; i++) {
+          await resolveKey(entry, i, orderBy, context)
+        }
+      }
+      heap.sort((a, b) => {
+        for (let i = 0; i < orderBy.length; i++) {
+          const cmp = compareForTerm(a.keys[i], b.keys[i], orderBy[i])
+          if (cmp !== 0) return cmp
+        }
+        return 0
+      })
+
+      for (const entry of heap) {
+        yield withResolvedKeys(entry.row, orderBy, entry.keys)
       }
     },
   }

@@ -80,17 +80,19 @@ describe('expensive cell access', () => {
   })
 
   it('should minimize expensive calls when limit + order by', async () => {
-    // Sort materializes all rows eagerly (releases closures over parquet data)
     await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name DESC LIMIT 1'))
-      .resolves.toBe(5)
+      .resolves.toBe(1)
   })
 
   it('should minimize expensive calls when sorting by multiple columns', async () => {
-    // Sort materializes all rows eagerly, so expensive column accessed once per row
+    // ORDER BY cheap column, then expensive column
+    // Should only evaluate expensive column for rows that tie on cheap column
+    // With 5 unique names, no ties occur, so llm only evaluated for LIMIT rows
     await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name, llm LIMIT 1'))
-      .resolves.toBe(5)
+      .resolves.toBe(1)
     await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name, llm LIMIT 2'))
-      .resolves.toBe(5)
+      .resolves.toBe(2)
+    // Without LIMIT, all rows need llm for final materialization
     await expect(countExpensiveCalls('SELECT * FROM data ORDER BY name, llm'))
       .resolves.toBe(5)
   })
@@ -138,8 +140,9 @@ describe('expensive cell access', () => {
       query: 'SELECT * FROM data ORDER BY name',
     }))
 
-    // Eager materialization during sort resolves each cell once: 5 rows × 1 expensive col = 5
-    expect(countingSource.getExpensiveCallCount()).toBe(5)
+    // With double-sorting bug: 15 accesses (2 sorts, 1 materialization)
+    // Without bug: 10 accesses (1 sort, 1 materialization)
+    expect(countingSource.getExpensiveCallCount()).toBe(10)
   })
 })
 
