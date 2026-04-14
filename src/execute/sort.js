@@ -3,7 +3,7 @@ import { executePlan } from './execute.js'
 import { compareForTerm } from './utils.js'
 
 /**
- * @import { AsyncRow, ExecuteContext, QueryResults, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncRow, ExecuteContext, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  * @import { SortNode, TopNNode } from '../plan/types.js'
  */
 
@@ -18,12 +18,12 @@ import { compareForTerm } from './utils.js'
 async function materializeRow(row) {
   if (row.resolved) return row
   const { columns } = row
-  /** @type {Record<string, import('../types.js').SqlPrimitive>} */
+  /** @type {Record<string, SqlPrimitive>} */
   const resolved = {}
   await Promise.all(columns.map(async col => {
     resolved[col] = await row.cells[col]()
   }))
-  /** @type {import('../types.js').AsyncCells} */
+  /** @type {AsyncCells} */
   const cells = {}
   for (const col of columns) {
     const val = resolved[col]
@@ -131,7 +131,7 @@ export function executeSort(plan, context) {
  *
  * @param {SqlPrimitive[]} aKeys
  * @param {SqlPrimitive[]} bKeys
- * @param {import('../types.js').OrderByItem[]} orderBy
+ * @param {OrderByItem[]} orderBy
  * @returns {number}
  */
 function compareKeys(aKeys, bKeys, orderBy) {
@@ -152,18 +152,20 @@ function compareKeys(aKeys, bKeys, orderBy) {
  */
 export function executeTopN(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const { limit, orderBy } = plan
+  const numRows = child.numRows !== undefined ? Math.min(limit, child.numRows) : undefined
+  const maxRows = Math.min(limit, child.maxRows ?? limit)
   return {
     columns: child.columns,
-    numRows: Math.min(plan.limit, child.numRows ?? plan.limit),
-    maxRows: Math.min(plan.limit, child.maxRows ?? plan.limit),
+    numRows,
+    maxRows,
     async *rows() {
-      if (plan.limit <= 0) return
+      if (limit <= 0) return
 
       // Bounded max-heap: heap[0] is the worst (largest for ASC) entry.
       // When a new row is better than the worst, replace it.
       /** @type {{ row: AsyncRow, keys: SqlPrimitive[] }[]} */
       const heap = []
-      const limit = plan.limit
 
       /** @param {number} i */
       function siftDown(i) {
@@ -172,8 +174,8 @@ export function executeTopN(plan, context) {
           let worst = i
           const left = 2 * i + 1
           const right = 2 * i + 2
-          if (left < n && compareKeys(heap[left].keys, heap[worst].keys, plan.orderBy) > 0) worst = left
-          if (right < n && compareKeys(heap[right].keys, heap[worst].keys, plan.orderBy) > 0) worst = right
+          if (left < n && compareKeys(heap[left].keys, heap[worst].keys, orderBy) > 0) worst = left
+          if (right < n && compareKeys(heap[right].keys, heap[worst].keys, orderBy) > 0) worst = right
           if (worst === i) break
           const tmp = heap[i]
           heap[i] = heap[worst]
@@ -185,8 +187,8 @@ export function executeTopN(plan, context) {
       /** @param {number} i */
       function siftUp(i) {
         while (i > 0) {
-          const parent = (i - 1) >> 1
-          if (compareKeys(heap[i].keys, heap[parent].keys, plan.orderBy) <= 0) break
+          const parent = i - 1 >> 1
+          if (compareKeys(heap[i].keys, heap[parent].keys, orderBy) <= 0) break
           const tmp = heap[i]
           heap[i] = heap[parent]
           heap[parent] = tmp
@@ -197,14 +199,14 @@ export function executeTopN(plan, context) {
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
 
-        const keys = await Promise.all(plan.orderBy.map(term =>
+        const keys = await Promise.all(orderBy.map(term =>
           evaluateExpr({ node: term.expr, row, context })
         ))
 
         if (heap.length < limit) {
           heap.push({ row: await materializeRow(row), keys })
           siftUp(heap.length - 1)
-        } else if (compareKeys(keys, heap[0].keys, plan.orderBy) < 0) {
+        } else if (compareKeys(keys, heap[0].keys, orderBy) < 0) {
           // New row sorts before the worst in heap — replace it
           heap[0] = { row: await materializeRow(row), keys }
           siftDown(0)
@@ -213,7 +215,7 @@ export function executeTopN(plan, context) {
       }
 
       // Extract in sorted order
-      const sorted = heap.sort((a, b) => compareKeys(a.keys, b.keys, plan.orderBy))
+      const sorted = heap.sort((a, b) => compareKeys(a.keys, b.keys, orderBy))
       for (const entry of sorted) {
         yield entry.row
       }
