@@ -46,6 +46,32 @@ describe('ORDER BY', () => {
     expect(result[result.length - 1].name).toBe('Eve')
   })
 
+  it('should support positional reference to derived column', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT name, age FROM users ORDER BY 2 DESC' }))
+    expect(result.map(r => r.age)).toEqual([35, 30, 30, 28, 25])
+  })
+
+  it('should support positional reference to aliased expression', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT name, age * 2 AS doubled FROM users ORDER BY 2 ASC' }))
+    expect(result[0].doubled).toBe(50)
+    expect(result[4].doubled).toBe(70)
+  })
+
+  it('should support multiple positional references', async () => {
+    const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, age, name FROM users ORDER BY 1 ASC, 2 DESC' }))
+    expect(result[0]).toEqual({ city: 'LA', age: 28, name: 'Diana' })
+    expect(result[1]).toEqual({ city: 'LA', age: 25, name: 'Bob' })
+    expect(result[2]).toEqual({ city: 'NYC', age: 35, name: 'Charlie' })
+  })
+
+  it('should throw for out-of-range ORDER BY position', () => {
+    expect(() => executeSql({ tables: { users }, query: 'SELECT name FROM users ORDER BY 5' })).toThrow(/position 5 is out of range/)
+  })
+
+  it('should throw for ORDER BY positional reference to *', () => {
+    expect(() => executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY 1' })).toThrow(/refers to \* which is not supported/)
+  })
+
   it('should handle ORDER BY RANDOM()', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users ORDER BY RANDOM()' }))
     expect(result).toHaveLength(5)

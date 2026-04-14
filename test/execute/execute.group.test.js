@@ -93,6 +93,36 @@ describe('executeSql - GROUP BY', () => {
     expect(result).toEqual([{ parity: 0, count: 2 }, { parity: 1, count: 2 }])
   })
 
+  it('should support positional reference in GROUP BY', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT city, COUNT(*) AS count FROM users GROUP BY 1 ORDER BY 1',
+    }))
+    expect(result).toEqual([
+      { city: 'LA', count: 2 },
+      { city: 'NYC', count: 3 },
+    ])
+  })
+
+  it('should support positional reference to derived expression in GROUP BY', async () => {
+    const data = [{ x: 1 }, { x: 2 }, { x: 3 }, { x: 4 }]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT x % 2 AS parity, COUNT(*) AS count FROM data GROUP BY 1 ORDER BY 1',
+    }))
+    expect(result).toEqual([
+      { parity: 0, count: 2 },
+      { parity: 1, count: 2 },
+    ])
+  })
+
+  it('should throw for out-of-range GROUP BY position', () => {
+    expect(() => executeSql({
+      tables: { users },
+      query: 'SELECT city FROM users GROUP BY 2',
+    })).toThrow(/position 2 is out of range/)
+  })
+
   it('should group by a chained SELECT alias', async () => {
     const data = [
       { x: 1 },

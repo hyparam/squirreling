@@ -1,3 +1,4 @@
+import { derivedAlias } from '../expression/alias.js'
 import { expectNoAggregate, findAggregate } from '../validation/aggregates.js'
 import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation/keywords.js'
 import { ParseError } from '../validation/parseErrors.js'
@@ -237,7 +238,7 @@ function parseSelect(state) {
   if (match(state, 'keyword', 'GROUP')) {
     expect(state, 'keyword', 'BY')
     while (true) {
-      const expr = parseExpression(state)
+      const expr = resolvePositionalRef(parseExpression(state), columns, 'GROUP BY')
       expectNoAggregate(expr, 'GROUP BY')
       groupBy.push(expr)
       if (!match(state, 'comma')) break
@@ -255,7 +256,7 @@ function parseSelect(state) {
   if (match(state, 'keyword', 'ORDER')) {
     expect(state, 'keyword', 'BY')
     while (true) {
-      const expr = parseExpression(state)
+      const expr = resolvePositionalRef(parseExpression(state), columns, 'ORDER BY', hasAggregate)
       if (!hasAggregate) {
         expectNoAggregate(expr, 'ORDER BY')
       }
@@ -331,6 +332,53 @@ function parseSelect(state) {
     positionStart,
     positionEnd: state.lastPos,
   }
+}
+
+/**
+ * Resolves a positive integer literal in GROUP BY or ORDER BY as a positional
+ * reference to the Nth SELECT column. Non-integer and non-literal expressions
+ * pass through unchanged.
+ *
+ * In post-aggregation contexts (ORDER BY when the query aggregates), the
+ * reference resolves to an identifier on the output column name, so it
+ * matches columns produced by the aggregate projection. In pre-projection
+ * contexts (GROUP BY, non-aggregated ORDER BY), the target column's full
+ * expression is substituted, since the output name won't exist yet.
+ *
+ * @param {ExprNode} expr
+ * @param {SelectColumn[]} columns
+ * @param {string} clauseName
+ * @param {boolean} [postAgg]
+ * @returns {ExprNode}
+ */
+function resolvePositionalRef(expr, columns, clauseName, postAgg) {
+  if (expr.type !== 'literal') return expr
+  const n = expr.value
+  if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) return expr
+  if (n > columns.length) {
+    throw new ParseError({
+      message: `${clauseName} position ${n} is out of range (expected 1..${columns.length}) at position ${expr.positionStart}`,
+      positionStart: expr.positionStart,
+      positionEnd: expr.positionEnd,
+    })
+  }
+  const col = columns[n - 1]
+  if (col.type === 'star') {
+    throw new ParseError({
+      message: `${clauseName} position ${n} refers to * which is not supported at position ${expr.positionStart}`,
+      positionStart: expr.positionStart,
+      positionEnd: expr.positionEnd,
+    })
+  }
+  if (postAgg) {
+    return {
+      type: 'identifier',
+      name: col.alias ?? derivedAlias(col.expr),
+      positionStart: expr.positionStart,
+      positionEnd: expr.positionEnd,
+    }
+  }
+  return col.expr
 }
 
 /**
