@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.12.3]
+ - Correlated subqueries
+ - Fix `count(*)` when `FROM` is a subquery
+ - Better error messages for window functions
+
 ## [0.12.2]
  - `GREATEST` and `LEAST` functions
  - `REGEXP_MATCHES` function
