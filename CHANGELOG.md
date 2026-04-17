@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.12.5]
+ - Support positional references in `ORDER BY` and `GROUP BY`
+ - Fix alias pushdown
+
 ## [0.12.4]
  - Push column projection through `UNION ALL` branches
 
