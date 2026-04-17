@@ -54,8 +54,19 @@ export function extractColumns({ select, parentColumns }) {
   // directly. For non-star queries, parent names may be aliases and are
   // handled below by filtering derived columns and collecting from expressions.
   const hasStar = select.columns.some(col => col.type === 'star' && !col.table)
+  // Exclude parent names that match a derived alias in this SELECT — those are
+  // produced by projection (e.g. `SELECT *, a+b AS c`), not by the source.
+  /** @type {Set<string>} */
+  const derivedAliases = new Set()
+  for (const col of select.columns) {
+    if (col.type === 'derived') {
+      derivedAliases.add(col.alias ?? derivedAlias(col.expr))
+    }
+  }
   /** @type {IdentifierNode[]} */
-  const identifiers = hasStar && parentColumns ? [...parentColumns] : []
+  const identifiers = hasStar && parentColumns
+    ? parentColumns.filter(id => !derivedAliases.has(id.name))
+    : []
 
   // Collect ORDER BY identifiers, excluding SELECT aliases (their underlying
   // columns are already collected from select.columns expressions above)

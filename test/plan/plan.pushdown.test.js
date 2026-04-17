@@ -245,6 +245,52 @@ describe('column pushdown', () => {
     })
   })
 
+  it('should not push derived alias as scan column when parent asks for it', () => {
+    // Regression: SELECT * alongside a derived alias (e.g. `*, a+b AS c`) must not
+    // seed `c` as a scan hint — `c` is produced by projection, not by the source.
+    const users = memorySource({ data: [{ a: 1, b: 2 }] })
+    const plan = planSql({
+      query: 'SELECT c FROM (SELECT *, a + b AS c FROM users)',
+      tables: { users },
+    })
+    expect(plan).toEqual({
+      type: 'Project',
+      columns: [
+        {
+          type: 'derived',
+          expr: { type: 'identifier', name: 'c', positionStart: 7, positionEnd: 8 },
+          positionStart: 7,
+          positionEnd: 8,
+        },
+      ],
+      child: {
+        type: 'Project',
+        columns: [
+          { type: 'star', positionStart: 22, positionEnd: 23 },
+          {
+            type: 'derived',
+            expr: {
+              type: 'binary',
+              op: '+',
+              left: { type: 'identifier', name: 'a', positionStart: 25, positionEnd: 26 },
+              right: { type: 'identifier', name: 'b', positionStart: 29, positionEnd: 30 },
+              positionStart: 25,
+              positionEnd: 30,
+            },
+            alias: 'c',
+            positionStart: 25,
+            positionEnd: 35,
+          },
+        ],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: { columns: ['a', 'b'] },
+        },
+      },
+    })
+  })
+
   it('should not add column hints for SELECT * join', () => {
     const plan = planSql({ query: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id' })
     expect(plan).toEqual({
