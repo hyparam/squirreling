@@ -12,7 +12,7 @@ export interface SelectStatement extends AstBase {
   type: 'select'
   distinct: boolean
   columns: SelectColumn[]
-  from: FromTable | FromSubquery
+  from: FromTable | FromSubquery | FromFunction
   joins: JoinClause[]
   where?: ExprNode
   groupBy: ExprNode[]
@@ -58,6 +58,14 @@ export interface FromSubquery extends AstBase {
   type: 'subquery'
   query: Statement
   alias?: string
+}
+
+export interface FromFunction extends AstBase {
+  type: 'function'
+  funcName: string
+  args: ExprNode[]
+  alias?: string
+  columnAlias?: string
 }
 
 export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'

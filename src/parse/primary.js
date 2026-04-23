@@ -1,4 +1,4 @@
-import { isCastType, isExtractField, isIntervalUnit, isKnownFunction, niladicFuncs } from '../validation/functions.js'
+import { isCastType, isExtractField, isIntervalUnit, isKnownFunction, isTableFunction, niladicFuncs } from '../validation/functions.js'
 import { InvalidLiteralError, ParseError, SyntaxError, UnknownFunctionError } from '../validation/parseErrors.js'
 import { RESERVED_KEYWORDS } from '../validation/keywords.js'
 import { parseExpression } from './expression.js'
@@ -7,7 +7,7 @@ import { parseStatement } from './parse.js'
 import { consume, current, expect, match, parseError, peekToken } from './state.js'
 
 /**
- * @import { ExprNode, IntervalNode, ParserState, WhenClause } from '../types.js'
+ * @import { ExprNode, IntervalNode, ParserState, SqlPrimitive, WhenClause } from '../types.js'
  */
 
 /**
@@ -38,6 +38,34 @@ export function parsePrimary(state) {
     const expr = parseExpression(state)
     expect(state, 'paren', ')')
     return expr
+  }
+
+  // Array literal: [elem, elem, ...] — elements must be literals
+  if (match(state, 'bracket', '[')) {
+    /** @type {SqlPrimitive[]} */
+    const values = []
+    if (!match(state, 'bracket', ']')) {
+      while (true) {
+        const elemStart = current(state).positionStart
+        const elem = parseExpression(state)
+        if (elem.type !== 'literal') {
+          throw new ParseError({
+            message: 'Array literal elements must be constant literals',
+            positionStart: elemStart,
+            positionEnd: state.lastPos,
+          })
+        }
+        values.push(elem.value)
+        if (!match(state, 'comma')) break
+      }
+      expect(state, 'bracket', ']')
+    }
+    return {
+      type: 'literal',
+      value: values,
+      positionStart,
+      positionEnd: state.lastPos,
+    }
   }
 
   if (tok.type === 'identifier') {
@@ -104,6 +132,14 @@ export function parsePrimary(state) {
       if (!isKnownFunction(funcNameUpper, state.functions)) {
         throw new UnknownFunctionError({
           funcName: tok.value,
+          positionStart,
+          positionEnd: tok.positionEnd,
+        })
+      }
+
+      if (isTableFunction(funcNameUpper)) {
+        throw new ParseError({
+          message: `${funcNameUpper} is a table function and can only be used in FROM clauses at position ${positionStart}`,
           positionStart,
           positionEnd: tok.positionEnd,
         })

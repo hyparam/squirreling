@@ -1,15 +1,30 @@
 import { derivedAlias } from '../expression/alias.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, FromSubquery, FromTable, IdentifierNode, SelectStatement, Statement } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, SelectStatement, Statement } from '../types.js'
  */
 
 /**
- * @param {FromTable | FromSubquery} from
+ * @param {FromTable | FromSubquery | FromFunction} from
  * @returns {string}
  */
 export function fromAlias(from) {
-  return from.alias ?? (from.type === 'table' ? from.table : 'table')
+  if (from.alias) return from.alias
+  if (from.type === 'table') return from.table
+  if (from.type === 'function') return from.funcName.toLowerCase()
+  // Unaliased subquery: no natural name. Callers that need a stable alias
+  // should require one at parse time.
+  return 'table'
+}
+
+/**
+ * Returns the single output column name for a FROM table function.
+ *
+ * @param {FromFunction} from
+ * @returns {string}
+ */
+export function tableFunctionColumnName(from) {
+  return from.columnAlias ?? from.funcName.toLowerCase()
 }
 
 /**
@@ -271,6 +286,24 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
     return inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
   }
 
+  if (select.from.type === 'function') {
+    // Table functions currently produce a single column
+    if (!select.joins.length) {
+      return [tableFunctionColumnName(select.from)]
+    }
+    /** @type {string[]} */
+    const result = []
+    const alias = fromAlias(select.from)
+    result.push(`${alias}.${tableFunctionColumnName(select.from)}`)
+    for (const join of select.joins) {
+      const joinAlias = join.alias ?? join.table
+      for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
+        result.push(`${joinAlias}.${col}`)
+      }
+    }
+    return result
+  }
+
   if (!select.joins.length) {
     return lookupTableColumns(select.from.table, cteColumns, tables)
   }
@@ -278,9 +311,9 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
   // Collect all sources, then prefix each table's columns
   /** @type {string[]} */
   const result = []
-  const fromAlias = select.from.alias ?? select.from.table
+  const sourceAlias = select.from.alias ?? select.from.table
   for (const col of lookupTableColumns(select.from.table, cteColumns, tables)) {
-    result.push(`${fromAlias}.${col}`)
+    result.push(`${sourceAlias}.${col}`)
   }
   for (const join of select.joins) {
     const joinAlias = join.alias ?? join.table

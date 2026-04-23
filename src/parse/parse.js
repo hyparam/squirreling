@@ -1,5 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { expectNoAggregate, findAggregate } from '../validation/aggregates.js'
+import { isTableFunction, validateFunctionArgs } from '../validation/functions.js'
 import { RESERVED_AFTER_COLUMN, RESERVED_AFTER_TABLE } from '../validation/keywords.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
@@ -8,7 +9,7 @@ import { consume, current, expect, match, parseError, peekToken } from './state.
 import { tokenizeSql } from './tokenize.js'
 
 /**
- * @import { CTEDefinition, ExprNode, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectColumn, SelectStatement, SetOperationStatement, SetOperator, Statement } from '../types.js'
+ * @import { CTEDefinition, ExprNode, FromFunction, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectColumn, SelectStatement, SetOperationStatement, SetOperator, Statement } from '../types.js'
  */
 
 /**
@@ -184,8 +185,8 @@ function parseSelect(state) {
     expect(state, 'keyword', 'FROM')
   }
 
-  // Check if it's a subquery or table name
-  /** @type {FromTable | FromSubquery} */
+  // Check if it's a subquery, table function, or table name
+  /** @type {FromTable | FromSubquery | FromFunction} */
   let from
   const fromTok = current(state)
   if (fromTok.type === 'paren' && fromTok.value === '(') {
@@ -201,6 +202,14 @@ function parseSelect(state) {
       positionStart: fromTok.positionStart,
       positionEnd: state.lastPos,
     }
+  } else if (
+    fromTok.type === 'identifier' &&
+    isTableFunction(fromTok.value.toUpperCase()) &&
+    peekToken(state, 1).type === 'paren' &&
+    peekToken(state, 1).value === '('
+  ) {
+    // Table function: SELECT * FROM UNNEST(expr) [AS alias[(col_alias)]]
+    from = parseFromFunction(state)
   } else {
     // Simple table name: SELECT * FROM users
     expect(state, 'identifier')
@@ -422,6 +431,58 @@ function parseSelectList(state) {
   }
 
   return cols
+}
+
+/**
+ * Parses a table function source: UNNEST(args...) [AS alias[(col_alias)]]
+ *
+ * @param {ParserState} state
+ * @returns {FromFunction}
+ */
+function parseFromFunction(state) {
+  const funcTok = consume(state)
+  const funcName = funcTok.value.toUpperCase()
+  const { positionStart } = funcTok
+
+  expect(state, 'paren', '(')
+  /** @type {ExprNode[]} */
+  const args = []
+  if (!match(state, 'paren', ')')) {
+    while (true) {
+      args.push(parseExpression(state))
+      if (!match(state, 'comma')) break
+    }
+    expect(state, 'paren', ')')
+  }
+
+  validateFunctionArgs(funcName, args.length, positionStart, state.lastPos, state.functions)
+
+  const alias = parseTableAlias(state)
+  /** @type {string | undefined} */
+  let columnAlias
+  if (alias && match(state, 'paren', '(')) {
+    const colStart = state.lastPos
+    const colTok = expect(state, 'identifier')
+    columnAlias = colTok.value
+    if (match(state, 'comma')) {
+      throw new ParseError({
+        message: `${funcName} produces a single column; only one column alias is allowed`,
+        positionStart: colStart,
+        positionEnd: state.lastPos,
+      })
+    }
+    expect(state, 'paren', ')')
+  }
+
+  return {
+    type: 'function',
+    funcName,
+    args,
+    alias,
+    columnAlias,
+    positionStart,
+    positionEnd: state.lastPos,
+  }
 }
 
 /**

@@ -35,6 +35,16 @@ export function isRegexpFunc(name) {
 }
 
 /**
+ * Table-valued functions produce rows (used in FROM clause), not scalar values.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isTableFunction(name) {
+  return ['UNNEST'].includes(name)
+}
+
+/**
  * @param {string} name
  * @returns {name is SpatialFunc}
  */
@@ -163,6 +173,9 @@ export const FUNCTION_SIGNATURES = {
   ARRAY_POSITION: { min: 2, max: 2, signature: 'array, element' },
   ARRAY_SORT: { min: 1, max: 1, signature: 'array' },
   CARDINALITY: { min: 1, max: 1, signature: 'array' },
+
+  // Table functions (used in FROM clause)
+  UNNEST: { min: 1, max: 1, signature: 'array' },
 
   // Conditional functions
   COALESCE: { min: 1, signature: 'value1, value2[, ...]' },

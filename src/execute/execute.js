@@ -12,7 +12,7 @@ import { addBounds, minBounds, stableRowKey } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
- * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode } from '../plan/types.js'
+ * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
 
 /**
@@ -104,8 +104,42 @@ export function executePlan({ plan, context }) {
     return executeLimit(plan, context)
   } else if (plan.type === 'SetOperation') {
     return executeSetOperation(plan, context)
+  } else if (plan.type === 'TableFunction') {
+    return executeTableFunction(plan, context)
   }
   return { columns: [], async *rows() {} }
+}
+
+/**
+ * Executes a table-valued function (e.g. UNNEST).
+ * Evaluates the argument once against an empty row and yields one row per
+ * element of the resulting array. Null or non-array input yields zero rows.
+ *
+ * @param {TableFunctionNode} plan
+ * @param {ExecuteContext} context
+ * @returns {QueryResults}
+ */
+function executeTableFunction(plan, context) {
+  if (plan.funcName !== 'UNNEST') {
+    throw new Error(`Unsupported table function: ${plan.funcName}`)
+  }
+  const columns = [plan.columnName]
+  return {
+    columns,
+    async *rows() {
+      /** @type {AsyncRow} */
+      const emptyRow = { columns: [], cells: {} }
+      const value = await evaluateExpr({ node: plan.args[0], row: emptyRow, rowIndex: 1, context })
+      if (!Array.isArray(value)) return
+      for (const element of value) {
+        if (context.signal?.aborted) return
+        yield {
+          columns,
+          cells: { [plan.columnName]: () => Promise.resolve(element) },
+        }
+      }
+    },
+  }
 }
 
 /**

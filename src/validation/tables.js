@@ -46,6 +46,54 @@ export function validateScan({ table, hints, tables, positionStart, positionEnd 
 }
 
 /**
+ * Throws if the expression references any column identifier. Used for
+ * expressions that have no row scope (e.g. table function arguments in FROM).
+ *
+ * @param {ExprNode} expr
+ * @param {string} context - context for the error message (e.g. function name)
+ */
+export function validateNoIdentifiers(expr, context) {
+  if (!expr) return
+  if (expr.type === 'identifier') {
+    const name = expr.prefix ? `${expr.prefix}.${expr.name}` : expr.name
+    throw new ExecutionError({
+      message: `${context} argument cannot reference column "${name}" — ${context} arguments must be constant (lateral/correlated ${context} is not supported)`,
+      positionStart: expr.positionStart,
+      positionEnd: expr.positionEnd,
+    })
+  }
+  if (expr.type === 'binary') {
+    validateNoIdentifiers(expr.left, context)
+    validateNoIdentifiers(expr.right, context)
+  } else if (expr.type === 'unary') {
+    validateNoIdentifiers(expr.argument, context)
+  } else if (expr.type === 'function') {
+    for (const arg of expr.args) {
+      validateNoIdentifiers(arg, context)
+    }
+  } else if (expr.type === 'cast') {
+    validateNoIdentifiers(expr.expr, context)
+  } else if (expr.type === 'in valuelist') {
+    validateNoIdentifiers(expr.expr, context)
+    for (const val of expr.values) {
+      validateNoIdentifiers(val, context)
+    }
+  } else if (expr.type === 'in') {
+    // LHS is in our scope; subquery is self-contained and planned separately.
+    validateNoIdentifiers(expr.expr, context)
+  } else if (expr.type === 'case') {
+    validateNoIdentifiers(expr.caseExpr, context)
+    for (const w of expr.whenClauses) {
+      validateNoIdentifiers(w.condition, context)
+      validateNoIdentifiers(w.result, context)
+    }
+    validateNoIdentifiers(expr.elseResult, context)
+  }
+  // subquery / exists / not exists are self-contained — their identifiers
+  // resolve to their own FROM and are validated when the subquery is planned.
+}
+
+/**
  * Validates that qualified identifiers reference known table aliases.
  *
  * @param {ExprNode} expr

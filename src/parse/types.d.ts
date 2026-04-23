@@ -17,6 +17,7 @@ export type TokenType =
   | 'comma'
   | 'dot'
   | 'paren'
+  | 'bracket'
   | 'semicolon'
   | 'eof'
 

@@ -2,8 +2,8 @@ import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
-import { validateScan, validateTableRefs } from '../validation/tables.js'
-import { extractColumns, fromAlias, inferStatementColumns } from './columns.js'
+import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
+import { extractColumns, fromAlias, inferStatementColumns, tableFunctionColumnName } from './columns.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -275,6 +275,16 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
     }
     validateScan({ ...select.from, hints, tables })
     return { type: 'Scan', table: select.from.table, hints }
+  } else if (select.from.type === 'function') {
+    for (const arg of select.from.args) {
+      validateNoIdentifiers(arg, select.from.funcName)
+    }
+    return {
+      type: 'TableFunction',
+      funcName: select.from.funcName,
+      args: select.from.args,
+      columnName: tableFunctionColumnName(select.from),
+    }
   } else {
     const subPlan = planStatement({
       stmt: select.from.query,

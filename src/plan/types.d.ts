@@ -14,6 +14,7 @@ export type QueryPlan =
   | NestedLoopJoinNode
   | PositionalJoinNode
   | SetOperationNode
+  | TableFunctionNode
 
 // Scan node
 export interface ScanNode {
@@ -113,4 +114,12 @@ export interface SetOperationNode {
   all: boolean
   left: QueryPlan
   right: QueryPlan
+}
+
+// Table-valued function (e.g. UNNEST) used in FROM clause
+export interface TableFunctionNode {
+  type: 'TableFunction'
+  funcName: string
+  args: ExprNode[]
+  columnName: string
 }

@@ -222,6 +222,17 @@ export function tokenizeSql(query) {
       continue
     }
 
+    if (ch === '[' || ch === ']') {
+      i++
+      tokens.push({
+        type: 'bracket',
+        value: ch,
+        positionStart,
+        positionEnd: i,
+      })
+      continue
+    }
+
     if (ch === ';') {
       i++
       tokens.push({
