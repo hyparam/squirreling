@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.12.7]
+ - Fix aggregates in function arguments
+ - Fix error on selecting `UNNEST` table alias as bare column
+
 ## [0.12.6]
  - `UNNEST` support, including `LATERAL` joins against array columns
  - Fix CTE references inside subqueries
