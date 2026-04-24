@@ -196,6 +196,68 @@ describe('LATERAL UNNEST', () => {
     ])
   })
 
+  it('should expand via CROSS JOIN UNNEST (no ON clause)', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t CROSS JOIN UNNEST(t.arr) AS u(x)',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should expand via comma-join UNNEST (implicit CROSS JOIN LATERAL)', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t, UNNEST(t.arr) AS u(x)',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should resolve an unqualified ref in CROSS JOIN UNNEST', async () => {
+    const t = [
+      { id: 1, arr: [1, 2] },
+      { id: 2, arr: [3] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t CROSS JOIN UNNEST(arr) AS u(x)',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 1 },
+      { id: 1, x: 2 },
+      { id: 2, x: 3 },
+    ])
+  })
+
+  it('should reject comma-join with a regular table', () => {
+    expect(() => executeSql({
+      tables: { t: [{ id: 1 }], labels: [{ id: 1, name: 'one' }] },
+      query: 'SELECT * FROM t, labels',
+    })).toThrow('Comma-separated FROM is only supported with table functions like UNNEST; use explicit JOIN ... ON ... for regular tables')
+  })
+
+  it('should reject CROSS JOIN with a regular table', () => {
+    expect(() => executeSql({
+      tables: { t: [{ id: 1 }], labels: [{ id: 1, name: 'one' }] },
+      query: 'SELECT * FROM t CROSS JOIN labels',
+    })).toThrow('CROSS JOIN is currently supported only with table functions like UNNEST')
+  })
+
   it('should filter rows with an ON condition', async () => {
     const t = [
       { id: 1, arr: [1, 2, 3] },

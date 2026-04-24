@@ -112,11 +112,9 @@ function executeLateralJoin(plan, context) {
         for await (const rightRow of right.rows()) {
           if (context.signal?.aborted) return
           const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)
-          const matches = await evaluateExpr({
-            node: plan.condition,
-            row: merged,
-            context,
-          })
+          const matches = plan.condition === undefined
+            ? true
+            : await evaluateExpr({ node: plan.condition, row: merged, context })
           if (matches) {
             hasMatch = true
             yield merged

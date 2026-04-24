@@ -94,7 +94,7 @@ export interface NestedLoopJoinNode {
   joinType: JoinType
   leftAlias: string
   rightAlias: string
-  condition: ExprNode
+  condition?: ExprNode
   left: QueryPlan
   right: QueryPlan
   lateral?: boolean

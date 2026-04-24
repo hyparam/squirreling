@@ -57,4 +57,14 @@ describe('planSql table validation', () => {
     const plan = planSql({ query: 'SELECT * FROM anything' })
     expect(plan.type).toBe('Scan')
   })
+
+  it('should reject self references in lateral UNNEST arguments', () => {
+    expect(() => planSql({ query: 'SELECT * FROM users JOIN UNNEST(u.arr) AS u(x) ON TRUE', tables }))
+      .toThrow('Table "u" not found in "u.arr". Available tables: users')
+  })
+
+  it('should reject forward references in lateral UNNEST arguments', () => {
+    expect(() => planSql({ query: 'SELECT * FROM users JOIN UNNEST(orders.total) AS u(x) ON TRUE JOIN orders ON TRUE', tables }))
+      .toThrow('Table "orders" not found in "orders.total". Available tables: users')
+  })
 })

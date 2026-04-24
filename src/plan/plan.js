@@ -176,7 +176,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Add JOINs
   if (select.joins.length) {
-    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables, scopeTables })
+    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables, outerScope })
   }
 
   // Whether FROM resolved to our own direct table scan
@@ -325,12 +325,20 @@ function planTableFunction(from) {
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Map<string, string[] | undefined>} options.perTableColumns
  * @param {Record<string, AsyncDataSource>} [options.tables]
- * @param {Record<string, any>} options.scopeTables - aliases visible in scope (for correlated refs)
+ * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables, scopeTables }) {
+function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables, outerScope }) {
   let plan = left
   let currentLeftTable = leftTable
+
+  // Running scope for lateral UNNEST arg validation — excludes the current
+  // join's own alias (self-reference) and later joins (forward reference).
+  /** @type {Record<string, any>} */
+  const lateralScope = { [leftTable]: true }
+  for (const alias of outerScope ?? []) {
+    lateralScope[alias] = true
+  }
 
   for (const join of joins) {
     const rightTable = join.alias ?? join.table
@@ -338,7 +346,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
     // LATERAL table function: right side references left-side columns.
     if (join.fromFunction) {
       for (const arg of join.fromFunction.args) {
-        validateTableRefs(arg, scopeTables)
+        validateTableRefs(arg, lateralScope)
       }
       plan = {
         type: 'NestedLoopJoin',
@@ -351,6 +359,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
         lateral: true,
       }
       currentLeftTable = `${currentLeftTable}_${rightTable}`
+      lateralScope[rightTable] = true
       continue
     }
 
@@ -397,6 +406,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
 
     // Update left table name for next join
     currentLeftTable = `${currentLeftTable}_${rightTable}`
+    lateralScope[rightTable] = true
   }
 
   return plan

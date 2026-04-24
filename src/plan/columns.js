@@ -238,7 +238,14 @@ function collectColumnsFromStatement(stmt, columns) {
   if (stmt.from?.type === 'subquery') {
     collectColumnsFromStatement(stmt.from.query, columns)
   }
-  for (const join of stmt.joins) collectColumnsFromExpr(join.on, columns)
+  for (const join of stmt.joins) {
+    collectColumnsFromExpr(join.on, columns)
+    if (join.fromFunction) {
+      for (const arg of join.fromFunction.args) {
+        collectColumnsFromExpr(arg, columns)
+      }
+    }
+  }
   for (const expr of stmt.groupBy) collectColumnsFromExpr(expr, columns)
   collectColumnsFromExpr(stmt.having, columns)
   for (const item of stmt.orderBy) collectColumnsFromExpr(item.expr, columns)

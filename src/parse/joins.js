@@ -19,6 +19,27 @@ export function parseJoins(state) {
   while (true) {
     const tok = current(state)
 
+    // Comma-join: implicit CROSS JOIN LATERAL, currently only for table functions.
+    if (match(state, 'comma')) {
+      if (!isTableFunctionStart(state)) {
+        throw new ParseError({
+          message: 'Comma-separated FROM is only supported with table functions like UNNEST; use explicit JOIN ... ON ... for regular tables',
+          positionStart: tok.positionStart,
+          positionEnd: state.lastPos,
+        })
+      }
+      const fromFunction = parseFromFunction(state)
+      joins.push({
+        joinType: 'CROSS',
+        table: fromFunction.funcName,
+        alias: fromFunction.alias,
+        fromFunction,
+        positionStart: tok.positionStart,
+        positionEnd: state.lastPos,
+      })
+      continue
+    }
+
     // Check for join keywords
     /** @type {JoinType} */
     let joinType = 'INNER'
@@ -36,6 +57,8 @@ export function parseJoins(state) {
       joinType = 'FULL'
     } else if (match(state, 'keyword', 'POSITIONAL')) {
       joinType = 'POSITIONAL'
+    } else if (match(state, 'keyword', 'CROSS')) {
+      joinType = 'CROSS'
     } else if (!match(state, 'keyword', 'JOIN')) {
       // Not a join keyword, stop parsing joins
       break
@@ -68,10 +91,13 @@ export function parseJoins(state) {
       }
       const fromFunction = parseFromFunction(state)
 
-      // ON condition required
-      expect(state, 'keyword', 'ON')
-      const condition = parseExpression(state)
-      expectNoAggregate(condition, 'JOIN ON')
+      /** @type {ExprNode | undefined} */
+      let condition
+      if (joinType !== 'CROSS') {
+        expect(state, 'keyword', 'ON')
+        condition = parseExpression(state)
+        expectNoAggregate(condition, 'JOIN ON')
+      }
 
       joins.push({
         joinType,
@@ -90,6 +116,14 @@ export function parseJoins(state) {
         message: 'LATERAL is only supported with table functions',
         positionStart: lateralTok.positionStart,
         positionEnd: lateralTok.positionEnd,
+      })
+    }
+
+    if (joinType === 'CROSS') {
+      throw new ParseError({
+        message: 'CROSS JOIN is currently supported only with table functions like UNNEST',
+        positionStart: tok.positionStart,
+        positionEnd: state.lastPos,
       })
     }
 
