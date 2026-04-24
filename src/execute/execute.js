@@ -265,33 +265,30 @@ function executeScan(plan, context) {
 function executeCount(plan, context) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
+  const columns = plan.columns.map(col => col.alias ?? derivedAlias(col.expr))
 
   return {
-    columns: plan.columns.map(col => col.alias ?? derivedAlias(col.expr)),
+    columns,
     numRows: 1,
     maxRows: 1,
     async *rows() {
       // Use source numRows if available
-      let count = table.numRows
-      if (count === undefined) {
+      const countPromise = table.numRows !== undefined ? Promise.resolve(table.numRows) : (async () => {
         // Fall back to counting rows via scan
-        count = 0
+        let count = 0
         const { rows } = table.scan({ signal })
         // eslint-disable-next-line no-unused-vars
         for await (const _ of rows()) {
           if (signal?.aborted) return
           count++
         }
-      }
+        return count
+      })()
 
-      /** @type {string[]} */
-      const columns = []
       /** @type {AsyncCells} */
       const cells = {}
-      for (const col of plan.columns) {
-        const alias = col.alias ?? derivedAlias(col.expr)
-        columns.push(alias)
-        cells[alias] = () => Promise.resolve(count)
+      for (const alias of columns) {
+        cells[alias] = () => countPromise
       }
       yield { columns, cells }
     },
@@ -366,21 +363,19 @@ async function* filterRows(rows, condition, context, limit) {
  * @param {AbortSignal} [signal]
  * @yields {AsyncRow}
  */
-async function* limitRows(rows, limit, offset, signal) {
-  const skip = offset ?? 0
-  const max = limit ?? Infinity
-  if (max <= 0) return
+async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
+  if (limit <= 0) return
   let skipped = 0
   let yielded = 0
   for await (const row of rows) {
     if (signal?.aborted) return
-    if (skipped < skip) {
+    if (skipped < offset) {
       skipped++
       continue
     }
     yield row
     yielded++
-    if (yielded >= max) return
+    if (yielded >= limit) return
   }
 }
 
@@ -409,84 +404,57 @@ function executeFilter(plan, context) {
  */
 function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const columns = selectColumnNames(plan.columns, child.columns)
 
-  // Pre-compute column names for derived columns (avoids per-row derivedAlias calls)
-  const hasStar = plan.columns.some(col => col.type === 'star')
-
-  /** @type {string[] | undefined} */
-  let staticColumns
-  /** @type {{ alias: string, sourceName: string }[] | undefined} */
-  let identifierMap
-  if (!hasStar) {
-    const derived = /** @type {DerivedColumn[]} */ (plan.columns)
-    staticColumns = derived.map(col => col.alias ?? derivedAlias(col.expr))
-    const allIdentifiers = derived.every(col =>
-      col.expr.type === 'identifier' && !col.expr.prefix
-    )
-    if (allIdentifiers) {
-      identifierMap = derived.map((col, i) => ({
-        alias: staticColumns[i],
-        sourceName: /** @type {IdentifierNode} */ (col.expr).name,
-      }))
-    }
-  }
+  const resolveable = plan.columns.every(col =>
+    col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
+  )
 
   return {
-    columns: selectColumnNames(plan.columns, child.columns),
+    columns,
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
       let rowIndex = 0
-      let identifierMapValidated = false
 
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
         rowIndex++
-
-        // Validate identifier fast path on first row (may fail for JOINs with prefixed columns)
-        if (identifierMap && !identifierMapValidated) {
-          identifierMapValidated = true
-          if (!identifierMap.every(m => m.sourceName in row.cells)) {
-            identifierMap = undefined
-          }
-        }
-
-        // Fast path: all columns are simple identifier references
-        if (identifierMap) {
-          /** @type {AsyncCells} */
-          const cells = {}
-          const source = row.resolved
-          /** @type {Record<string, SqlPrimitive> | undefined} */
-          const resolved = source ? {} : undefined
-          for (const { alias, sourceName } of identifierMap) {
-            cells[alias] = row.cells[sourceName]
-            if (resolved && source) resolved[alias] = source[sourceName]
-          }
-          yield { columns: staticColumns, cells, resolved }
-          continue
-        }
-
         const currentRowIndex = rowIndex
 
-        /** @type {string[]} */
-        const columns = staticColumns ?? []
         /** @type {AsyncCells} */
         const cells = {}
+        // Only safe to propagate resolved when every output column comes from
+        // the star branch — derived expressions evaluate lazily and can't be
+        // pre-materialized here, and a partial resolved would make
+        // collect()/downstream identifier fast paths read undefined.
+        const source = resolveable ? row.resolved : undefined
+        /** @type {Record<string, SqlPrimitive> | undefined} */
+        const resolved = source ? {} : undefined
 
-        for (let i = 0; i < plan.columns.length; i++) {
-          const col = plan.columns[i]
+        let colIdx = 0
+        for (const col of plan.columns) {
           if (col.type === 'star') {
             const prefix = col.table ? `${col.table}.` : undefined
             for (const key of row.columns) {
               if (prefix && !key.startsWith(prefix)) continue
               const dotIndex = key.indexOf('.')
               const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
-              columns.push(outputKey)
               cells[outputKey] = row.cells[key]
+              if (resolved && source) resolved[outputKey] = source[key]
+              colIdx++
             }
+          } else if (col.expr.type === 'identifier') {
+            // Common case: simple identifier. Avoid evaluateExpr overhead by
+            // directly mapping to the child's cell, relying on the planner to
+            // have normalized the identifier to match the child's column layout.
+            const id = col.expr
+            const sourceName = id.prefix ? `${id.prefix}.${id.name}` : id.name
+            cells[columns[colIdx]] = row.cells[sourceName]
+            if (resolved && source) resolved[columns[colIdx]] = source[sourceName]
+            colIdx++
           } else {
-            const alias = staticColumns ? staticColumns[i] : col.alias ?? derivedAlias(col.expr)
-            if (!staticColumns) columns.push(alias)
+            const alias = columns[colIdx++]
             cells[alias] = () => evaluateExpr({
               node: col.expr,
               row,
@@ -496,7 +464,7 @@ function executeProject(plan, context) {
           }
         }
 
-        yield { columns, cells }
+        yield { columns, cells, resolved }
       }
     },
   }

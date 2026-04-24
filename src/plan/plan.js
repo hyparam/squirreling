@@ -3,7 +3,7 @@ import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
-import { extractColumns, fromAlias, inferStatementColumns, tableFunctionColumnName } from './columns.js'
+import { extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnName } from './columns.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -242,6 +242,15 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
           col.type === 'star' || parentColumns.some(id => id.name === (col.alias ?? derivedAlias(col.expr)))
         )
       }
+      // Normalize identifiers to match the child's cell-key layout, so the
+      // Project executor can look up cells by exact name instead of relying
+      // on the evaluator's suffix-search fallback.
+      const sourceColumns = inferSelectSourceColumns({ select, cteColumns, tables })
+      projectColumns = projectColumns.map(col =>
+        col.type === 'derived'
+          ? { ...col, expr: normalizeIdentifiers(col.expr, sourceColumns) }
+          : col
+      )
       plan = { type: 'Project', columns: projectColumns, child: plan }
     }
 
@@ -458,6 +467,69 @@ function resolveAliases(node, aliases) {
     return { ...node, caseExpr, whenClauses, elseResult }
   }
   // literal, interval, subquery, in, exists: no identifiers to resolve
+  return node
+}
+
+/**
+ * Rewrites identifiers so their `prefix`/`name` pair matches a cell key that
+ * will actually exist in the child row. A join child yields cells keyed as
+ * `alias.column`; a plain scan or CTE yields bare `column`. Applying this at
+ * plan time lets the Project fast path use exact lookups and keeps the
+ * evaluator from having to suffix-search row.columns at runtime.
+ *
+ * @param {ExprNode} node
+ * @param {string[]} sourceColumns
+ * @returns {ExprNode}
+ */
+function normalizeIdentifiers(node, sourceColumns) {
+  if (!node) return node
+  if (node.type === 'identifier') {
+    const current = node.prefix ? `${node.prefix}.${node.name}` : node.name
+    if (sourceColumns.includes(current)) return node
+    if (node.prefix) {
+      if (sourceColumns.includes(node.name)) return { ...node, prefix: undefined }
+      return node
+    }
+    const suffix = '.' + node.name
+    const matches = sourceColumns.filter(c => c.endsWith(suffix))
+    if (matches.length === 1) {
+      return { ...node, prefix: matches[0].slice(0, matches[0].length - suffix.length) }
+    }
+    return node
+  }
+  if (node.type === 'unary') {
+    return { ...node, argument: normalizeIdentifiers(node.argument, sourceColumns) }
+  }
+  if (node.type === 'binary') {
+    return { ...node, left: normalizeIdentifiers(node.left, sourceColumns), right: normalizeIdentifiers(node.right, sourceColumns) }
+  }
+  if (node.type === 'function') {
+    return { ...node, args: node.args.map(arg => normalizeIdentifiers(arg, sourceColumns)) }
+  }
+  if (node.type === 'cast') {
+    return { ...node, expr: normalizeIdentifiers(node.expr, sourceColumns) }
+  }
+  if (node.type === 'in valuelist') {
+    return {
+      ...node,
+      expr: normalizeIdentifiers(node.expr, sourceColumns),
+      values: node.values.map(v => normalizeIdentifiers(v, sourceColumns)),
+    }
+  }
+  if (node.type === 'case') {
+    return {
+      ...node,
+      caseExpr: normalizeIdentifiers(node.caseExpr, sourceColumns),
+      whenClauses: node.whenClauses.map(w => ({
+        ...w,
+        condition: normalizeIdentifiers(w.condition, sourceColumns),
+        result: normalizeIdentifiers(w.result, sourceColumns),
+      })),
+      elseResult: normalizeIdentifiers(node.elseResult, sourceColumns),
+    }
+  }
+  // literal, interval, subquery, in, exists: leave unchanged (subquery bodies
+  // have their own source layout; correlated references must stay as-is).
   return node
 }
 
