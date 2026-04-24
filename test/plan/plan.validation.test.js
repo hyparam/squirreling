@@ -67,4 +67,12 @@ describe('planSql table validation', () => {
     expect(() => planSql({ query: 'SELECT * FROM users JOIN UNNEST(orders.total) AS u(x) ON TRUE JOIN orders ON TRUE', tables }))
       .toThrow('Table "orders" not found in "orders.total". Available tables: users')
   })
+
+  it('should reject forward references inside subqueries in lateral UNNEST arguments', () => {
+    const later = memorySource({ data: [{ id: 1, arr: [10, 20] }] })
+    expect(() => planSql({
+      query: 'SELECT * FROM users JOIN UNNEST((SELECT arr FROM later WHERE later.id = orders.id LIMIT 1)) AS u(x) ON TRUE JOIN orders ON TRUE',
+      tables: { ...tables, later },
+    })).toThrow('Table "orders" not found in "orders.id". Available tables: later, users')
+  })
 })

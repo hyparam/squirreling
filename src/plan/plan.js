@@ -345,8 +345,10 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
 
     // LATERAL table function: right side references left-side columns.
     if (join.fromFunction) {
+      const lateralOuterScope = Object.keys(lateralScope)
       for (const arg of join.fromFunction.args) {
         validateTableRefs(arg, lateralScope)
+        validateLateralSubqueries(arg, tables, lateralOuterScope)
       }
       plan = {
         type: 'NestedLoopJoin',
@@ -483,6 +485,53 @@ function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   }
 
   return { leftKey: left, rightKey: right }
+}
+
+/**
+ * Validates subquery expressions inside a lateral UNNEST argument by planning
+ * them against the lateral scope. Forward references (to joins that appear
+ * after the UNNEST) are rejected at plan time rather than deferring to
+ * execution.
+ *
+ * @param {ExprNode} expr
+ * @param {Record<string, AsyncDataSource> | undefined} tables
+ * @param {string[]} outerScope
+ */
+function validateLateralSubqueries(expr, tables, outerScope) {
+  if (!expr) return
+  if (expr.type === 'subquery' || expr.type === 'exists' || expr.type === 'not exists') {
+    planStatement({ stmt: expr.subquery, tables, outerScope })
+    return
+  }
+  if (expr.type === 'in') {
+    validateLateralSubqueries(expr.expr, tables, outerScope)
+    planStatement({ stmt: expr.subquery, tables, outerScope })
+    return
+  }
+  if (expr.type === 'binary') {
+    validateLateralSubqueries(expr.left, tables, outerScope)
+    validateLateralSubqueries(expr.right, tables, outerScope)
+  } else if (expr.type === 'unary') {
+    validateLateralSubqueries(expr.argument, tables, outerScope)
+  } else if (expr.type === 'function') {
+    for (const arg of expr.args) {
+      validateLateralSubqueries(arg, tables, outerScope)
+    }
+  } else if (expr.type === 'cast') {
+    validateLateralSubqueries(expr.expr, tables, outerScope)
+  } else if (expr.type === 'in valuelist') {
+    validateLateralSubqueries(expr.expr, tables, outerScope)
+    for (const val of expr.values) {
+      validateLateralSubqueries(val, tables, outerScope)
+    }
+  } else if (expr.type === 'case') {
+    validateLateralSubqueries(expr.caseExpr, tables, outerScope)
+    for (const w of expr.whenClauses) {
+      validateLateralSubqueries(w.condition, tables, outerScope)
+      validateLateralSubqueries(w.result, tables, outerScope)
+    }
+    validateLateralSubqueries(expr.elseResult, tables, outerScope)
+  }
 }
 
 /**
