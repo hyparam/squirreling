@@ -310,6 +310,40 @@ describe('LATERAL UNNEST', () => {
     ])
   })
 
+  it('should support later lateral UNNEST arguments that reference earlier lateral outputs', async () => {
+    const t = [
+      { id: 1, arr: [[10, 20], [30]] },
+      { id: 2, arr: [[40]] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, v.y FROM t JOIN UNNEST(t.arr) AS u(x) ON TRUE JOIN UNNEST(x) AS v(y) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, y: 10 },
+      { id: 1, y: 20 },
+      { id: 1, y: 30 },
+      { id: 2, y: 40 },
+    ])
+  })
+
+  it('should execute lateral UNNEST argument subqueries that reference enclosing CTEs', async () => {
+    const one = [{ id: 1 }]
+    const arrays = [{ arr: [10, 20] }]
+
+    const result = await collect(executeSql({
+      tables: { one, arrays },
+      query: `
+        WITH c AS (SELECT arr FROM arrays)
+        SELECT u.x
+        FROM one
+        JOIN UNNEST((SELECT arr FROM c LIMIT 1)) AS u(x) ON TRUE
+      `,
+    }))
+
+    expect(result).toEqual([{ x: 10 }, { x: 20 }])
+  })
+
   it('should aggregate over lateral output with GROUP BY', async () => {
     const t = [
       { id: 1, arr: [1, 2, 3] },

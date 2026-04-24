@@ -84,4 +84,18 @@ describe('planSql table validation', () => {
     })
     expect(plan).toBeDefined()
   })
+
+  it('should preserve CTE scope when validating subqueries in lateral UNNEST arguments', () => {
+    const arrays = memorySource({ data: [{ id: 1, arr: [10, 20] }] })
+    const plan = planSql({
+      query: `
+        WITH c AS (SELECT id, arr FROM arrays)
+        SELECT users.name, u.x
+        FROM users
+        JOIN UNNEST((SELECT arr FROM c LIMIT 1)) AS u(x) ON TRUE
+      `,
+      tables: { ...tables, arrays },
+    })
+    expect(plan).toBeDefined()
+  })
 })
