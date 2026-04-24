@@ -404,30 +404,28 @@ function executeFilter(plan, context) {
  */
 function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const columns = selectColumnNames(plan.columns, child.columns)
 
-  // Pre-compute column names for derived columns (avoids per-row derivedAlias calls)
   const hasStar = plan.columns.some(col => col.type === 'star')
+  const allStar = hasStar && plan.columns.every(col => col.type === 'star')
 
-  /** @type {string[] | undefined} */
-  let staticColumns
   /** @type {{ alias: string, sourceName: string }[] | undefined} */
   let identifierMap
   if (!hasStar) {
     const derived = /** @type {DerivedColumn[]} */ (plan.columns)
-    staticColumns = derived.map(col => col.alias ?? derivedAlias(col.expr))
     const allIdentifiers = derived.every(col =>
       col.expr.type === 'identifier' && !col.expr.prefix
     )
     if (allIdentifiers) {
       identifierMap = derived.map((col, i) => ({
-        alias: staticColumns[i],
+        alias: columns[i],
         sourceName: /** @type {IdentifierNode} */ (col.expr).name,
       }))
     }
   }
 
   return {
-    columns: selectColumnNames(plan.columns, child.columns),
+    columns,
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
@@ -457,31 +455,36 @@ function executeProject(plan, context) {
             cells[alias] = row.cells[sourceName]
             if (resolved && source) resolved[alias] = source[sourceName]
           }
-          yield { columns: staticColumns, cells, resolved }
+          yield { columns, cells, resolved }
           continue
         }
 
         const currentRowIndex = rowIndex
 
-        /** @type {string[]} */
-        const columns = staticColumns ?? []
         /** @type {AsyncCells} */
         const cells = {}
+        // Only safe to propagate resolved when every output column comes from
+        // the star branch — derived expressions evaluate lazily and can't be
+        // pre-materialized here, and a partial resolved would make
+        // collect()/downstream identifier fast paths read undefined.
+        const source = allStar ? row.resolved : undefined
+        /** @type {Record<string, SqlPrimitive> | undefined} */
+        const resolved = source ? {} : undefined
 
-        for (let i = 0; i < plan.columns.length; i++) {
-          const col = plan.columns[i]
+        let colIdx = 0
+        for (const col of plan.columns) {
           if (col.type === 'star') {
             const prefix = col.table ? `${col.table}.` : undefined
             for (const key of row.columns) {
               if (prefix && !key.startsWith(prefix)) continue
               const dotIndex = key.indexOf('.')
               const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
-              columns.push(outputKey)
               cells[outputKey] = row.cells[key]
+              if (resolved && source) resolved[outputKey] = source[key]
+              colIdx++
             }
           } else {
-            const alias = staticColumns ? staticColumns[i] : col.alias ?? derivedAlias(col.expr)
-            if (!staticColumns) columns.push(alias)
+            const alias = columns[colIdx++]
             cells[alias] = () => evaluateExpr({
               node: col.expr,
               row,
@@ -491,7 +494,7 @@ function executeProject(plan, context) {
           }
         }
 
-        yield { columns, cells }
+        yield { columns, cells, resolved }
       }
     },
   }
