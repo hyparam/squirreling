@@ -105,7 +105,12 @@ function executeLateralJoin(plan, context) {
       for await (const leftRow of left.rows()) {
         if (context.signal?.aborted) return
 
-        const subContext = { ...context, outerRow: leftRow }
+        // When nested inside a correlated subquery, preserve the enclosing
+        // outer row so UNNEST args can reference its columns (e.g. o.arr).
+        const nestedOuter = context.outerRow
+          ? mergeOuterRows(context.outerRow, leftRow, leftTable)
+          : leftRow
+        const subContext = { ...context, outerRow: nestedOuter }
         const right = executePlan({ plan: plan.right, context: subContext })
 
         let hasMatch = false
@@ -268,6 +273,28 @@ export function executeHashJoin(plan, context) {
       }
     },
   }
+}
+
+/**
+ * Merges an enclosing correlated outer row with a lateral join's left row.
+ * Outer cells are kept as-is; left cells are added under a qualified alias
+ * so qualified refs on either side resolve unambiguously.
+ *
+ * @param {AsyncRow} outerRow
+ * @param {AsyncRow} leftRow
+ * @param {string} leftTable
+ * @returns {AsyncRow}
+ */
+function mergeOuterRows(outerRow, leftRow, leftTable) {
+  const columns = [...outerRow.columns]
+  /** @type {AsyncCells} */
+  const cells = { ...outerRow.cells }
+  for (const [key, cell] of Object.entries(leftRow.cells)) {
+    const alias = key.includes('.') ? key : `${leftTable}.${key}`
+    if (!(alias in cells)) columns.push(alias)
+    cells[alias] = cell
+  }
+  return { columns, cells }
 }
 
 /**
