@@ -260,6 +260,97 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_VALID', () => {
+    it('should return true for a valid JSON string', async () => {
+      const data = [{ id: 1, json: '{"name":"Alice"}' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: true }])
+    })
+
+    it('should return true for a valid JSON array string', async () => {
+      const data = [{ id: 1, json: '[1,2,3]' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: true }])
+    })
+
+    it('should return true for a valid JSON primitive string', async () => {
+      const data = [{ id: 1, json: '42' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: true }])
+    })
+
+    it('should return false for an invalid JSON string', async () => {
+      const data = [{ id: 1, json: 'not valid json' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: false }])
+    })
+
+    it('should return false for an unterminated JSON string', async () => {
+      const data = [{ id: 1, json: '{"name":"Alice"' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: false }])
+    })
+
+    it('should return null when input is null', async () => {
+      const data = [{ id: 1, json: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: null }])
+    })
+
+    it('should return false for non-string input', async () => {
+      const data = [{ id: 1, num: 42 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(num) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: false }])
+    })
+
+    it('should return false for object input', async () => {
+      const data = [{ id: 1, json: { name: 'Alice' } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) AS valid FROM data',
+      }))
+      expect(result).toEqual([{ valid: false }])
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID() FROM data',
+      })).toThrow('JSON_VALID(value) function requires 1 argument, got 0')
+    })
+
+    it('should work without alias', async () => {
+      const data = [{ id: 1, json: '{}' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_VALID(json) FROM data',
+      }))
+      expect(result[0]).toHaveProperty('json_valid_json')
+    })
+  })
+
   describe('JSON_OBJECT', () => {
     it('should create an object with string key and value', async () => {
       const data = [{ id: 1 }]

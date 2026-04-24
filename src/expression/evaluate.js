@@ -417,6 +417,18 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return result
     }
 
+    if (funcName === 'JSON_VALID') {
+      const value = args[0]
+      if (value == null) return null
+      if (typeof value !== 'string') return false
+      try {
+        JSON.parse(value)
+        return true
+      } catch {
+        return false
+      }
+    }
+
     if (funcName === 'JSON_ARRAY_LENGTH') {
       let arr = args[0]
       if (arr == null) return null
