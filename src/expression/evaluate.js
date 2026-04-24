@@ -272,7 +272,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         return values[lower] + (values[upper] - values[lower]) * (pos - lower)
       }
 
-      if (funcName === 'JSON_ARRAYAGG') {
+      if (funcName === 'JSON_ARRAYAGG' || funcName === 'ARRAY_AGG') {
         if (node.distinct) {
           /** @type {SqlPrimitive[]} */
           const values = []

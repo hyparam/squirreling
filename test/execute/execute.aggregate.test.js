@@ -209,6 +209,63 @@ describe('executeSql', () => {
       expect(result).toEqual([{ names: [] }])
     })
 
+    it('should collect values into array with ARRAY_AGG', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT ARRAY_AGG(name) AS names FROM users',
+      }))
+      expect(result).toEqual([{ names: ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'] }])
+    })
+
+    it('should handle ARRAY_AGG with GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, ARRAY_AGG(name) AS names FROM users GROUP BY city ORDER BY city',
+      }))
+      expect(result).toEqual([
+        { city: 'LA', names: ['Bob', 'Diana'] },
+        { city: 'NYC', names: ['Alice', 'Charlie', 'Eve'] },
+      ])
+    })
+
+    it('should handle ARRAY_AGG DISTINCT', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT ARRAY_AGG(DISTINCT city) AS cities FROM users',
+      }))
+      expect(result[0].cities).toHaveLength(2)
+      expect(result[0].cities).toContain('NYC')
+      expect(result[0].cities).toContain('LA')
+    })
+
+    it('should include nulls in ARRAY_AGG', async () => {
+      const data = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: null },
+        { id: 3, name: 'Charlie' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_AGG(name) AS names FROM data',
+      }))
+      expect(result).toEqual([{ names: ['Alice', null, 'Charlie'] }])
+    })
+
+    it('should handle empty dataset for ARRAY_AGG', async () => {
+      const result = await collect(executeSql({
+        tables: { empty },
+        query: 'SELECT ARRAY_AGG(name) AS names FROM empty',
+      }))
+      expect(result).toEqual([{ names: [] }])
+    })
+
+    it('should throw for ARRAY_AGG with wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT ARRAY_AGG(name, age) FROM users',
+      })).toThrow('ARRAY_AGG(expression) function requires 1 argument, got 2')
+    })
+
     it('should calculate STDDEV_POP', async () => {
       // Values: 2, 4, 4, 4, 5, 5, 7, 9 => mean=5, sum of squared diffs=32, stddev_pop=sqrt(32/8)=2
       const data = [

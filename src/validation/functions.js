@@ -11,7 +11,7 @@ export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP'
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG'].includes(name)
+  return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'ARRAY_AGG', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG'].includes(name)
 }
 
 /**
@@ -167,6 +167,7 @@ export const FUNCTION_SIGNATURES = {
   JSON_OBJECT: { min: 0, signature: 'key1, value1[, ...]' },
   JSON_ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
   JSON_ARRAYAGG: { min: 1, max: 1, signature: 'expression' },
+  ARRAY_AGG: { min: 1, max: 1, signature: 'expression' },
 
   // Array functions
   ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
