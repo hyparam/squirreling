@@ -510,6 +510,30 @@ describe('subqueries', () => {
       ])
     })
 
+    it('should preserve the enclosing correlated row inside nested lateral UNNEST', async () => {
+      const outers = [
+        { id: 1, arr: [10, 20] },
+        { id: 2, arr: [30] },
+      ]
+      const t = [
+        { k: 1 },
+        { k: 2 },
+      ]
+      const result = await collect(executeSql({
+        tables: { outers, t },
+        query: `
+          SELECT
+            o.arr,
+            (SELECT COUNT(*) FROM t JOIN UNNEST(o.arr) AS u(x) ON TRUE) AS n
+          FROM outers AS o
+        `,
+      }))
+      expect(result).toEqual([
+        { arr: [10, 20], n: 4 },
+        { arr: [30], n: 2 },
+      ])
+    })
+
     it('should return null when correlated subquery matches no rows', async () => {
       const result = await collect(executeSql({
         tables: { users, orders },

@@ -36,7 +36,7 @@ describe('parseSql error handling', () => {
       expect(() => parseSql({ query: 'SELECT name, FROM users' }))
         .toThrow('Expected expression after "," but found "FROM" at position 13')
       expect(() => parseSql({ query: 'SELECT name FROM users,' }))
-        .toThrow('Expected end of query after "users" but found "," at position 22')
+        .toThrow('Comma-separated FROM is only supported with table functions like UNNEST; use explicit JOIN ... ON ... for regular tables')
     })
 
     it('should throw error on illegal keywords after SELECT', () => {

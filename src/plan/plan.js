@@ -176,7 +176,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Add JOINs
   if (select.joins.length) {
-    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables })
+    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables, outerScope })
   }
 
   // Whether FROM resolved to our own direct table scan
@@ -279,12 +279,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
     for (const arg of select.from.args) {
       validateNoIdentifiers(arg, select.from.funcName)
     }
-    return {
-      type: 'TableFunction',
-      funcName: select.from.funcName,
-      args: select.from.args,
-      columnName: tableFunctionColumnName(select.from),
-    }
+    return planTableFunction(select.from)
   } else {
     const subPlan = planStatement({
       stmt: select.from.query,
@@ -307,6 +302,21 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
 }
 
 /**
+ * Builds a TableFunction plan node for a FromFunction AST.
+ *
+ * @param {import('../types.js').FromFunction} from
+ * @returns {import('./types.d.ts').TableFunctionNode}
+ */
+function planTableFunction(from) {
+  return {
+    type: 'TableFunction',
+    funcName: from.funcName,
+    args: from.args,
+    columnName: tableFunctionColumnName(from),
+  }
+}
+
+/**
  * @param {object} options
  * @param {QueryPlan} options.left - the left side of the join (FROM or previous joins)
  * @param {JoinClause[]} options.joins - array of join clauses
@@ -315,14 +325,45 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Map<string, string[] | undefined>} options.perTableColumns
  * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables }) {
+function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables, outerScope }) {
   let plan = left
   let currentLeftTable = leftTable
 
+  // Running scope for lateral UNNEST arg validation — excludes the current
+  // join's own alias (self-reference) and later joins (forward reference).
+  /** @type {Record<string, any>} */
+  const lateralScope = { [leftTable]: true }
+  for (const alias of outerScope ?? []) {
+    lateralScope[alias] = true
+  }
+
   for (const join of joins) {
     const rightTable = join.alias ?? join.table
+
+    // LATERAL table function: right side references left-side columns.
+    if (join.fromFunction) {
+      const lateralOuterScope = Object.keys(lateralScope)
+      for (const arg of join.fromFunction.args) {
+        validateTableRefs(arg, lateralScope)
+        validateLateralSubqueries({ expr: arg, ctePlans, cteColumns, tables, outerScope: lateralOuterScope })
+      }
+      plan = {
+        type: 'NestedLoopJoin',
+        joinType: join.joinType,
+        leftAlias: currentLeftTable,
+        rightAlias: rightTable,
+        condition: join.on,
+        left: plan,
+        right: planTableFunction(join.fromFunction),
+        lateral: true,
+      }
+      currentLeftTable = `${currentLeftTable}_${rightTable}`
+      lateralScope[rightTable] = true
+      continue
+    }
 
     const ctePlan = ctePlans?.get(join.table.toLowerCase())
     /** @type {ScanOptions} */
@@ -367,6 +408,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
 
     // Update left table name for next join
     currentLeftTable = `${currentLeftTable}_${rightTable}`
+    lateralScope[rightTable] = true
   }
 
   return plan
@@ -443,6 +485,56 @@ function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
   }
 
   return { leftKey: left, rightKey: right }
+}
+
+/**
+ * Validates subquery expressions inside a lateral UNNEST argument by planning
+ * them against the lateral scope. Forward references (to joins that appear
+ * after the UNNEST) are rejected at plan time rather than deferring to
+ * execution.
+ *
+ * @param {object} options
+ * @param {ExprNode} options.expr
+ * @param {Map<string, QueryPlan>} [options.ctePlans]
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Record<string, AsyncDataSource> | undefined} options.tables
+ * @param {string[]} options.outerScope
+ */
+function validateLateralSubqueries({ expr, ctePlans, cteColumns, tables, outerScope }) {
+  if (!expr) return
+  if (expr.type === 'subquery' || expr.type === 'exists' || expr.type === 'not exists') {
+    planStatement({ stmt: expr.subquery, ctePlans, cteColumns, tables, outerScope })
+    return
+  }
+  if (expr.type === 'in') {
+    validateLateralSubqueries({ expr: expr.expr, ctePlans, cteColumns, tables, outerScope })
+    planStatement({ stmt: expr.subquery, ctePlans, cteColumns, tables, outerScope })
+    return
+  }
+  if (expr.type === 'binary') {
+    validateLateralSubqueries({ expr: expr.left, ctePlans, cteColumns, tables, outerScope })
+    validateLateralSubqueries({ expr: expr.right, ctePlans, cteColumns, tables, outerScope })
+  } else if (expr.type === 'unary') {
+    validateLateralSubqueries({ expr: expr.argument, ctePlans, cteColumns, tables, outerScope })
+  } else if (expr.type === 'function') {
+    for (const arg of expr.args) {
+      validateLateralSubqueries({ expr: arg, ctePlans, cteColumns, tables, outerScope })
+    }
+  } else if (expr.type === 'cast') {
+    validateLateralSubqueries({ expr: expr.expr, ctePlans, cteColumns, tables, outerScope })
+  } else if (expr.type === 'in valuelist') {
+    validateLateralSubqueries({ expr: expr.expr, ctePlans, cteColumns, tables, outerScope })
+    for (const val of expr.values) {
+      validateLateralSubqueries({ expr: val, ctePlans, cteColumns, tables, outerScope })
+    }
+  } else if (expr.type === 'case') {
+    validateLateralSubqueries({ expr: expr.caseExpr, ctePlans, cteColumns, tables, outerScope })
+    for (const w of expr.whenClauses) {
+      validateLateralSubqueries({ expr: w.condition, ctePlans, cteColumns, tables, outerScope })
+      validateLateralSubqueries({ expr: w.result, ctePlans, cteColumns, tables, outerScope })
+    }
+    validateLateralSubqueries({ expr: expr.elseResult, ctePlans, cteColumns, tables, outerScope })
+  }
 }
 
 /**

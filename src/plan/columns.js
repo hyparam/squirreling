@@ -82,6 +82,11 @@ export function extractColumns({ select, parentColumns }) {
   const identifiers = hasStar && parentColumns
     ? parentColumns.filter(id => !derivedAliases.has(id.name))
     : []
+  // Identifiers collected from lateral table function arguments, grouped with
+  // the aliases visible to that argument. Earlier lateral outputs are visible;
+  // the current function alias and later joins are not.
+  /** @type {{ identifiers: IdentifierNode[], visibleAliases: string[] }[]} */
+  const lateralArgGroups = []
 
   // Collect ORDER BY identifiers, excluding SELECT aliases (their underlying
   // columns are already collected from select.columns expressions above)
@@ -114,8 +119,19 @@ export function extractColumns({ select, parentColumns }) {
     collectColumnsFromExpr(expr, identifiers, selectAliases)
   }
   collectColumnsFromExpr(select.having, identifiers, selectAliases)
+  const visibleLateralAliases = [fromAlias(select.from)]
   for (const join of select.joins) {
     collectColumnsFromExpr(join.on, identifiers)
+    const joinAlias = join.alias ?? join.table
+    if (join.fromFunction) {
+      /** @type {IdentifierNode[]} */
+      const lateralArgIdentifiers = []
+      for (const arg of join.fromFunction.args) {
+        collectColumnsFromExpr(arg, lateralArgIdentifiers)
+      }
+      lateralArgGroups.push({ identifiers: lateralArgIdentifiers, visibleAliases: [...visibleLateralAliases] })
+    }
+    visibleLateralAliases.push(joinAlias)
   }
 
   // Partition identifiers by table prefix
@@ -133,6 +149,26 @@ export function extractColumns({ select, parentColumns }) {
       // Unqualified, single table: add to that table
       for (const [, set] of perTable) {
         if (set) set.add(name)
+      }
+    }
+  }
+
+  // Partition identifiers from lateral UNNEST args using only the left-side
+  // aliases that are in scope for that specific join.
+  for (const { identifiers, visibleAliases } of lateralArgGroups) {
+    for (const { prefix, name } of identifiers) {
+      if (prefix) {
+        const set = perTable.get(prefix)
+        if (set) set.add(name)
+      } else {
+        if (visibleAliases.length > 1) {
+          for (const alias of visibleAliases) {
+            perTable.set(alias, undefined)
+          }
+        } else if (visibleAliases.length === 1) {
+          const set = perTable.get(visibleAliases[0])
+          if (set) set.add(name)
+        }
       }
     }
   }
@@ -233,7 +269,14 @@ function collectColumnsFromStatement(stmt, columns) {
   if (stmt.from?.type === 'subquery') {
     collectColumnsFromStatement(stmt.from.query, columns)
   }
-  for (const join of stmt.joins) collectColumnsFromExpr(join.on, columns)
+  for (const join of stmt.joins) {
+    collectColumnsFromExpr(join.on, columns)
+    if (join.fromFunction) {
+      for (const arg of join.fromFunction.args) {
+        collectColumnsFromExpr(arg, columns)
+      }
+    }
+  }
   for (const expr of stmt.groupBy) collectColumnsFromExpr(expr, columns)
   collectColumnsFromExpr(stmt.having, columns)
   for (const item of stmt.orderBy) collectColumnsFromExpr(item.expr, columns)
@@ -297,8 +340,12 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
     result.push(`${alias}.${tableFunctionColumnName(select.from)}`)
     for (const join of select.joins) {
       const joinAlias = join.alias ?? join.table
-      for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
-        result.push(`${joinAlias}.${col}`)
+      if (join.fromFunction) {
+        result.push(`${joinAlias}.${tableFunctionColumnName(join.fromFunction)}`)
+      } else {
+        for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
+          result.push(`${joinAlias}.${col}`)
+        }
       }
     }
     return result
@@ -317,8 +364,12 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
   }
   for (const join of select.joins) {
     const joinAlias = join.alias ?? join.table
-    for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
-      result.push(`${joinAlias}.${col}`)
+    if (join.fromFunction) {
+      result.push(`${joinAlias}.${tableFunctionColumnName(join.fromFunction)}`)
+    } else {
+      for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
+        result.push(`${joinAlias}.${col}`)
+      }
     }
   }
   return result

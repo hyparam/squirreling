@@ -92,21 +92,21 @@ describe('UNNEST', () => {
     expect(() => executeSql({
       tables: { t: [{ arr: [1, 2] }] },
       query: 'SELECT * FROM UNNEST(arr) AS u',
-    })).toThrow('UNNEST argument cannot reference column "arr" — UNNEST arguments must be constant (lateral/correlated UNNEST is not supported)')
+    })).toThrow('UNNEST argument cannot reference column "arr" — use JOIN UNNEST(...) to reference columns from another table')
   })
 
   it('should throw when the argument uses a qualified column ref', () => {
     expect(() => executeSql({
       tables: { t: [{ arr: [1, 2] }] },
       query: 'SELECT * FROM UNNEST(t.arr) AS u',
-    })).toThrow('UNNEST argument cannot reference column "t.arr" — UNNEST arguments must be constant (lateral/correlated UNNEST is not supported)')
+    })).toThrow('UNNEST argument cannot reference column "t.arr" — use JOIN UNNEST(...) to reference columns from another table')
   })
 
   it('should throw when a column is referenced on the LHS of IN', () => {
     expect(() => executeSql({
       tables: { t: [{ arr: [1, 2] }], nums: [{ n: 1 }] },
       query: 'SELECT * FROM UNNEST(arr IN (SELECT n FROM nums)) AS u',
-    })).toThrow('UNNEST argument cannot reference column "arr" — UNNEST arguments must be constant (lateral/correlated UNNEST is not supported)')
+    })).toThrow('UNNEST argument cannot reference column "arr" — use JOIN UNNEST(...) to reference columns from another table')
   })
 
   it('should throw for multi-column aliases', () => {
@@ -144,6 +144,265 @@ describe('UNNEST', () => {
       { x: 2, name: 'two' },
       { x: 3, name: 'three' },
     ])
+  })
+})
+
+describe('LATERAL UNNEST', () => {
+  it('should expand an array column from the left-side row (qualified ref)', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t JOIN UNNEST(t.arr) AS u(x) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should resolve an unqualified ref from the left-side row', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t JOIN UNNEST(arr) AS u(x) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should accept an explicit LATERAL keyword', async () => {
+    const t = [
+      { id: 1, arr: [1, 2] },
+      { id: 2, arr: [3] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t JOIN LATERAL UNNEST(t.arr) AS u(x) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 1 },
+      { id: 1, x: 2 },
+      { id: 2, x: 3 },
+    ])
+  })
+
+  it('should expand via CROSS JOIN UNNEST (no ON clause)', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t CROSS JOIN UNNEST(t.arr) AS u(x)',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should expand via comma-join UNNEST (implicit CROSS JOIN LATERAL)', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t, UNNEST(t.arr) AS u(x)',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should resolve an unqualified ref in CROSS JOIN UNNEST', async () => {
+    const t = [
+      { id: 1, arr: [1, 2] },
+      { id: 2, arr: [3] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t CROSS JOIN UNNEST(arr) AS u(x)',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 1 },
+      { id: 1, x: 2 },
+      { id: 2, x: 3 },
+    ])
+  })
+
+  it('should reject comma-join with a regular table', () => {
+    expect(() => executeSql({
+      tables: { t: [{ id: 1 }], labels: [{ id: 1, name: 'one' }] },
+      query: 'SELECT * FROM t, labels',
+    })).toThrow('Comma-separated FROM is only supported with table functions like UNNEST; use explicit JOIN ... ON ... for regular tables')
+  })
+
+  it('should reject CROSS JOIN with a regular table', () => {
+    expect(() => executeSql({
+      tables: { t: [{ id: 1 }], labels: [{ id: 1, name: 'one' }] },
+      query: 'SELECT * FROM t CROSS JOIN labels',
+    })).toThrow('CROSS JOIN is currently supported only with table functions like UNNEST')
+  })
+
+  it('should filter rows with an ON condition', async () => {
+    const t = [
+      { id: 1, arr: [1, 2, 3] },
+      { id: 2, arr: [4, 5] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t JOIN UNNEST(t.arr) AS u(x) ON u.x > 2',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 3 },
+      { id: 2, x: 4 },
+      { id: 2, x: 5 },
+    ])
+  })
+
+  it('should LEFT JOIN yielding a NULL row for empty arrays', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [] },
+      { id: 3, arr: null },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t LEFT JOIN UNNEST(t.arr) AS u(x) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: null },
+      { id: 3, x: null },
+    ])
+  })
+
+  it('should support two chained lateral UNNESTs', async () => {
+    const t = [
+      { id: 1, a: [1, 2], b: ['x', 'y'] },
+      { id: 2, a: [3], b: ['z'] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x, v.y FROM t JOIN UNNEST(t.a) AS u(x) ON TRUE JOIN UNNEST(t.b) AS v(y) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 1, y: 'x' },
+      { id: 1, x: 1, y: 'y' },
+      { id: 1, x: 2, y: 'x' },
+      { id: 1, x: 2, y: 'y' },
+      { id: 2, x: 3, y: 'z' },
+    ])
+  })
+
+  it('should support later lateral UNNEST arguments that reference earlier lateral outputs', async () => {
+    const t = [
+      { id: 1, arr: [[10, 20], [30]] },
+      { id: 2, arr: [[40]] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, v.y FROM t JOIN UNNEST(t.arr) AS u(x) ON TRUE JOIN UNNEST(x) AS v(y) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, y: 10 },
+      { id: 1, y: 20 },
+      { id: 1, y: 30 },
+      { id: 2, y: 40 },
+    ])
+  })
+
+  it('should execute lateral UNNEST argument subqueries that reference enclosing CTEs', async () => {
+    const one = [{ id: 1 }]
+    const arrays = [{ arr: [10, 20] }]
+
+    const result = await collect(executeSql({
+      tables: { one, arrays },
+      query: `
+        WITH c AS (SELECT arr FROM arrays)
+        SELECT u.x
+        FROM one
+        JOIN UNNEST((SELECT arr FROM c LIMIT 1)) AS u(x) ON TRUE
+      `,
+    }))
+
+    expect(result).toEqual([{ x: 10 }, { x: 20 }])
+  })
+
+  it('should aggregate over lateral output with GROUP BY', async () => {
+    const t = [
+      { id: 1, arr: [1, 2, 3] },
+      { id: 2, arr: [10, 20] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, SUM(u.x) AS total FROM t JOIN UNNEST(t.arr) AS u(x) ON TRUE GROUP BY t.id',
+    }))
+    expect(result).toEqual([
+      { id: 1, total: 6 },
+      { id: 2, total: 30 },
+    ])
+  })
+
+  it('should reject RIGHT JOIN with a table function', () => {
+    expect(() => executeSql({
+      tables: { t: [{ arr: [1] }] },
+      query: 'SELECT * FROM t RIGHT JOIN UNNEST(t.arr) AS u(x) ON TRUE',
+    })).toThrow(/RIGHT JOIN not supported with table functions/)
+  })
+
+  it('should reject FULL JOIN with a table function', () => {
+    expect(() => executeSql({
+      tables: { t: [{ arr: [1] }] },
+      query: 'SELECT * FROM t FULL JOIN UNNEST(t.arr) AS u(x) ON TRUE',
+    })).toThrow(/FULL JOIN not supported with table functions/)
+  })
+
+  it('should reject LATERAL on a plain table join', () => {
+    expect(() => executeSql({
+      tables: { t: [{ id: 1 }], labels: [{ id: 1, name: 'one' }] },
+      query: 'SELECT * FROM t JOIN LATERAL labels ON labels.id = t.id',
+    })).toThrow(/LATERAL is only supported with table functions/)
+  })
+
+  it('should still reject FROM UNNEST with a column ref (no scope)', () => {
+    expect(() => executeSql({
+      tables: { t: [{ arr: [1, 2] }] },
+      query: 'SELECT * FROM UNNEST(arr) AS u',
+    })).toThrow(/cannot reference column "arr"/)
+  })
+
+  it('should stop yielding when the signal aborts mid-stream', async () => {
+    const t = [
+      { id: 1, arr: [1, 2, 3] },
+      { id: 2, arr: [4, 5, 6] },
+    ]
+    const controller = new AbortController()
+    const iter = executeSql({
+      tables: { t },
+      query: 'SELECT u.x FROM t JOIN UNNEST(t.arr) AS u(x) ON TRUE',
+      signal: controller.signal,
+    }).rows()
+    const first = await iter.next()
+    expect(await first.value?.cells.x()).toBe(1)
+    controller.abort()
+    const second = await iter.next()
+    expect(second.done).toBe(true)
   })
 })
 

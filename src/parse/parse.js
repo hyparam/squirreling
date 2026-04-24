@@ -202,12 +202,7 @@ function parseSelect(state) {
       positionStart: fromTok.positionStart,
       positionEnd: state.lastPos,
     }
-  } else if (
-    fromTok.type === 'identifier' &&
-    isTableFunction(fromTok.value.toUpperCase()) &&
-    peekToken(state, 1).type === 'paren' &&
-    peekToken(state, 1).value === '('
-  ) {
+  } else if (isTableFunctionStart(state)) {
     // Table function: SELECT * FROM UNNEST(expr) [AS alias[(col_alias)]]
     from = parseFromFunction(state)
   } else {
@@ -434,12 +429,27 @@ function parseSelectList(state) {
 }
 
 /**
+ * Peeks whether the current token starts a table-valued function call
+ * like `UNNEST(...)`.
+ *
+ * @param {ParserState} state
+ * @returns {boolean}
+ */
+export function isTableFunctionStart(state) {
+  const tok = current(state)
+  if (tok.type !== 'identifier') return false
+  if (!isTableFunction(tok.value.toUpperCase())) return false
+  const next = peekToken(state, 1)
+  return next.type === 'paren' && next.value === '('
+}
+
+/**
  * Parses a table function source: UNNEST(args...) [AS alias[(col_alias)]]
  *
  * @param {ParserState} state
  * @returns {FromFunction}
  */
-function parseFromFunction(state) {
+export function parseFromFunction(state) {
   const funcTok = consume(state)
   const funcName = funcTok.value.toUpperCase()
   const { positionStart } = funcTok

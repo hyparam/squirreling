@@ -201,6 +201,7 @@ export interface JoinClause extends AstBase {
   table: string
   alias?: string
   on?: ExprNode
+  fromFunction?: FromFunction
 }
 
 // All AST node derive from this base, which includes position info for error reporting and other purposes

@@ -57,4 +57,45 @@ describe('planSql table validation', () => {
     const plan = planSql({ query: 'SELECT * FROM anything' })
     expect(plan.type).toBe('Scan')
   })
+
+  it('should reject self references in lateral UNNEST arguments', () => {
+    expect(() => planSql({ query: 'SELECT * FROM users JOIN UNNEST(u.arr) AS u(x) ON TRUE', tables }))
+      .toThrow('Table "u" not found in "u.arr". Available tables: users')
+  })
+
+  it('should reject forward references in lateral UNNEST arguments', () => {
+    expect(() => planSql({ query: 'SELECT * FROM users JOIN UNNEST(orders.total) AS u(x) ON TRUE JOIN orders ON TRUE', tables }))
+      .toThrow('Table "orders" not found in "orders.total". Available tables: users')
+  })
+
+  it('should reject forward references inside subqueries in lateral UNNEST arguments', () => {
+    const later = memorySource({ data: [{ id: 1, arr: [10, 20] }] })
+    expect(() => planSql({
+      query: 'SELECT * FROM users JOIN UNNEST((SELECT arr FROM later WHERE later.id = orders.id LIMIT 1)) AS u(x) ON TRUE JOIN orders ON TRUE',
+      tables: { ...tables, later },
+    })).toThrow('Table "orders" not found in "orders.id". Available tables: later, users')
+  })
+
+  it('should allow later lateral UNNEST arguments to reference earlier lateral outputs', () => {
+    const nested = memorySource({ data: [{ id: 1, arr: [[10, 20], [30]] }] })
+    const plan = planSql({
+      query: 'SELECT t.id, v.y FROM nested AS t JOIN UNNEST(t.arr) AS u(x) ON TRUE JOIN UNNEST(x) AS v(y) ON TRUE',
+      tables: { nested },
+    })
+    expect(plan).toBeDefined()
+  })
+
+  it('should preserve CTE scope when validating subqueries in lateral UNNEST arguments', () => {
+    const arrays = memorySource({ data: [{ id: 1, arr: [10, 20] }] })
+    const plan = planSql({
+      query: `
+        WITH c AS (SELECT id, arr FROM arrays)
+        SELECT users.name, u.x
+        FROM users
+        JOIN UNNEST((SELECT arr FROM c LIMIT 1)) AS u(x) ON TRUE
+      `,
+      tables: { ...tables, arrays },
+    })
+    expect(plan).toBeDefined()
+  })
 })

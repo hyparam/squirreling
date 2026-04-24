@@ -142,8 +142,8 @@ function executeTableFunction(plan, context) {
     columns,
     async *rows() {
       /** @type {AsyncRow} */
-      const emptyRow = { columns: [], cells: {} }
-      const value = await evaluateExpr({ node: plan.args[0], row: emptyRow, rowIndex: 1, context })
+      const row = context.outerRow ?? { columns: [], cells: {} }
+      const value = await evaluateExpr({ node: plan.args[0], row, rowIndex: 1, context })
       if (!Array.isArray(value)) return
       for (const element of value) {
         if (context.signal?.aborted) return

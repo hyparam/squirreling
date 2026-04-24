@@ -328,4 +328,34 @@ describe('column pushdown', () => {
       },
     })
   })
+
+  it('should retain correlated columns referenced by nested lateral UNNEST args', () => {
+    const outers = memorySource({ data: [{ id: 1, arr: [10, 20] }] })
+    const t = memorySource({ data: [{ k: 1 }] })
+    const plan = planSql({
+      tables: { outers, t },
+      query: 'SELECT o.id, (SELECT COUNT(*) FROM t JOIN UNNEST(o.arr) AS u(x) ON TRUE) AS n FROM outers AS o',
+    })
+
+    if (plan.type !== 'Project' || plan.child.type !== 'Scan') {
+      throw new Error(`expected Project over Scan, got ${plan.type}`)
+    }
+    expect(plan.child.table).toBe('outers')
+    expect(plan.child.hints.columns).toEqual(expect.arrayContaining(['id', 'arr']))
+    expect(plan.child.hints.columns).toHaveLength(2)
+  })
+
+  it('should keep pushdown for unqualified lateral UNNEST arguments', () => {
+    const t = memorySource({ data: [{ id: 1, arr: [10, 20], padding: 'x' }] })
+    const plan = planSql({
+      tables: { t },
+      query: 'SELECT t.id FROM t JOIN UNNEST(arr) AS u(x) ON TRUE',
+    })
+
+    if (plan.type !== 'Project' || plan.child.type !== 'NestedLoopJoin' || plan.child.left.type !== 'Scan') {
+      throw new Error(`expected Project over NestedLoopJoin over Scan, got ${plan.type}`)
+    }
+    expect(plan.child.left.table).toBe('t')
+    expect(plan.child.left.hints.columns).toEqual(['id', 'arr'])
+  })
 })
