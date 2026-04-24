@@ -387,6 +387,17 @@ describe('LATERAL UNNEST', () => {
     })).toThrow(/cannot reference column "arr"/)
   })
 
+  it('should reject selecting the UNNEST table alias as a bare column', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    await expect(collect(executeSql({
+      tables: { t },
+      query: 'SELECT tc_item FROM t CROSS JOIN UNNEST(t.arr) AS tc_item',
+    }))).rejects.toThrow('Column "tc_item" not found. Available columns: t.id, t.arr, tc_item.unnest (row 1)')
+  })
+
   it('should stop yielding when the signal aborts mid-stream', async () => {
     const t = [
       { id: 1, arr: [1, 2, 3] },

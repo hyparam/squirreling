@@ -448,11 +448,25 @@ function executeProject(plan, context) {
             // Common case: simple identifier. Avoid evaluateExpr overhead by
             // directly mapping to the child's cell, relying on the planner to
             // have normalized the identifier to match the child's column layout.
+            // If the identifier didn't normalize to a child cell key (e.g. the
+            // name refers to a table alias that produced no matching column),
+            // fall through to the evaluator so suffix-search and the proper
+            // ColumnNotFoundError apply instead of emitting an undefined cell.
             const id = col.expr
             const sourceName = id.prefix ? `${id.prefix}.${id.name}` : id.name
-            cells[columns[colIdx]] = row.cells[sourceName]
-            if (resolved && source) resolved[columns[colIdx]] = source[sourceName]
-            colIdx++
+            const alias = columns[colIdx++]
+            if (sourceName in row.cells) {
+              cells[alias] = row.cells[sourceName]
+              if (resolved && source) resolved[alias] = source[sourceName]
+            } else {
+              const { expr } = col
+              cells[alias] = () => evaluateExpr({
+                node: expr,
+                row,
+                rowIndex: currentRowIndex,
+                context,
+              })
+            }
           } else {
             const alias = columns[colIdx++]
             cells[alias] = () => evaluateExpr({
