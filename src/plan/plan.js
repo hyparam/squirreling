@@ -1,13 +1,14 @@
 import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
+import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnNames } from './columns.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
- * @import { QueryPlan } from './types.d.ts'
+ * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
+ * @import { QueryPlan, WindowSpec } from './types.d.ts'
  */
 
 /**
@@ -106,12 +107,49 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
  * @returns {QueryPlan}
  */
 function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
+  // Reject window functions in clauses where they're not permitted.
+  expectNoWindowFunction(select.where, 'WHERE')
+  expectNoWindowFunction(select.having, 'HAVING')
+  for (const expr of select.groupBy) expectNoWindowFunction(expr, 'GROUP BY')
+  for (const term of select.orderBy) expectNoWindowFunction(term.expr, 'ORDER BY')
+  for (const join of select.joins) expectNoWindowFunction(join.on, 'JOIN ON')
+
+  // Collect window functions from SELECT columns and rewrite them to identifiers
+  // pointing at the synthetic cells produced by the Window plan node.
+  /** @type {WindowSpec[]} */
+  const windows = []
+  const windowColumns = select.columns.map(col => {
+    if (col.type !== 'derived') return col
+    const originalAlias = col.alias ?? derivedAlias(col.expr)
+    const expr = collectWindows(col.expr, windows)
+    if (expr === col.expr) return col
+    return { ...col, expr, alias: originalAlias }
+  })
+
+  if (windows.length && select.columns.some(col => col.type === 'derived' && findAggregate(col.expr))) {
+    throw new ParseError({
+      message: 'Window functions are not supported in queries with aggregation',
+      ...select,
+    })
+  }
+  if (windows.length && select.groupBy.length) {
+    throw new ParseError({
+      message: 'Window functions are not supported in queries with aggregation',
+      ...select,
+    })
+  }
+
+  // Preserve the pre-substitution columns for column-extraction, so synthetic
+  // `__window_N` identifiers are not requested from the data source.
+  const originalSelect = select
+  select = { ...select, columns: windowColumns }
+
   // Check for aggregation
   const hasAggregate = select.columns.some(col =>
     col.type === 'derived' && findAggregate(col.expr)
   )
   const useGrouping = hasAggregate || select.groupBy.length > 0
-  const needsBuffering = useGrouping || select.orderBy.length > 0
+  const needsBuffering = useGrouping || select.orderBy.length > 0 || windows.length > 0
 
   // Source alias for FROM clause
   const sourceAlias = fromAlias(select.from)
@@ -155,7 +193,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */
   const hints = {}
-  const perTableColumns = extractColumns({ select, parentColumns })
+  const perTableColumns = extractColumns({ select: originalSelect, parentColumns })
   hints.columns = perTableColumns.get(sourceAlias)
   // Empty columns array means no columns were referenced, but a FROM subquery
   // still needs its own columns (e.g. for DISTINCT). Treat empty as unrestricted.
@@ -218,6 +256,12 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
   } else {
     // Non-aggregation path
+
+    // Window functions: insert before Sort so outer ORDER BY can reference
+    // the window output aliases.
+    if (windows.length) {
+      plan = { type: 'Window', windows, child: plan }
+    }
 
     // ORDER BY (before projection so it can access all columns)
     // Resolve SELECT aliases in ORDER BY expressions at plan time
@@ -607,6 +651,126 @@ function validateLateralSubqueries({ expr, ctePlans, cteColumns, tables, outerSc
     }
     validateLateralSubqueries({ expr: expr.elseResult, ctePlans, cteColumns, tables, outerScope })
   }
+}
+
+/**
+ * Walks an expression, replacing every window function subnode with an
+ * identifier that points at a synthetic `__window_N` cell. The collected
+ * WindowSpec entries drive the Window plan node. Returns the same node
+ * reference when no window function is present, so untouched expressions
+ * aren't shallow-cloned.
+ *
+ * @param {ExprNode} expr
+ * @param {WindowSpec[]} windows
+ * @returns {ExprNode}
+ */
+function collectWindows(expr, windows) {
+  if (!expr || !findWindow(expr)) return expr
+  if (expr.type === 'window') {
+    const alias = `__window_${windows.length}`
+    windows.push({
+      alias,
+      funcName: expr.funcName.toUpperCase(),
+      args: expr.args,
+      partitionBy: expr.partitionBy,
+      orderBy: expr.orderBy,
+    })
+    return {
+      type: 'identifier',
+      name: alias,
+      positionStart: expr.positionStart,
+      positionEnd: expr.positionEnd,
+    }
+  }
+  if (expr.type === 'unary') {
+    return { ...expr, argument: collectWindows(expr.argument, windows) }
+  }
+  if (expr.type === 'binary') {
+    return { ...expr, left: collectWindows(expr.left, windows), right: collectWindows(expr.right, windows) }
+  }
+  if (expr.type === 'function') {
+    return { ...expr, args: expr.args.map(a => collectWindows(a, windows)) }
+  }
+  if (expr.type === 'cast') {
+    return { ...expr, expr: collectWindows(expr.expr, windows) }
+  }
+  if (expr.type === 'in valuelist') {
+    return {
+      ...expr,
+      expr: collectWindows(expr.expr, windows),
+      values: expr.values.map(v => collectWindows(v, windows)),
+    }
+  }
+  if (expr.type === 'case') {
+    return {
+      ...expr,
+      caseExpr: expr.caseExpr && collectWindows(expr.caseExpr, windows),
+      whenClauses: expr.whenClauses.map(w => ({
+        ...w,
+        condition: collectWindows(w.condition, windows),
+        result: collectWindows(w.result, windows),
+      })),
+      elseResult: expr.elseResult && collectWindows(expr.elseResult, windows),
+    }
+  }
+  return expr
+}
+
+/**
+ * Throws if the expression tree contains a window function.
+ *
+ * @param {ExprNode | undefined} expr
+ * @param {string} clause
+ */
+function expectNoWindowFunction(expr, clause) {
+  const win = findWindow(expr)
+  if (win) {
+    throw new ParseError({
+      message: `Window function ${win.funcName.toUpperCase()} is not allowed in ${clause} clause`,
+      positionStart: win.positionStart,
+      positionEnd: win.positionEnd,
+    })
+  }
+}
+
+/**
+ * @param {ExprNode | undefined} expr
+ * @returns {WindowFunctionNode | undefined}
+ */
+function findWindow(expr) {
+  if (!expr) return undefined
+  if (expr.type === 'window') return expr
+  if (expr.type === 'binary') return findWindow(expr.left) || findWindow(expr.right)
+  if (expr.type === 'unary') return findWindow(expr.argument)
+  if (expr.type === 'function') {
+    for (const arg of expr.args) {
+      const found = findWindow(arg)
+      if (found) return found
+    }
+    return undefined
+  }
+  if (expr.type === 'cast') return findWindow(expr.expr)
+  if (expr.type === 'in valuelist') {
+    const found = findWindow(expr.expr)
+    if (found) return found
+    for (const val of expr.values) {
+      const f = findWindow(val)
+      if (f) return f
+    }
+    return undefined
+  }
+  if (expr.type === 'case') {
+    if (expr.caseExpr) {
+      const f = findWindow(expr.caseExpr)
+      if (f) return f
+    }
+    for (const w of expr.whenClauses) {
+      const f = findWindow(w.condition) || findWindow(w.result)
+      if (f) return f
+    }
+    if (expr.elseResult) return findWindow(expr.elseResult)
+  }
+  return undefined
 }
 
 /**

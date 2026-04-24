@@ -1,10 +1,10 @@
-import { isAggregateFunc, isKnownFunction, niladicFuncs, validateFunctionArgs } from '../validation/functions.js'
+import { isAggregateFunc, isKnownFunction, isWindowFunc, niladicFuncs, validateFunctionArgs } from '../validation/functions.js'
 import { ParseError, UnknownFunctionError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 
 /**
- * @import { ExprNode, ParserState } from '../types.js'
+ * @import { ExprNode, OrderByItem, ParserState } from '../types.js'
  */
 
 /**
@@ -128,13 +128,43 @@ export function parseFunctionCall(state, positionStart) {
     expect(state, 'paren', ')')
   }
 
-  // Check for OVER clause (window functions not supported)
+  // Check for OVER clause
   const overTok = current(state)
-  if (overTok.type === 'identifier' && overTok.value.toUpperCase() === 'OVER') {
-    throw new ParseError({
-      message: `Window functions are not supported: ${funcName}(...) OVER (...)`,
+  const hasOver = overTok.type === 'identifier' && overTok.value.toUpperCase() === 'OVER'
+
+  if (hasOver) {
+    if (!isWindowFunc(funcNameUpper)) {
+      throw new ParseError({
+        message: `Window functions are not supported: ${funcName}(...) OVER (...)`,
+        positionStart,
+        positionEnd: overTok.positionEnd,
+      })
+    }
+    if (filter) {
+      throw new ParseError({
+        message: `FILTER cannot be combined with OVER for "${funcName}"`,
+        positionStart,
+        positionEnd: overTok.positionEnd,
+      })
+    }
+    consume(state)
+    const { partitionBy, orderBy } = parseWindowSpec(state, positionStart)
+    return {
+      type: 'window',
+      funcName,
+      args,
+      partitionBy,
+      orderBy,
       positionStart,
-      positionEnd: overTok.positionEnd,
+      positionEnd: state.lastPos,
+    }
+  }
+
+  if (isWindowFunc(funcNameUpper)) {
+    throw new ParseError({
+      message: `${funcName}() requires an OVER clause at position ${positionStart}`,
+      positionStart,
+      positionEnd: state.lastPos,
     })
   }
 
@@ -147,4 +177,65 @@ export function parseFunctionCall(state, positionStart) {
     positionStart,
     positionEnd: state.lastPos,
   }
+}
+
+/**
+ * Parses the window spec after OVER: ( [PARTITION BY expr[, ...]] [ORDER BY expr [ASC|DESC] [NULLS FIRST|LAST][, ...]] )
+ *
+ * @param {ParserState} state
+ * @param {number} positionStart - start position of the enclosing function call (for OrderByItem positions)
+ * @returns {{ partitionBy: ExprNode[], orderBy: OrderByItem[] }}
+ */
+function parseWindowSpec(state, positionStart) {
+  expect(state, 'paren', '(')
+  /** @type {ExprNode[]} */
+  const partitionBy = []
+  /** @type {OrderByItem[]} */
+  const orderBy = []
+
+  const partitionTok = current(state)
+  if (partitionTok.type === 'identifier' && partitionTok.value.toUpperCase() === 'PARTITION') {
+    consume(state)
+    expect(state, 'keyword', 'BY')
+    while (true) {
+      partitionBy.push(parseExpression(state))
+      if (!match(state, 'comma')) break
+    }
+  }
+
+  if (match(state, 'keyword', 'ORDER')) {
+    expect(state, 'keyword', 'BY')
+    while (true) {
+      const expr = parseExpression(state)
+      /** @type {'ASC' | 'DESC'} */
+      let direction = 'ASC'
+      if (match(state, 'keyword', 'ASC')) {
+        direction = 'ASC'
+      } else if (match(state, 'keyword', 'DESC')) {
+        direction = 'DESC'
+      }
+      /** @type {'FIRST' | 'LAST' | undefined} */
+      let nulls
+      if (match(state, 'keyword', 'NULLS')) {
+        const tok = consume(state)
+        const upper = tok.value.toUpperCase()
+        if (tok.type === 'identifier' && upper === 'FIRST') {
+          nulls = 'FIRST'
+        } else if (tok.type === 'identifier' && upper === 'LAST') {
+          nulls = 'LAST'
+        } else {
+          throw new ParseError({
+            message: `Expected FIRST or LAST after NULLS at position ${tok.positionStart}`,
+            positionStart: tok.positionStart,
+            positionEnd: tok.positionEnd,
+          })
+        }
+      }
+      orderBy.push({ expr, direction, nulls, positionStart, positionEnd: state.lastPos })
+      if (!match(state, 'comma')) break
+    }
+  }
+
+  expect(state, 'paren', ')')
+  return { partitionBy, orderBy }
 }

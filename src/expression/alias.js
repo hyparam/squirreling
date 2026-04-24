@@ -31,6 +31,9 @@ export function derivedAlias(expr) {
     }
     return expr.funcName.toLowerCase() + '_' + expr.args.map(derivedAlias).join('_')
   }
+  if (expr.type === 'window') {
+    return expr.funcName.toLowerCase()
+  }
   if (expr.type === 'interval') {
     return `interval_${expr.value}_${expr.unit.toLowerCase()}`
   }

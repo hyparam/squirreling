@@ -106,6 +106,14 @@ export interface FunctionNode extends AstBase {
   filter?: ExprNode
 }
 
+export interface WindowFunctionNode extends AstBase {
+  type: 'window'
+  funcName: string
+  args: ExprNode[]
+  partitionBy: ExprNode[]
+  orderBy: OrderByItem[]
+}
+
 export type CastType = 'TEXT' | 'STRING' | 'VARCHAR' | 'INTEGER' | 'INT' | 'BIGINT' | 'FLOAT' | 'REAL' | 'DOUBLE' | 'BOOLEAN' | 'BOOL'
 
 export interface CastNode extends AstBase {
@@ -166,6 +174,7 @@ export type ExprNode =
   | UnaryNode
   | BinaryNode
   | FunctionNode
+  | WindowFunctionNode
   | CastNode
   | InSubqueryNode
   | InValuesNode

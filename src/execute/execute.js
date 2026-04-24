@@ -9,6 +9,7 @@ import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
+import { executeWindow } from './window.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
@@ -120,6 +121,8 @@ export function executePlan({ plan, context }) {
     return executeSetOperation(plan, context)
   } else if (plan.type === 'TableFunction') {
     return executeTableFunction(plan, context)
+  } else if (plan.type === 'Window') {
+    return executeWindow(plan, context)
   }
   return { columns: [], async *rows() {} }
 }

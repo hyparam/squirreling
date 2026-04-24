@@ -211,6 +211,10 @@ function collectColumnsFromExpr(expr, columns, aliases) {
       collectColumnsFromExpr(arg, columns, aliases)
     }
     collectColumnsFromExpr(expr.filter, columns, aliases)
+  } else if (expr.type === 'window') {
+    for (const arg of expr.args) collectColumnsFromExpr(arg, columns, aliases)
+    for (const p of expr.partitionBy) collectColumnsFromExpr(p, columns, aliases)
+    for (const o of expr.orderBy) collectColumnsFromExpr(o.expr, columns, aliases)
   } else if (expr.type === 'cast') {
     collectColumnsFromExpr(expr.expr, columns, aliases)
   } else if (expr.type === 'in valuelist') {

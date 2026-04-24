@@ -2,7 +2,7 @@ import { FUNCTION_SIGNATURES } from './functions.js'
 
 /** Well-known window functions that are not supported */
 const WINDOW_FUNCTIONS = new Set([
-  'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'NTILE',
+  'RANK', 'DENSE_RANK', 'NTILE',
   'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE', 'NTH_VALUE',
   'CUME_DIST', 'PERCENT_RANK',
 ])

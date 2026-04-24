@@ -28,6 +28,14 @@ export function isMathFunc(name) {
 
 /**
  * @param {string} name
+ * @returns {boolean}
+ */
+export function isWindowFunc(name) {
+  return ['ROW_NUMBER'].includes(name)
+}
+
+/**
+ * @param {string} name
  * @returns {name is RegExpFunction}
  */
 export function isRegexpFunc(name) {
@@ -199,6 +207,9 @@ export const FUNCTION_SIGNATURES = {
   PERCENTILE_CONT: { min: 2, max: 2, signature: 'fraction, expression' },
   APPROX_QUANTILE: { min: 2, max: 2, signature: 'expression, fraction' },
   STRING_AGG: { min: 2, max: 2, signature: 'expression, separator' },
+
+  // Window functions
+  ROW_NUMBER: { min: 0, max: 0, signature: '' },
 
   // Spatial functions
   ST_INTERSECTS: { min: 2, max: 2, signature: 'geometry, geometry' },

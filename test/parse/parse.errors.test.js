@@ -185,9 +185,9 @@ describe('parseSql error handling', () => {
         .toThrow('Window functions are not supported: COUNT(...) OVER (...)')
     })
 
-    it('should throw error for ROW_NUMBER window function', () => {
-      expect(() => parseSql({ query: 'SELECT ROW_NUMBER() OVER (ORDER BY id) FROM t' }))
-        .toThrow('Window function "ROW_NUMBER" is not supported')
+    it('should throw error for ROW_NUMBER without OVER', () => {
+      expect(() => parseSql({ query: 'SELECT ROW_NUMBER() FROM t' }))
+        .toThrow('ROW_NUMBER() requires an OVER clause')
     })
 
     it('should throw error for RANK window function', () => {

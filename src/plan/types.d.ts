@@ -15,6 +15,7 @@ export type QueryPlan =
   | PositionalJoinNode
   | SetOperationNode
   | TableFunctionNode
+  | WindowNode
 
 // Scan node
 export interface ScanNode {
@@ -123,4 +124,18 @@ export interface TableFunctionNode {
   funcName: string
   args: ExprNode[]
   columnNames: string[]
+}
+
+export interface WindowSpec {
+  alias: string
+  funcName: string
+  args: ExprNode[]
+  partitionBy: ExprNode[]
+  orderBy: OrderByItem[]
+}
+
+export interface WindowNode {
+  type: 'Window'
+  windows: WindowSpec[]
+  child: QueryPlan
 }

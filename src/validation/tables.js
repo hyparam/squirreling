@@ -119,6 +119,10 @@ export function validateTableRefs(expr, tables) {
     for (const arg of expr.args) {
       validateTableRefs(arg, tables)
     }
+  } else if (expr.type === 'window') {
+    for (const arg of expr.args) validateTableRefs(arg, tables)
+    for (const p of expr.partitionBy) validateTableRefs(p, tables)
+    for (const o of expr.orderBy) validateTableRefs(o.expr, tables)
   } else if (expr.type === 'cast') {
     validateTableRefs(expr.expr, tables)
   } else if (expr.type === 'in valuelist') {
