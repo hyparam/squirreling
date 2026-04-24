@@ -415,6 +415,47 @@ describe('executeSql', () => {
       expect(result).toEqual([{ p50: null }])
     })
 
+    it('should calculate PERCENTILE_CONT with WITHIN GROUP syntax', async () => {
+      const data = [{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }, { v: 5 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY v) AS p25 FROM data',
+      }))
+      expect(result).toEqual([{ p25: 2 }])
+    })
+
+    it('should support PERCENTILE_CONT WITHIN GROUP with GROUP BY', async () => {
+      const data = [
+        { category: 'A', v: 10 },
+        { category: 'A', v: 20 },
+        { category: 'A', v: 30 },
+        { category: 'B', v: 1 },
+        { category: 'B', v: 2 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT category, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v) AS med FROM data GROUP BY category ORDER BY category',
+      }))
+      expect(result).toEqual([
+        { category: 'A', med: 20 },
+        { category: 'B', med: 1.5 },
+      ])
+    })
+
+    it('should reject mixing PERCENTILE_CONT positional form with WITHIN GROUP', () => {
+      expect(() => executeSql({
+        tables: { data: [{ v: 1 }] },
+        query: 'SELECT PERCENTILE_CONT(0.5, v) WITHIN GROUP (ORDER BY v) FROM data',
+      })).toThrow('PERCENTILE_CONT: cannot combine WITHIN GROUP with a value argument')
+    })
+
+    it('should reject WITHIN GROUP on non-ordered-set aggregate', () => {
+      expect(() => executeSql({
+        tables: { data: [{ v: 1 }] },
+        query: 'SELECT SUM(v) WITHIN GROUP (ORDER BY v) FROM data',
+      })).toThrow('WITHIN GROUP is only supported for PERCENTILE_CONT, not "SUM"')
+    })
+
     it('should calculate APPROX_QUANTILE', async () => {
       // Same semantics as PERCENTILE_CONT but args reversed: (expression, fraction)
       const data = [{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }, { v: 5 }]

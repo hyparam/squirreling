@@ -4,7 +4,7 @@ export const KEYWORDS = new Set([
   'DISTINCT', 'TRUE', 'FALSE', 'NULL', 'LIKE', 'IN', 'EXISTS', 'BETWEEN',
   'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'JOIN', 'INNER', 'LEFT', 'RIGHT',
   'FULL', 'OUTER', 'CROSS', 'POSITIONAL', 'LATERAL', 'ON', 'INTERVAL', 'DAY', 'MONTH', 'YEAR',
-  'HOUR', 'MINUTE', 'SECOND', 'FILTER',
+  'HOUR', 'MINUTE', 'SECOND', 'FILTER', 'WITHIN',
   'UNION', 'INTERSECT', 'EXCEPT',
 ])
 

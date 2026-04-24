@@ -84,6 +84,30 @@ export function parseFunctionCall(state, positionStart) {
     })
   }
 
+  // Check for WITHIN GROUP (ORDER BY expr) clause — standard SQL ordered-set aggregate syntax.
+  // Supported for PERCENTILE_CONT: PERCENTILE_CONT(fraction) WITHIN GROUP (ORDER BY expr)
+  const withinTok = current(state)
+  if (match(state, 'keyword', 'WITHIN')) {
+    if (funcNameUpper !== 'PERCENTILE_CONT') {
+      throw new ParseError({
+        message: `WITHIN GROUP is only supported for PERCENTILE_CONT, not "${funcName}"`,
+        ...withinTok,
+      })
+    }
+    if (args.length !== 1) {
+      throw new ParseError({
+        message: `${funcName}: cannot combine WITHIN GROUP with a value argument`,
+        ...withinTok,
+      })
+    }
+    expect(state, 'keyword', 'GROUP')
+    expect(state, 'paren', '(')
+    expect(state, 'keyword', 'ORDER')
+    expect(state, 'keyword', 'BY')
+    args.push(parseExpression(state))
+    expect(state, 'paren', ')')
+  }
+
   // Validate argument count at parse time
   validateFunctionArgs(funcNameUpper, args.length, positionStart, state.lastPos, state.functions)
 
