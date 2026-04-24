@@ -19,6 +19,36 @@ import { compareForTerm, keyify } from './utils.js'
 export function executeWindow(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   const extraColumns = plan.windows.map(w => w.alias)
+
+  // Streaming fast path: every window is OVER () with no partition/order, so
+  // each row's output depends only on its position in the input stream. Avoids
+  // buffering — critical for large scans (e.g. parquet).
+  const streamable = plan.windows.every(w => w.partitionBy.length === 0 && w.orderBy.length === 0)
+
+  if (streamable) {
+    return {
+      columns: [...child.columns, ...extraColumns],
+      numRows: child.numRows,
+      maxRows: child.maxRows,
+      async *rows() {
+        let i = 0
+        for await (const row of child.rows()) {
+          if (context.signal?.aborted) return
+          i++
+          const cells = { ...row.cells }
+          for (const w of plan.windows) {
+            const value = assignRowNumber(w.funcName, i - 1)
+            cells[w.alias] = () => Promise.resolve(value)
+          }
+          yield {
+            columns: [...row.columns, ...extraColumns],
+            cells,
+          }
+        }
+      },
+    }
+  }
+
   return {
     columns: [...child.columns, ...extraColumns],
     numRows: child.numRows,

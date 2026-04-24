@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { trackingSource } from './trackingSource.js'
 
 describe('window functions', () => {
   const sales = [
@@ -145,6 +146,21 @@ describe('window functions', () => {
         tables: { sales },
         query: 'SELECT * FROM sales WHERE ROW_NUMBER() OVER (ORDER BY id) > 1',
       })).toThrow('Window function ROW_NUMBER is not allowed in WHERE clause')
+    })
+
+    it('should stream OVER () without buffering and push LIMIT down to scan', async () => {
+      const data = Array.from({ length: 1000 }, (_, i) => ({ id: i + 1 }))
+      const { source, getRowCount } = trackingSource(data)
+      const result = await collect(executeSql({
+        tables: { data: source },
+        query: 'SELECT id, ROW_NUMBER() OVER () AS rn FROM data LIMIT 3',
+      }))
+      expect(result).toEqual([
+        { id: 1, rn: 1 },
+        { id: 2, rn: 2 },
+        { id: 3, rn: 3 },
+      ])
+      expect(getRowCount()).toBe(3)
     })
 
     it('should throw when combined with GROUP BY', () => {

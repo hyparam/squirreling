@@ -149,7 +149,9 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     col.type === 'derived' && findAggregate(col.expr)
   )
   const useGrouping = hasAggregate || select.groupBy.length > 0
-  const needsBuffering = useGrouping || select.orderBy.length > 0 || windows.length > 0
+  // Windows with PARTITION BY or ORDER BY buffer; `OVER ()` streams.
+  const bufferingWindows = windows.some(w => w.partitionBy.length > 0 || w.orderBy.length > 0)
+  const needsBuffering = useGrouping || select.orderBy.length > 0 || bufferingWindows
 
   // Source alias for FROM clause
   const sourceAlias = fromAlias(select.from)
