@@ -281,7 +281,7 @@ export function inferStatementColumns({ stmt, cteColumns, tables }) {
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @returns {string[]}
  */
-function inferSelectSourceColumns({ select, cteColumns, tables }) {
+export function inferSelectSourceColumns({ select, cteColumns, tables }) {
   if (select.from.type === 'subquery') {
     return inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
   }

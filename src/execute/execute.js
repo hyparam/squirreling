@@ -406,23 +406,9 @@ function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   const columns = selectColumnNames(plan.columns, child.columns)
 
-  const hasStar = plan.columns.some(col => col.type === 'star')
-  const allStar = hasStar && plan.columns.every(col => col.type === 'star')
-
-  /** @type {{ alias: string, sourceName: string }[] | undefined} */
-  let identifierMap
-  if (!hasStar) {
-    const derived = /** @type {DerivedColumn[]} */ (plan.columns)
-    const allIdentifiers = derived.every(col =>
-      col.expr.type === 'identifier' && !col.expr.prefix
-    )
-    if (allIdentifiers) {
-      identifierMap = derived.map((col, i) => ({
-        alias: columns[i],
-        sourceName: /** @type {IdentifierNode} */ (col.expr).name,
-      }))
-    }
-  }
+  const resolveable = plan.columns.every(col =>
+    col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
+  )
 
   return {
     columns,
@@ -430,35 +416,10 @@ function executeProject(plan, context) {
     maxRows: child.maxRows,
     async *rows() {
       let rowIndex = 0
-      let identifierMapValidated = false
 
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
         rowIndex++
-
-        // Validate identifier fast path on first row (may fail for JOINs with prefixed columns)
-        if (identifierMap && !identifierMapValidated) {
-          identifierMapValidated = true
-          if (!identifierMap.every(m => m.sourceName in row.cells)) {
-            identifierMap = undefined
-          }
-        }
-
-        // Fast path: all columns are simple identifier references
-        if (identifierMap) {
-          /** @type {AsyncCells} */
-          const cells = {}
-          const source = row.resolved
-          /** @type {Record<string, SqlPrimitive> | undefined} */
-          const resolved = source ? {} : undefined
-          for (const { alias, sourceName } of identifierMap) {
-            cells[alias] = row.cells[sourceName]
-            if (resolved && source) resolved[alias] = source[sourceName]
-          }
-          yield { columns, cells, resolved }
-          continue
-        }
-
         const currentRowIndex = rowIndex
 
         /** @type {AsyncCells} */
@@ -467,7 +428,7 @@ function executeProject(plan, context) {
         // the star branch — derived expressions evaluate lazily and can't be
         // pre-materialized here, and a partial resolved would make
         // collect()/downstream identifier fast paths read undefined.
-        const source = allStar ? row.resolved : undefined
+        const source = resolveable ? row.resolved : undefined
         /** @type {Record<string, SqlPrimitive> | undefined} */
         const resolved = source ? {} : undefined
 
@@ -483,6 +444,15 @@ function executeProject(plan, context) {
               if (resolved && source) resolved[outputKey] = source[key]
               colIdx++
             }
+          } else if (col.expr.type === 'identifier') {
+            // Common case: simple identifier. Avoid evaluateExpr overhead by
+            // directly mapping to the child's cell, relying on the planner to
+            // have normalized the identifier to match the child's column layout.
+            const id = col.expr
+            const sourceName = id.prefix ? `${id.prefix}.${id.name}` : id.name
+            cells[columns[colIdx]] = row.cells[sourceName]
+            if (resolved && source) resolved[columns[colIdx]] = source[sourceName]
+            colIdx++
           } else {
             const alias = columns[colIdx++]
             cells[alias] = () => evaluateExpr({
