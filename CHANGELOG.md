@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.12.9]
+ - `ROW_NUMBER() OVER (PARTITION BY ...)` window function
+ - Streaming fast path for `ROW_NUMBER() OVER ()`
+
 ## [0.12.8]
  - `ARRAY_AGG` aggregate function
  - `JSON_VALID` function
