@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
+/**
+ * @import { UserDefinedFunction } from '../../src/index.js'
+ */
+
 describe('ORDER BY', () => {
   const users = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
@@ -313,6 +317,56 @@ describe('ORDER BY', () => {
       expect(result[2].value).toBe(5)
       expect(result[3].value).toBe(null)
       expect(result[4].value).toBe(null)
+    })
+  })
+
+  describe('ORDER BY with async UDF', () => {
+    const data = Array.from({ length: 300 }, (_, i) => ({ id: i, val: i * 37 % 300 }))
+
+    it('should evaluate sort-key UDF concurrently', async () => {
+      let inFlight = 0
+      let peak = 0
+      /** @type {Record<string, UserDefinedFunction>} */
+      const functions = {
+        SLOW: {
+          async apply(x) {
+            inFlight++
+            peak = Math.max(peak, inFlight)
+            await new Promise(r => setTimeout(r, 1))
+            inFlight--
+            return x
+          },
+          arguments: { min: 1, max: 1 },
+        },
+      }
+      const result = await collect(executeSql({
+        tables: { data }, functions,
+        query: 'SELECT id, SLOW(val) AS k FROM data ORDER BY k LIMIT 5',
+      }))
+      expect(result).toHaveLength(5)
+      expect(result.map(r => r.k)).toEqual([0, 1, 2, 3, 4])
+      // Sequential evaluation would yield peak=1; concurrent evaluation
+      // should reach the chunk ceiling of 256.
+      expect(peak).toBeGreaterThan(10)
+    })
+
+    it('should not re-invoke the sort-key UDF in the output projection', async () => {
+      let calls = 0
+      /** @type {Record<string, UserDefinedFunction>} */
+      const functions = {
+        TAG: {
+          apply(x) { calls++; return x },
+          arguments: { min: 1, max: 1 },
+        },
+      }
+      await collect(executeSql({
+        tables: { data }, functions,
+        query: 'SELECT id, TAG(val) AS label FROM data ORDER BY label LIMIT 10',
+      }))
+      // Without cache writeback the projection re-invokes TAG for each of the
+      // 10 output rows, giving 310 calls. With writeback it should be exactly
+      // one call per source row.
+      expect(calls).toBe(data.length)
     })
   })
 })

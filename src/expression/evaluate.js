@@ -119,6 +119,18 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   if (node.type === 'function') {
     const funcName = node.funcName.toUpperCase()
 
+    // Reuse a previously cached evaluation of this expression, written back
+    // as a synthetic cell (e.g. by executeSort). Cached cells are not added to
+    // row.columns, so checking that the alias is NOT a real column guards
+    // against false positives where a table column happens to share a name
+    // with the expression's derived alias.
+    if (!rows) {
+      const alias = derivedAlias(node)
+      if (alias in row.cells && !row.columns.includes(alias)) {
+        return row.cells[alias]()
+      }
+    }
+
     // Handle aggregate functions
     if (isAggregateFunc(funcName)) {
       if (!rows) {

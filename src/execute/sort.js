@@ -1,3 +1,4 @@
+import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
 import { compareForTerm } from './utils.js'
@@ -6,6 +7,8 @@ import { compareForTerm } from './utils.js'
  * @import { AsyncRow, ExecuteContext, QueryResults, SqlPrimitive } from '../types.js'
  * @import { SortNode } from '../plan/types.js'
  */
+
+const MAX_CHUNK = 256
 
 /**
  * Executes a sort operation (ORDER BY)
@@ -49,15 +52,34 @@ export function executeSort(plan, context) {
             continue
           }
 
-          // Evaluate this column for all rows in the group
+          // Evaluate this column for all rows in the group, in parallel
+          // chunks that double up to MAX_CHUNK so a slow UDF doesn't serialize.
+          // Cache each value back into the row so downstream projection can
+          // reuse it instead of re-invoking the expression.
+          const alias = derivedAlias(term.expr)
+          /** @type {number[]} */
+          const missing = []
           for (const idx of group) {
-            if (evaluatedValues[idx][orderByIdx] === undefined) {
-              evaluatedValues[idx][orderByIdx] = await evaluateExpr({
-                node: term.expr,
-                row: rows[idx],
-                context,
-              })
+            if (evaluatedValues[idx][orderByIdx] === undefined) missing.push(idx)
+          }
+          let chunkSize = 1
+          let start = 0
+          while (start < missing.length) {
+            if (context.signal?.aborted) return
+            const chunk = missing.slice(start, start + chunkSize)
+            const values = await Promise.all(chunk.map(idx =>
+              evaluateExpr({ node: term.expr, row: rows[idx], context })
+            ))
+            for (let i = 0; i < chunk.length; i++) {
+              const idx = chunk[i]
+              const value = values[i]
+              evaluatedValues[idx][orderByIdx] = value
+              if (!(alias in rows[idx].cells)) {
+                rows[idx].cells[alias] = () => Promise.resolve(value)
+              }
             }
+            start += chunk.length
+            chunkSize = Math.min(chunkSize * 2, MAX_CHUNK)
           }
 
           // Sort the group by this column

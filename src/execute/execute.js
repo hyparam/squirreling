@@ -172,7 +172,7 @@ export function selectColumnNames(selectColumns, childColumns) {
       for (const key of childColumns) {
         if (prefix && !key.startsWith(prefix)) continue
         const dotIndex = key.indexOf('.')
-        const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+        const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
         result.push(outputKey)
       }
     } else {
@@ -462,9 +462,7 @@ function executeProject(plan, context) {
             cells[alias] = row.cells[sourceName]
             if (resolved && source) resolved[alias] = source[sourceName]
           }
-          yield resolved
-            ? { columns: staticColumns, cells, resolved }
-            : { columns: staticColumns, cells }
+          yield { columns: staticColumns, cells, resolved }
           continue
         }
 
@@ -482,12 +480,12 @@ function executeProject(plan, context) {
             for (const key of row.columns) {
               if (prefix && !key.startsWith(prefix)) continue
               const dotIndex = key.indexOf('.')
-              const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
+              const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
               columns.push(outputKey)
               cells[outputKey] = row.cells[key]
             }
           } else {
-            const alias = staticColumns ? staticColumns[i] : (col.alias ?? derivedAlias(col.expr))
+            const alias = staticColumns ? staticColumns[i] : col.alias ?? derivedAlias(col.expr)
             if (!staticColumns) columns.push(alias)
             cells[alias] = () => evaluateExpr({
               node: col.expr,

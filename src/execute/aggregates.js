@@ -120,11 +120,10 @@ export function executeHashAggregate(plan, context) {
  */
 export function executeScalarAggregate(plan, context) {
   // Fast path: use scanColumn when available
-  const scalarColumns = selectColumnNames(plan.columns, [])
   const fast = tryColumnScanAggregate(plan, context)
   if (fast) {
     return {
-      columns: scalarColumns,
+      columns: selectColumnNames(plan.columns, []),
       numRows: 1,
       maxRows: 1,
       rows: fast,
