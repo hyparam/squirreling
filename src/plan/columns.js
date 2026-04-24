@@ -64,6 +64,17 @@ export function extractColumns({ select, parentColumns }) {
   /** @type {Map<string, Set<string> | undefined>} */
   const perTable = new Map(aliases.map(alias => [alias, new Set()]))
 
+  // Aliases that refer to lateral table functions (UNNEST etc.), not real
+  // tables. Unqualified identifiers inside UNNEST args can never resolve to
+  // these — the UNNEST alias has no columns for its own args to reference.
+  /** @type {Set<string>} */
+  const lateralAliases = new Set()
+  for (const join of select.joins) {
+    if (join.fromFunction) {
+      lateralAliases.add(join.alias ?? join.table)
+    }
+  }
+
   // Collect all identifiers from all clauses
   // For SELECT *, parent column names are real table columns, so seed them
   // directly. For non-star queries, parent names may be aliases and are
@@ -82,6 +93,11 @@ export function extractColumns({ select, parentColumns }) {
   const identifiers = hasStar && parentColumns
     ? parentColumns.filter(id => !derivedAliases.has(id.name))
     : []
+  // Identifiers collected from lateral table function arguments (e.g. UNNEST
+  // args). Tracked separately so the UNNEST's own alias is excluded from
+  // disambiguation of unqualified refs.
+  /** @type {IdentifierNode[]} */
+  const lateralArgIdentifiers = []
 
   // Collect ORDER BY identifiers, excluding SELECT aliases (their underlying
   // columns are already collected from select.columns expressions above)
@@ -118,7 +134,7 @@ export function extractColumns({ select, parentColumns }) {
     collectColumnsFromExpr(join.on, identifiers)
     if (join.fromFunction) {
       for (const arg of join.fromFunction.args) {
-        collectColumnsFromExpr(arg, identifiers)
+        collectColumnsFromExpr(arg, lateralArgIdentifiers)
       }
     }
   }
@@ -137,6 +153,26 @@ export function extractColumns({ select, parentColumns }) {
     } else {
       // Unqualified, single table: add to that table
       for (const [, set] of perTable) {
+        if (set) set.add(name)
+      }
+    }
+  }
+
+  // Partition identifiers from lateral UNNEST args. Unqualified refs here
+  // cannot resolve to an UNNEST alias, so exclude UNNEST aliases from the
+  // disambiguation pool.
+  for (const { prefix, name } of lateralArgIdentifiers) {
+    if (prefix) {
+      const set = perTable.get(prefix)
+      if (set) set.add(name)
+    } else {
+      const realAliases = aliases.filter(alias => !lateralAliases.has(alias))
+      if (realAliases.length > 1) {
+        for (const alias of realAliases) {
+          perTable.set(alias, undefined)
+        }
+      } else if (realAliases.length === 1) {
+        const set = perTable.get(realAliases[0])
         if (set) set.add(name)
       }
     }
