@@ -1,5 +1,12 @@
 # Squirreling Changelog
 
+## [0.12.8]
+ - `ARRAY_AGG` aggregate function
+ - `JSON_VALID` function
+ - `JSON_TYPE` function
+ - `JSON_EACH` table function
+ - `PERCENTILE_CONT` with `WITHIN GROUP` ordered-set aggregate
+
 ## [0.12.7]
  - Fix aggregates in function arguments
  - Fix error on selecting `UNNEST` table alias as bare column
