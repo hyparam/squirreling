@@ -167,6 +167,7 @@ export const FUNCTION_SIGNATURES = {
   JSON_OBJECT: { min: 0, signature: 'key1, value1[, ...]' },
   JSON_ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
   JSON_VALID: { min: 1, max: 1, signature: 'value' },
+  JSON_TYPE: { min: 1, max: 1, signature: 'value' },
   JSON_ARRAYAGG: { min: 1, max: 1, signature: 'expression' },
   ARRAY_AGG: { min: 1, max: 1, signature: 'expression' },
 

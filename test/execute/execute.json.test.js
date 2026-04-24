@@ -351,6 +351,114 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_TYPE', () => {
+    it('should return object for a JSON object string', async () => {
+      const data = [{ id: 1, json: '{"name":"Alice"}' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'object' }])
+    })
+
+    it('should return array for a JSON array string', async () => {
+      const data = [{ id: 1, json: '[1,2,3]' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'array' }])
+    })
+
+    it('should return string for a JSON string literal', async () => {
+      const data = [{ id: 1, json: '"hello"' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'string' }])
+    })
+
+    it('should return number for a JSON number literal', async () => {
+      const data = [{ id: 1, json: '42' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'number' }])
+    })
+
+    it('should return boolean for a JSON boolean literal', async () => {
+      const data = [{ id: 1, json: 'true' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'boolean' }])
+    })
+
+    it('should return null for a JSON null literal', async () => {
+      const data = [{ id: 1, json: 'null' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'null' }])
+    })
+
+    it('should return object for an object value', async () => {
+      const data = [{ id: 1, json: { name: 'Alice' } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'object' }])
+    })
+
+    it('should return array for an array value', async () => {
+      const data = [{ id: 1, json: [1, 2, 3] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: 'array' }])
+    })
+
+    it('should return null when input is SQL null', async () => {
+      const data = [{ id: 1, json: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))
+      expect(result).toEqual([{ type: null }])
+    })
+
+    it('should throw for an invalid JSON string', async () => {
+      const data = [{ id: 1, json: 'not valid json' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) AS type FROM data',
+      }))).rejects.toThrow('JSON_TYPE(value): invalid JSON string. Argument must be valid JSON. (row 1)')
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE() FROM data',
+      })).toThrow('JSON_TYPE(value) function requires 1 argument, got 0')
+    })
+
+    it('should work without alias', async () => {
+      const data = [{ id: 1, json: '{}' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_TYPE(json) FROM data',
+      }))
+      expect(result[0]).toHaveProperty('json_type_json')
+    })
+  })
+
   describe('JSON_OBJECT', () => {
     it('should create an object with string key and value', async () => {
       const data = [{ id: 1 }]

@@ -429,6 +429,28 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
     }
 
+    if (funcName === 'JSON_TYPE') {
+      let value = args[0]
+      if (value == null) return null
+      if (typeof value === 'string') {
+        try {
+          value = JSON.parse(value)
+        } catch {
+          throw new ArgValueError({
+            ...node,
+            message: 'invalid JSON string',
+            hint: 'Argument must be valid JSON.',
+            rowIndex,
+          })
+        }
+      }
+      if (value === null) return 'null'
+      if (Array.isArray(value)) return 'array'
+      if (value instanceof Date) return 'string'
+      if (typeof value === 'bigint') return 'number'
+      return typeof value
+    }
+
     if (funcName === 'JSON_ARRAY_LENGTH') {
       let arr = args[0]
       if (arr == null) return null
