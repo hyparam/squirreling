@@ -75,4 +75,13 @@ describe('planSql table validation', () => {
       tables: { ...tables, later },
     })).toThrow('Table "orders" not found in "orders.id". Available tables: later, users')
   })
+
+  it('should allow later lateral UNNEST arguments to reference earlier lateral outputs', () => {
+    const nested = memorySource({ data: [{ id: 1, arr: [[10, 20], [30]] }] })
+    const plan = planSql({
+      query: 'SELECT t.id, v.y FROM nested AS t JOIN UNNEST(t.arr) AS u(x) ON TRUE JOIN UNNEST(x) AS v(y) ON TRUE',
+      tables: { nested },
+    })
+    expect(plan).toBeDefined()
+  })
 })
