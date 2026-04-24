@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.12.6]
+ - `UNNEST` support, including `LATERAL` joins against array columns
+ - Fix CTE references inside subqueries
+ - Parallel cell fetch for `ORDER BY` with result caching
+
 ## [0.12.5]
  - Support positional references in `ORDER BY` and `GROUP BY`
  - Fix alias pushdown
