@@ -265,33 +265,30 @@ function executeScan(plan, context) {
 function executeCount(plan, context) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
+  const columns = plan.columns.map(col => col.alias ?? derivedAlias(col.expr))
 
   return {
-    columns: plan.columns.map(col => col.alias ?? derivedAlias(col.expr)),
+    columns,
     numRows: 1,
     maxRows: 1,
     async *rows() {
       // Use source numRows if available
-      let count = table.numRows
-      if (count === undefined) {
+      const countPromise = table.numRows !== undefined ? Promise.resolve(table.numRows) : (async () => {
         // Fall back to counting rows via scan
-        count = 0
+        let count = 0
         const { rows } = table.scan({ signal })
         // eslint-disable-next-line no-unused-vars
         for await (const _ of rows()) {
           if (signal?.aborted) return
           count++
         }
-      }
+        return count
+      })()
 
-      /** @type {string[]} */
-      const columns = []
       /** @type {AsyncCells} */
       const cells = {}
-      for (const col of plan.columns) {
-        const alias = col.alias ?? derivedAlias(col.expr)
-        columns.push(alias)
-        cells[alias] = () => Promise.resolve(count)
+      for (const alias of columns) {
+        cells[alias] = () => countPromise
       }
       yield { columns, cells }
     },
@@ -366,21 +363,19 @@ async function* filterRows(rows, condition, context, limit) {
  * @param {AbortSignal} [signal]
  * @yields {AsyncRow}
  */
-async function* limitRows(rows, limit, offset, signal) {
-  const skip = offset ?? 0
-  const max = limit ?? Infinity
-  if (max <= 0) return
+async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
+  if (limit <= 0) return
   let skipped = 0
   let yielded = 0
   for await (const row of rows) {
     if (signal?.aborted) return
-    if (skipped < skip) {
+    if (skipped < offset) {
       skipped++
       continue
     }
     yield row
     yielded++
-    if (yielded >= max) return
+    if (yielded >= limit) return
   }
 }
 
