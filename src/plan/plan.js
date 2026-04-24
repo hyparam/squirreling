@@ -176,7 +176,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Add JOINs
   if (select.joins.length) {
-    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables })
+    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables, scopeTables })
   }
 
   // Whether FROM resolved to our own direct table scan
@@ -279,12 +279,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
     for (const arg of select.from.args) {
       validateNoIdentifiers(arg, select.from.funcName)
     }
-    return {
-      type: 'TableFunction',
-      funcName: select.from.funcName,
-      args: select.from.args,
-      columnName: tableFunctionColumnName(select.from),
-    }
+    return planTableFunction(select.from)
   } else {
     const subPlan = planStatement({
       stmt: select.from.query,
@@ -307,6 +302,21 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
 }
 
 /**
+ * Builds a TableFunction plan node for a FromFunction AST.
+ *
+ * @param {import('../types.js').FromFunction} from
+ * @returns {import('./types.d.ts').TableFunctionNode}
+ */
+function planTableFunction(from) {
+  return {
+    type: 'TableFunction',
+    funcName: from.funcName,
+    args: from.args,
+    columnName: tableFunctionColumnName(from),
+  }
+}
+
+/**
  * @param {object} options
  * @param {QueryPlan} options.left - the left side of the join (FROM or previous joins)
  * @param {JoinClause[]} options.joins - array of join clauses
@@ -315,14 +325,34 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Map<string, string[] | undefined>} options.perTableColumns
  * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {Record<string, any>} options.scopeTables - aliases visible in scope (for correlated refs)
  * @returns {QueryPlan}
  */
-function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables }) {
+function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables, scopeTables }) {
   let plan = left
   let currentLeftTable = leftTable
 
   for (const join of joins) {
     const rightTable = join.alias ?? join.table
+
+    // LATERAL table function: right side references left-side columns.
+    if (join.fromFunction) {
+      for (const arg of join.fromFunction.args) {
+        validateTableRefs(arg, scopeTables)
+      }
+      plan = {
+        type: 'NestedLoopJoin',
+        joinType: join.joinType,
+        leftAlias: currentLeftTable,
+        rightAlias: rightTable,
+        condition: join.on,
+        left: plan,
+        right: planTableFunction(join.fromFunction),
+        lateral: true,
+      }
+      currentLeftTable = `${currentLeftTable}_${rightTable}`
+      continue
+    }
 
     const ctePlan = ctePlans?.get(join.table.toLowerCase())
     /** @type {ScanOptions} */

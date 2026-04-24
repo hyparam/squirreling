@@ -57,7 +57,7 @@ export function validateNoIdentifiers(expr, context) {
   if (expr.type === 'identifier') {
     const name = expr.prefix ? `${expr.prefix}.${expr.name}` : expr.name
     throw new ExecutionError({
-      message: `${context} argument cannot reference column "${name}" — ${context} arguments must be constant (lateral/correlated ${context} is not supported)`,
+      message: `${context} argument cannot reference column "${name}" — use JOIN ${context}(...) to reference columns from another table`,
       positionStart: expr.positionStart,
       positionEnd: expr.positionEnd,
     })

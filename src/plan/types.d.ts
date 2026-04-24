@@ -97,6 +97,7 @@ export interface NestedLoopJoinNode {
   condition: ExprNode
   left: QueryPlan
   right: QueryPlan
+  lateral?: boolean
 }
 
 export interface PositionalJoinNode {

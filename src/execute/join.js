@@ -15,6 +15,9 @@ import { executePlan } from './execute.js'
  * @returns {QueryResults}
  */
 export function executeNestedLoopJoin(plan, context) {
+  if (plan.lateral) {
+    return executeLateralJoin(plan, context)
+  }
   const left = executePlan({ plan: plan.left, context })
   const right = executePlan({ plan: plan.right, context })
   return {
@@ -75,6 +78,54 @@ export function executeNestedLoopJoin(plan, context) {
             const nullLeft = createNullRow(leftCols ?? [])
             yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
           }
+        }
+      }
+    },
+  }
+}
+
+/**
+ * Executes a LATERAL nested loop join — the right side is re-executed per
+ * left row with the left row available as `context.outerRow`.
+ *
+ * @param {NestedLoopJoinNode} plan
+ * @param {ExecuteContext} context
+ * @returns {QueryResults}
+ */
+function executeLateralJoin(plan, context) {
+  const left = executePlan({ plan: plan.left, context })
+  // Right columns are known statically for table functions (the common case).
+  const rightCols = plan.right.type === 'TableFunction' ? [plan.right.columnName] : []
+  return {
+    columns: mergeColumnNames(left.columns, rightCols, plan.leftAlias, plan.rightAlias),
+    async *rows() {
+      const leftTable = plan.leftAlias
+      const rightTable = plan.rightAlias
+
+      for await (const leftRow of left.rows()) {
+        if (context.signal?.aborted) return
+
+        const subContext = { ...context, outerRow: leftRow }
+        const right = executePlan({ plan: plan.right, context: subContext })
+
+        let hasMatch = false
+        for await (const rightRow of right.rows()) {
+          if (context.signal?.aborted) return
+          const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)
+          const matches = await evaluateExpr({
+            node: plan.condition,
+            row: merged,
+            context,
+          })
+          if (matches) {
+            hasMatch = true
+            yield merged
+          }
+        }
+
+        if (!hasMatch && plan.joinType === 'LEFT') {
+          const nullRight = createNullRow(rightCols)
+          yield mergeRows(leftRow, nullRight, leftTable, rightTable)
         }
       }
     },

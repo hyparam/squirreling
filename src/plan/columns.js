@@ -116,6 +116,11 @@ export function extractColumns({ select, parentColumns }) {
   collectColumnsFromExpr(select.having, identifiers, selectAliases)
   for (const join of select.joins) {
     collectColumnsFromExpr(join.on, identifiers)
+    if (join.fromFunction) {
+      for (const arg of join.fromFunction.args) {
+        collectColumnsFromExpr(arg, identifiers)
+      }
+    }
   }
 
   // Partition identifiers by table prefix
@@ -297,8 +302,12 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
     result.push(`${alias}.${tableFunctionColumnName(select.from)}`)
     for (const join of select.joins) {
       const joinAlias = join.alias ?? join.table
-      for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
-        result.push(`${joinAlias}.${col}`)
+      if (join.fromFunction) {
+        result.push(`${joinAlias}.${tableFunctionColumnName(join.fromFunction)}`)
+      } else {
+        for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
+          result.push(`${joinAlias}.${col}`)
+        }
       }
     }
     return result
@@ -317,8 +326,12 @@ function inferSelectSourceColumns({ select, cteColumns, tables }) {
   }
   for (const join of select.joins) {
     const joinAlias = join.alias ?? join.table
-    for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
-      result.push(`${joinAlias}.${col}`)
+    if (join.fromFunction) {
+      result.push(`${joinAlias}.${tableFunctionColumnName(join.fromFunction)}`)
+    } else {
+      for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
+        result.push(`${joinAlias}.${col}`)
+      }
     }
   }
   return result
