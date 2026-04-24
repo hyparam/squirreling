@@ -36,8 +36,16 @@ export function executeSql({ tables, query, functions, signal }) {
   }
 
   const scope = statementScope(parsed)
-  const context = { tables: normalizedTables, functions, signal, scope }
-  const plan = planSql({ query: parsed, functions, tables: normalizedTables })
+  // CTEs are resolved at plan time for FROM/JOIN positions. Subqueries inside
+  // expressions are re-planned during execution, so capture the CTE maps here
+  // and thread them through the context so those re-plans can still resolve
+  // CTE references.
+  /** @type {Map<string, QueryPlan>} */
+  const ctePlans = new Map()
+  /** @type {Map<string, string[]>} */
+  const cteColumns = new Map()
+  const context = { tables: normalizedTables, functions, signal, scope, ctePlans, cteColumns }
+  const plan = planSql({ query: parsed, functions, tables: normalizedTables, ctePlans, cteColumns })
   return executePlan({ plan, context })
 }
 
@@ -51,7 +59,13 @@ export function executeSql({ tables, query, functions, signal }) {
  * @returns {QueryResults}
  */
 export function executeStatement({ query, context, outerScope }) {
-  const plan = planStatement({ stmt: query, tables: context.tables, outerScope })
+  const plan = planStatement({
+    stmt: query,
+    tables: context.tables,
+    ctePlans: context.ctePlans,
+    cteColumns: context.cteColumns,
+    outerScope,
+  })
   // Compute this query's scope (FROM alias + JOIN aliases) for nested correlated subqueries
   const scope = statementScope(query)
   return executePlan({ plan, context: scope ? { ...context, scope } : context })

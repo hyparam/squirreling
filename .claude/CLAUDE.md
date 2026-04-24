@@ -1,4 +1,4 @@
-# CLAUDE.md
+# Squirreling
 
 Squirreling is a streaming async SQL engine written in JavaScript.
 Uses async everywhere and late materialization for efficiency.
@@ -26,6 +26,7 @@ npx tsc           # Type check with TypeScript
 - Tests:
   - Prefer `toEqual` over `toMatchObject` for more precise assertions
   - Do not add `: undefined` values to test fixtures (toEqual ignores undefined properties)
+  - Pass the full exact error message string to `toThrow()` never a regex or substring
 
 ## Architecture
 

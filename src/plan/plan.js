@@ -17,10 +17,10 @@ import { extractColumns, fromAlias, inferStatementColumns, tableFunctionColumnNa
  * @param {PlanSqlOptions} options
  * @returns {QueryPlan} the root of the query plan tree
  */
-export function planSql({ query, functions, tables }) {
+export function planSql({ query, functions, tables, ctePlans, cteColumns }) {
   /** @type {Statement} */
   const stmt = typeof query === 'string' ? parseSql({ query, functions }) : query
-  return planStatement({ stmt, tables })
+  return planStatement({ stmt, tables, ctePlans, cteColumns })
 }
 
 /**

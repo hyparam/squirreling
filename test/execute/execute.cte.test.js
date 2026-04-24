@@ -247,6 +247,49 @@ describe('CTE execution', () => {
     })
   })
 
+  describe('CTE in expression subquery', () => {
+    it('should resolve CTE in a scalar subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          WITH oldest AS (SELECT MAX(age) AS age FROM users)
+          SELECT name, (SELECT age FROM oldest) AS max_age FROM users ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', max_age: 35 },
+        { name: 'Bob', max_age: 35 },
+        { name: 'Charlie', max_age: 35 },
+      ])
+    })
+
+    it('should resolve CTE in an IN subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          WITH adults AS (SELECT id FROM users WHERE age >= 30)
+          SELECT amount FROM orders WHERE user_id IN (SELECT id FROM adults) ORDER BY amount
+        `,
+      }))
+      expect(result).toEqual([{ amount: 100 }, { amount: 150 }])
+    })
+
+    it('should resolve CTE in an EXISTS subquery', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          WITH any_adult AS (SELECT id FROM users WHERE age >= 30)
+          SELECT name FROM users WHERE EXISTS (SELECT 1 FROM any_adult) ORDER BY name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice' },
+        { name: 'Bob' },
+        { name: 'Charlie' },
+      ])
+    })
+  })
+
   describe('CTE shadowing', () => {
     it('should use CTE when it shadows a real table name', async () => {
       const result = await collect(executeSql({

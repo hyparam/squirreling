@@ -1,4 +1,5 @@
 import type { ExprNode, SqlPrimitive, Statement } from './ast.js'
+import type { QueryPlan } from './plan/types.js'
 
 export * from './ast.js'
 export { ParserState, Token, TokenType } from './parse/types.js'
@@ -33,6 +34,11 @@ export interface PlanSqlOptions {
   query: string | Statement
   functions?: Record<string, UserDefinedFunction>
   tables?: Record<string, AsyncDataSource>
+  // Optional CTE plan/column maps populated during planning. Callers can pass
+  // in Maps to capture the resolved CTEs for later reference (e.g. by
+  // subqueries that are re-planned during execution).
+  ctePlans?: Map<string, QueryPlan>
+  cteColumns?: Map<string, string[]>
 }
 
 // executePlan(plan, context)
@@ -46,6 +52,10 @@ export interface ExecuteContext {
   outerRow?: AsyncRow
   // aliases from the enclosing query that are valid correlated references
   outerAliases?: Set<string>
+  // CTE plans and column metadata from the enclosing WITH, for resolving
+  // CTE references in subqueries re-planned during execution
+  ctePlans?: Map<string, QueryPlan>
+  cteColumns?: Map<string, string[]>
 }
 
 // AsyncRow represents a row with async cell values
