@@ -122,5 +122,5 @@ export interface TableFunctionNode {
   type: 'TableFunction'
   funcName: string
   args: ExprNode[]
-  columnName: string
+  columnNames: string[]
 }

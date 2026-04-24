@@ -618,4 +618,178 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_EACH', () => {
+    it('should iterate over object key/value pairs', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'{"a":1,"b":2}\')',
+      }))
+      expect(result).toEqual([
+        { key: 'a', value: 1 },
+        { key: 'b', value: 2 },
+      ])
+    })
+
+    it('should iterate over array elements with integer keys', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'[10,20,30]\')',
+      }))
+      expect(result).toEqual([
+        { key: 0, value: 10 },
+        { key: 1, value: 20 },
+        { key: 2, value: 30 },
+      ])
+    })
+
+    it('should accept an object value directly', async () => {
+      const data = [{ id: 1, json: { x: 'foo', y: 'bar' } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT j.key, j.value FROM data JOIN JSON_EACH(data.json) AS j ON TRUE',
+      }))
+      expect(result).toEqual([
+        { key: 'x', value: 'foo' },
+        { key: 'y', value: 'bar' },
+      ])
+    })
+
+    it('should accept an array value directly', async () => {
+      const data = [{ id: 1, json: ['a', 'b'] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT j.key, j.value FROM data JOIN JSON_EACH(data.json) AS j ON TRUE',
+      }))
+      expect(result).toEqual([
+        { key: 0, value: 'a' },
+        { key: 1, value: 'b' },
+      ])
+    })
+
+    it('should produce zero rows for NULL input', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(NULL)',
+      }))
+      expect(result).toEqual([])
+    })
+
+    it('should produce zero rows for an empty object', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'{}\')',
+      }))
+      expect(result).toEqual([])
+    })
+
+    it('should produce zero rows for an empty array', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'[]\')',
+      }))
+      expect(result).toEqual([])
+    })
+
+    it('should support column aliases like AS j(k, v)', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT k, v FROM JSON_EACH(\'{"a":1,"b":2}\') AS j(k, v)',
+      }))
+      expect(result).toEqual([
+        { k: 'a', v: 1 },
+        { k: 'b', v: 2 },
+      ])
+    })
+
+    it('should support a single column alias for just key', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT k FROM JSON_EACH(\'{"a":1,"b":2}\') AS j(k)',
+      }))
+      expect(result).toEqual([{ k: 'a' }, { k: 'b' }])
+    })
+
+    it('should work with WHERE', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT key, value FROM JSON_EACH(\'[10,20,30,40]\') WHERE value > 15',
+      }))
+      expect(result).toEqual([
+        { key: 1, value: 20 },
+        { key: 2, value: 30 },
+        { key: 3, value: 40 },
+      ])
+    })
+
+    it('should work with aggregation', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT SUM(value) AS total FROM JSON_EACH(\'[1,2,3,4]\')',
+      }))
+      expect(result).toEqual([{ total: 10 }])
+    })
+
+    it('should iterate over nested object values without recursion', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'{"a":{"x":1},"b":[1,2]}\')',
+      }))
+      expect(result).toEqual([
+        { key: 'a', value: { x: 1 } },
+        { key: 'b', value: [1, 2] },
+      ])
+    })
+
+    it('should throw for invalid JSON string', async () => {
+      await expect(collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'not valid json\')',
+      }))).rejects.toThrow('JSON_EACH(value): invalid JSON string')
+    })
+
+    it('should throw for non-object, non-array JSON', async () => {
+      await expect(collect(executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'42\')',
+      }))).rejects.toThrow('JSON_EACH(value): argument must be a JSON object or array')
+    })
+
+    it('should throw for wrong argument count', () => {
+      expect(() => executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH()',
+      })).toThrow('JSON_EACH(value) function requires 1 argument, got 0')
+    })
+
+    it('should throw when used as a scalar expression', () => {
+      expect(() => executeSql({
+        tables: {},
+        query: 'SELECT JSON_EACH(\'{}\')',
+      })).toThrow('JSON_EACH is a table function and can only be used in FROM clauses at position 7')
+    })
+
+    it('should work with LATERAL join over multiple rows', async () => {
+      const data = [
+        { id: 1, json: { a: 1, b: 2 } },
+        { id: 2, json: { c: 3 } },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT data.id, j.key, j.value FROM data JOIN JSON_EACH(data.json) AS j ON TRUE',
+      }))
+      expect(result).toEqual([
+        { id: 1, key: 'a', value: 1 },
+        { id: 1, key: 'b', value: 2 },
+        { id: 2, key: 'c', value: 3 },
+      ])
+    })
+
+    it('should throw for too many column aliases', () => {
+      expect(() => executeSql({
+        tables: {},
+        query: 'SELECT * FROM JSON_EACH(\'{}\') AS j(a, b, c)',
+      })).toThrow('JSON_EACH produces at most 2 columns (key, value); too many column aliases')
+    })
+  })
+
 })

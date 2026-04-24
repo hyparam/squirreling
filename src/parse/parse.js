@@ -468,15 +468,22 @@ export function parseFromFunction(state) {
   validateFunctionArgs(funcName, args.length, positionStart, state.lastPos, state.functions)
 
   const alias = parseTableAlias(state)
-  /** @type {string | undefined} */
-  let columnAlias
+  /** @type {string[]} */
+  const columnAliases = []
   if (alias && match(state, 'paren', '(')) {
     const colStart = state.lastPos
-    const colTok = expect(state, 'identifier')
-    columnAlias = colTok.value
-    if (match(state, 'comma')) {
+    while (true) {
+      const colTok = expect(state, 'identifier')
+      columnAliases.push(colTok.value)
+      if (!match(state, 'comma')) break
+    }
+    const maxCols = tableFunctionColumnCount(funcName)
+    if (columnAliases.length > maxCols) {
+      const colLabels = tableFunctionDefaultColumns(funcName).join(', ')
       throw new ParseError({
-        message: `${funcName} produces a single column; only one column alias is allowed`,
+        message: maxCols === 1
+          ? `${funcName} produces a single column; only one column alias is allowed`
+          : `${funcName} produces at most ${maxCols} columns (${colLabels}); too many column aliases`,
         positionStart: colStart,
         positionEnd: state.lastPos,
       })
@@ -489,10 +496,29 @@ export function parseFromFunction(state) {
     funcName,
     args,
     alias,
-    columnAlias,
+    columnAliases,
     positionStart,
     positionEnd: state.lastPos,
   }
+}
+
+/**
+ * Default column names produced by a table-valued function.
+ * @param {string} funcName
+ * @returns {string[]}
+ */
+export function tableFunctionDefaultColumns(funcName) {
+  if (funcName === 'JSON_EACH') return ['key', 'value']
+  return [funcName.toLowerCase()]
+}
+
+/**
+ * Maximum number of output columns a table-valued function can produce.
+ * @param {string} funcName
+ * @returns {number}
+ */
+export function tableFunctionColumnCount(funcName) {
+  return tableFunctionDefaultColumns(funcName).length
 }
 
 /**

@@ -3,7 +3,7 @@ import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
-import { extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnName } from './columns.js'
+import { extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnNames } from './columns.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -321,7 +321,7 @@ function planTableFunction(from) {
     type: 'TableFunction',
     funcName: from.funcName,
     args: from.args,
-    columnName: tableFunctionColumnName(from),
+    columnNames: tableFunctionColumnNames(from),
   }
 }
 

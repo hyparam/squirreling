@@ -65,7 +65,7 @@ export interface FromFunction extends AstBase {
   funcName: string
   args: ExprNode[]
   alias?: string
-  columnAlias?: string
+  columnAliases: string[]
 }
 
 export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'

@@ -125,19 +125,31 @@ export function executePlan({ plan, context }) {
 }
 
 /**
- * Executes a table-valued function (e.g. UNNEST).
- * Evaluates the argument once against an empty row and yields one row per
- * element of the resulting array. Null or non-array input yields zero rows.
+ * Executes a table-valued function (e.g. UNNEST, JSON_EACH).
+ * Evaluates the argument once against the outer row (for lateral joins) or an
+ * empty row, then yields rows derived from the resulting value.
  *
  * @param {TableFunctionNode} plan
  * @param {ExecuteContext} context
  * @returns {QueryResults}
  */
 function executeTableFunction(plan, context) {
-  if (plan.funcName !== 'UNNEST') {
-    throw new Error(`Unsupported table function: ${plan.funcName}`)
+  if (plan.funcName === 'UNNEST') {
+    return executeUnnest(plan, context)
+  } else if (plan.funcName === 'JSON_EACH') {
+    return executeJsonEach(plan, context)
   }
-  const columns = [plan.columnName]
+  throw new Error(`Unsupported table function: ${plan.funcName}`)
+}
+
+/**
+ * @param {TableFunctionNode} plan
+ * @param {ExecuteContext} context
+ * @returns {QueryResults}
+ */
+function executeUnnest(plan, context) {
+  const columns = plan.columnNames
+  const [columnName] = columns
   return {
     columns,
     async *rows() {
@@ -149,9 +161,65 @@ function executeTableFunction(plan, context) {
         if (context.signal?.aborted) return
         yield {
           columns,
-          cells: { [plan.columnName]: () => Promise.resolve(element) },
+          cells: { [columnName]: () => Promise.resolve(element) },
         }
       }
+    },
+  }
+}
+
+/**
+ * @param {TableFunctionNode} plan
+ * @param {ExecuteContext} context
+ * @returns {QueryResults}
+ */
+function executeJsonEach(plan, context) {
+  const columns = plan.columnNames
+  const [keyCol, valueCol] = columns
+  return {
+    columns,
+    async *rows() {
+      /** @type {AsyncRow} */
+      const row = context.outerRow ?? { columns: [], cells: {} }
+      const value = await evaluateExpr({ node: plan.args[0], row, rowIndex: 1, context })
+      if (value == null) return
+      let parsed = value
+      if (typeof value === 'string') {
+        try {
+          parsed = JSON.parse(value)
+        } catch {
+          throw new Error('JSON_EACH(value): invalid JSON string. Argument must be valid JSON.')
+        }
+      }
+      if (Array.isArray(parsed)) {
+        for (let i = 0; i < parsed.length; i++) {
+          if (context.signal?.aborted) return
+          const k = i
+          const v = parsed[i]
+          yield {
+            columns,
+            cells: {
+              [keyCol]: () => Promise.resolve(k),
+              [valueCol]: () => Promise.resolve(v),
+            },
+          }
+        }
+        return
+      }
+      if (typeof parsed === 'object' && parsed !== null) {
+        for (const [k, v] of Object.entries(parsed)) {
+          if (context.signal?.aborted) return
+          yield {
+            columns,
+            cells: {
+              [keyCol]: () => Promise.resolve(k),
+              [valueCol]: () => Promise.resolve(v),
+            },
+          }
+        }
+        return
+      }
+      throw new Error('JSON_EACH(value): argument must be a JSON object or array')
     },
   }
 }

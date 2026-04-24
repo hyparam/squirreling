@@ -1,3 +1,4 @@
+import { tableFunctionDefaultColumns } from '../parse/parse.js'
 import { derivedAlias } from '../expression/alias.js'
 
 /**
@@ -18,13 +19,19 @@ export function fromAlias(from) {
 }
 
 /**
- * Returns the single output column name for a FROM table function.
+ * Returns the output column names for a FROM table function, applying any
+ * column aliases over the function's default column names.
  *
  * @param {FromFunction} from
- * @returns {string}
+ * @returns {string[]}
  */
-export function tableFunctionColumnName(from) {
-  return from.columnAlias ?? from.funcName.toLowerCase()
+export function tableFunctionColumnNames(from) {
+  const defaults = tableFunctionDefaultColumns(from.funcName)
+  const result = []
+  for (let i = 0; i < defaults.length; i++) {
+    result.push(from.columnAliases[i] ?? defaults[i])
+  }
+  return result
 }
 
 /**
@@ -330,18 +337,21 @@ export function inferSelectSourceColumns({ select, cteColumns, tables }) {
   }
 
   if (select.from.type === 'function') {
-    // Table functions currently produce a single column
     if (!select.joins.length) {
-      return [tableFunctionColumnName(select.from)]
+      return tableFunctionColumnNames(select.from)
     }
     /** @type {string[]} */
     const result = []
     const alias = fromAlias(select.from)
-    result.push(`${alias}.${tableFunctionColumnName(select.from)}`)
+    for (const col of tableFunctionColumnNames(select.from)) {
+      result.push(`${alias}.${col}`)
+    }
     for (const join of select.joins) {
       const joinAlias = join.alias ?? join.table
       if (join.fromFunction) {
-        result.push(`${joinAlias}.${tableFunctionColumnName(join.fromFunction)}`)
+        for (const col of tableFunctionColumnNames(join.fromFunction)) {
+          result.push(`${joinAlias}.${col}`)
+        }
       } else {
         for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
           result.push(`${joinAlias}.${col}`)
@@ -365,7 +375,9 @@ export function inferSelectSourceColumns({ select, cteColumns, tables }) {
   for (const join of select.joins) {
     const joinAlias = join.alias ?? join.table
     if (join.fromFunction) {
-      result.push(`${joinAlias}.${tableFunctionColumnName(join.fromFunction)}`)
+      for (const col of tableFunctionColumnNames(join.fromFunction)) {
+        result.push(`${joinAlias}.${col}`)
+      }
     } else {
       for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
         result.push(`${joinAlias}.${col}`)

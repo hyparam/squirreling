@@ -95,7 +95,7 @@ export function executeNestedLoopJoin(plan, context) {
 function executeLateralJoin(plan, context) {
   const left = executePlan({ plan: plan.left, context })
   // Right columns are known statically for table functions (the common case).
-  const rightCols = plan.right.type === 'TableFunction' ? [plan.right.columnName] : []
+  const rightCols = plan.right.type === 'TableFunction' ? plan.right.columnNames : []
   return {
     columns: mergeColumnNames(left.columns, rightCols, plan.leftAlias, plan.rightAlias),
     async *rows() {

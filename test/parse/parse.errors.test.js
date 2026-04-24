@@ -234,7 +234,7 @@ describe('parseSql error handling', () => {
 
     it('should suggest similar functions with shared prefix', () => {
       expect(() => parseSql({ query: 'SELECT JSON_EXTRACT_STRING(name) FROM users' }))
-        .toThrow('Unknown function "JSON_EXTRACT_STRING" at position 7. Did you mean JSON_EXTRACT, JSON_ARRAY_LENGTH, JSON_ARRAYAGG, JSON_OBJECT?')
+        .toThrow('Unknown function "JSON_EXTRACT_STRING" at position 7. Did you mean JSON_EXTRACT, JSON_ARRAY_LENGTH, JSON_ARRAYAGG, JSON_EACH?')
     })
 
     it('should suggest similar functions by edit distance', () => {
