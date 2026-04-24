@@ -699,6 +699,17 @@ describe('executeSql', () => {
       }))
       expect(result).toEqual([{ large_complete: 350 }]) // 200 + 150
     })
+
+    it('should allow FILTER aggregate nested inside an arithmetic expression', async () => {
+      const result = await collect(executeSql({
+        tables: { orders },
+        query: `SELECT ROUND(
+          100.0 * COUNT(*) FILTER (WHERE status = 'complete') / COUNT(*),
+          2
+        ) AS pct FROM orders`,
+      }))
+      expect(result).toEqual([{ pct: 60 }]) // 3 / 5 = 60%
+    })
   })
 
   describe('COUNT(*) optimization with numRows', () => {

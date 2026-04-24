@@ -14,8 +14,13 @@ import { ParseError } from './parseErrors.js'
  */
 export function findAggregate(expr) {
   if (!expr) return undefined
-  if (expr.type === 'function' && isAggregateFunc(expr.funcName.toUpperCase())) {
-    return expr
+  if (expr.type === 'function') {
+    if (isAggregateFunc(expr.funcName.toUpperCase())) return expr
+    for (const arg of expr.args) {
+      const found = findAggregate(arg)
+      if (found) return found
+    }
+    return undefined
   }
   if (expr.type === 'binary') {
     return findAggregate(expr.left) || findAggregate(expr.right)
