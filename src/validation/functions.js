@@ -180,7 +180,7 @@ export const FUNCTION_SIGNATURES = {
   ARRAY_AGG: { min: 1, max: 1, signature: 'expression' },
 
   // Array functions
-  ARRAY_LENGTH: { min: 1, max: 1, signature: 'array' },
+  ARRAY_LENGTH: { min: 1, max: 2, signature: 'array[, dimension]' },
   ARRAY_POSITION: { min: 2, max: 2, signature: 'array, element' },
   ARRAY_SORT: { min: 1, max: 1, signature: 'array' },
   CARDINALITY: { min: 1, max: 1, signature: 'array' },

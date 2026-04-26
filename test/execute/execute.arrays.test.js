@@ -41,8 +41,47 @@ describe('array functions', () => {
       const data = [{ id: 1, items: [1, 2] }]
       expect(() => executeSql({
         tables: { data },
-        query: 'SELECT ARRAY_LENGTH(items, 1) FROM data',
-      })).toThrow()
+        query: 'SELECT ARRAY_LENGTH(items, 1, 2) FROM data',
+      })).toThrow('ARRAY_LENGTH(array[, dimension]) function requires 1-2 arguments, got 3')
+    })
+
+    it('should return length along dimension 1', async () => {
+      const data = [
+        { id: 1, items: [1, 2, 3] },
+        { id: 2, items: [] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_LENGTH(items, 1) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 3 }, { len: 0 }])
+    })
+
+    it('should return length along dimension 2 for nested arrays', async () => {
+      const data = [{ id: 1, matrix: [[1, 2, 3], [4, 5, 6]] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_LENGTH(matrix, 2) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 3 }])
+    })
+
+    it('should return null for dimension beyond array depth', async () => {
+      const data = [{ id: 1, items: [1, 2, 3] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_LENGTH(items, 2) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+
+    it('should return null for non-positive dimension', async () => {
+      const data = [{ id: 1, items: [1, 2, 3] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_LENGTH(items, 0) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
     })
   })
 

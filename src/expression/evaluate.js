@@ -473,6 +473,23 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY') {
       const arr = args[0]
       if (!Array.isArray(arr)) return null
+      if (funcName === 'ARRAY_LENGTH' && args.length === 2) {
+        const dim = args[1]
+        if (typeof dim !== 'number' && typeof dim !== 'bigint') return null
+        const d = Number(dim)
+        if (!Number.isInteger(d) || d < 1) return null
+        let level = arr
+        for (let i = 1; i < d; i++) {
+          if (!Array.isArray(level) || level.length === 0) return null
+          const first = level[0]
+          if (!Array.isArray(first)) return null
+          for (const item of level) {
+            if (!Array.isArray(item) || item.length !== first.length) return null
+          }
+          level = first
+        }
+        return level.length
+      }
       return arr.length
     }
 
