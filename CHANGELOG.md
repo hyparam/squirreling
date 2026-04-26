@@ -1,5 +1,11 @@
 # Squirreling Changelog
 
+## [0.12.10]
+ - Bracket subscript notation for object field access (e.g. `col['name']`)
+ - Support `ORDER BY` referencing grouped aggregate expressions
+ - Support dot access on `UNNEST` results
+ - `ARRAY_LENGTH` with optional dimension argument
+
 ## [0.12.9]
  - `ROW_NUMBER() OVER (PARTITION BY ...)` window function
  - Streaming fast path for `ROW_NUMBER() OVER ()`
