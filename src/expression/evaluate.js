@@ -1,5 +1,5 @@
 import { executeStatement } from '../execute/execute.js'
-import { keyify, stringify } from '../execute/utils.js'
+import { isPlainObject, keyify, stringify } from '../execute/utils.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
 import { UnknownFunctionError } from '../validation/parseErrors.js'
@@ -38,6 +38,14 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       const qualified = node.prefix + '.' + node.name
       if (qualified in row.cells) {
         return row.cells[qualified]()
+      }
+      const prefix = node.prefix + '.'
+      const prefixedColumns = row.columns.filter(col => col.startsWith(prefix))
+      if (prefixedColumns.length === 1) {
+        const value = await row.cells[prefixedColumns[0]]()
+        if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
+          return value[node.name]
+        }
       }
       // Check outer row for correlated subquery references
       if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {

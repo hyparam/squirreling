@@ -122,6 +122,19 @@ export function maxBounds(a, b) {
 }
 
 /**
+ * Returns true for plain object SqlPrimitive values, excluding null, arrays, and Dates.
+ *
+ * @param {SqlPrimitive} value
+ * @returns {value is Record<string, SqlPrimitive>}
+ */
+export function isPlainObject(value) {
+  return value != null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && !(value instanceof Date)
+}
+
+/**
  * @param {SqlPrimitive} value
  * @returns {string}
  */

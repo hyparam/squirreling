@@ -417,6 +417,54 @@ describe('LATERAL UNNEST', () => {
   })
 })
 
+describe('UNNEST array-of-struct', () => {
+  const traces = [
+    { id: 1, tools: [{ name: 'web_search', args: '{"q":"sql"}' }, { name: 'calculator', args: '1+1' }] },
+    { id: 2, tools: [{ name: 'web_search', args: '{"q":"json"}' }] },
+    { id: 3, tools: [] },
+  ]
+
+  it('should expose struct fields as columns on the unnest alias via dot access', async () => {
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT t.id, tc.name FROM traces t JOIN UNNEST(t.tools) AS tc ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, name: 'web_search' },
+      { id: 1, name: 'calculator' },
+      { id: 2, name: 'web_search' },
+    ])
+  })
+
+  it('should expose struct fields via comma-join UNNEST + dot access', async () => {
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT t.id, tc.name FROM traces t, UNNEST(t.tools) AS tc',
+    }))
+    expect(result).toEqual([
+      { id: 1, name: 'web_search' },
+      { id: 1, name: 'calculator' },
+      { id: 2, name: 'web_search' },
+    ])
+  })
+
+  it('should support filtering by an unnested struct field', async () => {
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT t.id FROM traces t JOIN UNNEST(t.tools) AS tc ON TRUE WHERE tc.name = \'web_search\'',
+    }))
+    expect(result).toEqual([{ id: 1 }, { id: 2 }])
+  })
+
+  it('should support COUNT(*) with a filter on an unnested struct field', async () => {
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT COUNT(*) AS cnt FROM traces t JOIN UNNEST(t.tools) AS tc ON TRUE WHERE tc.name = \'web_search\'',
+    }))
+    expect(result).toEqual([{ cnt: 2 }])
+  })
+})
+
 describe('array literals', () => {
   const singleRow = [{ x: 1 }]
 
