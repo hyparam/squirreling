@@ -67,6 +67,7 @@ export interface HashAggregateNode {
   type: 'HashAggregate'
   groupBy: ExprNode[]
   columns: SelectColumn[]
+  orderBy?: OrderByItem[]
   having?: ExprNode
   child: QueryPlan
 }

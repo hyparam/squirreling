@@ -1,6 +1,7 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
+import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
 
 /**
@@ -51,6 +52,22 @@ function projectAggregateColumns(selectColumns, group, context) {
 }
 
 /**
+ * Builds the row visible to post-aggregation expressions such as HAVING and
+ * grouped ORDER BY: source group columns plus aggregate output aliases.
+ *
+ * @param {AsyncRow[]} group
+ * @param {AsyncRow} aggregateRow
+ * @returns {AsyncRow}
+ */
+function aggregateContextRow(group, aggregateRow) {
+  const baseRow = group[0] ?? { columns: [], cells: {} }
+  return {
+    columns: [...baseRow.columns, ...aggregateRow.columns],
+    cells: { ...baseRow.cells, ...aggregateRow.cells },
+  }
+}
+
+/**
  * Executes a hash aggregate operation (GROUP BY)
  *
  * @param {HashAggregateNode} plan
@@ -85,27 +102,42 @@ export function executeHashAggregate(plan, context) {
         group.push(row)
       }
 
-      // Yield one row per group
+      /** @type {{ row: AsyncRow, group: AsyncRow[], contextRow: AsyncRow }[]} */
+      const aggregateRows = []
+
       for (const group of groups.values()) {
         const asyncRow = projectAggregateColumns(plan.columns, group, context)
+        const contextRow = aggregateContextRow(group, asyncRow)
 
         // Apply HAVING filter
         if (plan.having) {
-          /** @type {AsyncRow} */
-          const havingRow = {
-            columns: [...group[0].columns, ...asyncRow.columns],
-            cells: { ...group[0].cells, ...asyncRow.cells },
-          }
           const passes = await evaluateExpr({
             node: plan.having,
-            row: havingRow,
+            row: contextRow,
             rows: group,
             context,
           })
           if (!passes) continue
         }
 
-        yield asyncRow
+        aggregateRows.push({ row: asyncRow, group, contextRow })
+      }
+
+      if (plan.orderBy?.length) {
+        const sortedRows = await sortEntriesByTerms({
+          entries: aggregateRows.map((aggregateRow, idx) => ({
+            row: aggregateRow.contextRow,
+            rows: aggregateRow.group,
+            idx,
+          })),
+          orderBy: plan.orderBy,
+          context,
+        })
+        aggregateRows.splice(0, aggregateRows.length, ...sortedRows.map(({ idx }) => aggregateRows[idx]))
+      }
+
+      for (const { row } of aggregateRows) {
+        yield row
       }
     },
   }
