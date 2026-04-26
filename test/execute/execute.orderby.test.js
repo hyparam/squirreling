@@ -309,6 +309,38 @@ describe('ORDER BY', () => {
       expect(result[0].city).toBe('NYC')
       expect(result[1].city).toBe('LA')
     })
+
+    it('should evaluate grouped sort-key UDF concurrently', async () => {
+      const data = Array.from({ length: 300 }, (_, i) => ({ g: 299 - i }))
+      let inFlight = 0
+      let peak = 0
+      /** @type {Record<string, UserDefinedFunction>} */
+      const functions = {
+        SLOW: {
+          async apply(x) {
+            inFlight++
+            peak = Math.max(peak, inFlight)
+            await new Promise(r => setTimeout(r, 1))
+            inFlight--
+            return x
+          },
+          arguments: { min: 1, max: 1 },
+        },
+      }
+      const result = await collect(executeSql({
+        tables: { data },
+        functions,
+        query: 'SELECT g, COUNT(*) AS cnt FROM data GROUP BY g ORDER BY SLOW(g) LIMIT 5',
+      }))
+      expect(result).toEqual([
+        { g: 0, cnt: 1 },
+        { g: 1, cnt: 1 },
+        { g: 2, cnt: 1 },
+        { g: 3, cnt: 1 },
+        { g: 4, cnt: 1 },
+      ])
+      expect(peak).toBeGreaterThan(10)
+    })
   })
 
   describe('NULLS FIRST and NULLS LAST', () => {

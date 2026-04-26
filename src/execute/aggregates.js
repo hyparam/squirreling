@@ -1,7 +1,8 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
-import { compareForTerm, keyify } from './utils.js'
+import { sortEntriesByTerms } from './sort.js'
+import { keyify } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
@@ -101,7 +102,7 @@ export function executeHashAggregate(plan, context) {
         group.push(row)
       }
 
-      /** @type {{ row: AsyncRow, group: AsyncRow[], contextRow: AsyncRow, sortValues?: (SqlPrimitive | undefined)[] }[]} */
+      /** @type {{ row: AsyncRow, group: AsyncRow[], contextRow: AsyncRow }[]} */
       const aggregateRows = []
 
       for (const group of groups.values()) {
@@ -123,23 +124,16 @@ export function executeHashAggregate(plan, context) {
       }
 
       if (plan.orderBy?.length) {
-        for (const aggregateRow of aggregateRows) {
-          aggregateRow.sortValues = await Promise.all(plan.orderBy.map(term =>
-            evaluateExpr({
-              node: term.expr,
-              row: aggregateRow.contextRow,
-              rows: aggregateRow.group,
-              context,
-            })
-          ))
-        }
-        aggregateRows.sort((a, b) => {
-          for (let i = 0; i < plan.orderBy.length; i++) {
-            const cmp = compareForTerm(a.sortValues?.[i], b.sortValues?.[i], plan.orderBy[i])
-            if (cmp !== 0) return cmp
-          }
-          return 0
+        const sortedRows = await sortEntriesByTerms({
+          entries: aggregateRows.map((aggregateRow, idx) => ({
+            row: aggregateRow.contextRow,
+            rows: aggregateRow.group,
+            idx,
+          })),
+          orderBy: plan.orderBy,
+          context,
         })
+        aggregateRows.splice(0, aggregateRows.length, ...sortedRows.map(({ idx }) => aggregateRows[idx]))
       }
 
       for (const { row } of aggregateRows) {
