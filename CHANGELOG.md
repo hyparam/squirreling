@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.12.11]
+ - `LENGTH` supports arrays and rejects non-string/array-like values
+ - Support struct dot-access on `UNNEST` column aliases
+
 ## [0.12.10]
  - Bracket subscript notation for object field access (e.g. `col['name']`)
  - Support `ORDER BY` referencing grouped aggregate expressions
