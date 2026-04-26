@@ -214,6 +214,39 @@ describe('string functions', () => {
       }))
       expect(result[0].len).toBe(0)
     })
+
+    it('should return length of array', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LENGTH(items) AS len FROM data',
+      }))
+      expect(result[0].len).toBe(3)
+    })
+
+    it('should reject number arguments', async () => {
+      const data = [{ id: 1, n: 42 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT LENGTH(n) FROM data',
+      }))).rejects.toThrow('LENGTH(string): expected string or array, got number. Use CAST to convert to a string first. (row 1)')
+    })
+
+    it('should reject object arguments', async () => {
+      const data = [{ id: 1, obj: { a: 1 } }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT LENGTH(obj) FROM data',
+      }))).rejects.toThrow('LENGTH(string): expected string or array, got object. Use CAST to convert to a string first. (row 1)')
+    })
+
+    it('should reject date arguments', async () => {
+      const data = [{ id: 1, d: new Date('2026-01-01') }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT LENGTH(d) FROM data',
+      }))).rejects.toThrow('LENGTH(string): expected string or array, got date. Use CAST to convert to a string first. (row 1)')
+    })
   })
 
   describe('SUBSTRING', () => {

@@ -32,6 +32,25 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
   // String first arg
   const [val] = args
   if (val == null) return null
+
+  if (funcName === 'LENGTH') {
+    if (typeof val === 'string' || Array.isArray(val)) return val.length
+    throw new ArgValueError({
+      ...node,
+      message: `expected string or array, got ${typeof val === 'object' ? val instanceof Date ? 'date' : 'object' : typeof val}`,
+      hint: 'Use CAST to convert to a string first.',
+      rowIndex,
+    })
+  }
+
+  if (typeof val === 'object' && !(val instanceof Date)) {
+    throw new ArgValueError({
+      ...node,
+      message: `does not support ${Array.isArray(val) ? 'array' : 'object'} arguments`,
+      hint: 'Use CAST to convert to a string first.',
+      rowIndex,
+    })
+  }
   const str = String(val)
 
   if (funcName === 'UPPER') {
@@ -40,10 +59,6 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
 
   if (funcName === 'LOWER') {
     return str.toLowerCase()
-  }
-
-  if (funcName === 'LENGTH') {
-    return str.length
   }
 
   if (funcName === 'SUBSTRING' || funcName === 'SUBSTR') {
