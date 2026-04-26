@@ -687,93 +687,97 @@ describe('planSql', () => {
         type: 'Limit',
         limit: 10,
         child: {
-          type: 'Sort',
+          type: 'HashAggregate',
+          groupBy: [
+            {
+              type: 'identifier',
+              name: 'department',
+              positionStart: 55,
+              positionEnd: 65,
+            },
+          ],
+          columns: [
+            {
+              type: 'derived',
+              expr: {
+                type: 'identifier',
+                name: 'department',
+                positionStart: 7,
+                positionEnd: 17,
+              },
+              positionStart: 7,
+              positionEnd: 17,
+            },
+            {
+              type: 'derived',
+              expr: {
+                type: 'function',
+                funcName: 'COUNT',
+                args: [
+                  {
+                    type: 'star',
+                    positionStart: 25,
+                    positionEnd: 26,
+                  },
+                ],
+                positionStart: 19,
+                positionEnd: 27,
+              },
+              alias: 'cnt',
+              positionStart: 19,
+              positionEnd: 34,
+            },
+          ],
           orderBy: [
             {
               expr: {
-                type: 'identifier',
-                name: 'cnt',
-                positionStart: 95,
-                positionEnd: 98,
+                type: 'function',
+                funcName: 'COUNT',
+                args: [
+                  {
+                    type: 'star',
+                    positionStart: 25,
+                    positionEnd: 26,
+                  },
+                ],
+                positionStart: 19,
+                positionEnd: 27,
               },
               direction: 'ASC',
               positionStart: 0,
               positionEnd: 98,
             },
           ],
-          child: {
-            type: 'HashAggregate',
-            groupBy: [
-              {
-                type: 'identifier',
-                name: 'department',
-                positionStart: 55,
-                positionEnd: 65,
-              },
-            ],
-            columns: [
-              {
-                type: 'derived',
-                expr: {
-                  type: 'identifier',
-                  name: 'department',
-                  positionStart: 7,
-                  positionEnd: 17,
+          having: {
+            type: 'binary',
+            op: '>',
+            left: {
+              type: 'function',
+              funcName: 'COUNT',
+              args: [
+                {
+                  type: 'star',
+                  positionStart: 79,
+                  positionEnd: 80,
                 },
-                positionStart: 7,
-                positionEnd: 17,
-              },
-              {
-                type: 'derived',
-                expr: {
-                  type: 'function',
-                  funcName: 'COUNT',
-                  args: [
-                    {
-                      type: 'star',
-                      positionStart: 25,
-                      positionEnd: 26,
-                    },
-                  ],
-                  positionStart: 19,
-                  positionEnd: 27,
-                },
-                alias: 'cnt',
-                positionStart: 19,
-                positionEnd: 34,
-              },
-            ],
-            having: {
-              type: 'binary',
-              op: '>',
-              left: {
-                type: 'function',
-                funcName: 'COUNT',
-                args: [
-                  {
-                    type: 'star',
-                    positionStart: 79,
-                    positionEnd: 80,
-                  },
-                ],
-                positionStart: 73,
-                positionEnd: 81,
-              },
-              right: {
-                type: 'literal',
-                value: 5,
-                positionStart: 84,
-                positionEnd: 85,
-              },
+              ],
               positionStart: 73,
+              positionEnd: 81,
+            },
+            right: {
+              type: 'literal',
+              value: 5,
+              positionStart: 84,
               positionEnd: 85,
             },
-            child: {
-              type: 'Scan',
-              table: 'users',
-              hints: {
-                columns: ['department'],
-              },
+            positionStart: 73,
+            positionEnd: 85,
+          },
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: {
+              columns: ['department'],
             },
           },
         },

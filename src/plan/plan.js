@@ -7,7 +7,7 @@ import { validateNoIdentifiers, validateScan, validateTableRefs } from '../valid
 import { extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnNames } from './columns.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
+ * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
  * @import { QueryPlan, WindowSpec } from './types.d.ts'
  */
 
@@ -177,6 +177,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
     return col
   })
+  const orderBy = resolveOrderByAliases(select.orderBy, aliases)
 
   // Validate qualified references in other clauses
   validateTableRefs(select.where, scopeTables)
@@ -235,7 +236,16 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       const groupBy = aliases.size > 0
         ? select.groupBy.map(expr => resolveAliases(expr, aliases))
         : select.groupBy
-      plan = { type: 'HashAggregate', groupBy, columns, having: select.having, child: plan }
+      /** @type {QueryPlan} */
+      const aggregatePlan = {
+        type: 'HashAggregate',
+        groupBy,
+        columns,
+        having: select.having,
+        child: plan,
+      }
+      if (orderBy.length) aggregatePlan.orderBy = orderBy
+      plan = aggregatePlan
     } else if (!select.having && !select.where && plan.type === 'Scan' && isOwnScan && isAllCountStar(select.columns)) {
       plan = { type: 'Count', table: plan.table, columns: select.columns }
     } else {
@@ -243,8 +253,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
 
     // ORDER BY (after aggregation)
-    if (select.orderBy.length) {
-      plan = { type: 'Sort', orderBy: select.orderBy, child: plan }
+    if (orderBy.length && !select.groupBy.length) {
+      plan = { type: 'Sort', orderBy, child: plan }
     }
 
     // DISTINCT
@@ -267,10 +277,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
     // ORDER BY (before projection so it can access all columns)
     // Resolve SELECT aliases in ORDER BY expressions at plan time
-    if (select.orderBy.length) {
-      const orderBy = aliases.size > 0
-        ? select.orderBy.map(term => ({ ...term, expr: resolveAliases(term.expr, aliases) }))
-        : select.orderBy
+    if (orderBy.length) {
       plan = { type: 'Sort', orderBy, child: plan }
     }
 
@@ -470,6 +477,19 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
 }
 
 /**
+ * Recursively replaces identifier nodes in ORDER BY terms that match SELECT
+ * aliases with their aliased expressions.
+ *
+ * @param {OrderByItem[]} orderBy
+ * @param {Map<string, ExprNode>} aliases
+ * @returns {OrderByItem[]}
+ */
+function resolveOrderByAliases(orderBy, aliases) {
+  if (!aliases.size) return orderBy
+  return orderBy.map(term => ({ ...term, expr: resolveAliases(term.expr, aliases) }))
+}
+
+/**
  * Recursively replaces identifier nodes that match SELECT aliases
  * with their aliased expressions.
  *
@@ -492,7 +512,8 @@ function resolveAliases(node, aliases) {
   }
   if (node.type === 'function') {
     const args = node.args.map(arg => resolveAliases(arg, aliases))
-    return { ...node, args }
+    if (!node.filter) return { ...node, args }
+    return { ...node, args, filter: resolveAliases(node.filter, aliases) }
   }
   if (node.type === 'cast') {
     return { ...node, expr: resolveAliases(node.expr, aliases) }

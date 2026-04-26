@@ -248,9 +248,66 @@ describe('ORDER BY', () => {
       expect(result).toEqual([{ parity: 1, count: 2 }, { parity: 0, count: 2 }])
     })
 
-    it('throws on aggregate expression without alias', async () => {
-      await expect(() => collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY COUNT(*)' })))
-        .rejects.toThrow('Aggregate function COUNT is not available in this context')
+    it('should sort by SELECT alias nested inside aggregate ORDER BY expression', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT age AS a, COUNT(*) AS count FROM users GROUP BY a ORDER BY SUM(a)',
+      }))
+      expect(result).toEqual([
+        { a: 25, count: 1 },
+        { a: 28, count: 1 },
+        { a: 35, count: 1 },
+        { a: 30, count: 2 },
+      ])
+    })
+
+    it('should sort by aggregate expression not selected by alias', async () => {
+      const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) as cnt FROM users GROUP BY city ORDER BY COUNT(*)' }))
+      expect(result).toEqual([{ city: 'LA', cnt: 2 }, { city: 'NYC', cnt: 3 }])
+    })
+
+    it('should sort by an arithmetic expression containing aggregates', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT city, COUNT(*) AS cnt
+          FROM users
+          GROUP BY city
+          ORDER BY (SUM(CASE WHEN active THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) DESC
+        `,
+      }))
+      // LA is 100% active (2/2); NYC is 67% active (2/3) — LA sorts first DESC.
+      expect(result[0].city).toBe('LA')
+      expect(result[1].city).toBe('NYC')
+    })
+
+    it('should sort by aggregate / aggregate ratio', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT city, COUNT(*) AS cnt
+          FROM users
+          GROUP BY city
+          ORDER BY SUM(age) / COUNT(*) DESC
+        `,
+      }))
+      // NYC avg age 31.67 (95/3); LA avg age 26.5 (53/2). NYC first DESC.
+      expect(result[0].city).toBe('NYC')
+      expect(result[1].city).toBe('LA')
+    })
+
+    it('should sort by an aggregate plus a constant', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT city, COUNT(*) AS cnt
+          FROM users
+          GROUP BY city
+          ORDER BY (COUNT(*) + 0) DESC
+        `,
+      }))
+      expect(result[0].city).toBe('NYC')
+      expect(result[1].city).toBe('LA')
     })
   })
 

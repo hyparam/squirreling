@@ -1,7 +1,7 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
-import { keyify } from './utils.js'
+import { compareForTerm, keyify } from './utils.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
@@ -51,6 +51,22 @@ function projectAggregateColumns(selectColumns, group, context) {
 }
 
 /**
+ * Builds the row visible to post-aggregation expressions such as HAVING and
+ * grouped ORDER BY: source group columns plus aggregate output aliases.
+ *
+ * @param {AsyncRow[]} group
+ * @param {AsyncRow} aggregateRow
+ * @returns {AsyncRow}
+ */
+function aggregateContextRow(group, aggregateRow) {
+  const baseRow = group[0] ?? { columns: [], cells: {} }
+  return {
+    columns: [...baseRow.columns, ...aggregateRow.columns],
+    cells: { ...baseRow.cells, ...aggregateRow.cells },
+  }
+}
+
+/**
  * Executes a hash aggregate operation (GROUP BY)
  *
  * @param {HashAggregateNode} plan
@@ -85,27 +101,49 @@ export function executeHashAggregate(plan, context) {
         group.push(row)
       }
 
-      // Yield one row per group
+      /** @type {{ row: AsyncRow, group: AsyncRow[], contextRow: AsyncRow, sortValues?: (SqlPrimitive | undefined)[] }[]} */
+      const aggregateRows = []
+
       for (const group of groups.values()) {
         const asyncRow = projectAggregateColumns(plan.columns, group, context)
+        const contextRow = aggregateContextRow(group, asyncRow)
 
         // Apply HAVING filter
         if (plan.having) {
-          /** @type {AsyncRow} */
-          const havingRow = {
-            columns: [...group[0].columns, ...asyncRow.columns],
-            cells: { ...group[0].cells, ...asyncRow.cells },
-          }
           const passes = await evaluateExpr({
             node: plan.having,
-            row: havingRow,
+            row: contextRow,
             rows: group,
             context,
           })
           if (!passes) continue
         }
 
-        yield asyncRow
+        aggregateRows.push({ row: asyncRow, group, contextRow })
+      }
+
+      if (plan.orderBy?.length) {
+        for (const aggregateRow of aggregateRows) {
+          aggregateRow.sortValues = await Promise.all(plan.orderBy.map(term =>
+            evaluateExpr({
+              node: term.expr,
+              row: aggregateRow.contextRow,
+              rows: aggregateRow.group,
+              context,
+            })
+          ))
+        }
+        aggregateRows.sort((a, b) => {
+          for (let i = 0; i < plan.orderBy.length; i++) {
+            const cmp = compareForTerm(a.sortValues?.[i], b.sortValues?.[i], plan.orderBy[i])
+            if (cmp !== 0) return cmp
+          }
+          return 0
+        })
+      }
+
+      for (const { row } of aggregateRows) {
+        yield row
       }
     },
   }
