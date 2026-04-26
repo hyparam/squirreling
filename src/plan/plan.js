@@ -309,6 +309,20 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
   }
 
+  // Fuse Sort+Limit into TopN for O(limit) memory instead of O(n)
+  if (plan.type === 'Limit' && plan.limit !== undefined && !plan.offset) {
+    if (plan.child.type === 'Sort') {
+      plan = { type: 'TopN', limit: plan.limit, orderBy: plan.child.orderBy, child: plan.child.child }
+    } else if (plan.child.type === 'Project' && plan.child.child.type === 'Sort') {
+      const sort = plan.child.child
+      plan = {
+        type: 'Project',
+        columns: plan.child.columns,
+        child: { type: 'TopN', limit: plan.limit, orderBy: sort.orderBy, child: sort.child },
+      }
+    }
+  }
+
   return plan
 }
 
