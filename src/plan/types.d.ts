@@ -6,6 +6,7 @@ export type QueryPlan =
   | FilterNode
   | ProjectNode
   | SortNode
+  | TopNNode
   | DistinctNode
   | LimitNode
   | HashAggregateNode
@@ -46,6 +47,13 @@ export interface ProjectNode {
 
 export interface SortNode {
   type: 'Sort'
+  orderBy: OrderByItem[]
+  child: QueryPlan
+}
+
+export interface TopNNode {
+  type: 'TopN'
+  limit: number
   orderBy: OrderByItem[]
   child: QueryPlan
 }

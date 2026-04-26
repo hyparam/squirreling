@@ -201,6 +201,44 @@ describe('numRows and maxRows', () => {
     })
   })
 
+  describe('topn', () => {
+    it('should compute numRows and maxRows for ORDER BY + LIMIT', () => {
+      const result = executeSql({
+        tables: { users: memorySource({ data: users }) },
+        query: 'SELECT * FROM users ORDER BY age LIMIT 2',
+      })
+      expect(result.numRows).toBe(2)
+      expect(result.maxRows).toBe(2)
+    })
+
+    it('should cap numRows at child count when LIMIT exceeds input', () => {
+      const result = executeSql({
+        tables: { users: memorySource({ data: users }) },
+        query: 'SELECT * FROM users ORDER BY age LIMIT 100',
+      })
+      expect(result.numRows).toBe(3)
+      expect(result.maxRows).toBe(3)
+    })
+
+    it('should leave numRows undefined when child numRows is unknown (WHERE + ORDER BY + LIMIT)', () => {
+      const result = executeSql({
+        tables: { users: memorySource({ data: users }) },
+        query: 'SELECT * FROM users WHERE age > 25 ORDER BY age LIMIT 2',
+      })
+      expect(result.numRows).toBeUndefined()
+      expect(result.maxRows).toBe(2)
+    })
+
+    it('should leave numRows undefined when data source lacks numRows', () => {
+      const result = executeSql({
+        tables: { data: noNumRowsSource },
+        query: 'SELECT * FROM data ORDER BY x LIMIT 5',
+      })
+      expect(result.numRows).toBeUndefined()
+      expect(result.maxRows).toBe(5)
+    })
+  })
+
   describe('union', () => {
     it('should return numRows and maxRows for UNION ALL', () => {
       const result = executeSql({
