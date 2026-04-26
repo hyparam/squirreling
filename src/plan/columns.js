@@ -400,3 +400,24 @@ export function inferSelectSourceColumns({ select, cteColumns, tables }) {
 function lookupTableColumns(table, cteColumns, tables) {
   return cteColumns?.get(table.toLowerCase()) ?? tables?.[table]?.columns ?? []
 }
+
+/**
+ * Collects bare column names exposed by a SELECT's FROM and joins. Used by
+ * validation to recognize struct-field dot access (e.g. `item.name` on a
+ * struct-valued column `item`) instead of rejecting the prefix as an unknown
+ * table.
+ *
+ * @param {object} options
+ * @param {SelectStatement} options.select
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @returns {Set<string>}
+ */
+export function collectScopeColumns({ select, cteColumns, tables }) {
+  const result = new Set()
+  for (const col of inferSelectSourceColumns({ select, cteColumns, tables })) {
+    const dot = col.indexOf('.')
+    result.add(dot >= 0 ? col.slice(dot + 1) : col)
+  }
+  return result
+}

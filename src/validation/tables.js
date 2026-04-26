@@ -95,13 +95,18 @@ export function validateNoIdentifiers(expr, context) {
 
 /**
  * Validates that qualified identifiers reference known table aliases.
+ * A `prefix` may also be a bare column name in scope, in which case the
+ * identifier is struct-field access (e.g. `item.name` reads field `name`
+ * from a struct-valued column `item`).
  *
  * @param {ExprNode} expr
  * @param {Record<string, any>} tables
+ * @param {Set<string>} [scopeColumns] - bare column names in scope, used to
+ *   recognize struct-field dot access on a column rather than a table
  */
-export function validateTableRefs(expr, tables) {
+export function validateTableRefs(expr, tables, scopeColumns) {
   if (!expr) return
-  if (expr.type === 'identifier' && expr.prefix && !(expr.prefix in tables)) {
+  if (expr.type === 'identifier' && expr.prefix && !(expr.prefix in tables) && !scopeColumns?.has(expr.prefix)) {
     throw new TableNotFoundError({
       table: expr.prefix,
       qualified: expr.prefix + '.' + expr.name,
@@ -111,32 +116,32 @@ export function validateTableRefs(expr, tables) {
     })
   }
   if (expr.type === 'binary') {
-    validateTableRefs(expr.left, tables)
-    validateTableRefs(expr.right, tables)
+    validateTableRefs(expr.left, tables, scopeColumns)
+    validateTableRefs(expr.right, tables, scopeColumns)
   } else if (expr.type === 'unary') {
-    validateTableRefs(expr.argument, tables)
+    validateTableRefs(expr.argument, tables, scopeColumns)
   } else if (expr.type === 'function') {
     for (const arg of expr.args) {
-      validateTableRefs(arg, tables)
+      validateTableRefs(arg, tables, scopeColumns)
     }
   } else if (expr.type === 'window') {
-    for (const arg of expr.args) validateTableRefs(arg, tables)
-    for (const p of expr.partitionBy) validateTableRefs(p, tables)
-    for (const o of expr.orderBy) validateTableRefs(o.expr, tables)
+    for (const arg of expr.args) validateTableRefs(arg, tables, scopeColumns)
+    for (const p of expr.partitionBy) validateTableRefs(p, tables, scopeColumns)
+    for (const o of expr.orderBy) validateTableRefs(o.expr, tables, scopeColumns)
   } else if (expr.type === 'cast') {
-    validateTableRefs(expr.expr, tables)
+    validateTableRefs(expr.expr, tables, scopeColumns)
   } else if (expr.type === 'in valuelist') {
-    validateTableRefs(expr.expr, tables)
+    validateTableRefs(expr.expr, tables, scopeColumns)
     for (const val of expr.values) {
-      validateTableRefs(val, tables)
+      validateTableRefs(val, tables, scopeColumns)
     }
   } else if (expr.type === 'case') {
-    validateTableRefs(expr.caseExpr, tables)
+    validateTableRefs(expr.caseExpr, tables, scopeColumns)
     for (const w of expr.whenClauses) {
-      validateTableRefs(w.condition, tables)
-      validateTableRefs(w.result, tables)
+      validateTableRefs(w.condition, tables, scopeColumns)
+      validateTableRefs(w.result, tables, scopeColumns)
     }
-    validateTableRefs(expr.elseResult, tables)
+    validateTableRefs(expr.elseResult, tables, scopeColumns)
   }
 }
 

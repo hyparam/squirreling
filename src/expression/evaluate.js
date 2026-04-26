@@ -47,6 +47,17 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           return value[node.name]
         }
       }
+      // Struct dot access where the prefix is itself a column name (bare or
+      // table-qualified), e.g. `item.name` reading field `name` from a struct
+      // column `item` (often introduced via UNNEST AS tc(item)).
+      const suffix = '.' + node.prefix
+      const baseColumns = row.columns.filter(col => col === node.prefix || col.endsWith(suffix))
+      if (baseColumns.length === 1) {
+        const value = await row.cells[baseColumns[0]]()
+        if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
+          return value[node.name]
+        }
+      }
       // Check outer row for correlated subquery references
       if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
         return context.outerRow.cells[node.name]()

@@ -4,7 +4,7 @@ import { findAggregate } from '../validation/aggregates.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
-import { extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnNames } from './columns.js'
+import { collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnNames } from './columns.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
@@ -159,11 +159,15 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   // Resolve aliases (and validate qualified references)
   // Include outerScope aliases so correlated references pass validation
   const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table), ...outerScope ?? []].map(a => [a, true]))
+  // Bare column names in scope, so the validator can recognize struct-field
+  // dot access on a column (e.g. `item.name` where `item` is an unnested
+  // struct column) rather than rejecting `item` as an unknown table.
+  const scopeColumns = collectScopeColumns({ select, cteColumns, tables })
   /** @type {Map<string, ExprNode>} */
   const aliases = new Map()
   const columns = select.columns.map(col => {
     if (col.type === 'derived') {
-      validateTableRefs(col.expr, scopeTables)
+      validateTableRefs(col.expr, scopeTables, scopeColumns)
       const expr = resolveAliases(col.expr, aliases)
       if (col.alias) {
         aliases.set(col.alias, expr)
@@ -180,16 +184,16 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const orderBy = resolveOrderByAliases(select.orderBy, aliases)
 
   // Validate qualified references in other clauses
-  validateTableRefs(select.where, scopeTables)
-  validateTableRefs(select.having, scopeTables)
+  validateTableRefs(select.where, scopeTables, scopeColumns)
+  validateTableRefs(select.having, scopeTables, scopeColumns)
   for (const expr of select.groupBy) {
-    validateTableRefs(expr, scopeTables)
+    validateTableRefs(expr, scopeTables, scopeColumns)
   }
   for (const term of select.orderBy) {
-    validateTableRefs(term.expr, scopeTables)
+    validateTableRefs(term.expr, scopeTables, scopeColumns)
   }
   for (const join of select.joins) {
-    validateTableRefs(join.on, scopeTables)
+    validateTableRefs(join.on, scopeTables, scopeColumns)
   }
 
   // Determine scan hints for direct table scans (WHERE and LIMIT/OFFSET are

@@ -475,6 +475,20 @@ describe('UNNEST array-of-struct', () => {
       { id: 2, tool: 'web_search' },
     ])
   })
+
+  it('should expose struct fields when the alias has an explicit column name', async () => {
+    // `AS tc(item)` aliases the unnested element as `item`; struct fields
+    // should then be reachable via `item.name` (dot access on the struct).
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT t.id, item.name FROM traces t JOIN UNNEST(t.tools) AS tc(item) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, name: 'web_search' },
+      { id: 1, name: 'calculator' },
+      { id: 2, name: 'web_search' },
+    ])
+  })
 })
 
 describe('array literals', () => {
