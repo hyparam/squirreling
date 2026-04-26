@@ -157,6 +157,16 @@ export function parsePrimary(state) {
     if (match(state, 'dot')) {
       prefix = name
       name = expect(state, 'identifier').value
+    } else if (match(state, 'bracket', '[')) {
+      // table['column'] — string subscript is equivalent to dot access
+      const fieldTok = current(state)
+      if (fieldTok.type !== 'string') {
+        throw parseError(state, 'string literal')
+      }
+      consume(state)
+      expect(state, 'bracket', ']')
+      prefix = name
+      name = fieldTok.value
     }
 
     return {

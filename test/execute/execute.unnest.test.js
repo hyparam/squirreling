@@ -463,6 +463,18 @@ describe('UNNEST array-of-struct', () => {
     }))
     expect(result).toEqual([{ cnt: 2 }])
   })
+
+  it('should support subscript notation on the unnest alias', async () => {
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT t.id, tc[\'name\'] AS tool FROM traces t JOIN UNNEST(t.tools) AS tc ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, tool: 'web_search' },
+      { id: 1, tool: 'calculator' },
+      { id: 2, tool: 'web_search' },
+    ])
+  })
 })
 
 describe('array literals', () => {
