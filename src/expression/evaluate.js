@@ -614,7 +614,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return Math.trunc(num)
     }
     if (toType === 'BIGINT') {
-      return BigInt(val)
+      if (typeof val === 'bigint') return val
+      const num = Number(val)
+      if (isNaN(num)) return null
+      return BigInt(Math.trunc(num))
     }
     if (toType === 'FLOAT' || toType === 'REAL' || toType === 'DOUBLE') {
       const num = Number(val)

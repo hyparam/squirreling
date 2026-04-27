@@ -40,6 +40,23 @@ describe('CAST calls', () => {
     expect(result.map(r => r.city).sort()).toEqual(['LA', 'NYC'])
   })
 
+  it('should handle CAST to BIGINT', async () => {
+    const data = [
+      { v: 30 },
+      { v: 885728114.2809999 },
+      { v: '42' },
+      { v: -3.7 },
+      { v: 100n },
+      { v: null },
+      { v: 'not a number' },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT CAST(v AS BIGINT) as b FROM data',
+    }))
+    expect(result.map(r => r.b)).toEqual([30n, 885728114n, 42n, -3n, 100n, null, null])
+  })
+
   it('should handle CAST object to STRING as JSON', async () => {
     // bigint serialization test
     const data = [
