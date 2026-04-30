@@ -86,8 +86,11 @@ export interface HashJoinNode {
   joinType: JoinType
   leftAlias: string
   rightAlias: string
-  leftKey: ExprNode
-  rightKey: ExprNode
+  leftKeys: ExprNode[]
+  rightKeys: ExprNode[]
+  // Non-equi conjuncts from the ON clause (e.g. range predicates) applied to
+  // each merged candidate after the hash lookup succeeds.
+  residual?: ExprNode
   left: QueryPlan
   right: QueryPlan
 }

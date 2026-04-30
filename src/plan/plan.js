@@ -455,18 +455,21 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
     if (join.joinType === 'POSITIONAL') {
       plan = { type: 'PositionalJoin', leftAlias: currentLeftTable, rightAlias: rightTable, left: plan, right: rightScan }
     } else {
-      const keys = join.on && extractSimpleJoinKeys({ condition: join.on, leftTable: currentLeftTable, rightTable })
+      const keys = join.on && extractEquiKeys({ condition: join.on, leftTable: currentLeftTable, rightTable })
       if (keys) {
-        plan = {
+        /** @type {import('./types.d.ts').HashJoinNode} */
+        const hashJoin = {
           type: 'HashJoin',
           joinType: join.joinType,
           leftAlias: currentLeftTable,
           rightAlias: rightTable,
-          leftKey: keys.leftKey,
-          rightKey: keys.rightKey,
+          leftKeys: keys.leftKeys,
+          rightKeys: keys.rightKeys,
           left: plan,
           right: rightScan,
         }
+        if (keys.residual) hashJoin.residual = keys.residual
+        plan = hashJoin
       } else {
         plan = {
           type: 'NestedLoopJoin',
@@ -613,28 +616,89 @@ function normalizeIdentifiers(node, sourceColumns) {
 }
 
 /**
- * Extracts left and right key expressions from a simple equality join condition.
- * Returns undefined if the condition is not a simple equality between identifiers.
+ * Splits a join ON expression into equi-key pairs and a residual predicate so
+ * the planner can route AND-of-equis (with optional range/inequality
+ * conjuncts) to the hash-join path. Conjuncts of the form
+ * `<left-ref> = <right-ref>` between two identifiers become hash keys; every
+ * other conjunct stays as part of the residual that will run after the hash
+ * lookup. Returns undefined when no equi conjunct is present so the caller
+ * falls back to the nested-loop path.
  *
  * @param {object} options
  * @param {ExprNode} options.condition
  * @param {string} options.leftTable
  * @param {string} options.rightTable
+ * @returns {{ leftKeys: ExprNode[], rightKeys: ExprNode[], residual?: ExprNode } | undefined}
+ */
+function extractEquiKeys({ condition, leftTable, rightTable }) {
+  /** @type {ExprNode[]} */
+  const conjuncts = []
+  collectConjuncts(condition, conjuncts)
+  /** @type {ExprNode[]} */
+  const leftKeys = []
+  /** @type {ExprNode[]} */
+  const rightKeys = []
+  /** @type {ExprNode[]} */
+  const residuals = []
+  for (const conjunct of conjuncts) {
+    const eq = classifyEquiConjunct(conjunct, leftTable, rightTable)
+    if (eq) {
+      leftKeys.push(eq.leftKey)
+      rightKeys.push(eq.rightKey)
+    } else {
+      residuals.push(conjunct)
+    }
+  }
+  if (!leftKeys.length) return undefined
+  /** @type {ExprNode | undefined} */
+  let residual
+  for (const r of residuals) {
+    residual = residual === undefined
+      ? r
+      : { type: 'binary', op: 'AND', left: residual, right: r, positionStart: residual.positionStart, positionEnd: r.positionEnd }
+  }
+  return residual ? { leftKeys, rightKeys, residual } : { leftKeys, rightKeys }
+}
+
+/**
+ * Walks an ON expression, flattening top-level AND conjuncts. Non-AND nodes
+ * are pushed verbatim. Used to expose individual predicates so equi-keys can
+ * be lifted out of an AND chain.
+ *
+ * @param {ExprNode} node
+ * @param {ExprNode[]} out
+ */
+function collectConjuncts(node, out) {
+  if (node.type === 'binary' && node.op === 'AND') {
+    collectConjuncts(node.left, out)
+    collectConjuncts(node.right, out)
+    return
+  }
+  out.push(node)
+}
+
+/**
+ * Returns the (leftKey, rightKey) pair for an equi conjunct, oriented so
+ * leftKey references the left input and rightKey references the right input.
+ * Returns undefined when the conjunct is not a `<identifier> = <identifier>`
+ * predicate. When the prefixes don't unambiguously identify a side, falls
+ * through to the original orientation — matches the prior single-equi
+ * behavior so unprefixed columns still produce a hash join.
+ *
+ * @param {ExprNode} conjunct
+ * @param {string} leftTable
+ * @param {string} rightTable
  * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | undefined}
  */
-function extractSimpleJoinKeys({ condition, leftTable, rightTable }) {
-  if (condition.type !== 'binary' || condition.op !== '=') return
-  const { left, right } = condition
-  if (left.type !== 'identifier' || right.type !== 'identifier') return
-
-  // Check if keys are in swapped order (right table ref on left side)
+function classifyEquiConjunct(conjunct, leftTable, rightTable) {
+  if (conjunct.type !== 'binary' || conjunct.op !== '=') return undefined
+  const { left, right } = conjunct
+  if (left.type !== 'identifier' || right.type !== 'identifier') return undefined
   const leftRefsRight = left.prefix === rightTable
   const rightRefsLeft = right.prefix === leftTable
-
   if (leftRefsRight && rightRefsLeft) {
     return { leftKey: right, rightKey: left }
   }
-
   return { leftKey: left, rightKey: right }
 }
 

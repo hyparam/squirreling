@@ -438,20 +438,20 @@ describe('planSql', () => {
           joinType: 'INNER',
           leftAlias: 'users',
           rightAlias: 'orders',
-          leftKey: {
+          leftKeys: [{
             type: 'identifier',
             name: 'id',
             prefix: 'users',
             positionStart: 35,
             positionEnd: 43,
-          },
-          rightKey: {
+          }],
+          rightKeys: [{
             type: 'identifier',
             name: 'user_id',
             prefix: 'orders',
             positionStart: 46,
             positionEnd: 60,
-          },
+          }],
           left: {
             type: 'Scan',
             table: 'users',
@@ -543,20 +543,20 @@ describe('planSql', () => {
           joinType: 'LEFT',
           leftAlias: 'users',
           rightAlias: 'orders',
-          leftKey: {
+          leftKeys: [{
             type: 'identifier',
             name: 'id',
             prefix: 'users',
             positionStart: 40,
             positionEnd: 48,
-          },
-          rightKey: {
+          }],
+          rightKeys: [{
             type: 'identifier',
             name: 'user_id',
             prefix: 'orders',
             positionStart: 51,
             positionEnd: 65,
-          },
+          }],
           left: {
             type: 'Scan',
             table: 'users',

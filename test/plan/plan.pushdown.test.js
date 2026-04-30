@@ -229,20 +229,20 @@ describe('column pushdown', () => {
         joinType: 'INNER',
         leftAlias: 'users',
         rightAlias: 'orders',
-        leftKey: {
+        leftKeys: [{
           type: 'identifier',
           name: 'id',
           prefix: 'users',
           positionStart: 58,
           positionEnd: 66,
-        },
-        rightKey: {
+        }],
+        rightKeys: [{
           type: 'identifier',
           name: 'user_id',
           prefix: 'orders',
           positionStart: 69,
           positionEnd: 83,
-        },
+        }],
         left: {
           type: 'Scan',
           table: 'users',
@@ -317,20 +317,20 @@ describe('column pushdown', () => {
         joinType: 'INNER',
         leftAlias: 'users',
         rightAlias: 'orders',
-        leftKey: {
+        leftKeys: [{
           type: 'identifier',
           name: 'id',
           prefix: 'users',
           positionStart: 35,
           positionEnd: 43,
-        },
-        rightKey: {
+        }],
+        rightKeys: [{
           type: 'identifier',
           name: 'user_id',
           prefix: 'orders',
           positionStart: 46,
           positionEnd: 60,
-        },
+        }],
         left: {
           type: 'Scan',
           table: 'users',

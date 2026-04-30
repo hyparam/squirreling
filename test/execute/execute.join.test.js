@@ -917,6 +917,138 @@ describe('JOIN queries', () => {
     })
   })
 
+  describe('hash-join equi/residual decomposition', () => {
+    it('should run a pure equi-join via the hash path', async () => {
+      const traces = []
+      const N = 200, sessions = 50
+      for (let i = 0; i < N; i++) traces.push({ id: i, session_id: 's' + i % sessions, ts: i })
+      const result = await collect(executeSql({
+        tables: { traces },
+        query: 'SELECT COUNT(*) AS n FROM traces a JOIN traces b ON a.session_id = b.session_id',
+      }))
+      // Each session has N/sessions = 4 rows, all pair with each other (incl. self): sessions * (N/sessions)^2.
+      expect(result).toEqual([{ n: sessions * (N / sessions) * (N / sessions) }])
+    })
+
+    it('should apply a range residual after an equi key', async () => {
+      const traces = [
+        { id: 1, session_id: 's1', ts: 1 },
+        { id: 2, session_id: 's1', ts: 2 },
+        { id: 3, session_id: 's1', ts: 3 },
+        { id: 4, session_id: 's2', ts: 1 },
+        { id: 5, session_id: 's2', ts: 4 },
+      ]
+      const result = await collect(executeSql({
+        tables: { traces },
+        query: 'SELECT a.id AS l, b.id AS r FROM traces a JOIN traces b ON a.session_id = b.session_id AND b.ts > a.ts ORDER BY l, r',
+      }))
+      expect(result).toEqual([
+        { l: 1, r: 2 },
+        { l: 1, r: 3 },
+        { l: 2, r: 3 },
+        { l: 4, r: 5 },
+      ])
+    })
+
+    it('should hash on multiple equi conjuncts', async () => {
+      const lhs = [
+        { x: 1, y: 'a', tag: 'L1' },
+        { x: 1, y: 'b', tag: 'L2' },
+        { x: 2, y: 'a', tag: 'L3' },
+      ]
+      const rhs = [
+        { x: 1, y: 'a', tag: 'R1' },
+        { x: 1, y: 'b', tag: 'R2' },
+        { x: 1, y: 'c', tag: 'R3' },
+        { x: 2, y: 'a', tag: 'R4' },
+      ]
+      const result = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.tag AS l, rhs.tag AS r FROM lhs JOIN rhs ON lhs.x = rhs.x AND lhs.y = rhs.y ORDER BY l, r',
+      }))
+      expect(result).toEqual([
+        { l: 'L1', r: 'R1' },
+        { l: 'L2', r: 'R2' },
+        { l: 'L3', r: 'R4' },
+      ])
+    })
+
+    it('should support LEFT JOIN with an equi key', async () => {
+      const lhs = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' },
+      ]
+      const rhs = [
+        { user_id: 1, role: 'admin' },
+        { user_id: 1, role: 'editor' },
+        { user_id: 3, role: 'viewer' },
+      ]
+      const result = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.name, rhs.role FROM lhs LEFT JOIN rhs ON lhs.id = rhs.user_id ORDER BY lhs.name, rhs.role',
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', role: 'admin' },
+        { name: 'Alice', role: 'editor' },
+        { name: 'Bob', role: null },
+        { name: 'Charlie', role: 'viewer' },
+      ])
+    })
+
+    it('should not match rows where the join key is NULL', async () => {
+      const lhs = [
+        { id: 1, k: 'x' },
+        { id: 2, k: null },
+        { id: 3, k: 'y' },
+      ]
+      const rhs = [
+        { id: 10, k: 'x' },
+        { id: 11, k: null },
+        { id: 12, k: 'y' },
+      ]
+      const inner = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.id AS l, rhs.id AS r FROM lhs JOIN rhs ON lhs.k = rhs.k ORDER BY l, r',
+      }))
+      expect(inner).toEqual([
+        { l: 1, r: 10 },
+        { l: 3, r: 12 },
+      ])
+      // LEFT JOIN: the row with NULL key must still appear with a NULL right side.
+      const outer = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.id AS l, rhs.id AS r FROM lhs LEFT JOIN rhs ON lhs.k = rhs.k ORDER BY l',
+      }))
+      expect(outer).toEqual([
+        { l: 1, r: 10 },
+        { l: 2, r: null },
+        { l: 3, r: 12 },
+      ])
+    })
+
+    it('should still execute non-equi-only joins via the nested-loop path', async () => {
+      const lhs = [
+        { id: 1, lo: 0, hi: 10 },
+        { id: 2, lo: 5, hi: 8 },
+      ]
+      const rhs = [
+        { v: 3 },
+        { v: 6 },
+        { v: 12 },
+      ]
+      const result = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.id AS id, rhs.v AS v FROM lhs JOIN rhs ON rhs.v BETWEEN lhs.lo AND lhs.hi ORDER BY id, v',
+      }))
+      expect(result).toEqual([
+        { id: 1, v: 3 },
+        { id: 1, v: 6 },
+        { id: 2, v: 6 },
+      ])
+    })
+  })
+
   describe('qualified star', () => {
     it('should select only columns from the qualified table', async () => {
       const a = memorySource({ data: [{ id: 1, x: 10 }] })

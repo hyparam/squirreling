@@ -200,6 +200,7 @@ export function executeHashJoin(plan, context) {
     async *rows() {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
+      const { leftKeys, rightKeys, residual } = plan
 
       // Buffer right rows and build hash map
       /** @type {AsyncRow[]} */
@@ -209,16 +210,16 @@ export function executeHashJoin(plan, context) {
         rightRows.push(row)
       }
 
-      /** @type {Map<any, AsyncRow[]>} */
+      /** @type {Map<string | number | bigint | boolean, AsyncRow[]>} */
       const hashMap = new Map()
       for (const rightRow of rightRows) {
-        const keyValue = await evaluateExpr({
-          node: plan.rightKey,
-          row: rightRow,
-          context,
-        })
-        if (keyValue == null) continue
-        const key = keyify(keyValue)
+        const keyValues = await Promise.all(
+          rightKeys.map(node => evaluateExpr({ node, row: rightRow, context }))
+        )
+        // SQL semantics: NULL never equals anything, so a row with any NULL
+        // join key is excluded from the hash table.
+        if (keyValues.some(v => v == null)) continue
+        const key = keyify(...keyValues)
         let bucket = hashMap.get(key)
         if (!bucket) {
           bucket = []
@@ -243,20 +244,28 @@ export function executeHashJoin(plan, context) {
           leftCols = leftRow.columns
         }
 
-        const keyValue = await evaluateExpr({
-          node: plan.leftKey,
-          row: leftRow,
-          context,
-        })
-        const key = keyify(keyValue)
-        const matchingRightRows = hashMap.get(key)
-
-        if (matchingRightRows?.length) {
-          for (const rightRow of matchingRightRows) {
-            matchedRightRows?.add(rightRow)
-            yield mergeRows(leftRow, rightRow, leftTable, rightTable)
+        const keyValues = await Promise.all(
+          leftKeys.map(node => evaluateExpr({ node, row: leftRow, context }))
+        )
+        let matched = false
+        if (!keyValues.some(v => v == null)) {
+          const key = keyify(...keyValues)
+          const candidates = hashMap.get(key)
+          if (candidates?.length) {
+            for (const rightRow of candidates) {
+              const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)
+              if (residual) {
+                const ok = await evaluateExpr({ node: residual, row: merged, context })
+                if (!ok) continue
+              }
+              matched = true
+              matchedRightRows?.add(rightRow)
+              yield merged
+            }
           }
-        } else if (plan.joinType === 'LEFT' || plan.joinType === 'FULL') {
+        }
+
+        if (!matched && (plan.joinType === 'LEFT' || plan.joinType === 'FULL')) {
           const nullRight = createNullRow(rightCols)
           yield mergeRows(leftRow, nullRight, leftTable, rightTable)
         }
