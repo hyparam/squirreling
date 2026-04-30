@@ -1,5 +1,11 @@
 # Squirreling Changelog
 
+## [0.12.12]
+ - `LATERAL VIEW EXPLODE` syntax (Hive-style) as alias for `UNNEST`
+ - Hash join fast path for self-joins with AND-of-equi conditions
+ - Resolve aliased outer table from correlated subquery inside a derived table
+ - Fix `CAST` to `BIGINT`
+
 ## [0.12.11]
  - `LENGTH` supports arrays and rejects non-string/array-like values
  - Support struct dot-access on `UNNEST` column aliases
