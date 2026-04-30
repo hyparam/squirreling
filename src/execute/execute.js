@@ -137,7 +137,7 @@ export function executePlan({ plan, context }) {
  * @returns {QueryResults}
  */
 function executeTableFunction(plan, context) {
-  if (plan.funcName === 'UNNEST') {
+  if (plan.funcName === 'UNNEST' || plan.funcName === 'EXPLODE') {
     return executeUnnest(plan, context)
   } else if (plan.funcName === 'JSON_EACH') {
     return executeJsonEach(plan, context)

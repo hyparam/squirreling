@@ -491,6 +491,62 @@ describe('UNNEST array-of-struct', () => {
   })
 })
 
+describe('EXPLODE', () => {
+  it('should expand a numeric array into rows', async () => {
+    const result = await collect(executeSql({
+      tables: {},
+      query: 'SELECT * FROM EXPLODE([1, 2, 3]) AS t',
+    }))
+    expect(result).toEqual([{ explode: 1 }, { explode: 2 }, { explode: 3 }])
+  })
+
+  it('should support a column alias like AS t(x)', async () => {
+    const result = await collect(executeSql({
+      tables: {},
+      query: 'SELECT x FROM EXPLODE([10, 20, 30]) AS t(x)',
+    }))
+    expect(result).toEqual([{ x: 10 }, { x: 20 }, { x: 30 }])
+  })
+
+  it('should produce zero rows for a NULL argument', async () => {
+    const result = await collect(executeSql({
+      tables: {},
+      query: 'SELECT * FROM EXPLODE(NULL) AS t',
+    }))
+    expect(result).toEqual([])
+  })
+
+  it('should work in a lateral JOIN with a column ref', async () => {
+    const t = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, u.x FROM t JOIN EXPLODE(t.arr) AS u(x) ON TRUE',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 10 },
+      { id: 1, x: 20 },
+      { id: 2, x: 30 },
+    ])
+  })
+
+  it('should throw for wrong argument count', () => {
+    expect(() => executeSql({
+      tables: {},
+      query: 'SELECT * FROM EXPLODE() AS t',
+    })).toThrow('EXPLODE(array) function requires 1 argument, got 0')
+  })
+
+  it('should throw when used as a scalar expression', () => {
+    expect(() => executeSql({
+      tables: {},
+      query: 'SELECT EXPLODE([1, 2, 3])',
+    })).toThrow('EXPLODE is a table function and can only be used in FROM clauses at position 7')
+  })
+})
+
 describe('array literals', () => {
   const singleRow = [{ x: 1 }]
 

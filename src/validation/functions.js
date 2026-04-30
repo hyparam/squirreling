@@ -49,7 +49,7 @@ export function isRegexpFunc(name) {
  * @returns {boolean}
  */
 export function isTableFunction(name) {
-  return ['UNNEST', 'JSON_EACH'].includes(name)
+  return ['UNNEST', 'EXPLODE', 'JSON_EACH'].includes(name)
 }
 
 /**
@@ -187,6 +187,7 @@ export const FUNCTION_SIGNATURES = {
 
   // Table functions (used in FROM clause)
   UNNEST: { min: 1, max: 1, signature: 'array' },
+  EXPLODE: { min: 1, max: 1, signature: 'array' },
   JSON_EACH: { min: 1, max: 1, signature: 'value' },
 
   // Conditional functions
