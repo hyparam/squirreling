@@ -4,7 +4,7 @@ import { findAggregate } from '../validation/aggregates.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
-import { collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, tableFunctionColumnNames } from './columns.js'
+import { collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
@@ -362,6 +362,14 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
       if (missingColumn) {
         throw new ColumnNotFoundError({ missingColumn, availableColumns, ...select.from })
       }
+    }
+    // Wrap with the inner SELECT's scope so correlated subqueries inside the
+    // derived table resolve outer references against the inner aliases, not
+    // the enclosing query's. Compound subqueries (UNION etc.) have no single
+    // scope and pass through unwrapped.
+    const innerScope = statementScope(select.from.query)
+    if (innerScope) {
+      return { type: 'Subquery', scope: innerScope, child: subPlan }
     }
     return subPlan
   }

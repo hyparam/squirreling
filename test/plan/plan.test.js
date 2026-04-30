@@ -80,9 +80,13 @@ describe('planSql', () => {
     it('plan FROM subquery', () => {
       const plan = planSql({ query: 'SELECT * FROM (SELECT * FROM users) AS u' })
       expect(plan).toEqual({
-        type: 'Scan',
-        table: 'users',
-        hints: {},
+        type: 'Subquery',
+        scope: ['users'],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: {},
+        },
       })
     })
 

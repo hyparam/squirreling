@@ -14,6 +14,7 @@ export type QueryPlan =
   | NestedLoopJoinNode
   | PositionalJoinNode
   | SetOperationNode
+  | SubqueryNode
   | TableFunctionNode
   | WindowNode
 
@@ -117,6 +118,17 @@ export interface SetOperationNode {
   all: boolean
   left: QueryPlan
   right: QueryPlan
+}
+
+// Wraps a derived-table or CTE subplan with the lexical alias scope of its
+// inner SELECT, so the executor can set context.scope while traversing the
+// subtree. Correlated subqueries inside the subtree resolve outer references
+// against this scope, not whichever ancestor most recently went through
+// executeStatement.
+export interface SubqueryNode {
+  type: 'Subquery'
+  scope: string[]
+  child: QueryPlan
 }
 
 // Table-valued function (e.g. UNNEST) used in FROM clause

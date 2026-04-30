@@ -22,11 +22,15 @@ describe('column pushdown', () => {
         },
       ],
       child: {
-        type: 'Scan',
-        table: 'users',
-        hints: {
-          columns: ['id'],
-          limit: 1000,
+        type: 'Subquery',
+        scope: ['users'],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            columns: ['id'],
+            limit: 1000,
+          },
         },
       },
     })
@@ -55,26 +59,30 @@ describe('column pushdown', () => {
         },
       ],
       child: {
-        type: 'Project',
-        columns: [
-          {
-            type: 'derived',
-            expr: {
-              type: 'identifier',
-              name: 'name',
-              positionStart: 34,
-              positionEnd: 38,
-            },
-            alias: 'full_name',
-            positionStart: 34,
-            positionEnd: 51,
-          },
-        ],
+        type: 'Subquery',
+        scope: ['users'],
         child: {
-          type: 'Scan',
-          table: 'users',
-          hints: {
-            columns: ['name'],
+          type: 'Project',
+          columns: [
+            {
+              type: 'derived',
+              expr: {
+                type: 'identifier',
+                name: 'name',
+                positionStart: 34,
+                positionEnd: 38,
+              },
+              alias: 'full_name',
+              positionStart: 34,
+              positionEnd: 51,
+            },
+          ],
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: {
+              columns: ['name'],
+            },
           },
         },
       },
@@ -155,27 +163,31 @@ describe('column pushdown', () => {
         },
       ],
       child: {
-        type: 'Scan',
-        table: 'users',
-        hints: {
-          columns: ['id', 'age'],
-          where: {
-            type: 'binary',
-            op: '>',
-            left: {
-              type: 'identifier',
-              name: 'age',
+        type: 'Subquery',
+        scope: ['users'],
+        child: {
+          type: 'Scan',
+          table: 'users',
+          hints: {
+            columns: ['id', 'age'],
+            where: {
+              type: 'binary',
+              op: '>',
+              left: {
+                type: 'identifier',
+                name: 'age',
+                positionStart: 42,
+                positionEnd: 45,
+              },
+              right: {
+                type: 'literal',
+                value: 21,
+                positionStart: 48,
+                positionEnd: 50,
+              },
               positionStart: 42,
-              positionEnd: 45,
-            },
-            right: {
-              type: 'literal',
-              value: 21,
-              positionStart: 48,
               positionEnd: 50,
             },
-            positionStart: 42,
-            positionEnd: 50,
           },
         },
       },
@@ -264,28 +276,32 @@ describe('column pushdown', () => {
         },
       ],
       child: {
-        type: 'Project',
-        columns: [
-          { type: 'star', positionStart: 22, positionEnd: 23 },
-          {
-            type: 'derived',
-            expr: {
-              type: 'binary',
-              op: '+',
-              left: { type: 'identifier', name: 'a', positionStart: 25, positionEnd: 26 },
-              right: { type: 'identifier', name: 'b', positionStart: 29, positionEnd: 30 },
-              positionStart: 25,
-              positionEnd: 30,
-            },
-            alias: 'c',
-            positionStart: 25,
-            positionEnd: 35,
-          },
-        ],
+        type: 'Subquery',
+        scope: ['users'],
         child: {
-          type: 'Scan',
-          table: 'users',
-          hints: { columns: ['a', 'b'] },
+          type: 'Project',
+          columns: [
+            { type: 'star', positionStart: 22, positionEnd: 23 },
+            {
+              type: 'derived',
+              expr: {
+                type: 'binary',
+                op: '+',
+                left: { type: 'identifier', name: 'a', positionStart: 25, positionEnd: 26 },
+                right: { type: 'identifier', name: 'b', positionStart: 29, positionEnd: 30 },
+                positionStart: 25,
+                positionEnd: 30,
+              },
+              alias: 'c',
+              positionStart: 25,
+              positionEnd: 35,
+            },
+          ],
+          child: {
+            type: 'Scan',
+            table: 'users',
+            hints: { columns: ['a', 'b'] },
+          },
         },
       },
     })

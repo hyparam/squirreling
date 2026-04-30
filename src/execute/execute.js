@@ -3,7 +3,7 @@ import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { planSql, planStatement } from '../plan/plan.js'
-import { fromAlias } from '../plan/columns.js'
+import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
@@ -73,18 +73,6 @@ export function executeStatement({ query, context, outerScope }) {
 }
 
 /**
- * Extracts the table aliases from a statement's FROM and JOIN clauses.
- *
- * @param {Statement} stmt
- * @returns {string[] | undefined}
- */
-function statementScope(stmt) {
-  if (stmt.type === 'with') return statementScope(stmt.query)
-  if (stmt.type === 'compound') return undefined
-  return [fromAlias(stmt.from), ...stmt.joins.map(j => j.alias ?? j.table)]
-}
-
-/**
  * Executes a query plan and returns query results with row count estimates
  *
  * @param {Object} options
@@ -119,6 +107,8 @@ export function executePlan({ plan, context }) {
     return executeLimit(plan, context)
   } else if (plan.type === 'SetOperation') {
     return executeSetOperation(plan, context)
+  } else if (plan.type === 'Subquery') {
+    return executePlan({ plan: plan.child, context: { ...context, scope: plan.scope } })
   } else if (plan.type === 'TableFunction') {
     return executeTableFunction(plan, context)
   } else if (plan.type === 'Window') {

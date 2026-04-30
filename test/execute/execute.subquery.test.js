@@ -668,5 +668,24 @@ describe('subqueries', () => {
         { name: 'Charlie', biggest: null },
       ])
     })
+
+    it('should resolve aliased outer table from correlated subquery inside a derived table', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT * FROM (
+            SELECT u.id,
+              (SELECT SUM(amount) FROM orders o WHERE o.user_id = u.id) AS total
+            FROM users u
+          ) x
+          ORDER BY id
+        `,
+      }))
+      expect(result).toEqual([
+        { id: 1, total: 250 },
+        { id: 2, total: 200 },
+        { id: 3, total: null },
+      ])
+    })
   })
 })

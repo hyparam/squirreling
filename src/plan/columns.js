@@ -19,6 +19,22 @@ export function fromAlias(from) {
 }
 
 /**
+ * Returns the FROM/JOIN aliases visible inside a statement's body — its
+ * lexical scope. Used to set context.scope when entering a derived-table
+ * subplan, so correlated subqueries inside resolve outer references against
+ * the right aliases. Returns undefined for compound statements (UNION etc.)
+ * which have no single scope.
+ *
+ * @param {Statement} stmt
+ * @returns {string[] | undefined}
+ */
+export function statementScope(stmt) {
+  if (stmt.type === 'with') return statementScope(stmt.query)
+  if (stmt.type === 'compound') return undefined
+  return [fromAlias(stmt.from), ...stmt.joins.map(j => j.alias ?? j.table)]
+}
+
+/**
  * Returns the output column names for a FROM table function, applying any
  * column aliases over the function's default column names.
  *
