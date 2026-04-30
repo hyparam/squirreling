@@ -141,7 +141,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - `SELECT` statements with `DISTINCT`, `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`
 - `WITH` clause for Common Table Expressions (CTEs)
 - Subqueries in `SELECT`, `FROM`, `WHERE`, and correlated subqueries
-- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN`, `POSITIONAL JOIN`
+- `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN`, `POSITIONAL JOIN`, `LATERAL VIEW [OUTER] EXPLODE(...)`
 - `GROUP BY` and `HAVING` clauses
 - Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
 - Expressions: `CASE`, `CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`
@@ -161,7 +161,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `DATE_PART`, `DATE_TRUNC`, `EXTRACT`, `INTERVAL`
 - Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_OBJECT`, `JSON_ARRAY_LENGTH`, `JSON_VALID`, `JSON_TYPE`
 - Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_SORT`, `CARDINALITY`
-- Table functions: `UNNEST`, `JSON_EACH`
+- Table functions: `UNNEST`, `EXPLODE`, `JSON_EACH`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_EXTRACT`, `REGEXP_REPLACE`, `REGEXP_MATCHES`
 - Spatial: `ST_GeomFromText`, `ST_MakeEnvelope`, `ST_AsText`, `ST_Intersects`, `ST_Contains`, `ST_ContainsProperly`, `ST_Within`, `ST_Overlaps`, `ST_Touches`, `ST_Equals`, `ST_Crosses`, `ST_Covers`, `ST_CoveredBy`, `ST_DWithin`
 - Conditional: `COALESCE`, `NULLIF`, `GREATEST`, `LEAST`

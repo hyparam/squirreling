@@ -1,8 +1,9 @@
 import { expectNoAggregate } from '../validation/aggregates.js'
+import { isTableFunction, validateFunctionArgs } from '../validation/functions.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
-import { isTableFunctionStart, parseFromFunction, parseTableAlias } from './parse.js'
-import { current, expect, match } from './state.js'
+import { isTableFunctionStart, parseFromFunction, parseTableAlias, tableFunctionColumnCount, tableFunctionDefaultColumns } from './parse.js'
+import { consume, current, expect, match } from './state.js'
 
 /**
  * @import { ExprNode, JoinClause, JoinType, ParserState } from '../types.js'
@@ -18,6 +19,96 @@ export function parseJoins(state) {
 
   while (true) {
     const tok = current(state)
+
+    // LATERAL VIEW [OUTER] func(args) tableAlias AS colAlias[, ...] (Spark/Hive style)
+    if (current(state).type === 'keyword' && current(state).value === 'LATERAL') {
+      const lateralStart = tok.positionStart
+      consume(state)
+      expect(state, 'keyword', 'VIEW')
+      const isOuter = match(state, 'keyword', 'OUTER')
+      const funcTok = current(state)
+      if (funcTok.type !== 'identifier' || !isTableFunction(funcTok.value.toUpperCase())) {
+        throw new ParseError({
+          message: 'LATERAL VIEW requires a table function like EXPLODE',
+          positionStart: funcTok.positionStart,
+          positionEnd: funcTok.positionEnd,
+        })
+      }
+      consume(state)
+      const funcName = funcTok.value.toUpperCase()
+      expect(state, 'paren', '(')
+      /** @type {ExprNode[]} */
+      const args = []
+      if (!match(state, 'paren', ')')) {
+        while (true) {
+          args.push(parseExpression(state))
+          if (!match(state, 'comma')) break
+        }
+        expect(state, 'paren', ')')
+      }
+      validateFunctionArgs(funcName, args.length, funcTok.positionStart, state.lastPos, state.functions)
+
+      const aliasTok = current(state)
+      if (aliasTok.type !== 'identifier') {
+        throw new ParseError({
+          message: 'LATERAL VIEW requires a table alias before AS',
+          positionStart: aliasTok.positionStart,
+          positionEnd: aliasTok.positionEnd,
+        })
+      }
+      consume(state)
+      const tableAlias = aliasTok.value
+
+      expect(state, 'keyword', 'AS')
+      /** @type {string[]} */
+      const columnAliases = []
+      const colStart = state.lastPos
+      while (true) {
+        const colTok = expect(state, 'identifier')
+        columnAliases.push(colTok.value)
+        if (!match(state, 'comma')) break
+      }
+      const maxCols = tableFunctionColumnCount(funcName)
+      if (columnAliases.length > maxCols) {
+        const colLabels = tableFunctionDefaultColumns(funcName).join(', ')
+        throw new ParseError({
+          message: maxCols === 1
+            ? `${funcName} produces a single column; only one column alias is allowed`
+            : `${funcName} produces at most ${maxCols} columns (${colLabels}); too many column aliases`,
+          positionStart: colStart,
+          positionEnd: state.lastPos,
+        })
+      }
+
+      /** @type {import('../ast.js').FromFunction} */
+      const fromFunction = {
+        type: 'function',
+        funcName,
+        args,
+        alias: tableAlias,
+        columnAliases,
+        positionStart: funcTok.positionStart,
+        positionEnd: state.lastPos,
+      }
+
+      /** @type {JoinType} */
+      const joinType = isOuter ? 'LEFT' : 'CROSS'
+      /** @type {ExprNode | undefined} */
+      const condition = isOuter
+        ? { type: 'literal', value: true, positionStart: lateralStart, positionEnd: state.lastPos }
+        : undefined
+
+      joins.push({
+        joinType,
+        table: funcName,
+        alias: tableAlias,
+        on: condition,
+        fromFunction,
+        positionStart: lateralStart,
+        positionEnd: state.lastPos,
+      })
+      continue
+    }
 
     // Comma-join: implicit CROSS JOIN LATERAL, currently only for table functions.
     if (match(state, 'comma')) {

@@ -547,6 +547,133 @@ describe('EXPLODE', () => {
   })
 })
 
+describe('LATERAL VIEW', () => {
+  const t = [
+    { id: 1, tags: ['a', 'b'] },
+    { id: 2, tags: ['c'] },
+    { id: 3, tags: [] },
+    { id: 4, tags: null },
+  ]
+
+  it('should expand an array column into rows', async () => {
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT id, tag FROM t LATERAL VIEW EXPLODE(tags) e AS tag',
+    }))
+    expect(result).toEqual([
+      { id: 1, tag: 'a' },
+      { id: 1, tag: 'b' },
+      { id: 2, tag: 'c' },
+    ])
+  })
+
+  it('should resolve a qualified column ref in the array argument', async () => {
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT t.id, tag FROM t LATERAL VIEW EXPLODE(t.tags) e AS tag',
+    }))
+    expect(result).toEqual([
+      { id: 1, tag: 'a' },
+      { id: 1, tag: 'b' },
+      { id: 2, tag: 'c' },
+    ])
+  })
+
+  it('should drop rows with empty or NULL arrays (INNER semantics)', async () => {
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT id FROM t LATERAL VIEW EXPLODE(tags) e AS tag',
+    }))
+    expect(result).toEqual([
+      { id: 1 },
+      { id: 1 },
+      { id: 2 },
+    ])
+  })
+
+  it('should emit a NULL row for empty/NULL arrays with OUTER', async () => {
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT id, tag FROM t LATERAL VIEW OUTER EXPLODE(tags) e AS tag',
+    }))
+    expect(result).toEqual([
+      { id: 1, tag: 'a' },
+      { id: 1, tag: 'b' },
+      { id: 2, tag: 'c' },
+      { id: 3, tag: null },
+      { id: 4, tag: null },
+    ])
+  })
+
+  it('should support a WHERE clause on the exploded column', async () => {
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT id, tag FROM t LATERAL VIEW EXPLODE(tags) e AS tag WHERE tag > \'a\'',
+    }))
+    expect(result).toEqual([
+      { id: 1, tag: 'b' },
+      { id: 2, tag: 'c' },
+    ])
+  })
+
+  it('should aggregate over the exploded column', async () => {
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT id, COUNT(*) AS n FROM t LATERAL VIEW EXPLODE(tags) e AS tag GROUP BY id',
+    }))
+    expect(result).toEqual([
+      { id: 1, n: 2 },
+      { id: 2, n: 1 },
+    ])
+  })
+
+  it('should chain two LATERAL VIEWs', async () => {
+    const t2 = [
+      { id: 1, a: [1, 2], b: ['x', 'y'] },
+      { id: 2, a: [3], b: ['z'] },
+    ]
+    const result = await collect(executeSql({
+      tables: { t: t2 },
+      query: 'SELECT id, x, y FROM t LATERAL VIEW EXPLODE(a) ea AS x LATERAL VIEW EXPLODE(b) eb AS y',
+    }))
+    expect(result).toEqual([
+      { id: 1, x: 1, y: 'x' },
+      { id: 1, x: 1, y: 'y' },
+      { id: 1, x: 2, y: 'x' },
+      { id: 1, x: 2, y: 'y' },
+      { id: 2, x: 3, y: 'z' },
+    ])
+  })
+
+  it('should require VIEW after LATERAL', () => {
+    expect(() => executeSql({
+      tables: { t },
+      query: 'SELECT id FROM t LATERAL EXPLODE(tags) e AS tag',
+    })).toThrow('Expected VIEW after "LATERAL" but found "EXPLODE" at position 25')
+  })
+
+  it('should require a table alias', () => {
+    expect(() => executeSql({
+      tables: { t },
+      query: 'SELECT id FROM t LATERAL VIEW EXPLODE(tags) AS tag',
+    })).toThrow('LATERAL VIEW requires a table alias before AS')
+  })
+
+  it('should require AS columnAlias', () => {
+    expect(() => executeSql({
+      tables: { t },
+      query: 'SELECT id FROM t LATERAL VIEW EXPLODE(tags) e',
+    })).toThrow('Expected AS after "e" but found end of query at position 45')
+  })
+
+  it('should reject LATERAL VIEW with a non-table function', () => {
+    expect(() => executeSql({
+      tables: { t },
+      query: 'SELECT id FROM t LATERAL VIEW UPPER(tags) e AS tag',
+    })).toThrow('LATERAL VIEW requires a table function like EXPLODE')
+  })
+})
+
 describe('array literals', () => {
   const singleRow = [{ x: 1 }]
 
