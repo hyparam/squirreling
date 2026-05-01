@@ -1,4 +1,5 @@
 import { evaluateExpr } from '../expression/evaluate.js'
+import { materializeRow } from './cells.js'
 import { executePlan } from './execute.js'
 import { compareForTerm, keyify } from './utils.js'
 
@@ -70,18 +71,25 @@ export function executeWindow(plan, context) {
         if (context.signal?.aborted) return
       }
 
+      // Materialize each buffered row before yielding so the output's cell
+      // map doesn't carry source-row closures (and through them, upstream
+      // page/buffer state). We've already paid the buffering cost; lazy
+      // evaluation past this point would only multiply retention across the
+      // window's output set.
       for (let i = 0; i < rows.length; i++) {
         if (context.signal?.aborted) return
-        const row = rows[i]
-        const cells = { ...row.cells }
+        const slim = await materializeRow(rows[i])
+        const cells = { ...slim.cells }
         for (let w = 0; w < plan.windows.length; w++) {
-          const { alias } = plan.windows[w]
-          cells[alias] = windowValues[w][i]
+          cells[plan.windows[w].alias] = windowValues[w][i]
         }
         yield {
-          columns: [...row.columns, ...extraColumns],
+          columns: [...slim.columns, ...extraColumns],
           cells,
         }
+        // Drop the original buffered row reference so downstream draining
+        // can let GC reclaim the upstream page that held it.
+        rows[i] = slim
       }
     },
   }

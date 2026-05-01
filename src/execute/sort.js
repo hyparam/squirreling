@@ -1,5 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
+import { materializeRow } from './cells.js'
 import { executePlan } from './execute.js'
 import { compareForTerm } from './utils.js'
 
@@ -144,9 +145,12 @@ export function executeSort(plan, context) {
         cacheValues: true,
       })
 
-      // Yield sorted rows
+      // Materialize before yielding. Sort already buffered every row and
+      // stamped sort-key cells onto them; lazy evaluation past this point
+      // would let downstream consumers retain the entire sort buffer
+      // through any single output row's cell closures.
       for (const { row } of sortedRows) {
-        yield row
+        yield await materializeRow(row)
       }
     },
   }

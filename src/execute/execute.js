@@ -6,6 +6,7 @@ import { planSql, planStatement } from '../plan/plan.js'
 import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
+import { expressionCell } from './cells.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -187,13 +188,11 @@ function executeJsonEach(plan, context) {
       if (Array.isArray(parsed)) {
         for (let i = 0; i < parsed.length; i++) {
           if (context.signal?.aborted) return
-          const k = i
-          const v = parsed[i]
           yield {
             columns,
             cells: {
-              [keyCol]: k,
-              [valueCol]: v,
+              [keyCol]: i,
+              [valueCol]: parsed[i],
             },
           }
         }
@@ -273,10 +272,9 @@ function executeScan(plan, context) {
         for await (const chunk of chunks) {
           if (signal?.aborted) return
           for (let i = 0; i < chunk.length; i++) {
-            const value = chunk[i]
             yield {
               columns,
-              cells: { [column]: value },
+              cells: { [column]: chunk[i] },
             }
           }
         }
@@ -506,22 +504,11 @@ function executeProject(plan, context) {
             if (sourceName in row.cells) {
               cells[alias] = row.cells[sourceName]
             } else {
-              const { expr } = col
-              cells[alias] = () => evaluateExpr({
-                node: expr,
-                row,
-                rowIndex: currentRowIndex,
-                context,
-              })
+              cells[alias] = expressionCell(col.expr, row, currentRowIndex, context)
             }
           } else {
             const alias = columns[colIdx++]
-            cells[alias] = () => evaluateExpr({
-              node: col.expr,
-              row,
-              rowIndex: currentRowIndex,
-              context,
-            })
+            cells[alias] = expressionCell(col.expr, row, currentRowIndex, context)
           }
         }
 

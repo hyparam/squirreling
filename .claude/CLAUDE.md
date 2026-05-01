@@ -28,6 +28,47 @@ npx tsc           # Type check with TypeScript
   - Do not add `: undefined` values to test fixtures (toEqual ignores undefined properties)
   - Pass the full exact error message string to `toThrow()` never a regex or substring
 
+## Closure hygiene for AsyncRow cells
+
+`AsyncCell` is `SqlPrimitive | (() => Promise<SqlPrimitive>)` — a cell is
+either a bare value or a thunk. Two rules:
+
+**1. Prefer raw values over thunks.** If you already have the value, store
+it directly: `cells[col] = value`. Never wrap a known value in
+`() => Promise.resolve(value)` — closures pin their V8 scope's *entire*
+context, not just the variables they name, so a thunk created inside a
+loop body silently retains every local in that scope (rows, sort entries,
+window buffers).
+
+**2. When a thunk is genuinely needed, build it via a helper in
+`src/execute/cells.js`.** The helper's parameter list is the closure's
+context — by construction, the caller's loop locals can't sneak in.
+
+```js
+// BAD — closure pins `rows` (the entire window buffer).
+for (let i = 0; i < rows.length; i++) {
+  cells[alias] = () => Promise.resolve(windowValues[i])
+}
+
+// GOOD — bare value, no closure.
+for (let i = 0; i < rows.length; i++) {
+  cells[alias] = windowValues[i]
+}
+
+// GOOD — genuinely lazy expression, built via helper.
+cells[alias] = expressionCell(col.expr, row, rowIndex, context)
+```
+
+Companion rule: **don't widen an existing cell's retention by re-wrapping
+it.** Copy the cell reference (`cells[alias] = row.cells[col]`); never wrap
+it in a new closure (`cells[alias] = () => row.cells[col]()`) — that pins
+`row` in the new closure's context.
+
+For buffered nodes (aggregate, sort, buffered window, hash-join build):
+once the input is buffered, lazy evaluation past that point buys nothing
+and forces every output row to retain the buffer. Eagerly evaluate or
+`materializeRow()` before yielding.
+
 ## Architecture
 
 The main flow inside `executeSql({ tables, query, functions, signal })`:

@@ -1,4 +1,5 @@
 import { evaluateExpr } from '../expression/evaluate.js'
+import { materializeRow } from './cells.js'
 import { keyify, maxBounds } from './utils.js'
 import { executePlan } from './execute.js'
 
@@ -201,35 +202,48 @@ export function executeHashJoin(plan, context) {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
       const { leftKeys, rightKeys, residual } = plan
+      const keepUnmatchedRight = plan.joinType === 'RIGHT' || plan.joinType === 'FULL'
 
-      // Buffer right rows and build hash map
+      // Build phase. Stream the right side directly into the hash map and, in
+      // the same pass, materialize each row — replacing any thunk cells with
+      // bare values — and drop the original AsyncRow. This severs any
+      // upstream retention (parquet pages, arrow buffers, struct accessors)
+      // the source's cell closures may have pinned per row, which is what
+      // otherwise OOMs wide-schema build sides. Rows whose cells are already
+      // bare values pass through unchanged.
       /** @type {AsyncRow[]} */
       const rightRows = []
-      for await (const row of right.rows()) {
-        if (context.signal?.aborted) return
-        rightRows.push(row)
-      }
-
       /** @type {Map<string | number | bigint | boolean, AsyncRow[]>} */
       const hashMap = new Map()
-      for (const rightRow of rightRows) {
+      // Used to null-pad unmatched left rows for LEFT/FULL. Default to the
+      // right child's advertised columns so the column list is correct even
+      // when the build side is empty or every row has a NULL key (LEFT joins
+      // skip materializing those, so we can't read them off a slim row).
+      let rightCols = right.columns
+      for await (const row of right.rows()) {
+        if (context.signal?.aborted) return
         const keyValues = await Promise.all(
-          rightKeys.map(node => evaluateExpr({ node, row: rightRow, context }))
+          rightKeys.map(node => evaluateExpr({ node, row, context }))
         )
         // SQL semantics: NULL never equals anything, so a row with any NULL
-        // join key is excluded from the hash table.
-        if (keyValues.some(v => v == null)) continue
+        // join key is excluded from the hash table. INNER/LEFT joins don't
+        // need to retain those rows at all.
+        const nullKey = keyValues.some(v => v == null)
+        if (nullKey && !keepUnmatchedRight) continue
+
+        const slim = await materializeRow(row)
+        rightCols = slim.columns
+        if (keepUnmatchedRight) rightRows.push(slim)
+        if (nullKey) continue
+
         const key = keyify(...keyValues)
         let bucket = hashMap.get(key)
         if (!bucket) {
           bucket = []
           hashMap.set(key, bucket)
         }
-        bucket.push(rightRow)
+        bucket.push(slim)
       }
-
-      // Get column info for NULL row generation
-      const rightCols = rightRows.length ? rightRows[0].columns : []
 
       /** @type {string[] | undefined} */
       let leftCols

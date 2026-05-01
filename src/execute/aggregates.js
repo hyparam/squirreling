@@ -10,41 +10,46 @@ import { keyify } from './utils.js'
  */
 
 /**
- * Projects aggregate columns from a group of rows
+ * Projects aggregate columns from a group of rows. Eagerly evaluates each
+ * derived column so the output cells don't need to retain `group` to
+ * compute on demand — once we've buffered the group, lazy evaluation buys
+ * nothing and forces every downstream consumer of the aggregate row to keep
+ * the full input alive.
  *
  * @param {SelectColumn[]} selectColumns
  * @param {AsyncRow[]} group
  * @param {ExecuteContext} context
- * @returns {AsyncRow}
+ * @returns {Promise<AsyncRow>}
  */
-function projectAggregateColumns(selectColumns, group, context) {
+async function projectAggregateColumns(selectColumns, group, context) {
   /** @type {string[]} */
   const columns = []
   /** @type {AsyncCells} */
   const cells = {}
+  const baseRow = group[0]
 
   for (const col of selectColumns) {
     if (col.type === 'star') {
-      const firstRow = group[0]
-      if (firstRow) {
+      if (baseRow) {
         const prefix = col.table ? `${col.table}.` : undefined
-        for (const key of firstRow.columns) {
+        for (const key of baseRow.columns) {
           if (prefix && !key.startsWith(prefix)) continue
           const dotIndex = key.indexOf('.')
           const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
           columns.push(outputKey)
-          cells[outputKey] = firstRow.cells[key]
+          cells[outputKey] = baseRow.cells[key]
         }
       }
     } else {
       const alias = col.alias ?? derivedAlias(col.expr)
       columns.push(alias)
-      cells[alias] = () => evaluateExpr({
+      const value = await evaluateExpr({
         node: col.expr,
-        row: group[0] ?? { columns: [], cells: {} },
+        row: baseRow ?? { columns: [], cells: {} },
         rows: group,
         context,
       })
+      cells[alias] = value
     }
   }
 
@@ -106,7 +111,7 @@ export function executeHashAggregate(plan, context) {
       const aggregateRows = []
 
       for (const group of groups.values()) {
-        const asyncRow = projectAggregateColumns(plan.columns, group, context)
+        const asyncRow = await projectAggregateColumns(plan.columns, group, context)
         const contextRow = aggregateContextRow(group, asyncRow)
 
         // Apply HAVING filter
@@ -176,7 +181,7 @@ export function executeScalarAggregate(plan, context) {
         group.push(row)
       }
 
-      const asyncRow = projectAggregateColumns(plan.columns, group, context)
+      const asyncRow = await projectAggregateColumns(plan.columns, group, context)
 
       // Apply HAVING filter
       if (plan.having) {
