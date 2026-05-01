@@ -1,5 +1,5 @@
 import { executeStatement } from '../execute/execute.js'
-import { isPlainObject, keyify, stringify } from '../execute/utils.js'
+import { isPlainObject, keyify, readCell, stringify } from '../execute/utils.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
 import { UnknownFunctionError } from '../validation/parseErrors.js'
@@ -33,16 +33,20 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   }
 
   if (node.type === 'identifier') {
-    // Try qualified name first (e.g. 'users.id')
+    // Hot path. Inline the AsyncCell discriminator rather than calling readCell —
+    // function-call overhead measurably regresses tight expression evaluation
+    // (e.g. WHERE col > N over millions of rows).
     if (node.prefix) {
       const qualified = node.prefix + '.' + node.name
       if (qualified in row.cells) {
-        return row.cells[qualified]()
+        const c = row.cells[qualified]
+        return typeof c === 'function' ? c() : c
       }
       const prefix = node.prefix + '.'
       const prefixedColumns = row.columns.filter(col => col.startsWith(prefix))
       if (prefixedColumns.length === 1) {
-        const value = await row.cells[prefixedColumns[0]]()
+        const c = row.cells[prefixedColumns[0]]
+        const value = typeof c === 'function' ? await c() : c
         if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
           return value[node.name]
         }
@@ -53,29 +57,34 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       const suffix = '.' + node.prefix
       const baseColumns = row.columns.filter(col => col === node.prefix || col.endsWith(suffix))
       if (baseColumns.length === 1) {
-        const value = await row.cells[baseColumns[0]]()
+        const c = row.cells[baseColumns[0]]
+        const value = typeof c === 'function' ? await c() : c
         if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
           return value[node.name]
         }
       }
       // Check outer row for correlated subquery references
       if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
-        return context.outerRow.cells[node.name]()
+        const c = context.outerRow.cells[node.name]
+        return typeof c === 'function' ? c() : c
       }
       // Fall back to just the column part
       if (node.name in row.cells) {
-        return row.cells[node.name]()
+        const c = row.cells[node.name]
+        return typeof c === 'function' ? c() : c
       }
     } else {
       // Try exact match first
       if (node.name in row.cells) {
-        return row.cells[node.name]()
+        const c = row.cells[node.name]
+        return typeof c === 'function' ? c() : c
       }
       // For unqualified names, search for a matching prefixed column (e.g. 'id' to 'a.id')
       const suffix = '.' + node.name
       const match = row.columns.find(col => col.endsWith(suffix))
       if (match) {
-        return row.cells[match]()
+        const c = row.cells[match]
+        return typeof c === 'function' ? c() : c
       }
     }
     // Unknown identifier
@@ -97,7 +106,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     const { value } = await gen.next()
     gen.return(undefined)
     if (!value) return null
-    return value.cells[value.columns[0]]()
+    return readCell(value.cells[value.columns[0]])
   }
 
   // Unary operators
@@ -146,7 +155,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (!rows) {
       const alias = derivedAlias(node)
       if (alias in row.cells && !row.columns.includes(alias)) {
-        return row.cells[alias]()
+        return readCell(row.cells[alias])
       }
     }
 
@@ -157,7 +166,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         // This is only allowed if same aggregate was in the SELECT list
         const alias = derivedAlias(node)
         if (row.columns.includes(alias)) {
-          return row.cells[alias]()
+          return readCell(row.cells[alias])
         } else {
           throw new ExecutionError({
             message: `Aggregate function ${funcName} is not available in this context`,
@@ -643,7 +652,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     const subResult = executeStatement({ query: node.subquery, context })
     for await (const resRow of subResult.rows()) {
-      const value = await resRow.cells[resRow.columns[0]]()
+      const c = resRow.cells[resRow.columns[0]]
+      const value = typeof c === 'function' ? await c() : c
       if (exprVal == value) return true
     }
     return false

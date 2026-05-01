@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, readCell } from '../../src/index.js'
 import { trackingSource } from './trackingSource.js'
 
 const users = [
@@ -48,7 +48,7 @@ describe('abort signal', () => {
         query: 'SELECT * FROM users',
         signal: controller.signal,
       }).rows()) {
-        rows.push(await row.cells['name']())
+        rows.push(await readCell(row.cells['name']))
         if (rows.length === 2) {
           controller.abort()
         }
@@ -95,7 +95,7 @@ describe('abort signal', () => {
 
       const rows = []
       for await (const row of source.scan({ signal: controller.signal }).rows()) {
-        rows.push(await row.cells['name']())
+        rows.push(await readCell(row.cells['name']))
         if (rows.length === 2) {
           controller.abort()
         }
@@ -111,7 +111,7 @@ describe('abort signal', () => {
 
       const rows = []
       for await (const row of source.scan({ signal: controller.signal }).rows()) {
-        rows.push(await row.cells['name']())
+        rows.push(await readCell(row.cells['name']))
       }
       expect(rows).toHaveLength(5)
       expect(getScanCount()).toBe(1)
@@ -123,7 +123,7 @@ describe('abort signal', () => {
 
       const rows = []
       for await (const row of source.scan({}).rows()) {
-        rows.push(await row.cells['name']())
+        rows.push(await readCell(row.cells['name']))
       }
       expect(rows).toHaveLength(5)
       expect(getScanCount()).toBe(1)
@@ -158,8 +158,8 @@ describe('abort signal', () => {
         query: 'SELECT users.name, orders.amount FROM users JOIN orders ON users.id = orders.user_id',
       }).rows()) {
         rows.push({
-          name: await row.cells['name'](),
-          amount: await row.cells['amount'](),
+          name: await readCell(row.cells['name']),
+          amount: await readCell(row.cells['amount']),
         })
         if (rows.length === 2) break
       }

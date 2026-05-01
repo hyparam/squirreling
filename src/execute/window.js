@@ -37,8 +37,7 @@ export function executeWindow(plan, context) {
           i++
           const cells = { ...row.cells }
           for (const w of plan.windows) {
-            const value = assignRowNumber(w.funcName, i - 1)
-            cells[w.alias] = () => Promise.resolve(value)
+            cells[w.alias] = assignRowNumber(w.funcName, i - 1)
           }
           yield {
             columns: [...row.columns, ...extraColumns],
@@ -77,8 +76,7 @@ export function executeWindow(plan, context) {
         const cells = { ...row.cells }
         for (let w = 0; w < plan.windows.length; w++) {
           const { alias } = plan.windows[w]
-          const value = windowValues[w][i]
-          cells[alias] = () => Promise.resolve(value)
+          cells[alias] = windowValues[w][i]
         }
         yield {
           columns: [...row.columns, ...extraColumns],

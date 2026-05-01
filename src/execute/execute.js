@@ -154,7 +154,7 @@ function executeUnnest(plan, context) {
         if (context.signal?.aborted) return
         yield {
           columns,
-          cells: { [columnName]: () => Promise.resolve(element) },
+          cells: { [columnName]: element },
         }
       }
     },
@@ -192,8 +192,8 @@ function executeJsonEach(plan, context) {
           yield {
             columns,
             cells: {
-              [keyCol]: () => Promise.resolve(k),
-              [valueCol]: () => Promise.resolve(v),
+              [keyCol]: k,
+              [valueCol]: v,
             },
           }
         }
@@ -205,8 +205,8 @@ function executeJsonEach(plan, context) {
           yield {
             columns,
             cells: {
-              [keyCol]: () => Promise.resolve(k),
-              [valueCol]: () => Promise.resolve(v),
+              [keyCol]: k,
+              [valueCol]: v,
             },
           }
         }
@@ -276,7 +276,7 @@ function executeScan(plan, context) {
             const value = chunk[i]
             yield {
               columns,
-              cells: { [column]: () => Promise.resolve(value) },
+              cells: { [column]: value },
             }
           }
         }
@@ -467,10 +467,6 @@ function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   const columns = selectColumnNames(plan.columns, child.columns)
 
-  const resolveable = plan.columns.every(col =>
-    col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
-  )
-
   return {
     columns,
     numRows: child.numRows,
@@ -485,14 +481,6 @@ function executeProject(plan, context) {
 
         /** @type {AsyncCells} */
         const cells = {}
-        // Only safe to propagate resolved when every output column comes from
-        // the star branch — derived expressions evaluate lazily and can't be
-        // pre-materialized here, and a partial resolved would make
-        // collect()/downstream identifier fast paths read undefined.
-        const source = resolveable ? row.resolved : undefined
-        /** @type {Record<string, SqlPrimitive> | undefined} */
-        const resolved = source ? {} : undefined
-
         let colIdx = 0
         for (const col of plan.columns) {
           if (col.type === 'star') {
@@ -502,7 +490,6 @@ function executeProject(plan, context) {
               const dotIndex = key.indexOf('.')
               const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
               cells[outputKey] = row.cells[key]
-              if (resolved && source) resolved[outputKey] = source[key]
               colIdx++
             }
           } else if (col.expr.type === 'identifier') {
@@ -518,7 +505,6 @@ function executeProject(plan, context) {
             const alias = columns[colIdx++]
             if (sourceName in row.cells) {
               cells[alias] = row.cells[sourceName]
-              if (resolved && source) resolved[alias] = source[sourceName]
             } else {
               const { expr } = col
               cells[alias] = () => evaluateExpr({
@@ -539,7 +525,7 @@ function executeProject(plan, context) {
           }
         }
 
-        yield { columns, cells, resolved }
+        yield { columns, cells }
       }
     },
   }

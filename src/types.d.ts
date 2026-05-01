@@ -62,12 +62,12 @@ export interface ExecuteContext {
 export interface AsyncRow {
   columns: string[]
   cells: AsyncCells
-  // Optional pre-materialized row values keyed by output column name.
-  // When present, consumers can skip the AsyncCell Promise roundtrip.
-  resolved?: Record<string, SqlPrimitive>
 }
 export type AsyncCells = Record<string, AsyncCell>
-export type AsyncCell = () => Promise<SqlPrimitive>
+// A cell is either a bare value (already in hand — skip closure + Promise
+// allocation) or a thunk that returns a Promise of the value (lazy/async).
+// Consumers must discriminate with `typeof === 'function'` before calling.
+export type AsyncCell = SqlPrimitive | (() => Promise<SqlPrimitive>)
 
 export type Row = Record<string, SqlPrimitive>[]
 

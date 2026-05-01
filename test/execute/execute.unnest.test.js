@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, readCell } from '../../src/index.js'
 
 describe('UNNEST', () => {
   it('should expand a numeric array into rows', async () => {
@@ -124,7 +124,7 @@ describe('UNNEST', () => {
       signal: controller.signal,
     }).rows()
     const first = await iter.next()
-    expect(await first.value?.cells.x()).toBe(1)
+    expect(await readCell(first.value?.cells.x)).toBe(1)
     controller.abort()
     const second = await iter.next()
     expect(second.done).toBe(true)
@@ -410,7 +410,7 @@ describe('LATERAL UNNEST', () => {
       signal: controller.signal,
     }).rows()
     const first = await iter.next()
-    expect(await first.value?.cells.x()).toBe(1)
+    expect(await readCell(first.value?.cells.x)).toBe(1)
     controller.abort()
     const second = await iter.next()
     expect(second.done).toBe(true)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, readCell } from '../../src/index.js'
 import { cachedDataSource, memorySource } from '../../src/backend/dataSource.js'
 
 /**
@@ -192,9 +192,9 @@ function countingDataSource(data, expensiveColumns) {
               const cell = row.cells[key]
               if (expensiveColumns.includes(key)) {
                 // Wrap the cell to count accesses
-                cells[key] = () => {
+                cells[key] = async () => {
                   expensiveCallCount++
-                  return cell()
+                  return readCell(cell)
                 }
               } else {
                 cells[key] = cell

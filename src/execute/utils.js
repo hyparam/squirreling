@@ -1,8 +1,20 @@
 /**
- * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
+ * @import { AsyncCell, AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  */
 
 const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
+
+/**
+ * Reads an AsyncCell, returning the value (bare) or the Promise (thunk).
+ * Caller can `await` the result either way; bare values skip both the
+ * closure call and the Promise allocation.
+ *
+ * @param {AsyncCell} cell
+ * @returns {SqlPrimitive | Promise<SqlPrimitive>}
+ */
+export function readCell(cell) {
+  return typeof cell === 'function' ? cell() : cell
+}
 
 /**
  * Compares two values for a single ORDER BY term, handling nulls and direction
@@ -53,32 +65,27 @@ export async function collect(results) {
     rows.push(asyncRow)
   }
 
-  // Fast path: if all rows have pre-materialized data, skip Promise overhead
-  let allMaterialized = rows.length > 0
-  for (let i = 0; i < rows.length; i++) {
-    if (!rows[i].resolved) {
-      allMaterialized = false
-      break
-    }
-  }
-  if (allMaterialized) {
-    const result = new Array(rows.length)
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]
-      /** @type {Record<string, SqlPrimitive>} */
-      const item = {}
-      for (const col of row.columns) {
-        item[col] = row.resolved[col]
-      }
-      result[i] = item
-    }
-    return result
-  }
-
   return Promise.all(rows.map(async asyncRow => {
-    const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
     /** @type {Record<string, SqlPrimitive>} */
     const item = {}
+    if (asyncRow.columns.length === 0) return item
+    // Peek the first cell to pick a fast path. Most data sources produce
+    // rows of uniform cell shape — all bare values (memorySource) or all
+    // thunks (parquet-style async sources) — so the branch is predictable
+    // and we avoid both pending-array overhead (bare path) and Promise.all's
+    // implicit Promise.resolve coercion of bare values (thunk path).
+    const firstCell = asyncRow.cells[asyncRow.columns[0]]
+    if (typeof firstCell !== 'function') {
+      for (const k of asyncRow.columns) {
+        const c = asyncRow.cells[k]
+        item[k] = typeof c === 'function' ? await c() : c
+      }
+      return item
+    }
+    const values = await Promise.all(asyncRow.columns.map(k => {
+      const c = asyncRow.cells[k]
+      return typeof c === 'function' ? c() : c
+    }))
     for (let i = 0; i < asyncRow.columns.length; i++) {
       item[asyncRow.columns[i]] = values[i]
     }
@@ -168,6 +175,6 @@ export function keyify(...values) {
  * @returns {Promise<string | number | bigint | boolean>}
  */
 export function stableRowKey(row) {
-  return Promise.all(row.columns.map(k => row.cells[k]()))
+  return Promise.all(row.columns.map(k => readCell(row.cells[k])))
     .then(values => keyify(...values))
 }

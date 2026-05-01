@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, readCell } from '../../src/index.js'
 import { memorySource } from '../../src/backend/dataSource.js'
 
 /** @type {null} */
@@ -209,8 +209,8 @@ describe('executeSql', () => {
         query: 'SELECT 1 as one, 2 FROM users',
       }).rows().next()
       expect(value.columns).toEqual(['one', '2'])
-      await expect(value.cells['one']()).resolves.toBe(1)
-      await expect(value.cells['2']()).resolves.toBe(2)
+      expect(await readCell(value.cells['one'])).toBe(1)
+      expect(await readCell(value.cells['2'])).toBe(2)
     })
 
     it('should handle duplicate column names in select', async () => {
@@ -219,7 +219,7 @@ describe('executeSql', () => {
         query: 'SELECT name, name FROM users',
       }).rows().next()
       expect(value.columns).toEqual(['name', 'name'])
-      await expect(value.cells['name']()).resolves.toBe('Alice')
+      expect(await readCell(value.cells['name'])).toBe('Alice')
     })
 
     it('should handle string comparisons lexicographically', async () => {

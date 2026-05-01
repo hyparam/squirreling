@@ -316,7 +316,7 @@ function createNullRow(columns) {
   /** @type {AsyncCells} */
   const cells = {}
   for (const col of columns) {
-    cells[col] = () => Promise.resolve(null)
+    cells[col] = null
   }
   return { columns, cells }
 }

@@ -1,5 +1,6 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncCell, AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
 export type {
+  AsyncCell,
   AsyncCells,
   AsyncDataSource,
   AsyncRow,
@@ -79,6 +80,13 @@ export function tokenizeSql(query: string): Token[]
  * @returns array of all yielded values
  */
 export function collect(results: QueryResults): Promise<Record<string, SqlPrimitive>[]>
+
+/**
+ * Reads an AsyncCell, returning the value (bare) or the Promise (thunk).
+ * Caller can `await` the result either way; bare values skip both the
+ * closure call and the Promise allocation.
+ */
+export function readCell(cell: AsyncCell): SqlPrimitive | Promise<SqlPrimitive>
 
 export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): AsyncRow
 

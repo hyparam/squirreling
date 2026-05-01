@@ -74,7 +74,7 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
           const value = values[i]
           evaluatedValues[idx][orderByIdx] = value
           if (cacheValues && !(alias in entries[idx].row.cells)) {
-            entries[idx].row.cells[alias] = () => Promise.resolve(value)
+            entries[idx].row.cells[alias] = value
           }
         }
         start += chunk.length

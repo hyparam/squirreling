@@ -13,9 +13,9 @@ export function asyncRow(obj, columns) {
   /** @type {AsyncCells} */
   const cells = {}
   for (const key of columns) {
-    cells[key] = () => Promise.resolve(obj[key])
+    cells[key] = obj[key]
   }
-  return { columns, cells, resolved: obj }
+  return { columns, cells }
 }
 
 /**
@@ -103,15 +103,19 @@ export function cachedDataSource(source) {
             const cells = {}
             for (const key of row.columns) {
               const cell = row.cells[key]
-              // Wrap the cell to cache accesses
-              cells[key] = () => {
-                const cacheKey = `${rowIndex}:${key}`
-                let value = cache.get(cacheKey)
-                if (!value) {
-                  value = cell()
-                  cache.set(cacheKey, value)
+              if (typeof cell !== 'function') {
+                // Bare value already in hand — no point caching
+                cells[key] = cell
+              } else {
+                cells[key] = () => {
+                  const cacheKey = `${rowIndex}:${key}`
+                  let value = cache.get(cacheKey)
+                  if (!value) {
+                    value = cell()
+                    cache.set(cacheKey, value)
+                  }
+                  return value
                 }
-                return value
               }
             }
             yield { columns: row.columns, cells }
