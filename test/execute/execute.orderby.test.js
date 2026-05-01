@@ -223,6 +223,16 @@ describe('ORDER BY', () => {
       expect(result[0].cnt).toBe(3)
     })
 
+    it('should sort many groups without overflowing the call stack', async () => {
+      const data = Array.from({ length: 200000 }, (_, i) => ({ g: i }))
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT g, COUNT(*) AS cnt FROM data GROUP BY g ORDER BY cnt DESC LIMIT 5',
+      }))
+      expect(result).toHaveLength(5)
+      expect(result.map(r => r.cnt)).toEqual([1, 1, 1, 1, 1])
+    })
+
     it('should sort by aggregate expression without alias', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT city, COUNT(*) FROM users GROUP BY city ORDER BY COUNT(*)' }))
       expect(result[0].city).toBe('LA')

@@ -102,7 +102,7 @@ export function executeHashAggregate(plan, context) {
         group.push(row)
       }
 
-      /** @type {{ row: AsyncRow, group: AsyncRow[], contextRow: AsyncRow }[]} */
+      /** @type {{ row: AsyncRow, rows: AsyncRow[], outputRow: AsyncRow }[]} */
       const aggregateRows = []
 
       for (const group of groups.values()) {
@@ -120,24 +120,19 @@ export function executeHashAggregate(plan, context) {
           if (!passes) continue
         }
 
-        aggregateRows.push({ row: asyncRow, group, contextRow })
+        aggregateRows.push({ row: contextRow, rows: group, outputRow: asyncRow })
       }
 
-      if (plan.orderBy?.length) {
-        const sortedRows = await sortEntriesByTerms({
-          entries: aggregateRows.map((aggregateRow, idx) => ({
-            row: aggregateRow.contextRow,
-            rows: aggregateRow.group,
-            idx,
-          })),
+      const outputRows = plan.orderBy?.length
+        ? await sortEntriesByTerms({
+          entries: aggregateRows,
           orderBy: plan.orderBy,
           context,
         })
-        aggregateRows.splice(0, aggregateRows.length, ...sortedRows.map(({ idx }) => aggregateRows[idx]))
-      }
+        : aggregateRows
 
-      for (const { row } of aggregateRows) {
-        yield row
+      for (const { outputRow } of outputRows) {
+        yield outputRow
       }
     },
   }
