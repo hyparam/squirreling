@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.13]
+ - Fix call stack overflow on `ORDER BY` with many grouped rows
+
 ## [0.12.12]
  - `LATERAL VIEW EXPLODE` syntax (Hive-style) as alias for `UNNEST`
  - Hash join fast path for self-joins with AND-of-equi conditions
