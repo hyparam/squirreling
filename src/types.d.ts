@@ -80,6 +80,10 @@ export interface AsyncDataSource {
   scan(options: ScanOptions): ScanResults
   // Optional method for fast column scans
   scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>>
+  // Optional column-oriented batch scan. Sources that implement this can
+  // hand the engine columnar data directly without per-row materialization.
+  // Sources without scanBatches are bridged via adaptRowsToBatches.
+  scanBatches?(options: BatchScanOptions): AsyncIterable<ColumnBatch>
 }
 
 /**
@@ -116,6 +120,31 @@ export interface ScanColumnOptions {
   limit?: number
   offset?: number
   signal?: AbortSignal
+}
+
+/**
+ * Options for a column-oriented batch scan. Mirrors the minimal shape of
+ * ScanOptions; pushdown of WHERE/LIMIT/OFFSET is intentionally not part of
+ * the batch interface in Phase 5a. Filters are applied by the engine on the
+ * yielded batches (or after adapting batches back to rows).
+ */
+export interface BatchScanOptions {
+  columns?: string[] // columns needed (undefined means all columns)
+  batchSize?: number // suggested rows per batch — sources may use any size
+  signal?: AbortSignal
+}
+
+/**
+ * A column-oriented batch of rows. Either rowStart (sequential, contiguous)
+ * or rowIds (arbitrary identifiers, e.g. after a filter) identifies the rows
+ * — sources should set whichever they have. rowCount is authoritative for
+ * how many entries to read from each column array.
+ */
+export interface ColumnBatch {
+  rowStart?: number
+  rowIds?: Uint32Array | BigUint64Array
+  rowCount: number
+  columns: Record<string, ArrayLike<SqlPrimitive>>
 }
 
 export interface FunctionSignature {

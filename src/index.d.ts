@@ -1,8 +1,10 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, BatchScanOptions, ColumnBatch, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
   AsyncRow,
+  BatchScanOptions,
+  ColumnBatch,
   ExecuteContext,
   ExecuteSqlOptions,
   ExprNode,
@@ -83,6 +85,33 @@ export function collect(results: QueryResults): Promise<Record<string, SqlPrimit
 export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): AsyncRow
 
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
+
+/**
+ * Adapts a stream of AsyncRow into a stream of ColumnBatch by buffering rows
+ * and materializing the requested columns into per-batch arrays.
+ */
+export function adaptRowsToBatches(
+  rows: AsyncIterable<AsyncRow>,
+  columns: string[],
+  options?: { batchSize?: number, rowStart?: number, signal?: AbortSignal },
+): AsyncIterable<ColumnBatch>
+
+/**
+ * Adapts a stream of ColumnBatch into a stream of AsyncRow. Each yielded row
+ * has resolved values prefilled so consumers can skip the AsyncCell await.
+ */
+export function adaptBatchesToRows(
+  batches: AsyncIterable<ColumnBatch>,
+): AsyncIterable<AsyncRow>
+
+/**
+ * Returns batches from a data source, using its native scanBatches when
+ * available and otherwise falling back to scan() + adaptRowsToBatches.
+ */
+export function scanBatches(
+  source: AsyncDataSource,
+  options?: BatchScanOptions,
+): AsyncIterable<ColumnBatch>
 
 /**
  * Generates a default alias for a derived column expression.
