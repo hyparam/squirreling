@@ -208,6 +208,17 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         return count
       }
 
+      if (funcName === 'COUNTIF') {
+        const values = await Promise.all(filteredRows.map(row =>
+          evaluateExpr({ node: argNode, row, context })
+        ))
+        let count = 0
+        for (const v of values) {
+          if (v) count++
+        }
+        return count
+      }
+
       if (funcName === 'SUM' || funcName === 'AVG' || funcName === 'MIN' || funcName === 'MAX') {
         const rawValues = await Promise.all(filteredRows.map(row =>
           evaluateExpr({ node: argNode, row, context })

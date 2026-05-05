@@ -45,6 +45,62 @@ describe('executeSql', () => {
       expect(result).toEqual([{ sum_age: 148 }])
     })
 
+    it('should count rows matching a condition with COUNTIF', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNTIF(active) AS active_count FROM users',
+      }))
+      expect(result).toEqual([{ active_count: 4 }])
+    })
+
+    it('should count comparison results with COUNTIF', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNTIF(age > 28) AS over_28 FROM users',
+      }))
+      expect(result).toEqual([{ over_28: 3 }])
+    })
+
+    it('should ignore null condition values in COUNTIF', async () => {
+      const data = [
+        { id: 1, flag: true },
+        { id: 2, flag: false },
+        { id: 3, flag: null },
+        { id: 4, flag: true },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT COUNTIF(flag) AS yes FROM data',
+      }))
+      expect(result).toEqual([{ yes: 2 }])
+    })
+
+    it('should return 0 for COUNTIF when no rows match', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNTIF(age > 100) AS none FROM users',
+      }))
+      expect(result).toEqual([{ none: 0 }])
+    })
+
+    it('should support COUNTIF with GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, COUNTIF(active) AS active_count FROM users GROUP BY city ORDER BY city',
+      }))
+      expect(result).toEqual([
+        { city: 'LA', active_count: 2 },
+        { city: 'NYC', active_count: 2 },
+      ])
+    })
+
+    it('should throw for COUNTIF with wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT COUNTIF(active, age) FROM users',
+      })).toThrow('COUNTIF(condition) function requires 1 argument, got 2')
+    })
+
     it('should calculate AVG', async () => {
       const result = await collect(executeSql({ tables: { users }, query: 'SELECT AVG(age) FROM users' }))
       expect(result).toEqual([{ avg_age: 29.6 }])
