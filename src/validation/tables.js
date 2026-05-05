@@ -48,13 +48,22 @@ export function validateScan({ table, hints, tables, positionStart, positionEnd 
 /**
  * Throws if the expression references any column identifier. Used for
  * expressions that have no row scope (e.g. table function arguments in FROM).
+ * When `outerScope` is provided, identifiers that resolve to an outer query's
+ * alias (correlated reference) are allowed — they will be evaluated against
+ * the outer row at runtime.
  *
  * @param {ExprNode} expr
  * @param {string} context - context for the error message (e.g. function name)
+ * @param {string[]} [outerScope] - aliases of outer queries
  */
-export function validateNoIdentifiers(expr, context) {
+export function validateNoIdentifiers(expr, context, outerScope) {
   if (!expr) return
   if (expr.type === 'identifier') {
+    if (outerScope?.length) {
+      // Correlated reference: prefix matches an outer alias, or unqualified
+      // (resolved against the outer row at runtime).
+      if (!expr.prefix || outerScope.includes(expr.prefix)) return
+    }
     const name = expr.prefix ? `${expr.prefix}.${expr.name}` : expr.name
     throw new ExecutionError({
       message: `${context} argument cannot reference column "${name}" — use JOIN ${context}(...) to reference columns from another table`,
@@ -63,31 +72,31 @@ export function validateNoIdentifiers(expr, context) {
     })
   }
   if (expr.type === 'binary') {
-    validateNoIdentifiers(expr.left, context)
-    validateNoIdentifiers(expr.right, context)
+    validateNoIdentifiers(expr.left, context, outerScope)
+    validateNoIdentifiers(expr.right, context, outerScope)
   } else if (expr.type === 'unary') {
-    validateNoIdentifiers(expr.argument, context)
+    validateNoIdentifiers(expr.argument, context, outerScope)
   } else if (expr.type === 'function') {
     for (const arg of expr.args) {
-      validateNoIdentifiers(arg, context)
+      validateNoIdentifiers(arg, context, outerScope)
     }
   } else if (expr.type === 'cast') {
-    validateNoIdentifiers(expr.expr, context)
+    validateNoIdentifiers(expr.expr, context, outerScope)
   } else if (expr.type === 'in valuelist') {
-    validateNoIdentifiers(expr.expr, context)
+    validateNoIdentifiers(expr.expr, context, outerScope)
     for (const val of expr.values) {
-      validateNoIdentifiers(val, context)
+      validateNoIdentifiers(val, context, outerScope)
     }
   } else if (expr.type === 'in') {
     // LHS is in our scope; subquery is self-contained and planned separately.
-    validateNoIdentifiers(expr.expr, context)
+    validateNoIdentifiers(expr.expr, context, outerScope)
   } else if (expr.type === 'case') {
-    validateNoIdentifiers(expr.caseExpr, context)
+    validateNoIdentifiers(expr.caseExpr, context, outerScope)
     for (const w of expr.whenClauses) {
-      validateNoIdentifiers(w.condition, context)
-      validateNoIdentifiers(w.result, context)
+      validateNoIdentifiers(w.condition, context, outerScope)
+      validateNoIdentifiers(w.result, context, outerScope)
     }
-    validateNoIdentifiers(expr.elseResult, context)
+    validateNoIdentifiers(expr.elseResult, context, outerScope)
   }
   // subquery / exists / not exists are self-contained — their identifiers
   // resolve to their own FROM and are validated when the subquery is planned.

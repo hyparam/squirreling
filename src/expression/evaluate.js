@@ -62,6 +62,14 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
         return context.outerRow.cells[node.name]()
       }
+      // Standalone `FROM UNNEST(...) AS alias` row has a single bare column;
+      // `alias.field` should struct-access that column's element.
+      if (context.scope?.includes(node.prefix) && row.columns.length === 1) {
+        const value = await row.cells[row.columns[0]]()
+        if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
+          return value[node.name]
+        }
+      }
       // Fall back to just the column part
       if (node.name in row.cells) {
         return row.cells[node.name]()
@@ -650,13 +658,15 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   }
 
   // EXISTS and NOT EXISTS with subqueries
-  if (node.type === 'exists') {
-    const results = await executeStatement({ query: node.subquery, context }).rows().next()
-    return results.done === false
-  }
-  if (node.type === 'not exists') {
-    const results = await executeStatement({ query: node.subquery, context }).rows().next()
-    return results.done === true
+  if (node.type === 'exists' || node.type === 'not exists') {
+    const outerScope = context.scope
+    const subContext = outerScope
+      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+      : context
+    const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
+    const results = await gen.next()
+    gen.return(undefined)
+    return node.type === 'exists' ? results.done === false : results.done === true
   }
 
   // CASE expressions

@@ -343,7 +343,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
     return { type: 'Scan', table: select.from.table, hints }
   } else if (select.from.type === 'function') {
     for (const arg of select.from.args) {
-      validateNoIdentifiers(arg, select.from.funcName)
+      validateNoIdentifiers(arg, select.from.funcName, outerScope)
     }
     return planTableFunction(select.from)
   } else {

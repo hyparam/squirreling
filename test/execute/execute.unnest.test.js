@@ -102,6 +102,19 @@ describe('UNNEST', () => {
     })).toThrow('UNNEST argument cannot reference column "t.arr" — use JOIN UNNEST(...) to reference columns from another table')
   })
 
+  it('should evaluate EXISTS with a correlated UNNEST against the outer row', async () => {
+    const traces = [
+      { id: 1, tool_calls: [{ name: 'web_search' }] },
+      { id: 2, tool_calls: [{ name: 'calculator' }] },
+      { id: 3, tool_calls: [] },
+    ]
+    const result = await collect(executeSql({
+      tables: { traces },
+      query: 'SELECT id FROM traces WHERE EXISTS (SELECT 1 FROM UNNEST(tool_calls) AS tc WHERE tc.name = \'web_search\')',
+    }))
+    expect(result).toEqual([{ id: 1 }])
+  })
+
   it('should throw when a column is referenced on the LHS of IN', () => {
     expect(() => executeSql({
       tables: { t: [{ arr: [1, 2] }], nums: [{ n: 1 }] },

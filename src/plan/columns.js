@@ -268,6 +268,11 @@ function collectColumnsFromExpr(expr, columns, aliases) {
       for (const id of inner) {
         if (id.prefix) columns.push(id)
       }
+      // FROM-function args (e.g. UNNEST in the subquery's FROM) are evaluated
+      // against the outer scope — the table function is itself the FROM, so
+      // any identifier inside its args must be correlated. Push them even if
+      // unprefixed so the outer scan reads the columns they reference.
+      collectFromFunctionArgs(sub, columns)
     }
   }
   // No columns: count(*), literal, interval
@@ -307,6 +312,33 @@ function collectColumnsFromStatement(stmt, columns) {
   for (const expr of stmt.groupBy) collectColumnsFromExpr(expr, columns)
   collectColumnsFromExpr(stmt.having, columns)
   for (const item of stmt.orderBy) collectColumnsFromExpr(item.expr, columns)
+}
+
+/**
+ * Walks a subquery statement and collects identifiers from FROM-function args
+ * (e.g. UNNEST(col) in FROM). These identifiers are necessarily correlated
+ * outer references because the table function is the only source.
+ *
+ * @param {Statement} stmt
+ * @param {IdentifierNode[]} columns
+ */
+function collectFromFunctionArgs(stmt, columns) {
+  if (stmt.type === 'compound') {
+    collectFromFunctionArgs(stmt.left, columns)
+    collectFromFunctionArgs(stmt.right, columns)
+    return
+  }
+  if (stmt.type === 'with') {
+    collectFromFunctionArgs(stmt.query, columns)
+    return
+  }
+  if (stmt.from?.type === 'function') {
+    for (const arg of stmt.from.args) {
+      collectColumnsFromExpr(arg, columns)
+    }
+  } else if (stmt.from?.type === 'subquery') {
+    collectFromFunctionArgs(stmt.from.query, columns)
+  }
 }
 
 /**
