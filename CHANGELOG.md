@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.14]
+ - Support `EXISTS` with a correlated `UNNEST` against the outer row
+
 ## [0.12.13]
  - Fix call stack overflow on `ORDER BY` with many grouped rows
 
