@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.12.15]
+ - `ARRAY_CONTAINS` function
+ - `COUNTIF` function
+ - `SIZE` as alias for `LENGTH`
+
 ## [0.12.14]
  - Support `EXISTS` with a correlated `UNNEST` against the outer row
 
