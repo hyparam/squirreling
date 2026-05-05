@@ -101,6 +101,32 @@ export function extractField(field, dateVal) {
 }
 
 /**
+ * Compute the number of unit boundaries between two dates (end - start).
+ * @param {SqlPrimitive} unit
+ * @param {SqlPrimitive} startVal
+ * @param {SqlPrimitive} endVal
+ * @returns {number | null}
+ */
+export function dateDiff(unit, startVal, endVal) {
+  if (unit == null || startVal == null || endVal == null) return null
+  const start = toDate(startVal)
+  const end = toDate(endVal)
+  if (start == null || end == null) return null
+
+  const u = String(unit).toUpperCase()
+  if (u === 'YEAR') return end.getUTCFullYear() - start.getUTCFullYear()
+  if (u === 'MONTH') {
+    return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth())
+  }
+  const ms = end.getTime() - start.getTime()
+  if (u === 'DAY') return Math.trunc(ms / 86400000)
+  if (u === 'HOUR') return Math.trunc(ms / 3600000)
+  if (u === 'MINUTE') return Math.trunc(ms / 60000)
+  if (u === 'SECOND') return Math.trunc(ms / 1000)
+  return null
+}
+
+/**
  * @param {SqlPrimitive} val
  * @returns {Date | null}
  */

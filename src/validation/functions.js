@@ -140,6 +140,8 @@ export const FUNCTION_SIGNATURES = {
   CURRENT_TIMESTAMP: { min: 0, max: 0, signature: '' },
   DATE_TRUNC: { min: 2, max: 2, signature: 'unit, date' },
   DATE_PART: { min: 2, max: 2, signature: 'field, date' },
+  DATE_DIFF: { min: 3, max: 3, signature: 'unit, start, end' },
+  DATEDIFF: { min: 3, max: 3, signature: 'unit, start, end' },
   EXTRACT: { min: 2, max: 2, signature: 'field FROM date' },
 
   // Math functions

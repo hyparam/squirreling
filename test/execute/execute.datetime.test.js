@@ -330,4 +330,113 @@ describe('date/time functions', () => {
       ])
     })
   })
+
+  describe('DATE_DIFF', () => {
+    const events = [
+      { a: '2024-01-15T00:00:00.000Z', b: '2024-07-20T00:00:00.000Z' },
+    ]
+
+    it('should compute year difference', async () => {
+      const data = [{ a: '2020-01-15', b: '2024-07-20' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'year\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(4)
+    })
+
+    it('should compute month difference', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATE_DIFF(\'month\', a, b) AS d FROM events',
+      }))
+      expect(result[0].d).toBe(6)
+    })
+
+    it('should compute day difference', async () => {
+      const data = [{ a: '2024-01-01', b: '2024-01-15' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'day\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(14)
+    })
+
+    it('should compute hour difference', async () => {
+      const data = [{ a: '2024-01-01T00:00:00Z', b: '2024-01-01T05:30:00Z' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'hour\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(5)
+    })
+
+    it('should compute minute difference', async () => {
+      const data = [{ a: '2024-01-01T00:00:00Z', b: '2024-01-01T00:45:00Z' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'minute\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(45)
+    })
+
+    it('should compute second difference', async () => {
+      const data = [{ a: '2024-01-01T00:00:00Z', b: '2024-01-01T00:00:30Z' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'second\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(30)
+    })
+
+    it('should return negative for end before start', async () => {
+      const data = [{ a: '2024-07-20', b: '2024-01-15' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'day\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(-187)
+    })
+
+    it('should be case-insensitive for unit', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATE_DIFF(\'MONTH\', a, b) AS d FROM events',
+      }))
+      expect(result[0].d).toBe(6)
+    })
+
+    it('should return null for null start', async () => {
+      const data = [{ a: NULL, b: '2024-01-15' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'day\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(null)
+    })
+
+    it('should return null for null end', async () => {
+      const data = [{ a: '2024-01-15', b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT DATE_DIFF(\'day\', a, b) AS d FROM data',
+      }))
+      expect(result[0].d).toBe(null)
+    })
+
+    it('should throw for wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { events },
+        query: 'SELECT DATE_DIFF(\'day\', a) AS d FROM events',
+      })).toThrow('DATE_DIFF(unit, start, end) function requires 3 arguments, got 2')
+    })
+
+    it('DATEDIFF should be an alias for DATE_DIFF', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT DATEDIFF(\'month\', a, b) AS d FROM events',
+      }))
+      expect(result[0].d).toBe(6)
+    })
+  })
 })

@@ -6,7 +6,7 @@ import { UnknownFunctionError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
 import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
-import { applyIntervalToDate, dateTrunc, extractField } from './date.js'
+import { applyIntervalToDate, dateDiff, dateTrunc, extractField } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
 import { evaluateSpatialFunc } from '../spatial/spatial.js'
@@ -415,6 +415,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     if (funcName === 'EXTRACT' || funcName === 'DATE_PART') {
       return extractField(args[0], args[1])
+    }
+
+    if (funcName === 'DATE_DIFF' || funcName === 'DATEDIFF') {
+      return dateDiff(args[0], args[1], args[2])
     }
 
     if (funcName === 'CURRENT_DATE') {
