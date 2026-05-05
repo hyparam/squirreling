@@ -633,8 +633,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (typeof val === 'object') return stringify(val)
       return String(val)
     }
-    // Can only cast primitives to other primitive types
-    if (typeof val === 'object') {
+    // Can only cast primitives (and Dates) to other primitive types
+    if (typeof val === 'object' && !(val instanceof Date)) {
       throw new ExecutionError({ message: `Cannot CAST object to ${toType}`, rowIndex, ...node })
     }
     if (toType === 'INTEGER' || toType === 'INT') {
