@@ -225,6 +225,45 @@ describe('date/time functions', () => {
     })
   })
 
+  describe('EPOCH', () => {
+    const events = [
+      { ts: '2024-07-15T14:30:45.123Z' },
+    ]
+
+    it('should return seconds since unix epoch from a string timestamp', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT EPOCH(ts) AS e FROM events',
+      }))
+      expect(result[0].e).toBe(new Date('2024-07-15T14:30:45.123Z').getTime() / 1000)
+    })
+
+    it('should work with Date objects', async () => {
+      const data = [{ ts: new Date('2024-01-01T00:00:00Z') }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT EPOCH(ts) AS e FROM data',
+      }))
+      expect(result[0].e).toBe(1704067200)
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ ts: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT EPOCH(ts) AS e FROM data',
+      }))
+      expect(result[0].e).toBe(null)
+    })
+
+    it('should throw for wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { events },
+        query: 'SELECT EPOCH() AS e FROM events',
+      })).toThrow('EPOCH(date) function requires 1 argument, got 0')
+    })
+  })
+
   describe('DATE_TRUNC', () => {
     const events = [
       { ts: '2024-07-15T14:30:45.123Z' },

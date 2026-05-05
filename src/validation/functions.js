@@ -143,6 +143,7 @@ export const FUNCTION_SIGNATURES = {
   DATE_DIFF: { min: 3, max: 3, signature: 'unit, start, end' },
   DATEDIFF: { min: 3, max: 3, signature: 'unit, start, end' },
   EXTRACT: { min: 2, max: 2, signature: 'field FROM date' },
+  EPOCH: { min: 1, max: 1, signature: 'date' },
 
   // Math functions
   FLOOR: { min: 1, max: 1, signature: 'number' },

@@ -417,6 +417,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return extractField(args[0], args[1])
     }
 
+    if (funcName === 'EPOCH') {
+      return extractField('EPOCH', args[0])
+    }
+
     if (funcName === 'DATE_DIFF' || funcName === 'DATEDIFF') {
       return dateDiff(args[0], args[1], args[2])
     }
