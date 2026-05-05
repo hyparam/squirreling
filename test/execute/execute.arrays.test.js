@@ -217,4 +217,69 @@ describe('array functions', () => {
       expect(result).toEqual([{ len: null }])
     })
   })
+
+  describe('ARRAY_CONTAINS', () => {
+    it('should return true when element is in the array', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(items, 20) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: true }])
+    })
+
+    it('should return false when element is not in the array', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(items, 99) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: false }])
+    })
+
+    it('should find string elements', async () => {
+      const data = [{ id: 1, items: ['a', 'b', 'c'] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(items, \'b\') AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: true }])
+    })
+
+    it('should return false for empty array', async () => {
+      /** @type {{ id: number, items: number[] }[]} */
+      const data = [{ id: 1, items: [] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(items, 1) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: false }])
+    })
+
+    it('should return null for null array', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(items, 1) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: null }])
+    })
+
+    it('should return null for non-array input', async () => {
+      const data = [{ id: 1, name: 'Alice' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(name, \'A\') AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: null }])
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1, items: [1, 2] }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONTAINS(items) FROM data',
+      })).toThrow('ARRAY_CONTAINS(array, element) function requires 2 arguments, got 1')
+    })
+  })
 })

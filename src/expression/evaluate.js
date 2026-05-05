@@ -527,6 +527,12 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return index === -1 ? null : index + 1
     }
 
+    if (funcName === 'ARRAY_CONTAINS') {
+      const [arr, target] = args
+      if (!Array.isArray(arr)) return null
+      return arr.includes(target)
+    }
+
     if (funcName === 'ARRAY_SORT') {
       const arr = args[0]
       if (!Array.isArray(arr)) return null
