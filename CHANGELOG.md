@@ -1,5 +1,11 @@
 # Squirreling Changelog
 
+## [0.12.16]
+ - `LAG` and `LEAD` window functions
+ - `DATE_DIFF` and `DATEDIFF` functions
+ - `EPOCH` function
+ - Allow `CAST` of `Date` columns to numeric types
+
 ## [0.12.15]
  - `ARRAY_CONTAINS` function
  - `COUNTIF` function
