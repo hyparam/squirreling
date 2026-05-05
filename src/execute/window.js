@@ -20,10 +20,13 @@ export function executeWindow(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   const extraColumns = plan.windows.map(w => w.alias)
 
-  // Streaming fast path: every window is OVER () with no partition/order, so
-  // each row's output depends only on its position in the input stream. Avoids
-  // buffering — critical for large scans (e.g. parquet).
-  const streamable = plan.windows.every(w => w.partitionBy.length === 0 && w.orderBy.length === 0)
+  // Streaming fast path: every window is a positional function (e.g.
+  // ROW_NUMBER) with OVER () — no partition/order — so each row's output
+  // depends only on its index in the input stream. Avoids buffering, which
+  // matters for large scans (e.g. parquet).
+  const streamable = plan.windows.every(w =>
+    w.funcName === 'ROW_NUMBER' && w.partitionBy.length === 0 && w.orderBy.length === 0
+  )
 
   if (streamable) {
     return {
@@ -37,7 +40,7 @@ export function executeWindow(plan, context) {
           i++
           const cells = { ...row.cells }
           for (const w of plan.windows) {
-            const value = assignRowNumber(w.funcName, i - 1)
+            const value = i
             cells[w.alias] = () => Promise.resolve(value)
           }
           yield {
@@ -119,6 +122,8 @@ async function computeWindow(spec, rows, output, context) {
     if (context.signal?.aborted) return
 
     // Order within the partition. Empty ORDER BY → input order.
+    /** @type {number[]} */
+    let ordered
     if (spec.orderBy.length) {
       const orderValues = await Promise.all(bucket.map(idx =>
         Promise.all(spec.orderBy.map(term => evaluateExpr({ node: term.expr, row: rows[idx], context })))
@@ -132,23 +137,51 @@ async function computeWindow(spec, rows, output, context) {
         }
         return a.pos - b.pos
       })
-      for (let k = 0; k < entries.length; k++) {
-        output[entries[k].idx] = assignRowNumber(spec.funcName, k)
-      }
+      ordered = entries.map(e => e.idx)
     } else {
-      for (let k = 0; k < bucket.length; k++) {
-        output[bucket[k]] = assignRowNumber(spec.funcName, k)
-      }
+      ordered = bucket
     }
+
+    await applyWindowFunction(spec, ordered, rows, output, context)
   }
 }
 
 /**
- * @param {string} funcName
- * @param {number} rank - 0-based rank within the partition
- * @returns {SqlPrimitive}
+ * Computes window function values for a single partition's rows in order.
+ *
+ * @param {WindowSpec} spec
+ * @param {number[]} ordered - row indices in window order
+ * @param {AsyncRow[]} rows
+ * @param {SqlPrimitive[]} output
+ * @param {ExecuteContext} context
  */
-function assignRowNumber(funcName, rank) {
-  if (funcName === 'ROW_NUMBER') return rank + 1
-  throw new Error(`Unsupported window function: ${funcName}`)
+async function applyWindowFunction(spec, ordered, rows, output, context) {
+  if (spec.funcName === 'ROW_NUMBER') {
+    for (let k = 0; k < ordered.length; k++) {
+      output[ordered[k]] = k + 1
+    }
+    return
+  }
+  if (spec.funcName === 'LAG' || spec.funcName === 'LEAD') {
+    const direction = spec.funcName === 'LAG' ? -1 : 1
+    const [valueExpr, offsetExpr, defaultExpr] = spec.args
+    for (let k = 0; k < ordered.length; k++) {
+      if (context.signal?.aborted) return
+      const idx = ordered[k]
+      const row = rows[idx]
+      const offset = offsetExpr
+        ? Number(await evaluateExpr({ node: offsetExpr, row, context }))
+        : 1
+      const target = k + direction * offset
+      if (target >= 0 && target < ordered.length) {
+        output[idx] = await evaluateExpr({ node: valueExpr, row: rows[ordered[target]], context })
+      } else if (defaultExpr) {
+        output[idx] = await evaluateExpr({ node: defaultExpr, row, context })
+      } else {
+        output[idx] = null
+      }
+    }
+    return
+  }
+  throw new Error(`Unsupported window function: ${spec.funcName}`)
 }

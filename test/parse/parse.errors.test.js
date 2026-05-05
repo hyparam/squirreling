@@ -200,16 +200,6 @@ describe('parseSql error handling', () => {
         .toThrow('Window function "DENSE_RANK" is not supported')
     })
 
-    it('should throw error for LAG window function', () => {
-      expect(() => parseSql({ query: 'SELECT LAG(x) OVER (ORDER BY id) FROM t' }))
-        .toThrow('Window function "LAG" is not supported')
-    })
-
-    it('should throw error for LEAD window function', () => {
-      expect(() => parseSql({ query: 'SELECT LEAD(x) OVER (ORDER BY id) FROM t' }))
-        .toThrow('Window function "LEAD" is not supported')
-    })
-
     it('should throw error for NTILE window function', () => {
       expect(() => parseSql({ query: 'SELECT NTILE(4) OVER (ORDER BY id) FROM t' }))
         .toThrow('Window function "NTILE" is not supported')
