@@ -218,6 +218,34 @@ describe('array functions', () => {
     })
   })
 
+  describe('SIZE', () => {
+    it('should return the length of an array', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIZE(items) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 3 }])
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SIZE(items) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1, items: [1, 2] }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT SIZE(items, 1) FROM data',
+      })).toThrow('SIZE(array) function requires 1 argument, got 2')
+    })
+  })
+
   describe('ARRAY_CONTAINS', () => {
     it('should return true when element is in the array', async () => {
       const data = [{ id: 1, items: [10, 20, 30] }]

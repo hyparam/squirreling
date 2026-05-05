@@ -185,6 +185,7 @@ export const FUNCTION_SIGNATURES = {
   ARRAY_CONTAINS: { min: 2, max: 2, signature: 'array, element' },
   ARRAY_SORT: { min: 1, max: 1, signature: 'array' },
   CARDINALITY: { min: 1, max: 1, signature: 'array' },
+  SIZE: { min: 1, max: 1, signature: 'array' },
 
   // Table functions (used in FROM clause)
   UNNEST: { min: 1, max: 1, signature: 'array' },

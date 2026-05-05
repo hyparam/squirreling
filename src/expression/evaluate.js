@@ -508,7 +508,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return arr.length
     }
 
-    if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY') {
+    if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY' || funcName === 'SIZE') {
       const arr = args[0]
       if (!Array.isArray(arr)) return null
       if (funcName === 'ARRAY_LENGTH' && args.length === 2) {
