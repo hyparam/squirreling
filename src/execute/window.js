@@ -54,10 +54,12 @@ export function executeWindow(plan, context) {
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
+      const op = context.budget?.operator('Window')
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
+        op?.addRow()
         rows.push(row)
       }
       if (rows.length === 0) return

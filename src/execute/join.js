@@ -23,6 +23,7 @@ export function executeNestedLoopJoin(plan, context) {
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows() {
+      const op = context.budget?.operator('NestedLoopJoin')
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
 
@@ -31,6 +32,7 @@ export function executeNestedLoopJoin(plan, context) {
       const rightRows = []
       for await (const row of right.rows()) {
         if (context.signal?.aborted) return
+        op?.addRow()
         rightRows.push(row)
       }
 
@@ -153,6 +155,7 @@ export function executePositionalJoin(plan, context) {
     maxRows: maxBounds(left.maxRows, right.maxRows),
     async *rows() {
       const { signal } = context
+      const op = context.budget?.operator('PositionalJoin')
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
 
@@ -161,6 +164,7 @@ export function executePositionalJoin(plan, context) {
       const leftRows = []
       for await (const row of left.rows()) {
         if (signal?.aborted) return
+        op?.addRow()
         leftRows.push(row)
       }
 
@@ -168,6 +172,7 @@ export function executePositionalJoin(plan, context) {
       const rightRows = []
       for await (const row of right.rows()) {
         if (signal?.aborted) return
+        op?.addRow()
         rightRows.push(row)
       }
 
@@ -198,6 +203,7 @@ export function executeHashJoin(plan, context) {
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows() {
+      const op = context.budget?.operator('HashJoin')
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
       const { leftKeys, rightKeys, residual } = plan
@@ -207,6 +213,7 @@ export function executeHashJoin(plan, context) {
       const rightRows = []
       for await (const row of right.rows()) {
         if (context.signal?.aborted) return
+        op?.addRow()
         rightRows.push(row)
       }
 

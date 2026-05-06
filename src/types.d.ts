@@ -33,6 +33,54 @@ export interface ExecuteSqlOptions {
   query: string | Statement
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
+  budget?: SqlExecutionBudget
+}
+
+/**
+ * Execution-time budget enforced across a single SQL query. All fields are
+ * optional; an unset field means no limit. When any field is exceeded the
+ * executor throws a SqlBudgetError that identifies which limit was breached.
+ */
+export interface SqlExecutionBudget {
+  // Max rows pinned in materializing buffers (sort, hash, etc.) summed across
+  // operators. Each row added to a buffer counts once.
+  maxRowsToMaterialize?: number
+  // Max approximate heap bytes used by intermediate buffers, summed across
+  // operators. Bytes are estimated per row (default 64 if no estimate given).
+  maxHeapBytes?: number
+  // Max approximate intermediate bytes for any single materializing operator.
+  maxIntermediateBytes?: number
+  // Wall-clock timeout in milliseconds. Checked on each materialized row and
+  // explicitly via tracker.checkTimeout() in long-running streaming loops.
+  timeoutMs?: number
+  // When false, the executor must not use derived column scan fast paths.
+  // Default true (existing behavior).
+  allowDerivedColumnScan?: boolean
+}
+
+/**
+ * Internal tracker created from a SqlExecutionBudget. Operators that
+ * materialize rows obtain an operator-scoped handle via tracker.operator(name)
+ * and call .addRow() before pinning each row. Plumbed through ExecuteContext.
+ */
+export interface BudgetTracker {
+  budget: SqlExecutionBudget
+  // Whether scalar-aggregate scanColumn fast paths may run. False when
+  // budget.allowDerivedColumnScan === false.
+  allowDerivedColumnScan: boolean
+  // Returns an operator-scoped handle that tracks per-operator intermediate
+  // bytes and contributes to the global row/heap counters.
+  operator(name: string): BudgetOperator
+  // Throws SqlBudgetError if the wall-clock deadline has passed.
+  checkTimeout(): void
+}
+
+export interface BudgetOperator {
+  // Records one materialized row. Optional approxBytes lets operators that
+  // know more (e.g. typed arrays) provide a better estimate.
+  addRow(approxBytes?: number): void
+  // Throws SqlBudgetError if the wall-clock deadline has passed.
+  checkTimeout(): void
 }
 
 // planSql(options)
@@ -62,6 +110,9 @@ export interface ExecuteContext {
   // CTE references in subqueries re-planned during execution
   ctePlans?: Map<string, QueryPlan>
   cteColumns?: Map<string, string[]>
+  // Budget tracker for resource limits. When set, materializing operators
+  // call .operator(name).addRow() before pinning each row.
+  budget?: BudgetTracker
 }
 
 // AsyncRow represents a row with async cell values
