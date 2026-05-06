@@ -5,7 +5,7 @@ import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ColumnBatch, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  */
 
@@ -161,6 +161,21 @@ export function executeScalarAggregate(plan, context) {
   }
 
   const child = executePlan({ plan: plan.child, context })
+
+  // Batch-mode fast path: child emits column batches and every output column is
+  // a simple aggregate (COUNT/SUM/AVG/MIN/MAX) on a plain identifier (or
+  // COUNT(*)). Lets us consume columnar data directly without materializing
+  // per-row AsyncRow objects.
+  const batchFast = tryBatchAggregate(plan, child, context)
+  if (batchFast) {
+    return {
+      columns: selectColumnNames(plan.columns, child.columns),
+      numRows: 1,
+      maxRows: 1,
+      rows: batchFast,
+    }
+  }
+
   return {
     columns: selectColumnNames(plan.columns, child.columns),
     numRows: plan.having ? undefined : 1,
@@ -348,4 +363,194 @@ async function scanColumnAggregate({ table, spec, limit, offset, signal, budget 
   if (spec.funcName === 'MIN') return min
   if (spec.funcName === 'MAX') return max
   return null
+}
+
+/**
+ * @typedef {{
+ *   funcName: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX',
+ *   column: string | null,
+ *   alias: string,
+ *   resolvedColumn: string | null,
+ * }} BatchAggSpec
+ */
+
+/**
+ * Extracts a batch-aggregate spec from a SELECT column. Returns undefined for
+ * shapes the batch fast path can't handle: non-functions, FILTER, DISTINCT,
+ * unsupported function names, or arguments that aren't a plain identifier or
+ * star. The fast path mirrors tryColumnScanAggregate but consumes columnar
+ * batches instead of dispatching to scanColumn.
+ *
+ * @param {DerivedColumn} col
+ * @returns {Omit<BatchAggSpec, 'resolvedColumn'> | undefined}
+ */
+function extractBatchAggSpec({ expr, alias }) {
+  if (expr.type !== 'function') return
+  if (expr.filter) return
+  if (expr.distinct) return
+  const funcName = expr.funcName.toUpperCase()
+  if (funcName !== 'COUNT' && funcName !== 'SUM' && funcName !== 'AVG' && funcName !== 'MIN' && funcName !== 'MAX') return
+
+  const arg = expr.args[0]
+  if (arg.type === 'star') {
+    if (funcName !== 'COUNT') return
+    return { funcName, column: null, alias: alias ?? derivedAlias(expr) }
+  }
+  if (arg.type !== 'identifier') return
+  return {
+    funcName,
+    column: derivedAlias(arg),
+    alias: alias ?? derivedAlias(expr),
+  }
+}
+
+/**
+ * Resolves a spec's column name to a key in a batch's column map. Returns the
+ * actual key or undefined if unresolvable. Mirrors the suffix-match fallback
+ * used by projectBatchesSimple so prefixed child columns (e.g. 't.id') still
+ * resolve when the spec carries the bare identifier name.
+ *
+ * @param {string} name
+ * @param {string[]} childColumns
+ * @returns {string | undefined}
+ */
+function resolveBatchColumn(name, childColumns) {
+  if (childColumns.includes(name)) return name
+  const suffix = '.' + name
+  return childColumns.find(c => c.endsWith(suffix))
+}
+
+/**
+ * Builds an async generator that consumes column batches from `child` and
+ * emits a single aggregate row. Returns undefined when the fast path can't
+ * apply — caller falls back to row-mode aggregation.
+ *
+ * @param {ScalarAggregateNode} plan
+ * @param {QueryResults} child
+ * @param {ExecuteContext} context
+ * @returns {(() => AsyncGenerator<AsyncRow>) | undefined}
+ */
+function tryBatchAggregate(plan, child, context) {
+  if (plan.having) return
+  if (!child.batches) return
+
+  /** @type {BatchAggSpec[]} */
+  const specs = []
+  for (const col of plan.columns) {
+    if (col.type !== 'derived') return
+    const spec = extractBatchAggSpec(col)
+    if (!spec) return
+    /** @type {string | null} */
+    let resolvedColumn = null
+    if (spec.column !== null) {
+      const resolved = resolveBatchColumn(spec.column, child.columns)
+      if (!resolved) return
+      resolvedColumn = resolved
+    }
+    specs.push({ ...spec, resolvedColumn })
+  }
+
+  const childBatches = child.batches.bind(child)
+
+  return async function* () {
+    /** @type {Record<string, { count: number, sum: number, min: SqlPrimitive, max: SqlPrimitive }>} */
+    const state = {}
+    for (const spec of specs) {
+      state[spec.alias] = { count: 0, sum: 0, min: null, max: null }
+    }
+
+    for await (const batch of childBatches()) {
+      if (context.signal?.aborted) return
+      for (const spec of specs) {
+        accumulateBatch(state[spec.alias], spec, batch)
+      }
+    }
+
+    /** @type {string[]} */
+    const columns = []
+    /** @type {AsyncCells} */
+    const cells = {}
+    for (const spec of specs) {
+      columns.push(spec.alias)
+      const value = finalizeAggregate(spec, state[spec.alias])
+      cells[spec.alias] = () => Promise.resolve(value)
+    }
+    yield { columns, cells }
+  }
+}
+
+/**
+ * Accumulates one batch into the running state for a single aggregate spec.
+ * Null-handling mirrors scanColumnAggregate: nulls are skipped for every
+ * function; SUM/AVG additionally skip values that don't coerce to a finite
+ * number; MIN/MAX work on any non-null value (including strings).
+ *
+ * @param {{ count: number, sum: number, min: SqlPrimitive, max: SqlPrimitive }} s
+ * @param {BatchAggSpec} spec
+ * @param {ColumnBatch} batch
+ */
+function accumulateBatch(s, spec, batch) {
+  if (spec.funcName === 'COUNT' && spec.resolvedColumn === null) {
+    s.count += batch.rowCount
+    return
+  }
+  const { resolvedColumn } = spec
+  if (resolvedColumn === null) return
+  const col = batch.columns[resolvedColumn]
+  if (!col) return
+  const len = batch.rowCount
+  if (spec.funcName === 'COUNT') {
+    for (let i = 0; i < len; i++) {
+      if (col[i] != null) s.count++
+    }
+    return
+  }
+  if (spec.funcName === 'SUM' || spec.funcName === 'AVG') {
+    let { sum, count } = s
+    for (let i = 0; i < len; i++) {
+      const v = col[i]
+      if (v == null) continue
+      const num = Number(v)
+      if (!Number.isFinite(num)) continue
+      sum += num
+      count++
+    }
+    s.sum = sum
+    s.count = count
+    return
+  }
+  if (spec.funcName === 'MIN') {
+    let { min } = s
+    for (let i = 0; i < len; i++) {
+      const v = col[i]
+      if (v == null) continue
+      if (min === null || v < min) min = v
+    }
+    s.min = min
+    return
+  }
+  if (spec.funcName === 'MAX') {
+    let { max } = s
+    for (let i = 0; i < len; i++) {
+      const v = col[i]
+      if (v == null) continue
+      if (max === null || v > max) max = v
+    }
+    s.max = max
+  }
+}
+
+/**
+ * Computes the final aggregate value from running state.
+ *
+ * @param {BatchAggSpec} spec
+ * @param {{ count: number, sum: number, min: SqlPrimitive, max: SqlPrimitive }} s
+ * @returns {SqlPrimitive}
+ */
+function finalizeAggregate(spec, s) {
+  if (spec.funcName === 'COUNT') return s.count
+  if (spec.funcName === 'SUM') return s.count === 0 ? null : s.sum
+  if (spec.funcName === 'AVG') return s.count === 0 ? null : s.sum / s.count
+  if (spec.funcName === 'MIN') return s.min
+  return s.max
 }
