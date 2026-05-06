@@ -381,7 +381,11 @@ function computeScanRows(tableNumRows, limit, offset) {
  */
 async function* filterRows(rows, condition, context, limit) {
   const MAX_CHUNK = 256
-  let chunkSize = limit ?? Infinity
+  // Without a LIMIT hint, evaluate row-by-row to preserve streaming.
+  // With a LIMIT hint, batch in growing chunks to parallelize async cell
+  // evaluation across rows that may be discarded anyway.
+  let chunkSize = limit ?? 1
+  const grow = limit !== undefined
   let rowIndex = 0
 
   /** @type {{ row: AsyncRow, rowIndex: number }[]} */
@@ -400,7 +404,7 @@ async function* filterRows(rows, condition, context, limit) {
         if (results[i]) yield buffer[i].row
       }
       buffer = []
-      chunkSize = Math.min(chunkSize * 2, MAX_CHUNK)
+      if (grow) chunkSize = Math.min(chunkSize * 2, MAX_CHUNK)
     }
   }
 
