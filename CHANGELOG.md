@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.17]
+ - Stream filtering
+
 ## [0.12.16]
  - `LAG` and `LEAD` window functions
  - `DATE_DIFF` and `DATEDIFF` functions
