@@ -11,6 +11,12 @@ export { QueryPlan } from './plan/types.js'
 export interface QueryResults {
   columns: string[]
   rows(): AsyncGenerator<AsyncRow>
+  // Optional column-oriented batch iterator. Operators set this when they can
+  // produce batches natively (e.g. when the underlying source has scanBatches
+  // and the operator can chain through them without per-row materialization).
+  // Consumers may prefer batches() over rows() for throughput; rows() is still
+  // the canonical interface and always works.
+  batches?(): AsyncIterable<ColumnBatch>
   numRows?: number
   maxRows?: number
 }

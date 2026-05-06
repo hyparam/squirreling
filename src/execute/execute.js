@@ -1,3 +1,4 @@
+import { adaptBatchesToRows } from '../backend/batch.js'
 import { memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
@@ -6,6 +7,7 @@ import { planSql, planStatement } from '../plan/plan.js'
 import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
+import { filterBatches, limitBatches, projectBatchesSimple } from './batchOps.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -284,6 +286,36 @@ function executeScan(plan, context) {
     }
   }
 
+  // Native batch path: source has scanBatches. Per the Phase 5a contract,
+  // scanBatches has no WHERE/LIMIT pushdown surface — those hints are applied
+  // engine-side via filterBatches/limitBatches so the columnar pipeline stays
+  // intact end-to-end.
+  if (table.scanBatches) {
+    const cols = plan.hints.columns ?? table.columns
+    const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
+    const { where } = plan.hints
+    const scanBatchesFn = table.scanBatches.bind(table)
+
+    function makeBatches() {
+      let stream = scanBatchesFn({
+        columns: plan.hints.columns,
+        signal,
+      })
+      if (where) stream = filterBatches(stream, where, context, cols)
+      if (hasLimitOffset) stream = limitBatches(stream, plan.hints.limit, plan.hints.offset, signal)
+      return stream
+    }
+    return {
+      columns: cols,
+      numRows: !where ? scanRows : undefined,
+      maxRows: scanRows,
+      batches: makeBatches,
+      async *rows() {
+        yield* adaptBatchesToRows(makeBatches())
+      },
+    }
+  }
+
   // do the scan
   const scanResult = table.scan({ ...plan.hints, signal })
   const { appliedWhere, appliedLimitOffset } = scanResult
@@ -449,6 +481,21 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
  */
 function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  if (child.batches) {
+    const childBatches = child.batches.bind(child)
+    const childColumns = child.columns
+    function makeBatches() {
+      return filterBatches(childBatches(), plan.condition, context, childColumns)
+    }
+    return {
+      columns: childColumns,
+      maxRows: child.maxRows,
+      batches: makeBatches,
+      async *rows() {
+        yield* adaptBatchesToRows(makeBatches())
+      },
+    }
+  }
   return {
     columns: child.columns,
     maxRows: child.maxRows,
@@ -470,6 +517,26 @@ function executeProject(plan, context) {
   const resolveable = plan.columns.every(col =>
     col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
   )
+
+  // Native batch path: child emits batches and the projection is a simple
+  // shape (stars + identifiers) we can satisfy by aliasing column arrays.
+  // Complex expressions still go through row-mode below.
+  if (child.batches && resolveable) {
+    const childBatches = child.batches.bind(child)
+    const childColumns = child.columns
+    function makeBatches() {
+      return projectBatchesSimple(childBatches(), plan.columns, columns, childColumns)
+    }
+    return {
+      columns,
+      numRows: child.numRows,
+      maxRows: child.maxRows,
+      batches: makeBatches,
+      async *rows() {
+        yield* adaptBatchesToRows(makeBatches())
+      },
+    }
+  }
 
   return {
     columns,
