@@ -8,8 +8,28 @@ import { collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumn
 
 /**
  * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
- * @import { QueryPlan, WindowSpec } from './types.d.ts'
+ * @import { QueryPlan, SortNode, WindowSpec } from './types.d.ts'
  */
+
+// Maximum top-K size for the Sort heap rewrite. Sorts feeding a LIMIT smaller
+// than this fall into the bounded-heap path instead of buffering the full
+// input. Beyond this size the heap loses memory advantage over a full sort.
+const TOPK_THRESHOLD = 10000
+
+/**
+ * Top-K hint for Sort: if `limit` is defined and the combined LIMIT+OFFSET
+ * fits the threshold, return that count. Otherwise undefined (full sort).
+ *
+ * @param {number | undefined} limit
+ * @param {number | undefined} offset
+ * @returns {number | undefined}
+ */
+function topKHint(limit, offset) {
+  if (limit === undefined) return undefined
+  const k = limit + (offset ?? 0)
+  if (k > TOPK_THRESHOLD) return undefined
+  return k
+}
 
 /**
  * Builds a query plan from a statement AST.
@@ -85,7 +105,11 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
   }
 
   if (compound.orderBy.length) {
-    plan = { type: 'Sort', orderBy: compound.orderBy, child: plan }
+    /** @type {SortNode} */
+    const sortNode = { type: 'Sort', orderBy: compound.orderBy, child: plan }
+    const k = topKHint(compound.limit, compound.offset)
+    if (k !== undefined) sortNode.limit = k
+    plan = sortNode
   }
   if (compound.limit !== undefined || compound.offset) {
     plan = { type: 'Limit', limit: compound.limit, offset: compound.offset, child: plan }
@@ -258,7 +282,15 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
     // ORDER BY (after aggregation)
     if (orderBy.length && !select.groupBy.length) {
-      plan = { type: 'Sort', orderBy, child: plan }
+      /** @type {SortNode} */
+      const sortNode = { type: 'Sort', orderBy, child: plan }
+      // Top-K is only safe when nothing between Sort and Limit can change
+      // cardinality. DISTINCT can drop rows, so skip the hint when present.
+      if (!select.distinct) {
+        const k = topKHint(select.limit, select.offset)
+        if (k !== undefined) sortNode.limit = k
+      }
+      plan = sortNode
     }
 
     // DISTINCT
@@ -282,7 +314,15 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     // ORDER BY (before projection so it can access all columns)
     // Resolve SELECT aliases in ORDER BY expressions at plan time
     if (orderBy.length) {
-      plan = { type: 'Sort', orderBy, child: plan }
+      /** @type {SortNode} */
+      const sortNode = { type: 'Sort', orderBy, child: plan }
+      // Top-K is only safe when nothing between Sort and Limit can change
+      // cardinality. DISTINCT can drop rows, so skip the hint when present.
+      if (!select.distinct) {
+        const k = topKHint(select.limit, select.offset)
+        if (k !== undefined) sortNode.limit = k
+      }
+      plan = sortNode
     }
 
     // DISTINCT needs to come after projection but before LIMIT

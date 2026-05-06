@@ -1,8 +1,12 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncDataSource, AsyncRow, BatchScanOptions, BudgetTracker, ColumnBatch, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlExecutionBudget, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncCells,
   AsyncDataSource,
   AsyncRow,
+  BatchScanOptions,
+  BudgetOperator,
+  BudgetTracker,
+  ColumnBatch,
   ExecuteContext,
   ExecuteSqlOptions,
   ExprNode,
@@ -14,6 +18,7 @@ export type {
   ScanResults,
   SelectStatement,
   SetOperationStatement,
+  SqlExecutionBudget,
   SqlPrimitive,
   Statement,
   Token,
@@ -85,6 +90,33 @@ export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): 
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
 
 /**
+ * Adapts a stream of AsyncRow into a stream of ColumnBatch by buffering rows
+ * and materializing the requested columns into per-batch arrays.
+ */
+export function adaptRowsToBatches(
+  rows: AsyncIterable<AsyncRow>,
+  columns: string[],
+  options?: { batchSize?: number, rowStart?: number, signal?: AbortSignal },
+): AsyncIterable<ColumnBatch>
+
+/**
+ * Adapts a stream of ColumnBatch into a stream of AsyncRow. Each yielded row
+ * has resolved values prefilled so consumers can skip the AsyncCell await.
+ */
+export function adaptBatchesToRows(
+  batches: AsyncIterable<ColumnBatch>,
+): AsyncIterable<AsyncRow>
+
+/**
+ * Returns batches from a data source, using its native scanBatches when
+ * available and otherwise falling back to scan() + adaptRowsToBatches.
+ */
+export function scanBatches(
+  source: AsyncDataSource,
+  options?: BatchScanOptions,
+): AsyncIterable<ColumnBatch>
+
+/**
  * Generates a default alias for a derived column expression.
  * Useful for generating column names pre-execution.
  *
@@ -92,3 +124,30 @@ export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
  * @returns the generated alias
  */
 export function derivedAlias(expr: ExprNode): string
+
+/**
+ * Builds a BudgetTracker from a SqlExecutionBudget. Returns undefined when
+ * no budget is provided. Callers passing budgets via executeSql do not need
+ * to call this directly — it is wired automatically.
+ */
+export function createBudget(budget?: SqlExecutionBudget): BudgetTracker | undefined
+
+/**
+ * Structured error thrown when a SQL execution budget is exceeded.
+ *
+ * `limit` identifies which budget field was breached. `value` is the measured
+ * value at the time of abort and `max` is the configured limit. `operator`,
+ * when set, names the operator that triggered the abort (e.g. "Sort").
+ */
+export class SqlBudgetError extends Error {
+  readonly limit: 'maxRowsToMaterialize' | 'maxHeapBytes' | 'maxIntermediateBytes' | 'timeoutMs'
+  readonly value: number
+  readonly max: number
+  readonly operator?: string
+  constructor(options: {
+    limit: 'maxRowsToMaterialize' | 'maxHeapBytes' | 'maxIntermediateBytes' | 'timeoutMs'
+    value: number
+    max: number
+    operator?: string
+  })
+}

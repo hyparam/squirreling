@@ -1,3 +1,4 @@
+import { adaptBatchesToRows } from '../backend/batch.js'
 import { memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
@@ -6,6 +7,8 @@ import { planSql, planStatement } from '../plan/plan.js'
 import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
+import { filterBatches, limitBatches, projectBatchesSimple } from './batchOps.js'
+import { createBudget } from './budget.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -22,7 +25,7 @@ import { executeWindow } from './window.js'
  * @param {ExecuteSqlOptions} options
  * @returns {QueryResults}
  */
-export function executeSql({ tables, query, functions, signal }) {
+export function executeSql({ tables, query, functions, signal, budget }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
@@ -45,7 +48,7 @@ export function executeSql({ tables, query, functions, signal }) {
   const ctePlans = new Map()
   /** @type {Map<string, string[]>} */
   const cteColumns = new Map()
-  const context = { tables: normalizedTables, functions, signal, scope, ctePlans, cteColumns }
+  const context = { tables: normalizedTables, functions, signal, scope, ctePlans, cteColumns, budget: createBudget(budget) }
   const plan = planSql({ query: parsed, functions, tables: normalizedTables, ctePlans, cteColumns })
   return executePlan({ plan, context })
 }
@@ -284,6 +287,36 @@ function executeScan(plan, context) {
     }
   }
 
+  // Native batch path: source has scanBatches. Per the Phase 5a contract,
+  // scanBatches has no WHERE/LIMIT pushdown surface — those hints are applied
+  // engine-side via filterBatches/limitBatches so the columnar pipeline stays
+  // intact end-to-end.
+  if (table.scanBatches) {
+    const cols = plan.hints.columns ?? table.columns
+    const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
+    const { where } = plan.hints
+    const scanBatchesFn = table.scanBatches.bind(table)
+
+    function makeBatches() {
+      let stream = scanBatchesFn({
+        columns: plan.hints.columns,
+        signal,
+      })
+      if (where) stream = filterBatches(stream, where, context, cols)
+      if (hasLimitOffset) stream = limitBatches(stream, plan.hints.limit, plan.hints.offset, signal)
+      return stream
+    }
+    return {
+      columns: cols,
+      numRows: !where ? scanRows : undefined,
+      maxRows: scanRows,
+      batches: makeBatches,
+      async *rows() {
+        yield* adaptBatchesToRows(makeBatches())
+      },
+    }
+  }
+
   // do the scan
   const scanResult = table.scan({ ...plan.hints, signal })
   const { appliedWhere, appliedLimitOffset } = scanResult
@@ -397,6 +430,7 @@ async function* filterRows(rows, condition, context, limit) {
     buffer.push({ row, rowIndex })
 
     if (buffer.length >= chunkSize) {
+      context.budget?.checkTimeout()
       const results = await Promise.all(buffer.map(b =>
         evaluateExpr({ node: condition, row: b.row, rowIndex: b.rowIndex, context })
       ))
@@ -453,6 +487,21 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
  */
 function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  if (child.batches) {
+    const childBatches = child.batches.bind(child)
+    const childColumns = child.columns
+    function makeBatches() {
+      return filterBatches(childBatches(), plan.condition, context, childColumns)
+    }
+    return {
+      columns: childColumns,
+      maxRows: child.maxRows,
+      batches: makeBatches,
+      async *rows() {
+        yield* adaptBatchesToRows(makeBatches())
+      },
+    }
+  }
   return {
     columns: child.columns,
     maxRows: child.maxRows,
@@ -474,6 +523,26 @@ function executeProject(plan, context) {
   const resolveable = plan.columns.every(col =>
     col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
   )
+
+  // Native batch path: child emits batches and the projection is a simple
+  // shape (stars + identifiers) we can satisfy by aliasing column arrays.
+  // Complex expressions still go through row-mode below.
+  if (child.batches && resolveable) {
+    const childBatches = child.batches.bind(child)
+    const childColumns = child.columns
+    function makeBatches() {
+      return projectBatchesSimple(childBatches(), plan.columns, columns, childColumns)
+    }
+    return {
+      columns,
+      numRows: child.numRows,
+      maxRows: child.maxRows,
+      batches: makeBatches,
+      async *rows() {
+        yield* adaptBatchesToRows(makeBatches())
+      },
+    }
+  }
 
   return {
     columns,
@@ -563,6 +632,7 @@ function executeDistinct(plan, context) {
     maxRows: child.maxRows,
     async *rows() {
       const { signal } = context
+      const op = context.budget?.operator('Distinct')
       const MAX_CHUNK = 256
 
       const seen = new Set()
@@ -579,6 +649,7 @@ function executeDistinct(plan, context) {
           for (let i = 0; i < buffer.length; i++) {
             const key = await keys[i]
             if (!seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield buffer[i]
             }
@@ -593,6 +664,7 @@ function executeDistinct(plan, context) {
         for (let i = 0; i < buffer.length; i++) {
           const key = await keys[i]
           if (!seen.has(key)) {
+            op?.addRow()
             seen.add(key)
             yield buffer[i]
           }
@@ -651,11 +723,13 @@ function executeSetOperation(plan, context) {
         maxRows: addBounds(left.maxRows, right.maxRows),
         async *rows() {
           // UNION: yield deduplicated rows from both sides
+          const op = context.budget?.operator('Union')
           const seen = new Set()
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
@@ -664,6 +738,7 @@ function executeSetOperation(plan, context) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
@@ -678,12 +753,14 @@ function executeSetOperation(plan, context) {
       columns: left.columns,
       maxRows: minBounds(left.maxRows, right.maxRows),
       async *rows() {
+        const op = context.budget?.operator('Intersect')
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
         for await (const row of right.rows()) {
           if (signal?.aborted) return
           const key = await stableRowKey(row)
+          if (!rightKeys.has(key)) op?.addRow()
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
         }
 
@@ -705,6 +782,7 @@ function executeSetOperation(plan, context) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (rightKeys.has(key) && !seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
@@ -720,12 +798,14 @@ function executeSetOperation(plan, context) {
       columns: left.columns,
       maxRows: left.maxRows,
       async *rows() {
+        const op = context.budget?.operator('Except')
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
         for await (const row of right.rows()) {
           if (signal?.aborted) return
           const key = await stableRowKey(row)
+          if (!rightKeys.has(key)) op?.addRow()
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
         }
 
@@ -748,6 +828,7 @@ function executeSetOperation(plan, context) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (!rightKeys.has(key) && !seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
