@@ -355,10 +355,12 @@ export function executeSort(plan, context) {
       }
 
       // Full sort path: buffer all rows, then sort.
+      const op = context.budget?.operator('Sort')
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
+        op?.addRow()
         rows.push(row)
       }
 

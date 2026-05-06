@@ -80,11 +80,13 @@ export function executeHashAggregate(plan, context) {
     columns: selectColumnNames(plan.columns, child.columns),
     maxRows: child.maxRows,
     async *rows() {
+      const op = context.budget?.operator('HashAggregate')
       // Collect all rows
       /** @type {AsyncRow[]} */
       const allRows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
+        op?.addRow()
         allRows.push(row)
       }
 
@@ -147,7 +149,8 @@ export function executeHashAggregate(plan, context) {
  */
 export function executeScalarAggregate(plan, context) {
   // Fast path: use scanColumn when available
-  const fast = tryColumnScanAggregate(plan, context)
+  const allowFast = context.budget ? context.budget.allowDerivedColumnScan : true
+  const fast = allowFast ? tryColumnScanAggregate(plan, context) : undefined
   if (fast) {
     return {
       columns: selectColumnNames(plan.columns, []),
@@ -163,11 +166,13 @@ export function executeScalarAggregate(plan, context) {
     numRows: plan.having ? undefined : 1,
     maxRows: 1,
     async *rows() {
+      const op = context.budget?.operator('ScalarAggregate')
       // Collect all rows into single group
       /** @type {AsyncRow[]} */
       const group = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
+        op?.addRow()
         group.push(row)
       }
 
@@ -212,7 +217,7 @@ export function executeScalarAggregate(plan, context) {
  * @param {ExecuteContext} context
  * @returns {(() => AsyncGenerator<AsyncRow>) | undefined}
  */
-function tryColumnScanAggregate(plan, { tables, signal }) {
+function tryColumnScanAggregate(plan, { tables, signal, budget }) {
   // No HAVING support in fast path
   if (plan.having) return
   // Child must be a direct table scan
@@ -243,7 +248,7 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
 
     for (const spec of specs) {
       columns.push(spec.alias)
-      cells[spec.alias] = () => scanColumnAggregate({ table, spec, limit, offset, signal })
+      cells[spec.alias] = () => scanColumnAggregate({ table, spec, limit, offset, signal, budget })
     }
 
     yield { columns, cells }
@@ -283,15 +288,17 @@ function extractColumnAggSpec({ expr, alias }) {
  * @param {number} [options.limit]
  * @param {number} [options.offset]
  * @param {AbortSignal} [options.signal]
+ * @param {import('../types.js').BudgetTracker} [options.budget]
  * @returns {Promise<SqlPrimitive>}
  */
-async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
+async function scanColumnAggregate({ table, spec, limit, offset, signal, budget }) {
   const values = table.scanColumn({ column: spec.column, limit, offset, signal })
 
   if (spec.funcName === 'COUNT' && spec.distinct) {
     const seen = new Set()
     for await (const chunk of values) {
       if (signal?.aborted) return
+      budget?.checkTimeout()
       for (let i = 0; i < chunk.length; i++) {
         const v = chunk[i]
         if (v == null) continue
@@ -305,6 +312,7 @@ async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
     let count = 0
     for await (const chunk of values) {
       if (signal?.aborted) return
+      budget?.checkTimeout()
       for (let i = 0; i < chunk.length; i++) {
         if (chunk[i] != null) count++
       }
@@ -322,6 +330,7 @@ async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
 
   for await (const chunk of values) {
     if (signal?.aborted) return
+    budget?.checkTimeout()
     for (let i = 0; i < chunk.length; i++) {
       const v = chunk[i]
       if (v == null) continue

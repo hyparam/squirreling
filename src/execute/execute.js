@@ -8,6 +8,7 @@ import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { filterBatches, limitBatches, projectBatchesSimple } from './batchOps.js'
+import { createBudget } from './budget.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -24,7 +25,7 @@ import { executeWindow } from './window.js'
  * @param {ExecuteSqlOptions} options
  * @returns {QueryResults}
  */
-export function executeSql({ tables, query, functions, signal }) {
+export function executeSql({ tables, query, functions, signal, budget }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
@@ -47,7 +48,7 @@ export function executeSql({ tables, query, functions, signal }) {
   const ctePlans = new Map()
   /** @type {Map<string, string[]>} */
   const cteColumns = new Map()
-  const context = { tables: normalizedTables, functions, signal, scope, ctePlans, cteColumns }
+  const context = { tables: normalizedTables, functions, signal, scope, ctePlans, cteColumns, budget: createBudget(budget) }
   const plan = planSql({ query: parsed, functions, tables: normalizedTables, ctePlans, cteColumns })
   return executePlan({ plan, context })
 }
@@ -425,6 +426,7 @@ async function* filterRows(rows, condition, context, limit) {
     buffer.push({ row, rowIndex })
 
     if (buffer.length >= chunkSize) {
+      context.budget?.checkTimeout()
       const results = await Promise.all(buffer.map(b =>
         evaluateExpr({ node: condition, row: b.row, rowIndex: b.rowIndex, context })
       ))
@@ -626,6 +628,7 @@ function executeDistinct(plan, context) {
     maxRows: child.maxRows,
     async *rows() {
       const { signal } = context
+      const op = context.budget?.operator('Distinct')
       const MAX_CHUNK = 256
 
       const seen = new Set()
@@ -642,6 +645,7 @@ function executeDistinct(plan, context) {
           for (let i = 0; i < buffer.length; i++) {
             const key = await keys[i]
             if (!seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield buffer[i]
             }
@@ -656,6 +660,7 @@ function executeDistinct(plan, context) {
         for (let i = 0; i < buffer.length; i++) {
           const key = await keys[i]
           if (!seen.has(key)) {
+            op?.addRow()
             seen.add(key)
             yield buffer[i]
           }
@@ -714,11 +719,13 @@ function executeSetOperation(plan, context) {
         maxRows: addBounds(left.maxRows, right.maxRows),
         async *rows() {
           // UNION: yield deduplicated rows from both sides
+          const op = context.budget?.operator('Union')
           const seen = new Set()
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
@@ -727,6 +734,7 @@ function executeSetOperation(plan, context) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
@@ -741,12 +749,14 @@ function executeSetOperation(plan, context) {
       columns: left.columns,
       maxRows: minBounds(left.maxRows, right.maxRows),
       async *rows() {
+        const op = context.budget?.operator('Intersect')
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
         for await (const row of right.rows()) {
           if (signal?.aborted) return
           const key = await stableRowKey(row)
+          if (!rightKeys.has(key)) op?.addRow()
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
         }
 
@@ -768,6 +778,7 @@ function executeSetOperation(plan, context) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (rightKeys.has(key) && !seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
@@ -783,12 +794,14 @@ function executeSetOperation(plan, context) {
       columns: left.columns,
       maxRows: left.maxRows,
       async *rows() {
+        const op = context.budget?.operator('Except')
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
         for await (const row of right.rows()) {
           if (signal?.aborted) return
           const key = await stableRowKey(row)
+          if (!rightKeys.has(key)) op?.addRow()
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
         }
 
@@ -811,6 +824,7 @@ function executeSetOperation(plan, context) {
             if (signal?.aborted) return
             const key = await stableRowKey(row)
             if (!rightKeys.has(key) && !seen.has(key)) {
+              op?.addRow()
               seen.add(key)
               yield row
             }
