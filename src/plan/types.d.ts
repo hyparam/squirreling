@@ -48,6 +48,10 @@ export interface ProjectNode {
 export interface SortNode {
   type: 'Sort'
   orderBy: OrderByItem[]
+  // Top-K cap: when set, Sort retains at most `limit` rows via a bounded heap
+  // instead of buffering the full input. Set by the planner when a downstream
+  // LIMIT (plus OFFSET) is known and small.
+  limit?: number
   child: QueryPlan
 }
 
