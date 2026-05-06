@@ -655,6 +655,7 @@ describe('planSql', () => {
                 positionEnd: 51,
               },
             ],
+            limit: 10,
             child: {
               type: 'Scan',
               table: 'users',
