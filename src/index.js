@@ -1,4 +1,5 @@
 export { executePlan, executeSql } from './execute/execute.js'
+export { extractTables } from './parse/extractTables.js'
 export { parseSql } from './parse/parse.js'
 export { planSql } from './plan/plan.js'
 export { tokenizeSql } from './parse/tokenize.js'

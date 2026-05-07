@@ -54,6 +54,18 @@ export function executePlan(options: { plan: QueryPlan, context: ExecuteContext 
 export function parseSql(options: ParseSqlOptions): Statement
 
 /**
+ * Collects every external table referenced from FROM and JOIN clauses in a
+ * parsed statement, descending into subqueries (IN, EXISTS, derived tables,
+ * scalar subqueries) and the branches of compound queries. CTE names defined
+ * by an enclosing WITH are skipped. Returned in first-seen order with
+ * duplicates removed.
+ *
+ * @param statement - parsed SQL statement (output of `parseSql`)
+ * @returns table names referenced in the query, excluding CTE aliases
+ */
+export function extractTables(statement: Statement): string[]
+
+/**
  * Builds a query plan from a SQL query string or AST
  *
  * @param options
