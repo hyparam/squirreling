@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.18]
+ - Export `extractTables` helper to collect table names from a SQL query
+
 ## [0.12.17]
  - Stream filtering
 
