@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.19]
+ - Support `SELECT` without a `FROM` clause (e.g. `SELECT 1`)
+
 ## [0.12.18]
  - Export `extractTables` helper to collect table names from a SQL query
 
