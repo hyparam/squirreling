@@ -6,7 +6,7 @@ import { isTableFunctionStart, parseFromFunction, parseTableAlias, tableFunction
 import { consume, current, expect, match } from './state.js'
 
 /**
- * @import { ExprNode, JoinClause, JoinType, ParserState } from '../types.js'
+ * @import { ExprNode, FromFunction, JoinClause, JoinType, ParserState } from '../types.js'
  */
 
 /**
@@ -80,7 +80,7 @@ export function parseJoins(state) {
         })
       }
 
-      /** @type {import('../ast.js').FromFunction} */
+      /** @type {FromFunction} */
       const fromFunction = {
         type: 'function',
         funcName,

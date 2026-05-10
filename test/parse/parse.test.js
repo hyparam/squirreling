@@ -46,6 +46,29 @@ describe('parseSql', () => {
     })
   })
 
+  describe('FROM-less SELECT', () => {
+    it('should parse SELECT 1 with no FROM clause', () => {
+      const select = parseSelect('SELECT 1')
+      expect(select).toEqual({
+        type: 'select',
+        distinct: false,
+        columns: [
+          {
+            type: 'derived',
+            expr: { type: 'literal', value: 1, positionStart: 7, positionEnd: 8 },
+            positionStart: 7,
+            positionEnd: 8,
+          },
+        ],
+        joins: [],
+        groupBy: [],
+        orderBy: [],
+        positionStart: 0,
+        positionEnd: 8,
+      })
+    })
+  })
+
   describe('basic SELECT queries', () => {
     it('should parse literal SELECT', () => {
       const select = parseSelect('SELECT 1 from users')

@@ -88,6 +88,32 @@ describe('executeSql', () => {
     })
   })
 
+  describe('SELECT without FROM', () => {
+    it('should select a constant', async () => {
+      const result = await collect(executeSql({ tables: {}, query: 'SELECT 1' }))
+      expect(result).toEqual([{ '1': 1 }])
+    })
+
+    it('should evaluate a constant expression', async () => {
+      const result = await collect(executeSql({ tables: {}, query: 'SELECT 1 + 2 AS three' }))
+      expect(result).toEqual([{ three: 3 }])
+    })
+
+    it('should select multiple constants with aliases', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT \'hello\' AS greeting, UPPER(\'world\') AS shout',
+      }))
+      expect(result).toEqual([{ greeting: 'hello', shout: 'WORLD' }])
+    })
+
+    it('should error on unknown identifier without FROM', async () => {
+      await expect(async () => {
+        await collect(executeSql({ tables: {}, query: 'SELECT a' }))
+      }).rejects.toThrow('Column "a" not found (row 1)')
+    })
+  })
+
   describe('DISTINCT', () => {
     it('should return distinct rows', async () => {
       const data = [

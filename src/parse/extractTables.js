@@ -7,7 +7,7 @@
  * parsed statement, including those inside subqueries (IN, EXISTS, derived
  * tables, scalar subqueries) and the branches of compound (UNION /
  * INTERSECT / EXCEPT) queries. CTE names defined by an enclosing WITH are
- * skipped, including across sibling CTEs and nested WITHs — the result is
+ * skipped, including across sibling CTEs and nested WITHs. The result is
  * the set of names a caller would need to provide as `tables` to
  * `executeSql`.
  *
@@ -47,7 +47,9 @@ function walkStatement(stmt, cteScope, refs) {
     return
   }
   // select
-  if (stmt.from.type === 'table') {
+  if (!stmt.from) {
+    // FROM-less SELECT (e.g. `SELECT 1`), no source tables
+  } else if (stmt.from.type === 'table') {
     if (!cteScope.has(stmt.from.table.toLowerCase())) refs.add(stmt.from.table)
   } else if (stmt.from.type === 'subquery') {
     walkStatement(stmt.from.query, cteScope, refs)

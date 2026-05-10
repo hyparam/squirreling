@@ -14,15 +14,18 @@ describe('parseSql error handling', () => {
     })
 
     it('should throw error on incomplete SELECT statement', () => {
-      expect(() => parseSql({ query: 'SELECT name' }))
-        .toThrow('Expected FROM after "name" but found end of query at position 11')
-      expect(() => parseSql({ query: 'SELECT *' }))
-        .toThrow('Expected FROM after "*" but found end of query at position 8')
       expect(() => parseSql({ query: 'SELECT * FROM' }))
         .toThrow('Expected identifier after "FROM" but found end of query at position 13')
       // Test lowercase as well
       expect(() => parseSql({ query: 'select * from' }))
         .toThrow('Expected identifier after "from" but found end of query at position 13')
+    })
+
+    it('should treat SELECT without FROM as a constant SELECT', () => {
+      // `SELECT name` and `SELECT *` are now valid FROM-less SELECT statements.
+      // The unknown column / empty result error surfaces at execute time, not parse time.
+      expect(parseSql({ query: 'SELECT name' }).type).toBe('select')
+      expect(parseSql({ query: 'SELECT *' }).type).toBe('select')
     })
 
     it('should throw error on invalid table name after FROM', () => {

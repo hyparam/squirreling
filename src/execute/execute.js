@@ -83,6 +83,8 @@ export function executeStatement({ query, context, outerScope }) {
 export function executePlan({ plan, context }) {
   if (plan.type === 'Scan') {
     return executeScan(plan, context)
+  } else if (plan.type === 'SingleRow') {
+    return executeSingleRow()
   } else if (plan.type === 'Count') {
     return executeCount(plan, context)
   } else if (plan.type === 'Filter') {
@@ -115,6 +117,23 @@ export function executePlan({ plan, context }) {
     return executeWindow(plan, context)
   }
   return { columns: [], async *rows() {} }
+}
+
+/**
+ * Yields exactly one empty row. Used for FROM-less SELECT like `SELECT 1`,
+ * where the projection produces the output from constant expressions.
+ *
+ * @returns {QueryResults}
+ */
+function executeSingleRow() {
+  return {
+    columns: [],
+    numRows: 1,
+    maxRows: 1,
+    async *rows() {
+      yield { columns: [], cells: {} }
+    },
+  }
 }
 
 /**

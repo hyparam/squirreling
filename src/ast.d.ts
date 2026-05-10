@@ -12,7 +12,7 @@ export interface SelectStatement extends AstBase {
   type: 'select'
   distinct: boolean
   columns: SelectColumn[]
-  from: FromTable | FromSubquery | FromFunction
+  from?: FromTable | FromSubquery | FromFunction
   joins: JoinClause[]
   where?: ExprNode
   groupBy: ExprNode[]

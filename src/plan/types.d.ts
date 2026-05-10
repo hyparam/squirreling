@@ -2,6 +2,7 @@ import { DerivedColumn, ExprNode, JoinType, OrderByItem, ScanOptions, SelectColu
 
 export type QueryPlan =
   | ScanNode
+  | SingleRowNode
   | CountNode
   | FilterNode
   | ProjectNode
@@ -23,6 +24,11 @@ export interface ScanNode {
   type: 'Scan'
   table: string
   hints: ScanOptions
+}
+
+// Source for FROM-less SELECT like `SELECT 1`. Yields exactly one empty row.
+export interface SingleRowNode {
+  type: 'SingleRow'
 }
 
 // Count node for COUNT(*) optimization

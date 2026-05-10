@@ -7,8 +7,8 @@ import { validateNoIdentifiers, validateScan, validateTableRefs } from '../valid
 import { collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 
 /**
- * @import { AsyncDataSource, ExprNode, DerivedColumn, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
- * @import { QueryPlan, WindowSpec } from './types.d.ts'
+ * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
+ * @import { HashJoinNode, QueryPlan, TableFunctionNode, WindowSpec } from './types.js'
  */
 
 /**
@@ -153,12 +153,17 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const bufferingWindows = windows.some(w => w.partitionBy.length > 0 || w.orderBy.length > 0)
   const needsBuffering = useGrouping || select.orderBy.length > 0 || bufferingWindows
 
-  // Source alias for FROM clause
+  // Source alias for FROM clause (undefined for FROM-less SELECT)
   const sourceAlias = fromAlias(select.from)
 
   // Resolve aliases (and validate qualified references)
   // Include outerScope aliases so correlated references pass validation
-  const scopeTables = Object.fromEntries([sourceAlias, ...select.joins.map(j => j.alias ?? j.table), ...outerScope ?? []].map(a => [a, true]))
+  const scopeAliases = [
+    ...sourceAlias !== undefined ? [sourceAlias] : [],
+    ...select.joins.map(j => j.alias ?? j.table),
+    ...outerScope ?? [],
+  ]
+  const scopeTables = Object.fromEntries(scopeAliases.map(a => [a, true]))
   // Bare column names in scope, so the validator can recognize struct-field
   // dot access on a column (e.g. `item.name` where `item` is an unnested
   // struct column) rather than rejecting `item` as an unknown table.
@@ -201,10 +206,10 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   /** @type {ScanOptions} */
   const hints = {}
   const perTableColumns = extractColumns({ select: originalSelect, parentColumns })
-  hints.columns = perTableColumns.get(sourceAlias)
+  if (sourceAlias !== undefined) hints.columns = perTableColumns.get(sourceAlias)
   // Empty columns array means no columns were referenced, but a FROM subquery
   // still needs its own columns (e.g. for DISTINCT). Treat empty as unrestricted.
-  if (hints.columns?.length === 0 && select.from.type === 'subquery') {
+  if (hints.columns?.length === 0 && select.from?.type === 'subquery') {
     hints.columns = undefined
   }
   if (!select.joins.length) {
@@ -334,6 +339,9 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
  * @returns {QueryPlan}
  */
 function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
+  if (!select.from) {
+    return { type: 'SingleRow' }
+  }
   if (select.from.type === 'table') {
     const ctePlan = ctePlans?.get(select.from.table.toLowerCase())
     if (ctePlan) {
@@ -378,8 +386,8 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
 /**
  * Builds a TableFunction plan node for a FromFunction AST.
  *
- * @param {import('../types.js').FromFunction} from
- * @returns {import('./types.d.ts').TableFunctionNode}
+ * @param {FromFunction} from
+ * @returns {TableFunctionNode}
  */
 function planTableFunction(from) {
   return {
@@ -457,7 +465,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
     } else {
       const keys = join.on && extractEquiKeys({ condition: join.on, leftTable: currentLeftTable, rightTable })
       if (keys) {
-        /** @type {import('./types.d.ts').HashJoinNode} */
+        /** @type {HashJoinNode} */
         const hashJoin = {
           type: 'HashJoin',
           joinType: join.joinType,

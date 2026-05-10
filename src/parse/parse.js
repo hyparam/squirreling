@@ -12,6 +12,13 @@ import { tokenizeSql } from './tokenize.js'
  * @import { CTEDefinition, ExprNode, FromFunction, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectColumn, SelectStatement, SetOperationStatement, SetOperator, Statement } from '../types.js'
  */
 
+// Keywords that may legitimately follow the SELECT column list in place of FROM.
+// Anything else is a hint that the user forgot the FROM keyword.
+const CONTINUATION_KEYWORDS = new Set([
+  'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
+  'UNION', 'INTERSECT', 'EXCEPT',
+])
+
 /**
  * @param {ParseSqlOptions} options
  * @returns {Statement}
@@ -176,20 +183,38 @@ function parseSelect(state) {
   let distinct = false
 
   // Support duckdb-style shorthand "FROM table"
+  let hasFrom = true
   if (match(state, 'keyword', 'FROM')) {
     columns = [{ type: 'star', positionStart, positionEnd: positionStart }]
   } else {
     expect(state, 'keyword', 'SELECT')
     distinct = match(state, 'keyword', 'DISTINCT')
     columns = parseSelectList(state)
-    expect(state, 'keyword', 'FROM')
+    hasFrom = !!match(state, 'keyword', 'FROM')
+    // After the column list, if FROM is missing and the next token isn't a
+    // valid continuation (clause keyword, set operator, terminator), the user
+    // likely forgot a FROM keyword. Report that rather than letting parsing
+    // throw a less-specific end-of-query error.
+    if (!hasFrom) {
+      const tok = current(state)
+      const isContinuation = tok.type === 'eof' ||
+        tok.type === 'semicolon' ||
+        tok.type === 'paren' && tok.value === ')' ||
+        tok.type === 'keyword' && CONTINUATION_KEYWORDS.has(tok.value)
+      if (!isContinuation) {
+        throw parseError(state, 'FROM')
+      }
+    }
   }
 
   // Check if it's a subquery, table function, or table name
-  /** @type {FromTable | FromSubquery | FromFunction} */
+  /** @type {FromTable | FromSubquery | FromFunction | undefined} */
   let from
   const fromTok = current(state)
-  if (fromTok.type === 'paren' && fromTok.value === '(') {
+  if (!hasFrom) {
+    // No FROM clause: constant SELECT like "SELECT 1"
+    from = undefined
+  } else if (fromTok.type === 'paren' && fromTok.value === '(') {
     // Subquery: SELECT * FROM (SELECT ...) AS alias
     expect(state, 'paren', '(')
     const query = parseStatement(state)

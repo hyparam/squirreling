@@ -2,7 +2,7 @@ import { KEYWORDS } from '../validation/keywords.js'
 import { InvalidLiteralError, ParseError, UnexpectedCharError } from '../validation/parseErrors.js'
 
 /**
- * @import { Token } from '../types.d.ts'
+ * @import { Token } from '../types.js'
  */
 
 const NUMBER_REGEX = /^-?(?:\d+n|(?:\d+\.?\d*|\d*\.\d+)(?:[eE][+-]?\d+)?)/

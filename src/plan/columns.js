@@ -6,10 +6,11 @@ import { derivedAlias } from '../expression/alias.js'
  */
 
 /**
- * @param {FromTable | FromSubquery | FromFunction} from
- * @returns {string}
+ * @param {FromTable | FromSubquery | FromFunction | undefined} from
+ * @returns {string | undefined}
  */
 export function fromAlias(from) {
+  if (!from) return undefined
   if (from.alias) return from.alias
   if (from.type === 'table') return from.table
   if (from.type === 'function') return from.funcName.toLowerCase()
@@ -31,7 +32,9 @@ export function fromAlias(from) {
 export function statementScope(stmt) {
   if (stmt.type === 'with') return statementScope(stmt.query)
   if (stmt.type === 'compound') return undefined
-  return [fromAlias(stmt.from), ...stmt.joins.map(j => j.alias ?? j.table)]
+  const alias = fromAlias(stmt.from)
+  const joins = stmt.joins.map(j => j.alias ?? j.table)
+  return alias === undefined ? joins : [alias, ...joins]
 }
 
 /**
@@ -64,7 +67,10 @@ export function extractColumns({ select, parentColumns }) {
   const result = new Map()
 
   // Build alias list from FROM + JOINs
-  const aliases = [fromAlias(select.from)]
+  /** @type {string[]} */
+  const aliases = []
+  const sourceAlias = fromAlias(select.from)
+  if (sourceAlias !== undefined) aliases.push(sourceAlias)
   for (const join of select.joins) {
     aliases.push(join.alias ?? join.table)
   }
@@ -142,7 +148,9 @@ export function extractColumns({ select, parentColumns }) {
     collectColumnsFromExpr(expr, identifiers, selectAliases)
   }
   collectColumnsFromExpr(select.having, identifiers, selectAliases)
-  const visibleLateralAliases = [fromAlias(select.from)]
+  /** @type {string[]} */
+  const visibleLateralAliases = []
+  if (sourceAlias !== undefined) visibleLateralAliases.push(sourceAlias)
   for (const join of select.joins) {
     collectColumnsFromExpr(join.on, identifiers)
     const joinAlias = join.alias ?? join.table
@@ -298,7 +306,7 @@ function collectColumnsFromStatement(stmt, columns) {
     if (col.type === 'derived') collectColumnsFromExpr(col.expr, columns)
   }
   collectColumnsFromExpr(stmt.where, columns)
-  if (stmt.from?.type === 'subquery') {
+  if (stmt.from && stmt.from.type === 'subquery') {
     collectColumnsFromStatement(stmt.from.query, columns)
   }
   for (const join of stmt.joins) {
@@ -384,6 +392,7 @@ export function inferStatementColumns({ stmt, cteColumns, tables }) {
  * @returns {string[]}
  */
 export function inferSelectSourceColumns({ select, cteColumns, tables }) {
+  if (!select.from) return []
   if (select.from.type === 'subquery') {
     return inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
   }
