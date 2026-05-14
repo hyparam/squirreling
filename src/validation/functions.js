@@ -184,9 +184,17 @@ export const FUNCTION_SIGNATURES = {
 
   // Array functions
   ARRAY_LENGTH: { min: 1, max: 2, signature: 'array[, dimension]' },
+  LIST_LENGTH: { min: 1, max: 1, signature: 'array' },
+  LEN: { min: 1, max: 1, signature: 'array' },
   ARRAY_POSITION: { min: 2, max: 2, signature: 'array, element' },
+  LIST_POSITION: { min: 2, max: 2, signature: 'array, element' },
   ARRAY_CONTAINS: { min: 2, max: 2, signature: 'array, element' },
+  LIST_CONTAINS: { min: 2, max: 2, signature: 'array, element' },
   ARRAY_SORT: { min: 1, max: 1, signature: 'array' },
+  ARRAY_APPEND: { min: 2, max: 2, signature: 'array, element' },
+  LIST_APPEND: { min: 2, max: 2, signature: 'array, element' },
+  ARRAY_CONCAT: { min: 2, max: 2, signature: 'array1, array2' },
+  LIST_CONCAT: { min: 2, max: 2, signature: 'array1, array2' },
   CARDINALITY: { min: 1, max: 1, signature: 'array' },
   SIZE: { min: 1, max: 1, signature: 'array' },
 

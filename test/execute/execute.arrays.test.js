@@ -310,4 +310,261 @@ describe('array functions', () => {
       })).toThrow('ARRAY_CONTAINS(array, element) function requires 2 arguments, got 1')
     })
   })
+
+  describe('LIST_CONTAINS', () => {
+    it('should behave like ARRAY_CONTAINS', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_CONTAINS(items, 20) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: true }])
+    })
+
+    it('should return false when element is not in the array', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_CONTAINS(items, 99) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: false }])
+    })
+
+    it('should return null for null array', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_CONTAINS(items, 1) AS found FROM data',
+      }))
+      expect(result).toEqual([{ found: null }])
+    })
+  })
+
+  describe('LIST_POSITION', () => {
+    it('should behave like ARRAY_POSITION', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_POSITION(items, 20) AS pos FROM data',
+      }))
+      expect(result).toEqual([{ pos: 2 }])
+    })
+
+    it('should return null when element is not found', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_POSITION(items, 99) AS pos FROM data',
+      }))
+      expect(result).toEqual([{ pos: null }])
+    })
+
+    it('should return null for null array', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_POSITION(items, 1) AS pos FROM data',
+      }))
+      expect(result).toEqual([{ pos: null }])
+    })
+  })
+
+  describe('LIST_LENGTH', () => {
+    it('should behave like ARRAY_LENGTH', async () => {
+      const data = [
+        { id: 1, items: [1, 2] },
+        { id: 2, items: [10, 20, 30] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_LENGTH(items) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 2 }, { len: 3 }])
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_LENGTH(items) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+  })
+
+  describe('LEN', () => {
+    it('should return the length of an array', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEN(items) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: 3 }])
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LEN(items) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+  })
+
+  describe('ARRAY_APPEND', () => {
+    it('should append an element to the end of the array', async () => {
+      const data = [{ id: 1, items: [1, 2, 3] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(items, 4) AS appended FROM data',
+      }))
+      expect(result).toEqual([{ appended: [1, 2, 3, 4] }])
+    })
+
+    it('should append to an empty array', async () => {
+      /** @type {{ id: number, items: number[] }[]} */
+      const data = [{ id: 1, items: [] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(items, 1) AS appended FROM data',
+      }))
+      expect(result).toEqual([{ appended: [1] }])
+    })
+
+    it('should not mutate the original array', async () => {
+      const items = [1, 2, 3]
+      const data = [{ id: 1, items }]
+      await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(items, 4) AS appended FROM data',
+      }))
+      expect(items).toEqual([1, 2, 3])
+    })
+
+    it('should append null', async () => {
+      const data = [{ id: 1, items: [1, 2] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(items, NULL) AS appended FROM data',
+      }))
+      expect(result).toEqual([{ appended: [1, 2, null] }])
+    })
+
+    it('should return null for null array', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(items, 1) AS appended FROM data',
+      }))
+      expect(result).toEqual([{ appended: null }])
+    })
+
+    it('should return null for non-array input', async () => {
+      const data = [{ id: 1, name: 'Alice' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(name, \'B\') AS appended FROM data',
+      }))
+      expect(result).toEqual([{ appended: null }])
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1, items: [1, 2] }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_APPEND(items) FROM data',
+      })).toThrow('ARRAY_APPEND(array, element) function requires 2 arguments, got 1')
+    })
+  })
+
+  describe('LIST_APPEND', () => {
+    it('should behave like ARRAY_APPEND', async () => {
+      const data = [{ id: 1, items: [1, 2, 3] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_APPEND(items, 4) AS appended FROM data',
+      }))
+      expect(result).toEqual([{ appended: [1, 2, 3, 4] }])
+    })
+  })
+
+  describe('ARRAY_CONCAT', () => {
+    it('should concatenate two arrays', async () => {
+      const data = [{ id: 1, a: [1, 2], b: [3, 4] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(result).toEqual([{ combined: [1, 2, 3, 4] }])
+    })
+
+    it('should concatenate with empty arrays', async () => {
+      /** @type {{ id: number, a: number[], b: number[] }[]} */
+      const data = [{ id: 1, a: [], b: [1, 2] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(result).toEqual([{ combined: [1, 2] }])
+    })
+
+    it('should not mutate the original arrays', async () => {
+      const a = [1, 2]
+      const b = [3, 4]
+      const data = [{ id: 1, a, b }]
+      await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(a).toEqual([1, 2])
+      expect(b).toEqual([3, 4])
+    })
+
+    it('should return null for null first array', async () => {
+      const data = [{ id: 1, a: NULL, b: [1, 2] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(result).toEqual([{ combined: null }])
+    })
+
+    it('should return null for null second array', async () => {
+      const data = [{ id: 1, a: [1, 2], b: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(result).toEqual([{ combined: null }])
+    })
+
+    it('should return null for non-array input', async () => {
+      const data = [{ id: 1, a: 'hello', b: [1, 2] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(result).toEqual([{ combined: null }])
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1, items: [1, 2] }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT ARRAY_CONCAT(items) FROM data',
+      })).toThrow('ARRAY_CONCAT(array1, array2) function requires 2 arguments, got 1')
+    })
+  })
+
+  describe('LIST_CONCAT', () => {
+    it('should behave like ARRAY_CONCAT', async () => {
+      const data = [{ id: 1, a: [1, 2], b: [3, 4] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT LIST_CONCAT(a, b) AS combined FROM data',
+      }))
+      expect(result).toEqual([{ combined: [1, 2, 3, 4] }])
+    })
+  })
 })

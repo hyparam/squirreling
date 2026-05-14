@@ -516,7 +516,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return arr.length
     }
 
-    if (funcName === 'ARRAY_LENGTH' || funcName === 'CARDINALITY' || funcName === 'SIZE') {
+    if (funcName === 'ARRAY_LENGTH' || funcName === 'LIST_LENGTH' || funcName === 'LEN' || funcName === 'CARDINALITY' || funcName === 'SIZE') {
       const arr = args[0]
       if (!Array.isArray(arr)) return null
       if (funcName === 'ARRAY_LENGTH' && args.length === 2) {
@@ -539,17 +539,29 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return arr.length
     }
 
-    if (funcName === 'ARRAY_POSITION') {
+    if (funcName === 'ARRAY_POSITION' || funcName === 'LIST_POSITION') {
       const [arr, target] = args
       if (!Array.isArray(arr)) return null
       const index = arr.indexOf(target)
       return index === -1 ? null : index + 1
     }
 
-    if (funcName === 'ARRAY_CONTAINS') {
+    if (funcName === 'ARRAY_CONTAINS' || funcName === 'LIST_CONTAINS') {
       const [arr, target] = args
       if (!Array.isArray(arr)) return null
       return arr.includes(target)
+    }
+
+    if (funcName === 'ARRAY_APPEND' || funcName === 'LIST_APPEND') {
+      const [arr, element] = args
+      if (!Array.isArray(arr)) return null
+      return [...arr, element]
+    }
+
+    if (funcName === 'ARRAY_CONCAT' || funcName === 'LIST_CONCAT') {
+      const [a, b] = args
+      if (!Array.isArray(a) || !Array.isArray(b)) return null
+      return [...a, ...b]
     }
 
     if (funcName === 'ARRAY_SORT') {
