@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.12.20]
+ - `LIST_*` array function aliases and `ARRAY_APPEND`/`ARRAY_CONCAT`
+ - Sort `Date` values chronologically, not lexicographically
+ - Compare `Date` columns by instant
+
 ## [0.12.19]
  - Support `SELECT` without a `FROM` clause (e.g. `SELECT 1`)
 
