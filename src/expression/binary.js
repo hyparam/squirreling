@@ -29,6 +29,18 @@ export function applyBinaryOp(op, a, b) {
   }
   if (op === 'AND') return Boolean(a) && Boolean(b)
   if (op === 'OR') return Boolean(a) || Boolean(b)
+  // Compare Date values by their time so distinct instances for the same
+  // instant are equal, matching SQL TIMESTAMP semantics rather than JS identity.
+  if (a instanceof Date && b instanceof Date) {
+    const at = a.getTime()
+    const bt = b.getTime()
+    if (op === '!=' || op === '<>') return at !== bt
+    if (op === '=' || op === '==') return at === bt
+    if (op === '<') return at < bt
+    if (op === '<=') return at <= bt
+    if (op === '>') return at > bt
+    if (op === '>=') return at >= bt
+  }
   if (op === '!=' || op === '<>') return a != b
   if (op === '=' || op === '==') return a == b
   if (op === '<') return a < b

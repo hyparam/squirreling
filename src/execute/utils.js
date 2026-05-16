@@ -126,6 +126,19 @@ export function maxBounds(a, b) {
 }
 
 /**
+ * SQL equality for primitives. Two Date instances for the same instant compare
+ * equal (JS `==` would compare by identity).
+ *
+ * @param {SqlPrimitive} a
+ * @param {SqlPrimitive} b
+ * @returns {boolean}
+ */
+export function sqlEquals(a, b) {
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime()
+  return a == b
+}
+
+/**
  * Returns true for plain object SqlPrimitive values, excluding null, arrays, and Dates.
  *
  * @param {SqlPrimitive} value

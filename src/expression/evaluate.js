@@ -1,5 +1,5 @@
 import { executeStatement } from '../execute/execute.js'
-import { isPlainObject, keyify, stringify } from '../execute/utils.js'
+import { isPlainObject, keyify, sqlEquals, stringify } from '../execute/utils.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
 import { UnknownFunctionError } from '../validation/parseErrors.js'
@@ -679,7 +679,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     for (const valueNode of node.values) {
       const val = await evaluateExpr({ node: valueNode, row, rowIndex, rows, context })
-      if (exprVal == val) return true
+      if (sqlEquals(exprVal, val)) return true
     }
     return false
   }
@@ -689,7 +689,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     const subResult = executeStatement({ query: node.subquery, context })
     for await (const resRow of subResult.rows()) {
       const value = await resRow.cells[resRow.columns[0]]()
-      if (exprVal == value) return true
+      if (sqlEquals(exprVal, value)) return true
     }
     return false
   }
@@ -715,7 +715,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     for (const whenClause of node.whenClauses) {
       const whenValue = await evaluateExpr({ node: whenClause.condition, row, rowIndex, rows, context })
       // compare caseValue with condition or evaluate as boolean
-      if (caseValue !== undefined ? caseValue == whenValue : whenValue) {
+      if (caseValue !== undefined ? sqlEquals(caseValue, whenValue) : whenValue) {
         return evaluateExpr({ node: whenClause.result, row, rowIndex, rows, context })
       }
     }

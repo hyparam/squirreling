@@ -326,4 +326,40 @@ describe('WHERE clause', () => {
     }))
     expect(result).toHaveLength(0) // NULL comparisons should return false
   })
+
+  it('should compare Date columns by instant, not object identity', async () => {
+    const events = [
+      { id: 1, ts: new Date('2026-01-02T10:00:00Z') },
+      { id: 2, ts: new Date('2026-03-09T10:00:00Z') },
+    ]
+    // Distinct Date instances representing the same instant must compare equal.
+    const eq = await collect(executeSql({
+      tables: { events, probe: [{ t: new Date('2026-01-02T10:00:00Z') }] },
+      query: 'SELECT events.id FROM events JOIN probe ON events.ts = probe.t',
+    }))
+    expect(eq).toEqual([{ id: 1 }])
+
+    const lt = await collect(executeSql({
+      tables: { events, probe: [{ t: new Date('2026-02-01T00:00:00Z') }] },
+      query: 'SELECT events.id FROM events JOIN probe ON events.ts < probe.t',
+    }))
+    expect(lt).toEqual([{ id: 1 }])
+  })
+
+  it('should support IN over Date columns', async () => {
+    const events = [
+      { id: 1, ts: new Date('2026-01-02T10:00:00Z') },
+      { id: 2, ts: new Date('2026-03-09T10:00:00Z') },
+      { id: 3, ts: new Date('2026-05-15T10:00:00Z') },
+    ]
+    const wanted = [
+      { t: new Date('2026-01-02T10:00:00Z') },
+      { t: new Date('2026-05-15T10:00:00Z') },
+    ]
+    const result = await collect(executeSql({
+      tables: { events, wanted },
+      query: 'SELECT id FROM events WHERE ts IN (SELECT t FROM wanted)',
+    }))
+    expect(result).toEqual([{ id: 1 }, { id: 3 }])
+  })
 })
