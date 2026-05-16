@@ -27,7 +27,11 @@ export function compareForTerm(a, b, term) {
   if (a == b) return 0
 
   let cmp
-  if (primitiveTypes.has(typeof a) && primitiveTypes.has(typeof b)) {
+  if (a instanceof Date && b instanceof Date) {
+    const at = a.getTime()
+    const bt = b.getTime()
+    cmp = at < bt ? -1 : at > bt ? 1 : 0
+  } else if (primitiveTypes.has(typeof a) && primitiveTypes.has(typeof b)) {
     cmp = a < b ? -1 : 1
   } else {
     const aa = String(a)

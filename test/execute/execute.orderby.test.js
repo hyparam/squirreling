@@ -50,6 +50,30 @@ describe('ORDER BY', () => {
     expect(result[result.length - 1].name).toBe('Eve')
   })
 
+  it('should sort Date values chronologically, not lexicographically', async () => {
+    const events = [
+      { ts: new Date('2026-05-15T10:00:00Z') }, // Fri
+      { ts: new Date('2026-01-02T10:00:00Z') }, // Fri
+      { ts: new Date('2026-03-09T10:00:00Z') }, // Mon
+    ]
+    const result = await collect(executeSql({ tables: { events }, query: 'SELECT ts FROM events ORDER BY ts' }))
+    expect(result).toEqual([
+      { ts: new Date('2026-01-02T10:00:00Z') },
+      { ts: new Date('2026-03-09T10:00:00Z') },
+      { ts: new Date('2026-05-15T10:00:00Z') },
+    ])
+  })
+
+  it('should treat equal Date instants as equal under ORDER BY', async () => {
+    const events = [
+      { id: 1, ts: new Date('2026-01-02T10:00:00Z') },
+      { id: 2, ts: new Date('2026-01-02T10:00:00Z') },
+      { id: 3, ts: new Date('2026-01-01T10:00:00Z') },
+    ]
+    const result = await collect(executeSql({ tables: { events }, query: 'SELECT id FROM events ORDER BY ts, id' }))
+    expect(result.map(r => r.id)).toEqual([3, 1, 2])
+  })
+
   it('should support positional reference to derived column', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT name, age FROM users ORDER BY 2 DESC' }))
     expect(result.map(r => r.age)).toEqual([35, 30, 30, 28, 25])
