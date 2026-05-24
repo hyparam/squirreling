@@ -96,9 +96,16 @@ export function executeHashAggregate(plan, context) {
         allRows.push(row)
       }
 
-      // Group rows by GROUP BY keys
+      // Group rows by GROUP BY keys.
+      // Each chunk dispatches all per-row key evaluations in parallel so
+      // async cells (e.g. lazy parquet decode) overlap; the await is at the
+      // chunk boundary. Synchronous cells stay cheap because we skip the
+      // inner Promise.all wrapper when there's a single GROUP BY expression.
       /** @type {Map<any, AsyncRow[]>} */
       const groups = new Map()
+      const { groupBy } = plan
+      const singleKey = groupBy.length === 1
+      const singleExpr = singleKey ? groupBy[0] : null
 
       for (let chunkStart = 0; chunkStart < allRows.length; chunkStart += YIELD_INTERVAL) {
         if (chunkStart > 0) {
@@ -106,13 +113,22 @@ export function executeHashAggregate(plan, context) {
           if (context.signal?.aborted) return
         }
         const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, allRows.length)
-        const chunkKeys = await Promise.all(
-          allRows.slice(chunkStart, chunkEnd).map(row =>
-            Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context })))
-          )
-        )
-        for (let j = 0; j < chunkKeys.length; j++) {
-          const key = keyify(...chunkKeys[j])
+        const chunkLen = chunkEnd - chunkStart
+        /** @type {Promise<any>[]} */
+        const pending = new Array(chunkLen)
+        if (singleKey) {
+          for (let j = 0; j < chunkLen; j++) {
+            pending[j] = evaluateExpr({ node: singleExpr, row: allRows[chunkStart + j], context })
+          }
+        } else {
+          for (let j = 0; j < chunkLen; j++) {
+            const row = allRows[chunkStart + j]
+            pending[j] = Promise.all(groupBy.map(expr => evaluateExpr({ node: expr, row, context })))
+          }
+        }
+        const chunkKeys = await Promise.all(pending)
+        for (let j = 0; j < chunkLen; j++) {
+          const key = singleKey ? keyify(chunkKeys[j]) : keyify(...chunkKeys[j])
           const row = allRows[chunkStart + j]
           let group = groups.get(key)
           if (!group) {
