@@ -249,6 +249,36 @@ describe('abort signal', () => {
     }, 60_000)
   })
 
+  describe('setTimeout abort during long UNION', () => {
+    it('setTimeout abort fires while a UNION dedup runs', async () => {
+      // 2M rows on each side feeding executeSetOperation — the per-row
+      // stableRowKey loop in the UNION branch is microtask-only when cells
+      // are synchronous
+      const data = []
+      for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT id FROM s UNION SELECT id FROM s',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
   describe('join queries', () => {
     it('should scan all rows in a join query', async () => {
       const { source: usersSource, getScanCount: getUsersScanCount, getRowCount: getUsersRowCount } = trackingSource(users)

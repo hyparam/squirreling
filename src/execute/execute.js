@@ -684,8 +684,13 @@ function executeSetOperation(plan, context) {
         async *rows() {
           // UNION: yield deduplicated rows from both sides
           const seen = new Set()
+          let count = 0
           for await (const row of left.rows()) {
             if (signal?.aborted) return
+            if (++count % YIELD_INTERVAL === 0) {
+              await new Promise(resolve => setTimeout(resolve, 0))
+              if (signal?.aborted) return
+            }
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
               seen.add(key)
@@ -694,6 +699,10 @@ function executeSetOperation(plan, context) {
           }
           for await (const row of right.rows()) {
             if (signal?.aborted) return
+            if (++count % YIELD_INTERVAL === 0) {
+              await new Promise(resolve => setTimeout(resolve, 0))
+              if (signal?.aborted) return
+            }
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
               seen.add(key)
@@ -713,8 +722,13 @@ function executeSetOperation(plan, context) {
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
+        let tick = 0
         for await (const row of right.rows()) {
           if (signal?.aborted) return
+          if (++tick % YIELD_INTERVAL === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            if (signal?.aborted) return
+          }
           const key = await stableRowKey(row)
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
         }
@@ -723,6 +737,10 @@ function executeSetOperation(plan, context) {
           // INTERSECT ALL: yield each left row that matches, consuming right counts
           for await (const row of left.rows()) {
             if (signal?.aborted) return
+            if (++tick % YIELD_INTERVAL === 0) {
+              await new Promise(resolve => setTimeout(resolve, 0))
+              if (signal?.aborted) return
+            }
             const key = await stableRowKey(row)
             const count = rightKeys.get(key)
             if (count) {
@@ -735,6 +753,10 @@ function executeSetOperation(plan, context) {
           const seen = new Set()
           for await (const row of left.rows()) {
             if (signal?.aborted) return
+            if (++tick % YIELD_INTERVAL === 0) {
+              await new Promise(resolve => setTimeout(resolve, 0))
+              if (signal?.aborted) return
+            }
             const key = await stableRowKey(row)
             if (rightKeys.has(key) && !seen.has(key)) {
               seen.add(key)
@@ -755,8 +777,13 @@ function executeSetOperation(plan, context) {
         // Materialize right side keys
         /** @type {Map<any, number>} */
         const rightKeys = new Map()
+        let tick = 0
         for await (const row of right.rows()) {
           if (signal?.aborted) return
+          if (++tick % YIELD_INTERVAL === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            if (signal?.aborted) return
+          }
           const key = await stableRowKey(row)
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
         }
@@ -765,6 +792,10 @@ function executeSetOperation(plan, context) {
           // EXCEPT ALL: yield left rows, consuming right counts
           for await (const row of left.rows()) {
             if (signal?.aborted) return
+            if (++tick % YIELD_INTERVAL === 0) {
+              await new Promise(resolve => setTimeout(resolve, 0))
+              if (signal?.aborted) return
+            }
             const key = await stableRowKey(row)
             const count = rightKeys.get(key)
             if (count) {
@@ -778,6 +809,10 @@ function executeSetOperation(plan, context) {
           const seen = new Set()
           for await (const row of left.rows()) {
             if (signal?.aborted) return
+            if (++tick % YIELD_INTERVAL === 0) {
+              await new Promise(resolve => setTimeout(resolve, 0))
+              if (signal?.aborted) return
+            }
             const key = await stableRowKey(row)
             if (!rightKeys.has(key) && !seen.has(key)) {
               seen.add(key)
