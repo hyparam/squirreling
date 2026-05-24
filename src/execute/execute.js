@@ -459,8 +459,13 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
   if (limit <= 0) return
   let skipped = 0
   let yielded = 0
+  let innerCount = 0
   for await (const row of rows) {
     if (signal?.aborted) return
+    if (++innerCount % YIELD_INTERVAL === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      if (signal?.aborted) return
+    }
     if (skipped < offset) {
       skipped++
       continue
@@ -508,9 +513,14 @@ function executeProject(plan, context) {
     maxRows: child.maxRows,
     async *rows() {
       let rowIndex = 0
+      let innerCount = 0
 
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
+        if (++innerCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
         rowIndex++
         const currentRowIndex = rowIndex
 

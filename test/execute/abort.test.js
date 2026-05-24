@@ -3,6 +3,10 @@ import { collect, executeSql } from '../../src/index.js'
 import { memorySource } from '../../src/backend/dataSource.js'
 import { trackingSource } from './trackingSource.js'
 
+/**
+ * @import { AsyncDataSource } from '../../src/types.js'
+ */
+
 const users = [
   { id: 1, name: 'Alice' },
   { id: 2, name: 'Bob' },
@@ -295,6 +299,93 @@ describe('abort signal', () => {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT id, LAG(id) OVER (PARTITION BY bucket ORDER BY id) AS prev FROM s',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
+  describe('setTimeout abort during long projection', () => {
+    it('setTimeout abort fires while executeProject runs', async () => {
+      // 2M rows feeding executeProject via a derived expression (id + 1) so the
+      // resolveable identifier fast path is bypassed and every row flows
+      // through the per-row cells-building loop, which is microtask-only when
+      // the source yields synchronously
+      const data = []
+      for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        // Stream-consume to avoid buffering all rows when abort doesn't fire
+        // eslint-disable-next-line no-unused-vars
+        for await (const _row of executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT id + 1 AS x FROM s',
+          signal: controller.signal,
+        }).rows()) {
+          // no-op
+        }
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
+  describe('setTimeout abort during long LIMIT/OFFSET', () => {
+    it('setTimeout abort fires while limitRows skips rows', async () => {
+      // 2M rows feeding limitRows via a large OFFSET. We use a source that
+      // declares appliedLimitOffset:false so the executor's limitRows wrapper
+      // takes over the skip, and no WHERE so filterRows (which already yields)
+      // is not in the pipeline. The skip loop is microtask-only.
+      /** @type {{ id: number }[]} */
+      const data = []
+      for (let i = 0; i < 2_000_000; i++) data.push({ id: i })
+      /** @type {AsyncDataSource} */
+      const source = {
+        numRows: data.length,
+        columns: ['id'],
+        scan({ signal }) {
+          return {
+            async *rows() {
+              for (const row of data) {
+                if (signal?.aborted) break
+                yield {
+                  columns: ['id'],
+                  cells: { id: () => Promise.resolve(row.id) },
+                }
+              }
+            },
+            appliedWhere: false,
+            appliedLimitOffset: false,
+          }
+        },
+      }
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: source },
+          query: 'SELECT id FROM s LIMIT 1 OFFSET 1999999',
           signal: controller.signal,
         }))
       } catch {
