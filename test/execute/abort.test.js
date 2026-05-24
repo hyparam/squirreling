@@ -309,6 +309,36 @@ describe('abort signal', () => {
     }, 60_000)
   })
 
+  describe('setTimeout abort during long scalar aggregate', () => {
+    it('setTimeout abort fires while a scalar aggregate runs', async () => {
+      // 600k rows feeding executeScalarAggregate via a non-fast-path
+      // expression (SUM(id + 1) bypasses the scanColumn fast path). The row
+      // collection loop is microtask-only when cells are synchronous
+      const data = []
+      for (let i = 0; i < 600_000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT SUM(id + 1) AS n FROM s',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
   describe('join queries', () => {
     it('should scan all rows in a join query', async () => {
       const { source: usersSource, getScanCount: getUsersScanCount, getRowCount: getUsersRowCount } = trackingSource(users)

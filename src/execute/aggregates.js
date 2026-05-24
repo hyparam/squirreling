@@ -178,8 +178,12 @@ export function executeScalarAggregate(plan, context) {
       // Collect all rows into single group
       /** @type {AsyncRow[]} */
       const group = []
+      let collectCount = 0
       for await (const row of child.rows()) {
-        if (context.signal?.aborted) return
+        if (++collectCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
         group.push(row)
       }
 
