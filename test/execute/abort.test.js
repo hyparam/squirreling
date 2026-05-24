@@ -363,6 +363,41 @@ describe('abort signal', () => {
     }, 60_000)
   })
 
+  describe('setTimeout abort during long IN-subquery scan', () => {
+    it('setTimeout abort fires while IN scans a non-matching subquery', async () => {
+      // The IN-with-subquery branch in evaluate.js iterates the subquery via
+      //   for await (const resRow of subResult.rows()) { ... }
+      // with no signal check. Use a `SELECT *` subquery (planner skips the
+      // Project node, so no per-row YIELD_INTERVAL fires) and an outer value
+      // that never matches, so the IN loop scans every row of the subquery.
+      const data = []
+      for (let i = 0; i < 2_000_000; i++) data.push({ id: i })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: {
+            big: memorySource({ data }),
+            small: memorySource({ data: [{ x: -1 }] }),
+          },
+          query: 'SELECT x FROM small WHERE x IN (SELECT * FROM big)',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
   describe('setTimeout abort during long projection', () => {
     it('setTimeout abort fires while executeProject runs', async () => {
       // 2M rows feeding executeProject via a derived expression (id + 1) so the

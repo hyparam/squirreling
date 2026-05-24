@@ -700,7 +700,12 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     const subResult = executeStatement({ query: node.subquery, context })
+    let innerCount = 0
     for await (const resRow of subResult.rows()) {
+      if (++innerCount % YIELD_INTERVAL === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+        context.signal?.throwIfAborted()
+      }
       const value = await resRow.cells[resRow.columns[0]]()
       if (sqlEquals(exprVal, value)) return true
     }

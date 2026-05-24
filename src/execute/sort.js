@@ -59,7 +59,7 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
       let chunkSize = 1
       let start = 0
       while (start < missing.length) {
-        if (context.signal?.aborted) return []
+        context.signal?.throwIfAborted()
         const chunk = missing.slice(start, start + chunkSize)
         const values = await Promise.all(chunk.map(idx =>
           evaluateExpr({
