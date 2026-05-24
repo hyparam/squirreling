@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.22]
+ - Internal performance improvements
+
 ## [0.12.21]
  - Honor abort signals mid-query across all execution phases (joins, filters, aggregates, distinct, set operations, window functions, offset/limit, evaluate, subquery scan)
 
