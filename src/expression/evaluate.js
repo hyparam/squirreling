@@ -32,16 +32,21 @@ const YIELD_INTERVAL = 4000
 async function evaluateAll(node, rows, context) {
   /** @type {SqlPrimitive[]} */
   const results = new Array(rows.length)
+  /** @type {Promise<SqlPrimitive>[]} */
+  const pending = new Array(Math.min(YIELD_INTERVAL, rows.length))
   for (let i = 0; i < rows.length; i += YIELD_INTERVAL) {
     if (i > 0) {
       await yieldToEventLoop()
       context.signal?.throwIfAborted()
     }
     const end = Math.min(i + YIELD_INTERVAL, rows.length)
-    const chunk = await Promise.all(rows.slice(i, end).map(row =>
-      evaluateExpr({ node, row, context })
-    ))
-    for (let j = 0; j < chunk.length; j++) results[i + j] = chunk[j]
+    const chunkLen = end - i
+    pending.length = chunkLen
+    for (let j = 0; j < chunkLen; j++) {
+      pending[j] = evaluateExpr({ node, row: rows[i + j], context })
+    }
+    const chunk = await Promise.all(pending)
+    for (let j = 0; j < chunkLen; j++) results[i + j] = chunk[j]
   }
   return results
 }
