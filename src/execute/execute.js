@@ -16,6 +16,9 @@ import { executeWindow } from './window.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
 
+// Yield to the event loop every 4000 iterations so that aborts can actually fire
+const YIELD_INTERVAL = 4000
+
 /**
  * Executes a SQL SELECT query against tables
  *
@@ -406,12 +409,17 @@ async function* filterRows(rows, condition, context, limit) {
   let chunkSize = limit ?? 1
   const grow = limit !== undefined
   let rowIndex = 0
+  let innerCount = 0
 
   /** @type {{ row: AsyncRow, rowIndex: number }[]} */
   let buffer = []
 
   for await (const row of rows) {
     if (context.signal?.aborted) return
+    if (++innerCount % YIELD_INTERVAL === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      if (context.signal?.aborted) return
+    }
     rowIndex++
     buffer.push({ row, rowIndex })
 

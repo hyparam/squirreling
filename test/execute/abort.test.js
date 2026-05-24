@@ -193,6 +193,36 @@ describe('abort signal', () => {
     }, 60_000)
   })
 
+  describe('setTimeout abort during long WHERE filter', () => {
+    it('setTimeout abort fires while filterRows runs', async () => {
+      // 2M rows with a WHERE that memorySource does not push down, so every
+      // row flows through filterRows — a microtask-only chunked loop
+      const data = []
+      for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT id FROM s WHERE bucket > 50',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      console.log(`filter with ${timeoutMs}ms timeout took ${ms.toFixed(0)}ms (aborted=${controller.signal.aborted})`)
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
   describe('join queries', () => {
     it('should scan all rows in a join query', async () => {
       const { source: usersSource, getScanCount: getUsersScanCount, getRowCount: getUsersRowCount } = trackingSource(users)
