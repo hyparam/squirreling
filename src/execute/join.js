@@ -1,6 +1,7 @@
 import { evaluateExpr } from '../expression/evaluate.js'
 import { keyify, maxBounds } from './utils.js'
 import { executePlan } from './execute.js'
+import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { AsyncCells, AsyncRow, ExecuteContext, QueryResults } from '../types.js'
@@ -56,7 +57,7 @@ export function executeNestedLoopJoin(plan, context) {
 
         for (const rightRow of rightRows) {
           if (++innerCount % YIELD_INTERVAL === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0))
+            await yieldToEventLoop()
             if (context.signal?.aborted) return
           }
           const tempMerged = mergeRows(leftRow, rightRow, leftTable, rightTable)
@@ -263,7 +264,7 @@ export function executeHashJoin(plan, context) {
           if (candidates?.length) {
             for (const rightRow of candidates) {
               if (++innerCount % YIELD_INTERVAL === 0) {
-                await new Promise(resolve => setTimeout(resolve, 0))
+                await yieldToEventLoop()
                 if (context.signal?.aborted) return
               }
               const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)

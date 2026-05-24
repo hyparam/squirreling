@@ -1,6 +1,7 @@
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
 import { compareForTerm, keyify } from './utils.js'
+import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { AsyncRow, ExecuteContext, QueryResults, SqlPrimitive } from '../types.js'
@@ -40,7 +41,7 @@ export function executeWindow(plan, context) {
         let i = 0
         for await (const row of child.rows()) {
           if (++i % YIELD_INTERVAL === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0))
+            await yieldToEventLoop()
             if (context.signal?.aborted) return
           }
           const cells = { ...row.cells }
@@ -67,7 +68,7 @@ export function executeWindow(plan, context) {
       let collectCount = 0
       for await (const row of child.rows()) {
         if (++collectCount % YIELD_INTERVAL === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         rows.push(row)
@@ -86,7 +87,7 @@ export function executeWindow(plan, context) {
       let emitCount = 0
       for (let i = 0; i < rows.length; i++) {
         if (++emitCount % YIELD_INTERVAL === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         const row = rows[i]
@@ -120,7 +121,7 @@ async function computeWindow(spec, rows, output, context) {
   const partitions = new Map()
   for (let chunkStart = 0; chunkStart < rows.length; chunkStart += YIELD_INTERVAL) {
     if (chunkStart > 0) {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await yieldToEventLoop()
       if (context.signal?.aborted) return
     }
     const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, rows.length)
@@ -151,7 +152,7 @@ async function computeWindow(spec, rows, output, context) {
       const entries = new Array(bucket.length)
       for (let chunkStart = 0; chunkStart < bucket.length; chunkStart += YIELD_INTERVAL) {
         if (chunkStart > 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, bucket.length)
@@ -203,7 +204,7 @@ async function applyWindowFunction(spec, ordered, rows, output, context) {
     let tick = 0
     for (let k = 0; k < ordered.length; k++) {
       if (++tick % YIELD_INTERVAL === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0))
+        await yieldToEventLoop()
         if (context.signal?.aborted) return
       }
       const idx = ordered[k]

@@ -10,6 +10,7 @@ import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from '.
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 import { executeWindow } from './window.js'
+import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
@@ -417,7 +418,7 @@ async function* filterRows(rows, condition, context, limit) {
   for await (const row of rows) {
     if (context.signal?.aborted) return
     if (++innerCount % YIELD_INTERVAL === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await yieldToEventLoop()
       if (context.signal?.aborted) return
     }
     rowIndex++
@@ -463,7 +464,7 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
   for await (const row of rows) {
     if (signal?.aborted) return
     if (++innerCount % YIELD_INTERVAL === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await yieldToEventLoop()
       if (signal?.aborted) return
     }
     if (skipped < offset) {
@@ -518,7 +519,7 @@ function executeProject(plan, context) {
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
         if (++innerCount % YIELD_INTERVAL === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         rowIndex++
@@ -611,7 +612,7 @@ function executeDistinct(plan, context) {
       for await (const row of child.rows()) {
         if (signal?.aborted) return
         if (++innerCount % YIELD_INTERVAL === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (signal?.aborted) return
         }
         buffer.push(row)
@@ -698,7 +699,7 @@ function executeSetOperation(plan, context) {
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             if (++count % YIELD_INTERVAL === 0) {
-              await new Promise(resolve => setTimeout(resolve, 0))
+              await yieldToEventLoop()
               if (signal?.aborted) return
             }
             const key = await stableRowKey(row)
@@ -710,7 +711,7 @@ function executeSetOperation(plan, context) {
           for await (const row of right.rows()) {
             if (signal?.aborted) return
             if (++count % YIELD_INTERVAL === 0) {
-              await new Promise(resolve => setTimeout(resolve, 0))
+              await yieldToEventLoop()
               if (signal?.aborted) return
             }
             const key = await stableRowKey(row)
@@ -736,7 +737,7 @@ function executeSetOperation(plan, context) {
         for await (const row of right.rows()) {
           if (signal?.aborted) return
           if (++tick % YIELD_INTERVAL === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0))
+            await yieldToEventLoop()
             if (signal?.aborted) return
           }
           const key = await stableRowKey(row)
@@ -748,7 +749,7 @@ function executeSetOperation(plan, context) {
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             if (++tick % YIELD_INTERVAL === 0) {
-              await new Promise(resolve => setTimeout(resolve, 0))
+              await yieldToEventLoop()
               if (signal?.aborted) return
             }
             const key = await stableRowKey(row)
@@ -764,7 +765,7 @@ function executeSetOperation(plan, context) {
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             if (++tick % YIELD_INTERVAL === 0) {
-              await new Promise(resolve => setTimeout(resolve, 0))
+              await yieldToEventLoop()
               if (signal?.aborted) return
             }
             const key = await stableRowKey(row)
@@ -791,7 +792,7 @@ function executeSetOperation(plan, context) {
         for await (const row of right.rows()) {
           if (signal?.aborted) return
           if (++tick % YIELD_INTERVAL === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0))
+            await yieldToEventLoop()
             if (signal?.aborted) return
           }
           const key = await stableRowKey(row)
@@ -803,7 +804,7 @@ function executeSetOperation(plan, context) {
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             if (++tick % YIELD_INTERVAL === 0) {
-              await new Promise(resolve => setTimeout(resolve, 0))
+              await yieldToEventLoop()
               if (signal?.aborted) return
             }
             const key = await stableRowKey(row)
@@ -820,7 +821,7 @@ function executeSetOperation(plan, context) {
           for await (const row of left.rows()) {
             if (signal?.aborted) return
             if (++tick % YIELD_INTERVAL === 0) {
-              await new Promise(resolve => setTimeout(resolve, 0))
+              await yieldToEventLoop()
               if (signal?.aborted) return
             }
             const key = await stableRowKey(row)

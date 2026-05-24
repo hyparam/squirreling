@@ -1,5 +1,6 @@
 import { executeStatement } from '../execute/execute.js'
 import { isPlainObject, keyify, sqlEquals, stringify } from '../execute/utils.js'
+import { yieldToEventLoop } from '../execute/yield.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
 import { UnknownFunctionError } from '../validation/parseErrors.js'
@@ -33,7 +34,7 @@ async function evaluateAll(node, rows, context) {
   const results = new Array(rows.length)
   for (let i = 0; i < rows.length; i += YIELD_INTERVAL) {
     if (i > 0) {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await yieldToEventLoop()
       context.signal?.throwIfAborted()
     }
     const end = Math.min(i + YIELD_INTERVAL, rows.length)
@@ -703,7 +704,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     let innerCount = 0
     for await (const resRow of subResult.rows()) {
       if (++innerCount % YIELD_INTERVAL === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0))
+        await yieldToEventLoop()
         context.signal?.throwIfAborted()
       }
       const value = await resRow.cells[resRow.columns[0]]()

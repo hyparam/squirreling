@@ -3,6 +3,7 @@ import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
 import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
+import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
@@ -89,7 +90,7 @@ export function executeHashAggregate(plan, context) {
       let collectCount = 0
       for await (const row of child.rows()) {
         if (++collectCount % YIELD_INTERVAL === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         allRows.push(row)
@@ -101,7 +102,7 @@ export function executeHashAggregate(plan, context) {
 
       for (let chunkStart = 0; chunkStart < allRows.length; chunkStart += YIELD_INTERVAL) {
         if (chunkStart > 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, allRows.length)
@@ -189,7 +190,7 @@ export function executeScalarAggregate(plan, context) {
       let collectCount = 0
       for await (const row of child.rows()) {
         if (++collectCount % YIELD_INTERVAL === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+          await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
         group.push(row)
