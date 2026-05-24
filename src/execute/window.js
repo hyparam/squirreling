@@ -118,20 +118,26 @@ async function computeWindow(spec, rows, output, context) {
   // Bucket row indices by partition key.
   /** @type {Map<string | number | bigint | boolean, number[]>} */
   const partitions = new Map()
-  let keyCount = 0
-  for (let i = 0; i < rows.length; i++) {
-    if (++keyCount % YIELD_INTERVAL === 0) {
+  for (let chunkStart = 0; chunkStart < rows.length; chunkStart += YIELD_INTERVAL) {
+    if (chunkStart > 0) {
       await new Promise(resolve => setTimeout(resolve, 0))
       if (context.signal?.aborted) return
     }
-    const keyValues = await Promise.all(spec.partitionBy.map(expr => evaluateExpr({ node: expr, row: rows[i], context })))
-    const key = keyify(...keyValues)
-    let bucket = partitions.get(key)
-    if (!bucket) {
-      bucket = []
-      partitions.set(key, bucket)
+    const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, rows.length)
+    const chunkKeys = await Promise.all(
+      rows.slice(chunkStart, chunkEnd).map(row =>
+        Promise.all(spec.partitionBy.map(expr => evaluateExpr({ node: expr, row, context })))
+      )
+    )
+    for (let j = 0; j < chunkKeys.length; j++) {
+      const key = keyify(...chunkKeys[j])
+      let bucket = partitions.get(key)
+      if (!bucket) {
+        bucket = []
+        partitions.set(key, bucket)
+      }
+      bucket.push(chunkStart + j)
     }
-    bucket.push(i)
   }
 
   for (const bucket of partitions.values()) {
@@ -143,15 +149,21 @@ async function computeWindow(spec, rows, output, context) {
     if (spec.orderBy.length) {
       /** @type {{ idx: number, values: SqlPrimitive[], pos: number }[]} */
       const entries = new Array(bucket.length)
-      let orderCount = 0
-      for (let k = 0; k < bucket.length; k++) {
-        if (++orderCount % YIELD_INTERVAL === 0) {
+      for (let chunkStart = 0; chunkStart < bucket.length; chunkStart += YIELD_INTERVAL) {
+        if (chunkStart > 0) {
           await new Promise(resolve => setTimeout(resolve, 0))
           if (context.signal?.aborted) return
         }
-        const idx = bucket[k]
-        const values = await Promise.all(spec.orderBy.map(term => evaluateExpr({ node: term.expr, row: rows[idx], context })))
-        entries[k] = { idx, values, pos: k }
+        const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, bucket.length)
+        const chunkValues = await Promise.all(
+          bucket.slice(chunkStart, chunkEnd).map(idx =>
+            Promise.all(spec.orderBy.map(term => evaluateExpr({ node: term.expr, row: rows[idx], context })))
+          )
+        )
+        for (let j = 0; j < chunkValues.length; j++) {
+          const k = chunkStart + j
+          entries[k] = { idx: bucket[k], values: chunkValues[j], pos: k }
+        }
       }
       entries.sort((a, b) => {
         for (let i = 0; i < spec.orderBy.length; i++) {
