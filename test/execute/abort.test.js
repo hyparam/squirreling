@@ -155,7 +155,6 @@ describe('abort signal', () => {
       }
 
       const ms = performance.now() - start
-      console.log(`self-join with ${timeoutMs}ms timeout took ${ms.toFixed(0)}ms (aborted=${controller.signal.aborted})`)
       // The timer should have fired during the long join
       expect(controller.signal.aborted).toBe(true)
       // And the query should have stopped soon after, not run to completion
@@ -187,7 +186,6 @@ describe('abort signal', () => {
       }
 
       const ms = performance.now() - start
-      console.log(`group-by with ${timeoutMs}ms timeout took ${ms.toFixed(0)}ms (aborted=${controller.signal.aborted})`)
       expect(controller.signal.aborted).toBe(true)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
@@ -217,7 +215,35 @@ describe('abort signal', () => {
       }
 
       const ms = performance.now() - start
-      console.log(`filter with ${timeoutMs}ms timeout took ${ms.toFixed(0)}ms (aborted=${controller.signal.aborted})`)
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
+  describe('setTimeout abort during long DISTINCT', () => {
+    it('setTimeout abort fires while distinct runs', async () => {
+      // 2M rows feeding executeDistinct — the per-row stableRowKey loop is
+      // microtask-only when cells are synchronous
+      const data = []
+      for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT DISTINCT id FROM s',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)

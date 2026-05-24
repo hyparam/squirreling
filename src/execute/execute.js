@@ -596,9 +596,14 @@ function executeDistinct(plan, context) {
 
       /** @type {AsyncRow[]} */
       let buffer = []
+      let innerCount = 0
 
       for await (const row of child.rows()) {
         if (signal?.aborted) return
+        if (++innerCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (signal?.aborted) return
+        }
         buffer.push(row)
 
         if (buffer.length >= MAX_CHUNK) {
