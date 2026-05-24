@@ -313,6 +313,56 @@ describe('abort signal', () => {
     }, 60_000)
   })
 
+  describe('setTimeout abort during long SUM evaluation', () => {
+    it('setTimeout abort fires while SUM Promise.all runs', async () => {
+      // The scalar-aggregate collect loop yields every 4000 rows, so for huge
+      // N the abort fires during collection. To exercise the SUM evaluation
+      // path itself, drain the generator separately (collection done) and
+      // then await the cell — the cell evaluation does
+      //   await Promise.all(filteredRows.map(row => evaluateExpr(...)))
+      //   for (const raw of rawValues) { ... }
+      // .map creates N promises synchronously and the reduce is also sync,
+      // neither yields to macrotask. With N small enough that collection
+      // finishes before the abort timer wall time, the timer fires at 100ms
+      // but is blocked behind the SUM eval's microtask chain until the query
+      // returns and finally clears the timer.
+      // 50k rows so the scalar-aggregate collect loop finishes (~30ms) before
+      // the abort timer fires at 100ms. Then awaiting the result cell runs
+      // SUM's .map+Promise.all+sync-reduce over 50k rows with a multi-term
+      // expression, which takes hundreds of ms entirely in microtasks. The
+      // 100ms abort timer is stuck behind those microtasks until the query
+      // returns and finally clears the timer — signal.aborted stays false.
+      const N = 50_000
+      const data = []
+      for (let i = 0; i < N; i++) data.push({ id: i })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        const result = executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT SUM(id * id + id * 2 + id * 3 + 7) AS n FROM s',
+          signal: controller.signal,
+        })
+        /** @type {import('../../src/types.js').AsyncRow[]} */
+        const rows = []
+        for await (const row of result.rows()) rows.push(row)
+        // Collection done; SUM evaluation happens here when cells resolve
+        for (const row of rows) await row.cells['n']()
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
   describe('setTimeout abort during long projection', () => {
     it('setTimeout abort fires while executeProject runs', async () => {
       // 2M rows feeding executeProject via a derived expression (id + 1) so the

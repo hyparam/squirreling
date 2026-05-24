@@ -16,6 +16,35 @@ import { evaluateStringFunc } from './strings.js'
  * @import { ExprNode, AsyncRow, ExecuteContext, SqlPrimitive } from '../types.js'
  */
 
+// Yield to the event loop every this many iterations so that aborts can actually fire
+const YIELD_INTERVAL = 4000
+
+/**
+ * Evaluates an expression for each row, yielding to the event loop every
+ * YIELD_INTERVAL rows so signal-based aborts can fire mid-evaluation.
+ *
+ * @param {ExprNode} node
+ * @param {AsyncRow[]} rows
+ * @param {ExecuteContext} context
+ * @returns {Promise<SqlPrimitive[]>}
+ */
+async function evaluateAll(node, rows, context) {
+  /** @type {SqlPrimitive[]} */
+  const results = new Array(rows.length)
+  for (let i = 0; i < rows.length; i += YIELD_INTERVAL) {
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      context.signal?.throwIfAborted()
+    }
+    const end = Math.min(i + YIELD_INTERVAL, rows.length)
+    const chunk = await Promise.all(rows.slice(i, end).map(row =>
+      evaluateExpr({ node, row, context })
+    ))
+    for (let j = 0; j < chunk.length; j++) results[i + j] = chunk[j]
+  }
+  return results
+}
+
 /**
  * Evaluates an expression node against a row of data
  *
@@ -177,10 +206,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       // Apply FILTER clause if present
       let filteredRows = rows
       if (node.filter) {
-        const filterNode = node.filter
-        const passes = await Promise.all(rows.map(row =>
-          evaluateExpr({ node: filterNode, row, context })
-        ))
+        const passes = await evaluateAll(node.filter, rows, context)
         filteredRows = rows.filter((_, i) => passes[i])
       }
 
@@ -191,9 +217,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           return filteredRows.length
         }
 
-        const values = await Promise.all(filteredRows.map(row =>
-          evaluateExpr({ node: argNode, row, context })
-        ))
+        const values = await evaluateAll(argNode, filteredRows, context)
         if (node.distinct) {
           const seen = new Set()
           for (const v of values) {
@@ -209,9 +233,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
 
       if (funcName === 'COUNTIF') {
-        const values = await Promise.all(filteredRows.map(row =>
-          evaluateExpr({ node: argNode, row, context })
-        ))
+        const values = await evaluateAll(argNode, filteredRows, context)
         let count = 0
         for (const v of values) {
           if (v) count++
@@ -220,9 +242,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
 
       if (funcName === 'SUM' || funcName === 'AVG' || funcName === 'MIN' || funcName === 'MAX') {
-        const rawValues = await Promise.all(filteredRows.map(row =>
-          evaluateExpr({ node: argNode, row, context })
-        ))
+        const rawValues = await evaluateAll(argNode, filteredRows, context)
         let sum = 0
         let count = 0
         /** @type {SqlPrimitive} */
@@ -247,9 +267,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
 
       if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
-        const rawValues = await Promise.all(filteredRows.map(row =>
-          evaluateExpr({ node: argNode, row, context })
-        ))
+        const rawValues = await evaluateAll(argNode, filteredRows, context)
         let sum = 0
         /** @type {number[]} */
         const values = []
@@ -290,9 +308,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
             ...node,
           })
         }
-        const rawValues = await Promise.all(filteredRows.map(row =>
-          evaluateExpr({ node: valueNode, row, context })
-        ))
+        const rawValues = await evaluateAll(valueNode, filteredRows, context)
         /** @type {number[]} */
         const values = []
         for (const raw of rawValues) {
@@ -311,12 +327,12 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
 
       if (funcName === 'JSON_ARRAYAGG' || funcName === 'ARRAY_AGG') {
+        const allValues = await evaluateAll(argNode, filteredRows, context)
         if (node.distinct) {
           /** @type {SqlPrimitive[]} */
           const values = []
           const seen = new Set()
-          for (const row of filteredRows) {
-            const v = await evaluateExpr({ node: argNode, row, context })
+          for (const v of allValues) {
             const key = keyify(v)
             if (!seen.has(key)) {
               seen.add(key)
@@ -325,9 +341,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
           }
           return values
         } else {
-          return await Promise.all(filteredRows.map(row =>
-            evaluateExpr({ node: argNode, row, context })
-          ))
+          return allValues
         }
       }
 
@@ -336,10 +350,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         const separator = String(await evaluateExpr({ node: separatorNode, row: filteredRows[0] ?? { columns: [], cells: {} }, context }))
         /** @type {string[]} */
         const values = []
+        const allValues = await evaluateAll(argNode, filteredRows, context)
         if (node.distinct) {
           const seen = new Set()
-          for (const row of filteredRows) {
-            const v = await evaluateExpr({ node: argNode, row, context })
+          for (const v of allValues) {
             if (v == null) continue
             const str = String(v)
             const key = keyify(str)
@@ -349,8 +363,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
             }
           }
         } else {
-          for (const row of filteredRows) {
-            const v = await evaluateExpr({ node: argNode, row, context })
+          for (const v of allValues) {
             if (v != null) values.push(String(v))
           }
         }
