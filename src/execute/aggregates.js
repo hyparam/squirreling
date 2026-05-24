@@ -9,6 +9,9 @@ import { keyify } from './utils.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  */
 
+// Yield to the event loop every this many iterations so that aborts can actually fire
+const YIELD_INTERVAL = 4000
+
 /**
  * Projects aggregate columns from a group of rows
  *
@@ -83,8 +86,12 @@ export function executeHashAggregate(plan, context) {
       // Collect all rows
       /** @type {AsyncRow[]} */
       const allRows = []
+      let collectCount = 0
       for await (const row of child.rows()) {
-        if (context.signal?.aborted) return
+        if (++collectCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
         allRows.push(row)
       }
 
@@ -92,7 +99,12 @@ export function executeHashAggregate(plan, context) {
       /** @type {Map<any, AsyncRow[]>} */
       const groups = new Map()
 
+      let keyCount = 0
       for (const row of allRows) {
+        if (++keyCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
         const key = keyify(...await Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context }))))
         let group = groups.get(key)
         if (!group) {
