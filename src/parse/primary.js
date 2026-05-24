@@ -40,7 +40,7 @@ export function parsePrimary(state) {
     return expr
   }
 
-  // Array literal: [elem, elem, ...] — elements must be literals
+  // Array literal: [elem, elem, ...] elements must be literals
   if (match(state, 'bracket', '[')) {
     /** @type {SqlPrimitive[]} */
     const values = []
@@ -158,7 +158,7 @@ export function parsePrimary(state) {
       prefix = name
       name = expect(state, 'identifier').value
     } else if (match(state, 'bracket', '[')) {
-      // table['column'] — string subscript is equivalent to dot access
+      // table['column'] string subscript is equivalent to dot access
       const fieldTok = current(state)
       if (fieldTok.type !== 'string') {
         throw parseError(state, 'string literal')

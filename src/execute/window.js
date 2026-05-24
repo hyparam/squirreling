@@ -7,6 +7,9 @@ import { compareForTerm, keyify } from './utils.js'
  * @import { WindowNode, WindowSpec } from '../plan/types.js'
  */
 
+// Yield to the event loop every 4000 iterations so that aborts can actually fire
+const YIELD_INTERVAL = 4000
+
 /**
  * Executes a Window plan node: buffers the child's rows, assigns each window
  * function's output per partition, and yields rows in input order with the
@@ -36,8 +39,10 @@ export function executeWindow(plan, context) {
       async *rows() {
         let i = 0
         for await (const row of child.rows()) {
-          if (context.signal?.aborted) return
-          i++
+          if (++i % YIELD_INTERVAL === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            if (context.signal?.aborted) return
+          }
           const cells = { ...row.cells }
           for (const w of plan.windows) {
             const value = i
@@ -59,8 +64,12 @@ export function executeWindow(plan, context) {
     async *rows() {
       /** @type {AsyncRow[]} */
       const rows = []
+      let collectCount = 0
       for await (const row of child.rows()) {
-        if (context.signal?.aborted) return
+        if (++collectCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
         rows.push(row)
       }
       if (rows.length === 0) return
@@ -74,8 +83,12 @@ export function executeWindow(plan, context) {
         if (context.signal?.aborted) return
       }
 
+      let emitCount = 0
       for (let i = 0; i < rows.length; i++) {
-        if (context.signal?.aborted) return
+        if (++emitCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
         const row = rows[i]
         const cells = { ...row.cells }
         for (let w = 0; w < plan.windows.length; w++) {
@@ -105,11 +118,14 @@ async function computeWindow(spec, rows, output, context) {
   // Bucket row indices by partition key.
   /** @type {Map<string | number | bigint | boolean, number[]>} */
   const partitions = new Map()
-  const partitionKeys = await Promise.all(rows.map(row =>
-    Promise.all(spec.partitionBy.map(expr => evaluateExpr({ node: expr, row, context })))
-  ))
+  let keyCount = 0
   for (let i = 0; i < rows.length; i++) {
-    const key = keyify(...partitionKeys[i])
+    if (++keyCount % YIELD_INTERVAL === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      if (context.signal?.aborted) return
+    }
+    const keyValues = await Promise.all(spec.partitionBy.map(expr => evaluateExpr({ node: expr, row: rows[i], context })))
+    const key = keyify(...keyValues)
     let bucket = partitions.get(key)
     if (!bucket) {
       bucket = []
@@ -125,11 +141,18 @@ async function computeWindow(spec, rows, output, context) {
     /** @type {number[]} */
     let ordered
     if (spec.orderBy.length) {
-      const orderValues = await Promise.all(bucket.map(idx =>
-        Promise.all(spec.orderBy.map(term => evaluateExpr({ node: term.expr, row: rows[idx], context })))
-      ))
       /** @type {{ idx: number, values: SqlPrimitive[], pos: number }[]} */
-      const entries = bucket.map((idx, k) => ({ idx, values: orderValues[k], pos: k }))
+      const entries = new Array(bucket.length)
+      let orderCount = 0
+      for (let k = 0; k < bucket.length; k++) {
+        if (++orderCount % YIELD_INTERVAL === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          if (context.signal?.aborted) return
+        }
+        const idx = bucket[k]
+        const values = await Promise.all(spec.orderBy.map(term => evaluateExpr({ node: term.expr, row: rows[idx], context })))
+        entries[k] = { idx, values, pos: k }
+      }
       entries.sort((a, b) => {
         for (let i = 0; i < spec.orderBy.length; i++) {
           const cmp = compareForTerm(a.values[i], b.values[i], spec.orderBy[i])
@@ -165,8 +188,12 @@ async function applyWindowFunction(spec, ordered, rows, output, context) {
   if (spec.funcName === 'LAG' || spec.funcName === 'LEAD') {
     const direction = spec.funcName === 'LAG' ? -1 : 1
     const [valueExpr, offsetExpr, defaultExpr] = spec.args
+    let tick = 0
     for (let k = 0; k < ordered.length; k++) {
-      if (context.signal?.aborted) return
+      if (++tick % YIELD_INTERVAL === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+        if (context.signal?.aborted) return
+      }
       const idx = ordered[k]
       const row = rows[idx]
       const offset = offsetExpr

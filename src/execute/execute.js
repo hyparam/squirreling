@@ -517,7 +517,7 @@ function executeProject(plan, context) {
         /** @type {AsyncCells} */
         const cells = {}
         // Only safe to propagate resolved when every output column comes from
-        // the star branch — derived expressions evaluate lazily and can't be
+        // the star branch. Derived expressions evaluate lazily and can't be
         // pre-materialized here, and a partial resolved would make
         // collect()/downstream identifier fast paths read undefined.
         const source = resolveable ? row.resolved : undefined

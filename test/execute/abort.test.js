@@ -164,7 +164,7 @@ describe('abort signal', () => {
 
   describe('setTimeout abort during long GROUP BY', () => {
     it('setTimeout abort fires while a hash aggregate runs', async () => {
-      // 2M rows grouped into 100 buckets — the per-row group-key build loop in
+      // 2M rows grouped into 100 buckets: the per-row group-key build loop in
       // executeHashAggregate is microtask-only when expressions are synchronous
       const data = []
       for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
@@ -194,7 +194,7 @@ describe('abort signal', () => {
   describe('setTimeout abort during long WHERE filter', () => {
     it('setTimeout abort fires while filterRows runs', async () => {
       // 2M rows with a WHERE that memorySource does not push down, so every
-      // row flows through filterRows — a microtask-only chunked loop
+      // row flows through filterRows
       const data = []
       for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
       const controller = new AbortController()
@@ -222,7 +222,7 @@ describe('abort signal', () => {
 
   describe('setTimeout abort during long DISTINCT', () => {
     it('setTimeout abort fires while distinct runs', async () => {
-      // 2M rows feeding executeDistinct — the per-row stableRowKey loop is
+      // 2M rows feeding executeDistinct: the per-row stableRowKey loop is
       // microtask-only when cells are synchronous
       const data = []
       for (let i = 0; i < 2_000_000; i++) data.push({ id: i, bucket: i % 100 })
@@ -251,7 +251,7 @@ describe('abort signal', () => {
 
   describe('setTimeout abort during long UNION', () => {
     it('setTimeout abort fires while a UNION dedup runs', async () => {
-      // 2M rows on each side feeding executeSetOperation — the per-row
+      // 2M rows on each side feeding executeSetOperation: the per-row
       // stableRowKey loop in the UNION branch is microtask-only when cells
       // are synchronous
       const data = []
@@ -265,6 +265,36 @@ describe('abort signal', () => {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT id FROM s UNION SELECT id FROM s',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      expect(controller.signal.aborted).toBe(true)
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
+  })
+
+  describe('setTimeout abort during long window function', () => {
+    it('setTimeout abort fires while a window LAG runs', async () => {
+      // 1M rows in 100 partitions feeding executeWindow: the per-partition
+      // and per-row loops in computeWindow/applyWindowFunction are
+      // microtask-only when expressions are synchronous
+      const data = []
+      for (let i = 0; i < 1_000_000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT id, LAG(id) OVER (PARTITION BY bucket ORDER BY id) AS prev FROM s',
           signal: controller.signal,
         }))
       } catch {
