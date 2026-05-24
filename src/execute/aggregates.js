@@ -99,19 +99,27 @@ export function executeHashAggregate(plan, context) {
       /** @type {Map<any, AsyncRow[]>} */
       const groups = new Map()
 
-      let keyCount = 0
-      for (const row of allRows) {
-        if (++keyCount % YIELD_INTERVAL === 0) {
+      for (let chunkStart = 0; chunkStart < allRows.length; chunkStart += YIELD_INTERVAL) {
+        if (chunkStart > 0) {
           await new Promise(resolve => setTimeout(resolve, 0))
           if (context.signal?.aborted) return
         }
-        const key = keyify(...await Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context }))))
-        let group = groups.get(key)
-        if (!group) {
-          group = []
-          groups.set(key, group)
+        const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, allRows.length)
+        const chunkKeys = await Promise.all(
+          allRows.slice(chunkStart, chunkEnd).map(row =>
+            Promise.all(plan.groupBy.map(expr => evaluateExpr({ node: expr, row, context })))
+          )
+        )
+        for (let j = 0; j < chunkKeys.length; j++) {
+          const key = keyify(...chunkKeys[j])
+          const row = allRows[chunkStart + j]
+          let group = groups.get(key)
+          if (!group) {
+            group = []
+            groups.set(key, group)
+          }
+          group.push(row)
         }
-        group.push(row)
       }
 
       /** @type {{ row: AsyncRow, rows: AsyncRow[], outputRow: AsyncRow }[]} */
