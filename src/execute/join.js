@@ -7,6 +7,9 @@ import { executePlan } from './execute.js'
  * @import { HashJoinNode, NestedLoopJoinNode, PositionalJoinNode } from '../plan/types.js'
  */
 
+// Yield to the event loop every 4000 iterations so that aborts can actually fire
+const YIELD_INTERVAL = 4000
+
 /**
  * Executes a nested loop join operation
  *
@@ -41,6 +44,7 @@ export function executeNestedLoopJoin(plan, context) {
       /** @type {Set<AsyncRow> | undefined} */
       const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
 
+      let innerCount = 0
       for await (const leftRow of left.rows()) {
         if (context.signal?.aborted) break
 
@@ -51,6 +55,10 @@ export function executeNestedLoopJoin(plan, context) {
         let hasMatch = false
 
         for (const rightRow of rightRows) {
+          if (++innerCount % YIELD_INTERVAL === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            if (context.signal?.aborted) return
+          }
           const tempMerged = mergeRows(leftRow, rightRow, leftTable, rightTable)
           const matches = await evaluateExpr({
             node: plan.condition,
@@ -237,6 +245,7 @@ export function executeHashJoin(plan, context) {
       const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
 
       // Probe phase: stream left rows
+      let innerCount = 0
       for await (const leftRow of left.rows()) {
         if (context.signal?.aborted) break
 
@@ -253,6 +262,10 @@ export function executeHashJoin(plan, context) {
           const candidates = hashMap.get(key)
           if (candidates?.length) {
             for (const rightRow of candidates) {
+              if (++innerCount % YIELD_INTERVAL === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0))
+                if (context.signal?.aborted) return
+              }
               const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)
               if (residual) {
                 const ok = await evaluateExpr({ node: residual, row: merged, context })

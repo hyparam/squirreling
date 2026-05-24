@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
+import { memorySource } from '../../src/backend/dataSource.js'
 import { trackingSource } from './trackingSource.js'
 
 const users = [
@@ -129,6 +130,37 @@ describe('abort signal', () => {
       expect(getScanCount()).toBe(1)
       expect(getRowCount()).toBe(5)
     })
+  })
+
+  describe('setTimeout abort during long join', () => {
+    it('setTimeout abort fires while a self-join runs', async () => {
+      // 20k rows * 20k right rows / 100 buckets = ~4M inner-loop iterations
+      const data = []
+      for (let i = 0; i < 20000; i++) data.push({ id: i, bucket: i % 100 })
+      const controller = new AbortController()
+      const timeoutMs = 100
+      const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
+      const start = performance.now()
+
+      try {
+        await collect(executeSql({
+          tables: { s: memorySource({ data }) },
+          query: 'SELECT COUNT(*) AS n FROM s a JOIN s b ON a.bucket = b.bucket AND b.id > a.id',
+          signal: controller.signal,
+        }))
+      } catch {
+        // expected on abort
+      } finally {
+        clearTimeout(timer)
+      }
+
+      const ms = performance.now() - start
+      console.log(`self-join with ${timeoutMs}ms timeout took ${ms.toFixed(0)}ms (aborted=${controller.signal.aborted})`)
+      // The timer should have fired during the long join
+      expect(controller.signal.aborted).toBe(true)
+      // And the query should have stopped soon after, not run to completion
+      expect(ms).toBeLessThan(timeoutMs * 4)
+    }, 60_000)
   })
 
   describe('join queries', () => {
