@@ -322,6 +322,24 @@ describe('executeSql', () => {
       })).toThrow('ARRAY_AGG(expression) function requires 1 argument, got 2')
     })
 
+    it('should collect values into array with LIST (alias for ARRAY_AGG)', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT LIST(name) AS names FROM users',
+      }))
+      expect(result).toEqual([{ names: ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'] }])
+    })
+
+    it('should handle LIST DISTINCT', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT LIST(DISTINCT city) AS cities FROM users',
+      }))
+      expect(result[0].cities).toHaveLength(2)
+      expect(result[0].cities).toContain('NYC')
+      expect(result[0].cities).toContain('LA')
+    })
+
     it('should calculate STDDEV_POP', async () => {
       // Values: 2, 4, 4, 4, 5, 5, 7, 9 => mean=5, sum of squared diffs=32, stddev_pop=sqrt(32/8)=2
       const data = [
