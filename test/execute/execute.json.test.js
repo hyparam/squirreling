@@ -792,4 +792,75 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_KEYS', () => {
+    it('should return the keys of a JSON object', async () => {
+      const data = [{ id: 1, json: { name: 'Alice', age: 30 } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data',
+      }))
+      expect(result).toEqual([{ keys: ['name', 'age'] }])
+    })
+
+    it('should return an empty array for an empty object', async () => {
+      const result = await collect(executeSql({
+        tables: { data: [{ id: 1, json: {} }] },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data',
+      }))
+      expect(result).toEqual([{ keys: [] }])
+    })
+
+    it('should parse a JSON object string', async () => {
+      const data = [{ id: 1, json: '{"a":1,"b":2}' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data',
+      }))
+      expect(result).toEqual([{ keys: ['a', 'b'] }])
+    })
+
+    it('should return null when input is null', async () => {
+      const data = [{ id: 1, json: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data',
+      }))
+      expect(result).toEqual([{ keys: null }])
+    })
+
+    it('should return null when input is an array, not an object', async () => {
+      const data = [{ id: 1, json: [1, 2, 3] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data',
+      }))
+      expect(result).toEqual([{ keys: null }])
+    })
+
+    it('should return null when input is a primitive', async () => {
+      const data = [{ id: 1, json: '42' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data',
+      }))
+      expect(result).toEqual([{ keys: null }])
+    })
+
+    it('should throw for invalid JSON string', async () => {
+      const data = [{ id: 1, json: 'not valid json' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS(json) AS keys FROM data' })))
+        .rejects.toThrow('JSON_KEYS(value): invalid JSON string. Argument must be valid JSON. (row 1)')
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT JSON_KEYS() FROM data',
+      })).toThrow('JSON_KEYS(value) function requires 1 argument, got 0')
+    })
+  })
+
 })
