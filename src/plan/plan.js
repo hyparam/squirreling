@@ -463,7 +463,10 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
     if (join.joinType === 'POSITIONAL') {
       plan = { type: 'PositionalJoin', leftAlias: currentLeftTable, rightAlias: rightTable, left: plan, right: rightScan }
     } else {
-      const keys = join.on && extractEquiKeys({ condition: join.on, leftTable: currentLeftTable, rightTable })
+      // `USING (cols)` desugars to an equi-condition `left.col = right.col` per
+      // column, which routes through the hash-join path like any other ON.
+      const condition = join.on ?? (join.using && buildUsingCondition(join.using, join))
+      const keys = condition && extractEquiKeys({ condition, leftTable: currentLeftTable, rightTable })
       if (keys) {
         /** @type {HashJoinNode} */
         const hashJoin = {
@@ -484,7 +487,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
           joinType: join.joinType,
           leftAlias: currentLeftTable,
           rightAlias: rightTable,
-          condition: join.on,
+          condition,
           left: plan,
           right: rightScan,
         }
@@ -621,6 +624,37 @@ function normalizeIdentifiers(node, sourceColumns) {
   // literal, interval, subquery, in, exists: leave unchanged (subquery bodies
   // have their own source layout; correlated references must stay as-is).
   return node
+}
+
+/**
+ * Builds the join condition for a `JOIN ... USING (cols)` clause: an AND of
+ * `col = col` equalities using unprefixed identifiers. The hash-join path
+ * evaluates the left key against the left row and the right key against the
+ * right row, so each unqualified name resolves unambiguously on its own side.
+ *
+ * @param {string[]} using - shared column names from the USING clause
+ * @param {{ positionStart: number, positionEnd: number }} pos - position info for the synthesized exprs
+ * @returns {ExprNode | undefined}
+ */
+function buildUsingCondition(using, pos) {
+  const { positionStart, positionEnd } = pos
+  /** @type {ExprNode | undefined} */
+  let condition
+  for (const col of using) {
+    /** @type {ExprNode} */
+    const eq = {
+      type: 'binary',
+      op: '=',
+      left: { type: 'identifier', name: col, positionStart, positionEnd },
+      right: { type: 'identifier', name: col, positionStart, positionEnd },
+      positionStart,
+      positionEnd,
+    }
+    condition = condition === undefined
+      ? eq
+      : { type: 'binary', op: 'AND', left: condition, right: eq, positionStart, positionEnd }
+  }
+  return condition
 }
 
 /**

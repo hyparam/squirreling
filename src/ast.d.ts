@@ -210,6 +210,7 @@ export interface JoinClause extends AstBase {
   table: string
   alias?: string
   on?: ExprNode
+  using?: string[]
   fromFunction?: FromFunction
 }
 

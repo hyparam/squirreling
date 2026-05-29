@@ -153,6 +153,13 @@ export function extractColumns({ select, parentColumns }) {
   if (sourceAlias !== undefined) visibleLateralAliases.push(sourceAlias)
   for (const join of select.joins) {
     collectColumnsFromExpr(join.on, identifiers)
+    // USING columns are equi-join keys on both sides; keep them in every
+    // table's needed set so projection pushdown can't prune the join key.
+    if (join.using) {
+      for (const col of join.using) {
+        for (const [, set] of perTable) set?.add(col)
+      }
+    }
     const joinAlias = join.alias ?? join.table
     if (join.fromFunction) {
       /** @type {IdentifierNode[]} */

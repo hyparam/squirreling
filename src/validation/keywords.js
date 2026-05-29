@@ -3,7 +3,7 @@ export const KEYWORDS = new Set([
   'HAVING', 'ORDER', 'ASC', 'DESC', 'NULLS', 'LIMIT', 'OFFSET', 'AS', 'ALL',
   'DISTINCT', 'TRUE', 'FALSE', 'NULL', 'LIKE', 'IN', 'EXISTS', 'BETWEEN',
   'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'JOIN', 'INNER', 'LEFT', 'RIGHT',
-  'FULL', 'OUTER', 'CROSS', 'POSITIONAL', 'LATERAL', 'VIEW', 'ON', 'INTERVAL', 'DAY', 'MONTH', 'YEAR',
+  'FULL', 'OUTER', 'CROSS', 'POSITIONAL', 'LATERAL', 'VIEW', 'ON', 'USING', 'INTERVAL', 'DAY', 'MONTH', 'YEAR',
   'HOUR', 'MINUTE', 'SECOND', 'FILTER', 'WITHIN',
   'UNION', 'INTERSECT', 'EXCEPT',
 ])
@@ -17,7 +17,7 @@ export const RESERVED_KEYWORDS = new Set([
   'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'INTERVAL',
   'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
   'AS', 'ALL', 'DISTINCT',
-  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'ON',
+  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'ON', 'USING',
   'UNION', 'INTERSECT', 'EXCEPT',
 ])
 
@@ -30,6 +30,6 @@ export const RESERVED_AFTER_COLUMN = new Set([
 // Keywords that cannot be used as table aliases
 export const RESERVED_AFTER_TABLE = new Set([
   'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'JOIN', 'INNER',
-  'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'POSITIONAL', 'LATERAL',
+  'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'USING', 'POSITIONAL', 'LATERAL',
   'UNION', 'INTERSECT', 'EXCEPT',
 ])

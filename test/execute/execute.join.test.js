@@ -1070,4 +1070,66 @@ describe('JOIN queries', () => {
       expect(result).toEqual([{ id: 1, y: 20 }])
     })
   })
+
+  describe('JOIN ... USING', () => {
+    const lhs = [
+      { k: 1, x: 10 },
+      { k: 2, x: 20 },
+      { k: 3, x: 30 },
+    ]
+    const rhs = [
+      { k: 1, y: 100 },
+      { k: 2, y: 200 },
+    ]
+
+    it('should join on a single USING column', async () => {
+      const result = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.x, rhs.y FROM lhs JOIN rhs USING (k)',
+      }))
+      expect(result).toEqual([
+        { x: 10, y: 100 },
+        { x: 20, y: 200 },
+      ])
+    })
+
+    it('should resolve the USING column unqualified', async () => {
+      const result = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT k, x, y FROM lhs JOIN rhs USING (k) ORDER BY k',
+      }))
+      expect(result).toEqual([
+        { k: 1, x: 10, y: 100 },
+        { k: 2, x: 20, y: 200 },
+      ])
+    })
+
+    it('should join on multiple USING columns', async () => {
+      const l = [
+        { k1: 1, k2: 'a', v: 'L1' },
+        { k1: 1, k2: 'b', v: 'L2' },
+      ]
+      const r = [
+        { k1: 1, k2: 'a', w: 'R1' },
+        { k1: 2, k2: 'a', w: 'R2' },
+      ]
+      const result = await collect(executeSql({
+        tables: { l, r },
+        query: 'SELECT v, w FROM l JOIN r USING (k1, k2)',
+      }))
+      expect(result).toEqual([{ v: 'L1', w: 'R1' }])
+    })
+
+    it('should support LEFT JOIN ... USING with null padding', async () => {
+      const result = await collect(executeSql({
+        tables: { lhs, rhs },
+        query: 'SELECT lhs.k, rhs.y FROM lhs LEFT JOIN rhs USING (k) ORDER BY lhs.k',
+      }))
+      expect(result).toEqual([
+        { k: 1, y: 100 },
+        { k: 2, y: 200 },
+        { k: 3, y: null },
+      ])
+    })
+  })
 })

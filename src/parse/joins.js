@@ -222,13 +222,26 @@ export function parseJoins(state) {
     const tableTok = expect(state, 'identifier')
     const tableAlias = parseTableAlias(state)
 
-    // Parse ON condition (not for POSITIONAL joins)
+    // Parse ON condition or USING column list (not for POSITIONAL joins)
     /** @type {ExprNode | undefined} */
     let condition
+    /** @type {string[] | undefined} */
+    let using
     if (joinType !== 'POSITIONAL') {
-      expect(state, 'keyword', 'ON')
-      condition = parseExpression(state)
-      expectNoAggregate(condition, 'JOIN ON')
+      if (match(state, 'keyword', 'USING')) {
+        expect(state, 'paren', '(')
+        using = []
+        while (true) {
+          const colTok = expect(state, 'identifier')
+          using.push(colTok.value)
+          if (!match(state, 'comma')) break
+        }
+        expect(state, 'paren', ')')
+      } else {
+        expect(state, 'keyword', 'ON')
+        condition = parseExpression(state)
+        expectNoAggregate(condition, 'JOIN ON')
+      }
     }
 
     joins.push({
@@ -236,6 +249,7 @@ export function parseJoins(state) {
       table: tableTok.value,
       alias: tableAlias,
       on: condition,
+      using,
       positionStart: tok.positionStart,
       positionEnd: tableTok.positionEnd,
     })
