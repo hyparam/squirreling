@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.12.23]
+ - Support `JOIN ... USING (col, ...)` syntax
+ - `LIST` as an alias for `ARRAY_AGG`
+ - `JSON_KEYS` function
+
 ## [0.12.22]
  - Internal performance improvements
 
