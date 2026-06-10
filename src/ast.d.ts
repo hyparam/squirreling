@@ -212,6 +212,7 @@ export interface JoinClause extends AstBase {
   on?: ExprNode
   using?: string[]
   fromFunction?: FromFunction
+  subquery?: FromSubquery
 }
 
 // All AST node derive from this base, which includes position info for error reporting and other purposes

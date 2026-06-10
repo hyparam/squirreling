@@ -192,6 +192,60 @@ describe('subqueries', () => {
     })
   })
 
+  describe('JOIN subquery (derived table on the right side)', () => {
+    it('should INNER JOIN a subquery on the right side', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT users.name, o.amount
+          FROM users
+          JOIN (SELECT user_id, amount FROM orders WHERE amount > 100) AS o
+          ON users.id = o.user_id
+          ORDER BY o.amount
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', amount: 150 },
+        { name: 'Bob', amount: 200 },
+      ])
+    })
+
+    it('should LEFT JOIN a subquery with a LIMIT', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT users.name, o.amount
+          FROM users
+          LEFT JOIN (SELECT user_id, amount FROM orders ORDER BY amount DESC LIMIT 2) AS o
+          ON users.id = o.user_id
+          ORDER BY users.name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', amount: 150 },
+        { name: 'Bob', amount: 200 },
+        { name: 'Charlie', amount: null },
+      ])
+    })
+
+    it('should JOIN a subquery containing an aggregate', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT users.name, totals.total
+          FROM users
+          JOIN (SELECT user_id, SUM(amount) AS total FROM orders GROUP BY user_id) AS totals
+          ON users.id = totals.user_id
+          ORDER BY users.name
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', total: 250 },
+        { name: 'Bob', total: 200 },
+      ])
+    })
+  })
+
   describe('IN subquery', () => {
     it('should filter with IN subquery', async () => {
       const result = await collect(executeSql({

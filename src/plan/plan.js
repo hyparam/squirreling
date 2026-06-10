@@ -447,18 +447,47 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
       continue
     }
 
-    const ctePlan = ctePlans?.get(join.table.toLowerCase())
-    /** @type {ScanOptions} */
-    const rightHints = {}
-    if (!ctePlan) {
-      rightHints.columns = perTableColumns.get(rightTable)
-      validateScan({ ...join, hints: rightHints, tables })
-    } else {
-      // For CTE joins, use CTE column metadata for hints
-      rightHints.columns = perTableColumns.get(rightTable) ?? cteColumns?.get(join.table.toLowerCase())
-    }
     /** @type {QueryPlan} */
-    const rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }
+    let rightScan
+    if (join.subquery) {
+      // Subquery on the right side of the join (derived table). Mirror the
+      // FROM-clause subquery handling: plan the inner statement, push down the
+      // columns the outer query needs, and wrap in the inner scope so
+      // correlated subqueries inside resolve against the right aliases.
+      let subColumns = perTableColumns.get(rightTable)
+      // Empty array means no columns referenced, but the derived table still
+      // needs its own columns. Treat empty as unrestricted.
+      if (subColumns?.length === 0) subColumns = undefined
+      const subPlan = planStatement({
+        stmt: join.subquery.query,
+        ctePlans,
+        cteColumns,
+        tables,
+        outerScope,
+        parentColumns: subColumns?.map(name => ({ type: 'identifier', name, positionStart: 0, positionEnd: 0 })),
+      })
+      const availableColumns = inferStatementColumns({ stmt: join.subquery.query, cteColumns, tables })
+      if (subColumns && availableColumns.length) {
+        const missingColumn = subColumns.find(col => !availableColumns.includes(col))
+        if (missingColumn) {
+          throw new ColumnNotFoundError({ missingColumn, availableColumns, ...join.subquery })
+        }
+      }
+      const innerScope = statementScope(join.subquery.query)
+      rightScan = innerScope ? { type: 'Subquery', scope: innerScope, child: subPlan } : subPlan
+    } else {
+      const ctePlan = ctePlans?.get(join.table.toLowerCase())
+      /** @type {ScanOptions} */
+      const rightHints = {}
+      if (!ctePlan) {
+        rightHints.columns = perTableColumns.get(rightTable)
+        validateScan({ ...join, hints: rightHints, tables })
+      } else {
+        // For CTE joins, use CTE column metadata for hints
+        rightHints.columns = perTableColumns.get(rightTable) ?? cteColumns?.get(join.table.toLowerCase())
+      }
+      rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }
+    }
 
     if (join.joinType === 'POSITIONAL') {
       plan = { type: 'PositionalJoin', leftAlias: currentLeftTable, rightAlias: rightTable, left: plan, right: rightScan }
