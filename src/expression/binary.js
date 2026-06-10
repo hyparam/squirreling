@@ -55,7 +55,7 @@ export function applyBinaryOp(op, a, b) {
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       .replace(/%/g, '.*')
       .replace(/_/g, '.')
-    const regex = new RegExp(`^${regexPattern}$`, 'i')
+    const regex = new RegExp(`^${regexPattern}$`, 'is')
     return regex.test(str)
   }
 
