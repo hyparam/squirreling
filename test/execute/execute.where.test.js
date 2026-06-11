@@ -195,6 +195,16 @@ describe('WHERE clause', () => {
     expect(result.map(r => r.email).sort()).toEqual(['alice@example.com', 'diana@example.com'])
   })
 
+  it('should filter with LIKE across newlines', async () => {
+    const data = [
+      { id: 1, s: 'line one\nFind me\nline three' },
+      { id: 2, s: 'nothing here' },
+    ]
+    const result = await collect(executeSql({ tables: { data }, query: 'SELECT * FROM data WHERE s LIKE \'%Find me%\'' }))
+    expect(result).toHaveLength(1)
+    expect(result.map(r => r.id)).toEqual([1])
+  })
+
   it('should filter with NOT LIKE', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name NOT LIKE \'%li%\'' }))
     expect(result).toHaveLength(3)
