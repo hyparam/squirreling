@@ -2,11 +2,11 @@ import { expectNoAggregate } from '../validation/aggregates.js'
 import { isTableFunction, validateFunctionArgs } from '../validation/functions.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { parseExpression } from './expression.js'
-import { isTableFunctionStart, parseFromFunction, parseTableAlias, tableFunctionColumnCount, tableFunctionDefaultColumns } from './parse.js'
+import { isTableFunctionStart, parseFromFunction, parseStatement, parseTableAlias, tableFunctionColumnCount, tableFunctionDefaultColumns } from './parse.js'
 import { consume, current, expect, match } from './state.js'
 
 /**
- * @import { ExprNode, FromFunction, JoinClause, JoinType, ParserState } from '../types.js'
+ * @import { ExprNode, FromFunction, FromSubquery, JoinClause, JoinType, ParserState } from '../types.js'
  */
 
 /**
@@ -218,9 +218,42 @@ export function parseJoins(state) {
       })
     }
 
-    // Parse table name and optional alias
-    const tableTok = expect(state, 'identifier')
-    const tableAlias = parseTableAlias(state)
+    // Subquery on the right side: JOIN (SELECT ...) AS alias ON ...
+    const rightTok = current(state)
+    /** @type {FromSubquery | undefined} */
+    let subquery
+    let tableName
+    /** @type {string | undefined} */
+    let tableAlias
+    let endPos
+    if (rightTok.type === 'paren' && rightTok.value === '(') {
+      consume(state)
+      const query = parseStatement(state)
+      expect(state, 'paren', ')')
+      tableAlias = parseTableAlias(state)
+      if (!tableAlias) {
+        throw new ParseError({
+          message: 'Subquery in JOIN must have an alias',
+          positionStart: rightTok.positionStart,
+          positionEnd: state.lastPos,
+        })
+      }
+      endPos = state.lastPos
+      subquery = {
+        type: 'subquery',
+        query,
+        alias: tableAlias,
+        positionStart: rightTok.positionStart,
+        positionEnd: endPos,
+      }
+      tableName = tableAlias
+    } else {
+      // Parse table name and optional alias
+      const tableTok = expect(state, 'identifier')
+      tableName = tableTok.value
+      tableAlias = parseTableAlias(state)
+      endPos = tableTok.positionEnd
+    }
 
     // Parse ON condition or USING column list (not for POSITIONAL joins)
     /** @type {ExprNode | undefined} */
@@ -246,12 +279,13 @@ export function parseJoins(state) {
 
     joins.push({
       joinType,
-      table: tableTok.value,
+      table: tableName,
       alias: tableAlias,
       on: condition,
       using,
+      subquery,
       positionStart: tok.positionStart,
-      positionEnd: tableTok.positionEnd,
+      positionEnd: endPos,
     })
   }
 

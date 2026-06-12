@@ -420,6 +420,10 @@ export function inferSelectSourceColumns({ select, cteColumns, tables }) {
         for (const col of tableFunctionColumnNames(join.fromFunction)) {
           result.push(`${joinAlias}.${col}`)
         }
+      } else if (join.subquery) {
+        for (const col of inferStatementColumns({ stmt: join.subquery.query, cteColumns, tables })) {
+          result.push(`${joinAlias}.${col}`)
+        }
       } else {
         for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
           result.push(`${joinAlias}.${col}`)
@@ -444,6 +448,10 @@ export function inferSelectSourceColumns({ select, cteColumns, tables }) {
     const joinAlias = join.alias ?? join.table
     if (join.fromFunction) {
       for (const col of tableFunctionColumnNames(join.fromFunction)) {
+        result.push(`${joinAlias}.${col}`)
+      }
+    } else if (join.subquery) {
+      for (const col of inferStatementColumns({ stmt: join.subquery.query, cteColumns, tables })) {
         result.push(`${joinAlias}.${col}`)
       }
     } else {

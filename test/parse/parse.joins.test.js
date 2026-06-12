@@ -94,6 +94,31 @@ describe('parseSql - JOIN queries', () => {
     expect(select.joins[1].table).toBe('products')
   })
 
+  it('should parse JOIN with a subquery on the right side', () => {
+    const select = parseSelect('SELECT * FROM users JOIN (SELECT user_id FROM orders) AS o ON users.id = o.user_id')
+    expect(select.joins).toHaveLength(1)
+    const join = select.joins[0]
+    expect(join.joinType).toBe('INNER')
+    expect(join.table).toBe('o')
+    expect(join.alias).toBe('o')
+    expect(join.subquery?.type).toBe('subquery')
+    expect(join.subquery?.alias).toBe('o')
+    expect(join.subquery?.query.type).toBe('select')
+    expect(join.on).toBeTruthy()
+  })
+
+  it('should parse LEFT JOIN with a subquery on the right side', () => {
+    const select = parseSelect('SELECT * FROM users LEFT JOIN (SELECT user_id FROM orders LIMIT 5) o ON users.id = o.user_id')
+    expect(select.joins).toHaveLength(1)
+    expect(select.joins[0].joinType).toBe('LEFT')
+    expect(select.joins[0].subquery?.alias).toBe('o')
+  })
+
+  it('should throw when a JOIN subquery has no alias', () => {
+    expect(() => parseSelect('SELECT * FROM users JOIN (SELECT user_id FROM orders) ON users.id = user_id'))
+      .toThrow('Subquery in JOIN must have an alias')
+  })
+
   it('should parse JOIN with WHERE clause', () => {
     const select = parseSelect('SELECT * FROM users JOIN orders ON users.id = orders.user_id WHERE orders.total > 100')
     expect(select.joins).toHaveLength(1)

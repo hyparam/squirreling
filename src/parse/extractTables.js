@@ -59,6 +59,8 @@ function walkStatement(stmt, cteScope, refs) {
   for (const j of stmt.joins) {
     if (j.fromFunction) {
       for (const a of j.fromFunction.args) walkExpr(a, cteScope, refs)
+    } else if (j.subquery) {
+      walkStatement(j.subquery.query, cteScope, refs)
     } else if (!cteScope.has(j.table.toLowerCase())) {
       refs.add(j.table)
     }
