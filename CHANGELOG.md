@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.12.24]
+ - Handle subqueries on the right side of a join
+ - `LIKE` matches strings containing newlines
+
 ## [0.12.23]
  - Support `JOIN ... USING (col, ...)` syntax
  - `LIST` as an alias for `ARRAY_AGG`
