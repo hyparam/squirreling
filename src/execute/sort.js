@@ -116,6 +116,31 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
 }
 
 /**
+ * Eagerly resolves all cell values in an AsyncRow, replacing closures with
+ * plain value-returning functions. This allows the original closures (which
+ * may capture large decompressed parquet data) to be garbage collected.
+ *
+ * @param {AsyncRow} row
+ * @returns {Promise<AsyncRow>}
+ */
+async function materializeRow(row) {
+  if (row.resolved) return row
+  const { columns } = row
+  /** @type {Record<string, import('../types.js').SqlPrimitive>} */
+  const resolved = {}
+  await Promise.all(columns.map(async col => {
+    resolved[col] = await row.cells[col]()
+  }))
+  /** @type {import('../types.js').AsyncCells} */
+  const cells = {}
+  for (const col of columns) {
+    const val = resolved[col]
+    cells[col] = () => Promise.resolve(val)
+  }
+  return { columns, cells, resolved }
+}
+
+/**
  * Executes a sort operation (ORDER BY)
  *
  * @param {SortNode} plan
@@ -129,12 +154,12 @@ export function executeSort(plan, context) {
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
-      // Buffer all rows
+      // Buffer all rows, materializing cells to release closures over parquet data
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
-        rows.push(row)
+        rows.push(await materializeRow(row))
       }
 
       const sortedRows = await sortEntriesByTerms({
