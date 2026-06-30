@@ -22,12 +22,27 @@ export interface ParseSqlOptions {
 }
 
 /**
- * Execution budget: ceilings on the in-memory state that buffering operators
- * (ORDER BY, GROUP BY, DISTINCT, the scalar-aggregate slow path) may accumulate
- * before the engine refuses the query with a QueryBudgetExceededError. This
- * bounds execution memory and is distinct from any display/output-size control,
- * which trims an already-materialized result. Whichever ceiling trips first
- * wins; an undefined ceiling (or an undefined budget) is unbounded.
+ * Execution budget: ceilings on the in-memory state that bounded operators may
+ * accumulate before the engine refuses the query with a
+ * QueryBudgetExceededError. This bounds execution memory and is distinct from
+ * any display/output-size control, which trims an already-materialized result.
+ * Whichever ceiling trips first wins; an undefined ceiling (or an undefined
+ * budget) is unbounded.
+ *
+ * Bounded in V1: ORDER BY, GROUP BY, the scalar-aggregate slow path, DISTINCT,
+ * and COUNT(DISTINCT) (including its column-scan fast path). ORDER BY, GROUP BY,
+ * and the scalar-aggregate slow path fully buffer and refuse before emitting any
+ * row; DISTINCT and COUNT(DISTINCT) bound only their dedup-set memory and may
+ * emit rows before refusing (a thrown error invalidates the whole result, see
+ * QueryBudgetExceededError).
+ *
+ * NOT bounded in V1 (known limitations / follow-up): joins (nested-loop,
+ * positional, and the hash-join build side), window functions (the
+ * non-streaming path), and set operations (the UNION / INTERSECT / EXCEPT key
+ * sets). These can still grow memory without limit even when a budget is set.
+ *
+ * Plain streaming aggregates (COUNT / SUM / MIN / MAX / AVG over a scanned
+ * column) hold O(1) state and are intentionally budget-immune.
  */
 export interface ExecutionBudget {
   // Max rows a single buffering operator may hold before refusing.

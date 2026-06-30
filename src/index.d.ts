@@ -36,10 +36,18 @@ export type {
 export function executeSql(options: ExecuteSqlOptions): QueryResults
 
 /**
- * Error thrown when a buffering operator (ORDER BY, GROUP BY, DISTINCT, or the
- * scalar-aggregate slow path) would accumulate more in-memory state than the
- * configured execution budget allows. The query is refused with no rows; the
- * engine does not spill to disk or truncate the result.
+ * Error thrown when an operator would accumulate more in-memory state than the
+ * configured execution budget allows. V1 refuses over the ceiling; the engine
+ * does not spill to disk or truncate the result.
+ *
+ * The emit contract depends on the operator:
+ * - Buffering operators (ORDER BY, GROUP BY, the scalar-aggregate slow path)
+ *   fully buffer before emitting, so the refusal is all-or-nothing: the error
+ *   is thrown before any row is yielded.
+ * - Streaming operators (DISTINCT, COUNT(DISTINCT)) bound only their dedup-set
+ *   memory and may already have yielded rows before a later key trips the
+ *   ceiling. A consumer must treat a thrown error as invalidating the whole
+ *   result, not as a truncation point.
  */
 export class QueryBudgetExceededError extends Error {
   constructor(options: { operator: string, limitKind: 'rows' | 'bytes', limit: number, observed: number })

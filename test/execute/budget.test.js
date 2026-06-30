@@ -3,7 +3,7 @@ import { QueryBudgetExceededError, collect, executeSql } from '../../src/index.j
 import { memorySource } from '../../src/backend/dataSource.js'
 
 /**
- * @import { AsyncDataSource } from '../../src/types.js'
+ * @import { AsyncDataSource, SqlPrimitive } from '../../src/types.js'
  */
 
 /** @type {{ id: number, bucket: number }[]} */
@@ -119,6 +119,95 @@ describe('execution budget', () => {
         query: 'SELECT * FROM s ORDER BY id',
       }))
       expect(result).toHaveLength(10)
+    })
+  })
+
+  describe('streaming operators emit before refusing (not all-or-nothing)', () => {
+    it('DISTINCT emits rows up to the ceiling, then throws mid-stream', async () => {
+      // DISTINCT is a streaming operator: it bounds only its dedup-set memory and
+      // yields each new distinct row as it sees it. So unlike the buffering
+      // operators (which throw before emitting any row), DISTINCT has ALREADY
+      // emitted rows 1..ceiling by the time a later key trips the budget. The
+      // contract is that a thrown error invalidates the whole result.
+      const results = executeSql({
+        tables: { s: memorySource({ data: rows }) },
+        query: 'SELECT DISTINCT id FROM s',
+        budget: { maxBufferedRows: 5 },
+      })
+
+      /** @type {Record<string, SqlPrimitive>[]} */
+      const emitted = []
+      let caught
+      try {
+        for await (const row of results.rows()) {
+          /** @type {Record<string, SqlPrimitive>} */
+          const obj = {}
+          for (const col of row.columns) obj[col] = await row.cells[col]()
+          emitted.push(obj)
+        }
+      } catch (err) {
+        caught = err
+      }
+
+      expect(caught).toBeInstanceOf(QueryBudgetExceededError)
+      // The first five distinct rows were emitted before the sixth key tripped
+      // the ceiling; a consumer must discard them, not treat them as truncated.
+      expect(emitted).toEqual([{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }])
+    })
+  })
+
+  describe('COUNT(DISTINCT) fast path is bounded; plain COUNT stays immune', () => {
+    /**
+     * A scanColumn-only source streaming `count` ascending distinct ids in two
+     * chunks. Its buffering `scan` path throws, proving the column-scan fast
+     * path is taken rather than the buffered slow path.
+     *
+     * @param {number} count
+     * @returns {AsyncDataSource}
+     */
+    function scanColumnSource(count) {
+      return {
+        numRows: count,
+        columns: ['id'],
+        scan() {
+          throw new Error('scan (buffering path) should not be called')
+        },
+        async *scanColumn() {
+          const half = Math.floor(count / 2)
+          /** @type {number[]} */
+          const first = []
+          for (let i = 0; i < half; i++) first.push(i)
+          yield first
+          /** @type {number[]} */
+          const second = []
+          for (let i = half; i < count; i++) second.push(i)
+          yield second
+        },
+      }
+    }
+
+    it('COUNT(DISTINCT id) past the ceiling throws QueryBudgetExceededError', async () => {
+      // COUNT(DISTINCT) retains O(distinct) dedup keys even on the scanColumn
+      // fast path, so a budget must bound it or a high-cardinality column OOMs.
+      const err = await captureBudgetError({
+        tables: { data: scanColumnSource(100) },
+        query: 'SELECT COUNT(DISTINCT id) AS n FROM data',
+        budget: { maxBufferedRows: 10 },
+      })
+      expect(err.operator).toBe('COUNT(DISTINCT)')
+      expect(err.limitKind).toBe('rows')
+      expect(err.limit).toBe(10)
+    })
+
+    it('COUNT(id) over the same source with the same low ceiling stays immune (O(1))', async () => {
+      // Plain COUNT holds O(1) state, so the same ceiling that refuses
+      // COUNT(DISTINCT) must not bite it.
+      const result = await collect(executeSql({
+        tables: { data: scanColumnSource(100) },
+        query: 'SELECT COUNT(id) AS n FROM data',
+        budget: { maxBufferedRows: 10, maxBufferedBytes: 10 },
+      }))
+      expect(result).toEqual([{ n: 100 }])
     })
   })
 

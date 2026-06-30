@@ -48,10 +48,22 @@ export function estimateRowBytes(row) {
 }
 
 /**
- * Thrown when a buffering operator's in-memory accumulation would exceed the
- * configured execution budget. The query is refused with no rows: the engine
- * does not spill to disk or truncate the result. V1 of bounded query execution
- * refuses over the ceiling rather than spilling or truncating (hypaware LLP 0056).
+ * Thrown when an operator's in-memory accumulation would exceed the configured
+ * execution budget. V1 of bounded query execution refuses over the ceiling
+ * rather than spilling to disk or truncating (hypaware LLP 0056).
+ *
+ * What "refused" means for an already-running query depends on the operator
+ * class:
+ *
+ * - Buffering operators (ORDER BY, GROUP BY, the scalar-aggregate slow path)
+ *   fully buffer their input before they can emit a row, so the refusal is
+ *   all-or-nothing: the error is thrown before the first row is yielded and no
+ *   partial result escapes.
+ * - Streaming operators (DISTINCT, COUNT(DISTINCT)) emit as they go and bound
+ *   only their dedup-set memory, so rows 1..N may already have been yielded
+ *   before a later key trips the ceiling. A consumer MUST treat a thrown
+ *   QueryBudgetExceededError as invalidating the whole result — discarding any
+ *   rows it already received — never as a spill or a truncation point.
  */
 export class QueryBudgetExceededError extends Error {
   /**
@@ -76,9 +88,9 @@ export class QueryBudgetExceededError extends Error {
 }
 
 /**
- * Per-operator accountant for the execution budget. A buffering operator
- * constructs one of these and charges every row (or retained dedup key) it
- * accumulates in memory; when the configured row or byte ceiling is crossed it
+ * Per-operator accountant for the execution budget. An operator constructs one
+ * of these and charges every row (or retained dedup key) it accumulates in
+ * memory; when the configured row or byte ceiling is crossed it
  * throws {@link QueryBudgetExceededError} instead of continuing to buffer. An
  * undefined budget — or an undefined ceiling within it — is unbounded: `charge`
  * only counts and never throws, so callers that pass no budget are unaffected.

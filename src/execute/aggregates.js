@@ -7,7 +7,7 @@ import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecutionBudget, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  */
 
@@ -264,7 +264,7 @@ export function executeScalarAggregate(plan, context) {
  * @param {ExecuteContext} context
  * @returns {(() => AsyncGenerator<AsyncRow>) | undefined}
  */
-function tryColumnScanAggregate(plan, { tables, signal }) {
+function tryColumnScanAggregate(plan, { tables, signal, budget }) {
   // No HAVING support in fast path
   if (plan.having) return
   // Child must be a direct table scan
@@ -295,7 +295,7 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
 
     for (const spec of specs) {
       columns.push(spec.alias)
-      cells[spec.alias] = () => scanColumnAggregate({ table, spec, limit, offset, signal })
+      cells[spec.alias] = () => scanColumnAggregate({ table, spec, limit, offset, signal, budget })
     }
 
     yield { columns, cells }
@@ -335,19 +335,30 @@ function extractColumnAggSpec({ expr, alias }) {
  * @param {number} [options.limit]
  * @param {number} [options.offset]
  * @param {AbortSignal} [options.signal]
+ * @param {ExecutionBudget} [options.budget] - bounds the COUNT(DISTINCT) dedup set
  * @returns {Promise<SqlPrimitive>}
  */
-async function scanColumnAggregate({ table, spec, limit, offset, signal }) {
+async function scanColumnAggregate({ table, spec, limit, offset, signal, budget }) {
   const values = table.scanColumn({ column: spec.column, limit, offset, signal })
 
   if (spec.funcName === 'COUNT' && spec.distinct) {
+    // COUNT(DISTINCT) retains one dedup-set entry per distinct value — O(distinct
+    // rows), not O(1) — so even on the column-scan fast path it is a buffering
+    // operator and can OOM on a high-cardinality column. Charge each retained
+    // key into the budget and refuse over the ceiling (hypaware LLP 0056). The
+    // plain COUNT/SUM/MIN/MAX/AVG paths below hold O(1) state and stay immune.
+    const distinctBudget = new BufferBudget(budget, 'COUNT(DISTINCT)')
     const seen = new Set()
     for await (const chunk of values) {
       if (signal?.aborted) return
       for (let i = 0; i < chunk.length; i++) {
         const v = chunk[i]
         if (v == null) continue
-        seen.add(keyify(v))
+        const key = keyify(v)
+        if (!seen.has(key)) {
+          distinctBudget.addKey(key)
+          seen.add(key)
+        }
       }
     }
     return seen.size
