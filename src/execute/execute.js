@@ -1,4 +1,5 @@
 import { memorySource } from '../backend/dataSource.js'
+import { BufferBudget } from './budget.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
@@ -26,7 +27,7 @@ const YIELD_INTERVAL = 4000
  * @param {ExecuteSqlOptions} options
  * @returns {QueryResults}
  */
-export function executeSql({ tables, query, functions, signal }) {
+export function executeSql({ tables, query, functions, signal, budget }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
   // Normalize tables: convert arrays to AsyncDataSource
@@ -49,7 +50,7 @@ export function executeSql({ tables, query, functions, signal }) {
   const ctePlans = new Map()
   /** @type {Map<string, string[]>} */
   const cteColumns = new Map()
-  const context = { tables: normalizedTables, functions, signal, scope, ctePlans, cteColumns }
+  const context = { tables: normalizedTables, functions, signal, budget, scope, ctePlans, cteColumns }
   const plan = planSql({ query: parsed, functions, tables: normalizedTables, ctePlans, cteColumns })
   return executePlan({ plan, context })
 }
@@ -603,6 +604,10 @@ function executeDistinct(plan, context) {
       const { signal } = context
       const MAX_CHUNK = 256
 
+      // The distinct-key set grows with the number of distinct rows, so it is
+      // bounded by the execution budget; over the ceiling we refuse rather than
+      // spill or truncate (hypaware LLP 0056).
+      const budget = new BufferBudget(context.budget, 'DISTINCT')
       const seen = new Set()
 
       /** @type {AsyncRow[]} */
@@ -622,6 +627,7 @@ function executeDistinct(plan, context) {
           for (let i = 0; i < buffer.length; i++) {
             const key = await keys[i]
             if (!seen.has(key)) {
+              budget.addKey(key)
               seen.add(key)
               yield buffer[i]
             }
@@ -636,6 +642,7 @@ function executeDistinct(plan, context) {
         for (let i = 0; i < buffer.length; i++) {
           const key = await keys[i]
           if (!seen.has(key)) {
+            budget.addKey(key)
             seen.add(key)
             yield buffer[i]
           }

@@ -21,12 +21,30 @@ export interface ParseSqlOptions {
   functions?: Record<string, UserDefinedFunction>
 }
 
+/**
+ * Execution budget: ceilings on the in-memory state that buffering operators
+ * (ORDER BY, GROUP BY, DISTINCT, the scalar-aggregate slow path) may accumulate
+ * before the engine refuses the query with a QueryBudgetExceededError. This
+ * bounds execution memory and is distinct from any display/output-size control,
+ * which trims an already-materialized result. Whichever ceiling trips first
+ * wins; an undefined ceiling (or an undefined budget) is unbounded.
+ */
+export interface ExecutionBudget {
+  // Max rows a single buffering operator may hold before refusing.
+  maxBufferedRows?: number
+  // Max estimated bytes of buffered cell values a single buffering operator may
+  // hold before refusing.
+  maxBufferedBytes?: number
+}
+
 // executeSql(options)
 export interface ExecuteSqlOptions {
   tables: Record<string, Row | AsyncDataSource>
   query: string | Statement
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
+  // Execution budget for in-memory buffering operators. Undefined = unbounded.
+  budget?: ExecutionBudget
 }
 
 // planSql(options)
@@ -46,6 +64,8 @@ export interface ExecuteContext {
   tables: Record<string, AsyncDataSource>
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
+  // execution budget threaded to buffering operators (see ExecutionBudget)
+  budget?: ExecutionBudget
   // current query's FROM + JOIN aliases (e.g. ['a', 'b'])
   scope?: string[]
   // the enclosing query's current row, for resolving correlated references

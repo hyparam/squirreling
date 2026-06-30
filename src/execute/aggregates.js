@@ -1,5 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
+import { BufferBudget } from './budget.js'
 import { executePlan, selectColumnNames } from './execute.js'
 import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
@@ -84,6 +85,10 @@ export function executeHashAggregate(plan, context) {
     columns: selectColumnNames(plan.columns, child.columns),
     maxRows: child.maxRows,
     async *rows() {
+      // GROUP BY buffers the whole input to build groups; high-cardinality
+      // keys make this unbounded, so bound it with the execution budget and
+      // refuse over the ceiling rather than spill or truncate (hypaware LLP 0056).
+      const budget = new BufferBudget(context.budget, 'GROUP BY')
       // Collect all rows
       /** @type {AsyncRow[]} */
       const allRows = []
@@ -93,6 +98,7 @@ export function executeHashAggregate(plan, context) {
           await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
+        budget.addRow(row)
         allRows.push(row)
       }
 
@@ -200,6 +206,10 @@ export function executeScalarAggregate(plan, context) {
     numRows: plan.having ? undefined : 1,
     maxRows: 1,
     async *rows() {
+      // Scalar-aggregate slow path: with no scanColumn fast path the whole
+      // input is collected into one group, so bound it with the execution
+      // budget and refuse over the ceiling rather than spill (hypaware LLP 0056).
+      const budget = new BufferBudget(context.budget, 'aggregate')
       // Collect all rows into single group
       /** @type {AsyncRow[]} */
       const group = []
@@ -209,6 +219,7 @@ export function executeScalarAggregate(plan, context) {
           await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
+        budget.addRow(row)
         group.push(row)
       }
 

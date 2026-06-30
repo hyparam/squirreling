@@ -5,6 +5,7 @@ export type {
   AsyncRow,
   ExecuteContext,
   ExecuteSqlOptions,
+  ExecutionBudget,
   ExprNode,
   ParseSqlOptions,
   PlanSqlOptions,
@@ -29,9 +30,28 @@ export type {
  * @param options.query - SQL query string
  * @param options.functions - user-defined functions available in the SQL context
  * @param options.signal - AbortSignal to cancel the query
+ * @param options.budget - execution budget for in-memory buffering operators
  * @returns async generator yielding rows matching the query
  */
 export function executeSql(options: ExecuteSqlOptions): QueryResults
+
+/**
+ * Error thrown when a buffering operator (ORDER BY, GROUP BY, DISTINCT, or the
+ * scalar-aggregate slow path) would accumulate more in-memory state than the
+ * configured execution budget allows. The query is refused with no rows; the
+ * engine does not spill to disk or truncate the result.
+ */
+export class QueryBudgetExceededError extends Error {
+  constructor(options: { operator: string, limitKind: 'rows' | 'bytes', limit: number, observed: number })
+  // buffering operator that hit the ceiling (e.g. 'ORDER BY')
+  operator: string
+  // which ceiling tripped
+  limitKind: 'rows' | 'bytes'
+  // configured ceiling value that was exceeded
+  limit: number
+  // buffered rows/bytes at the point of refusal
+  observed: number
+}
 
 /**
  * Executes a query plan and yields result rows

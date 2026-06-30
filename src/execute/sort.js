@@ -1,5 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
+import { BufferBudget } from './budget.js'
 import { executePlan } from './execute.js'
 import { compareForTerm } from './utils.js'
 
@@ -129,11 +130,15 @@ export function executeSort(plan, context) {
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
-      // Buffer all rows
+      // ORDER BY must buffer the whole input before it can emit its first row.
+      // Bound that buffer with the execution budget and refuse over the
+      // ceiling rather than spill or truncate (hypaware LLP 0056).
+      const budget = new BufferBudget(context.budget, 'ORDER BY')
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
+        budget.addRow(row)
         rows.push(row)
       }
 
