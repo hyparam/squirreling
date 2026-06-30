@@ -5,6 +5,7 @@ export type {
   AsyncRow,
   ExecuteContext,
   ExecuteSqlOptions,
+  ExecutionBudget,
   ExprNode,
   ParseSqlOptions,
   PlanSqlOptions,
@@ -29,9 +30,36 @@ export type {
  * @param options.query - SQL query string
  * @param options.functions - user-defined functions available in the SQL context
  * @param options.signal - AbortSignal to cancel the query
+ * @param options.budget - execution budget for in-memory buffering operators
  * @returns async generator yielding rows matching the query
  */
 export function executeSql(options: ExecuteSqlOptions): QueryResults
+
+/**
+ * Error thrown when an operator would accumulate more in-memory state than the
+ * configured execution budget allows. V1 refuses over the ceiling; the engine
+ * does not spill to disk or truncate the result.
+ *
+ * The emit contract depends on the operator:
+ * - Buffering operators (ORDER BY, GROUP BY, the scalar-aggregate slow path)
+ *   fully buffer before emitting, so the refusal is all-or-nothing: the error
+ *   is thrown before any row is yielded.
+ * - Streaming operators (DISTINCT, COUNT(DISTINCT)) bound only their dedup-set
+ *   memory and may already have yielded rows before a later key trips the
+ *   ceiling. A consumer must treat a thrown error as invalidating the whole
+ *   result, not as a truncation point.
+ */
+export class QueryBudgetExceededError extends Error {
+  constructor(options: { operator: string, limitKind: 'rows' | 'bytes', limit: number, observed: number })
+  // buffering operator that hit the ceiling (e.g. 'ORDER BY')
+  operator: string
+  // which ceiling tripped
+  limitKind: 'rows' | 'bytes'
+  // configured ceiling value that was exceeded
+  limit: number
+  // buffered rows/bytes at the point of refusal
+  observed: number
+}
 
 /**
  * Executes a query plan and yields result rows
