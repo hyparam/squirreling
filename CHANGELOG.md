@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.12.25]
+ - Reject aborted aggregates and joins instead of finalizing partial results
+ - Bound cached data source memory
+ - Batch scalar aggregates
+
 ## [0.12.24]
  - Handle subqueries on the right side of a join
  - `LIKE` matches strings containing newlines
