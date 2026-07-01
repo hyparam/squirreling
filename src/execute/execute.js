@@ -565,7 +565,11 @@ function executeProject(plan, context) {
             const alias = columns[colIdx++]
             if (sourceName in row.cells) {
               cells[alias] = row.cells[sourceName]
-              if (resolved && source) resolved[alias] = source[sourceName]
+              // Only stay resolveable if the value is actually present in the
+              // source's resolved object; a cells-only key (e.g. a cached sort
+              // key) would otherwise propagate `undefined` into resolved.
+              if (resolved && source && sourceName in source) resolved[alias] = source[sourceName]
+              else rowResolveable = false
             } else {
               rowResolveable = false
               const { expr } = col

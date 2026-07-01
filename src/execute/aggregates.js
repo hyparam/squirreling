@@ -1,3 +1,4 @@
+import { asyncRow } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
@@ -70,15 +71,7 @@ function aggregateContextRow(group, aggregateRow) {
   const baseRow = group[0] ?? { columns: [], cells: {} }
   // Lean buffered rows carry `resolved` but no cell closures; rebuild base-column
   // cells from `resolved` for this one row per group (O(groups), not O(rows)).
-  const { resolved } = baseRow
-  /** @type {AsyncCells} */
-  let baseCells
-  if (resolved) {
-    baseCells = {}
-    for (const key of baseRow.columns) baseCells[key] = () => Promise.resolve(resolved[key])
-  } else {
-    baseCells = baseRow.cells
-  }
+  const baseCells = baseRow.resolved ? asyncRow(baseRow.resolved, baseRow.columns).cells : baseRow.cells
   return {
     columns: [...baseRow.columns, ...aggregateRow.columns],
     cells: { ...baseCells, ...aggregateRow.cells },

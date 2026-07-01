@@ -135,6 +135,35 @@ describe('ORDER BY', () => {
     expect(result.map(r => r.name)).toEqual(['Bob', 'Diana', 'Alice', 'Eve', 'Charlie'])
   })
 
+  it('should sort by a correlated scalar subquery with nested lateral UNNEST', async () => {
+    const outers = [
+      { id: 1, arr: [10, 20] },
+      { id: 2, arr: [30] },
+      { id: 3, arr: [] },
+    ]
+    const t = [
+      { k: 1 },
+      { k: 2 },
+    ]
+    const result = await collect(executeSql({
+      tables: { outers, t },
+      query: `
+        SELECT id, arr
+        FROM outers AS o
+        ORDER BY (
+          SELECT COUNT(*)
+          FROM t
+          JOIN UNNEST(o.arr) AS u(x) ON TRUE
+        ), id
+      `,
+    }))
+    expect(result).toEqual([
+      { id: 3, arr: [] },
+      { id: 2, arr: [30] },
+      { id: 1, arr: [10, 20] },
+    ])
+  })
+
   it('should sort by SELECT alias', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT id AS user_id, name FROM users ORDER BY user_id DESC' }))
     // Expected order by id DESC: 5, 4, 3, 2, 1

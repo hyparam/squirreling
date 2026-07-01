@@ -142,17 +142,12 @@ export function executeSort(plan, context) {
       // The empty cells map still lets the sort cache derived sort keys. Rows
       // without `resolved` (e.g. derived expressions) are kept as-is so their
       // lazy cells still work.
-      /** @type {WeakSet<AsyncRow>} */
-      const leanRows = new WeakSet()
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
         if (row.resolved) {
-          /** @type {AsyncRow} */
-          const lean = { columns: row.columns, cells: {}, resolved: row.resolved }
-          leanRows.add(lean)
-          rows.push(lean)
+          rows.push({ columns: row.columns, cells: {}, resolved: row.resolved })
         } else {
           rows.push(row)
         }
@@ -167,10 +162,11 @@ export function executeSort(plan, context) {
 
       // Rebuild full cell closures for lean rows only at emit time, one row at a
       // time, so downstream consumers get the normal cells interface without the
-      // buffer ever holding N sets of closures. Carry over any cached derived
-      // sort-key cells added during the sort.
+      // buffer ever holding N sets of closures. A buffered row is lean exactly
+      // when it carries `resolved` (non-materialized rows are kept as-is above).
+      // Carry over any cached derived sort-key cells added during the sort.
       for (const { row } of sortedRows) {
-        if (!leanRows.has(row)) {
+        if (!row.resolved) {
           yield row
           continue
         }
