@@ -85,9 +85,13 @@ export function parquetDataSource(file, metadata, compressors) {
               useOffsetIndex: safeOffset > 0 || safeLimit < rowCount,
             })
 
-            // Yield each row
+            // Yield each row. All rows in a row group share the same schema, so
+            // compute the column-name array once and reuse it across every row
+            // instead of allocating a fresh Object.keys() array per row (which
+            // buffering operators would then retain, one array per row).
+            const rowColumns = data.length ? Object.keys(data[0]) : []
             for (const row of data) {
-              yield asyncRow(row, Object.keys(row))
+              yield asyncRow(row, rowColumns)
             }
 
             remainingLimit -= data.length
