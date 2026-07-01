@@ -356,16 +356,20 @@ function executeCount(plan, context) {
     numRows: 1,
     maxRows: 1,
     async *rows() {
-      // Use source numRows if available
-      const countPromise = table.numRows !== undefined ? Promise.resolve(table.numRows) : (async () => {
+      const countPromise = (async () => {
+        signal?.throwIfAborted()
+        // Use source numRows if available
+        if (table.numRows !== undefined) return table.numRows
+
         // Fall back to counting rows via scan
         let count = 0
         const { rows } = table.scan({ signal })
         // eslint-disable-next-line no-unused-vars
         for await (const _ of rows()) {
-          if (signal?.aborted) return
+          signal?.throwIfAborted()
           count++
         }
+        signal?.throwIfAborted()
         return count
       })()
 

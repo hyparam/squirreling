@@ -95,6 +95,7 @@ export function executeHashAggregate(plan, context) {
         }
         allRows.push(row)
       }
+      context.signal?.throwIfAborted()
 
       // Group rows by GROUP BY keys.
       // Each chunk dispatches all per-row key evaluations in parallel so
@@ -211,6 +212,7 @@ export function executeScalarAggregate(plan, context) {
         }
         group.push(row)
       }
+      context.signal?.throwIfAborted()
 
       const asyncRow = projectAggregateColumns(plan.columns, group, context)
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executePlan, executeSql, planSql } from '../../src/index.js'
 import { memorySource } from '../../src/backend/dataSource.js'
 import { trackingSource } from './trackingSource.js'
 
@@ -540,6 +540,156 @@ describe('abort signal', () => {
         query: 'SELECT SUM(x) AS total, COUNT(x) AS n FROM t',
         signal: controller.signal,
       }))).rejects.toThrow('aggregate aborted')
+    })
+  })
+
+  describe('scalar aggregate abort after cooperative source stop', () => {
+    it('should reject instead of finalizing partial scalar aggregate results', async () => {
+      const controller = new AbortController()
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['x'],
+        scan({ signal }) {
+          return {
+            async *rows() {
+              yield {
+                columns: ['x'],
+                cells: { x: () => Promise.resolve(1) },
+              }
+              controller.abort(new Error('scalar aggregate aborted'))
+              if (signal?.aborted) return
+              yield {
+                columns: ['x'],
+                cells: { x: () => Promise.resolve(2) },
+              }
+            },
+            appliedWhere: false,
+            appliedLimitOffset: false,
+          }
+        },
+      }
+
+      await expect(collect(executeSql({
+        tables: { t: source },
+        query: 'SELECT COUNT(*) AS n FROM t',
+        signal: controller.signal,
+      }))).rejects.toThrow('scalar aggregate aborted')
+    })
+  })
+
+  describe('right join abort after cooperative source stop', () => {
+    it('should stop hash joins before emitting unmatched right rows after abort', async () => {
+      const controller = new AbortController()
+      /** @type {AsyncDataSource} */
+      const usersSource = {
+        columns: ['id', 'name'],
+        scan({ signal }) {
+          return {
+            async *rows() {
+              yield {
+                columns: ['id', 'name'],
+                cells: {
+                  id: () => Promise.resolve(1),
+                  name: () => Promise.resolve('Alice'),
+                },
+              }
+              controller.abort(new Error('hash join aborted'))
+              if (signal?.aborted) return
+              yield {
+                columns: ['id', 'name'],
+                cells: {
+                  id: () => Promise.resolve(2),
+                  name: () => Promise.resolve('Bob'),
+                },
+              }
+            },
+            appliedWhere: false,
+            appliedLimitOffset: false,
+          }
+        },
+      }
+
+      const tables = {
+        users: usersSource,
+        orders: memorySource({
+          data: [
+            { user_id: 1, product: 'Laptop' },
+            { user_id: 2, product: 'Keyboard' },
+          ],
+        }),
+      }
+      const plan = planSql({
+        tables,
+        query: 'SELECT users.name, orders.product FROM users RIGHT JOIN orders ON users.id = orders.user_id',
+      })
+      if (plan.type !== 'Project' || plan.child.type !== 'HashJoin') throw new Error('expected Project over HashJoin')
+
+      const result = await collect(executePlan({
+        plan: plan.child,
+        context: { tables, signal: controller.signal },
+      }))
+
+      expect(result.map(row => ({
+        name: row['users.name'],
+        product: row['orders.product'],
+      }))).toEqual([{ name: 'Alice', product: 'Laptop' }])
+    })
+
+    it('should stop nested loop joins before emitting unmatched right rows after abort', async () => {
+      const controller = new AbortController()
+      /** @type {AsyncDataSource} */
+      const usersSource = {
+        columns: ['id', 'name'],
+        scan({ signal }) {
+          return {
+            async *rows() {
+              yield {
+                columns: ['id', 'name'],
+                cells: {
+                  id: () => Promise.resolve(1),
+                  name: () => Promise.resolve('Alice'),
+                },
+              }
+              controller.abort(new Error('nested join aborted'))
+              if (signal?.aborted) return
+              yield {
+                columns: ['id', 'name'],
+                cells: {
+                  id: () => Promise.resolve(3),
+                  name: () => Promise.resolve('Bob'),
+                },
+              }
+            },
+            appliedWhere: false,
+            appliedLimitOffset: false,
+          }
+        },
+      }
+
+      const tables = {
+        users: usersSource,
+        orders: memorySource({
+          data: [
+            { user_id: 2, product: 'Keyboard' },
+            { user_id: 0, product: 'Mouse' },
+          ],
+        }),
+      }
+      const plan = planSql({
+        tables,
+        query: 'SELECT users.name, orders.product FROM users RIGHT JOIN orders ON users.id < orders.user_id',
+      })
+      if (plan.type !== 'Project' || plan.child.type !== 'NestedLoopJoin') throw new Error('expected Project over NestedLoopJoin')
+
+      const result = await collect(executePlan({
+        plan: plan.child,
+        context: { tables, signal: controller.signal },
+      }))
+
+      expect(result.map(row => ({
+        name: row['users.name'],
+        product: row['orders.product'],
+      }))).toEqual([{ name: 'Alice', product: 'Keyboard' }])
     })
   })
 

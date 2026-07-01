@@ -47,7 +47,7 @@ export function executeNestedLoopJoin(plan, context) {
 
       let innerCount = 0
       for await (const leftRow of left.rows()) {
-        if (context.signal?.aborted) break
+        if (context.signal?.aborted) return
 
         if (!leftCols) {
           leftCols = leftRow.columns
@@ -79,6 +79,8 @@ export function executeNestedLoopJoin(plan, context) {
           yield mergeRows(leftRow, nullRight, leftTable, rightTable)
         }
       }
+
+      if (context.signal?.aborted) return
 
       // Unmatched right rows for RIGHT/FULL joins
       if (matchedRightRows) {
@@ -248,7 +250,7 @@ export function executeHashJoin(plan, context) {
       // Probe phase: stream left rows
       let innerCount = 0
       for await (const leftRow of left.rows()) {
-        if (context.signal?.aborted) break
+        if (context.signal?.aborted) return
 
         if (!leftCols) {
           leftCols = leftRow.columns
@@ -284,6 +286,8 @@ export function executeHashJoin(plan, context) {
           yield mergeRows(leftRow, nullRight, leftTable, rightTable)
         }
       }
+
+      if (context.signal?.aborted) return
 
       // Unmatched right rows for RIGHT/FULL joins
       if (matchedRightRows) {
