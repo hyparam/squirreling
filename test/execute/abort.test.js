@@ -515,6 +515,34 @@ describe('abort signal', () => {
     }, 60_000)
   })
 
+  describe('scanColumn scalar aggregate abort', () => {
+    it('should reject instead of finalizing partial scalar aggregate results', async () => {
+      const controller = new AbortController()
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['x'],
+        scan() {
+          throw new Error('scan should not be called')
+        },
+        scanColumn({ column, signal }) {
+          if (column !== 'x') throw new Error(`unexpected column: ${column}`)
+          return (async function* () {
+            yield [1, 2, 3]
+            controller.abort(new Error('aggregate aborted'))
+            if (signal?.aborted) return
+            yield [4, 5, 6]
+          })()
+        },
+      }
+
+      await expect(collect(executeSql({
+        tables: { t: source },
+        query: 'SELECT SUM(x) AS total, COUNT(x) AS n FROM t',
+        signal: controller.signal,
+      }))).rejects.toThrow('aggregate aborted')
+    })
+  })
+
   describe('join queries', () => {
     it('should scan all rows in a join query', async () => {
       const { source: usersSource, getScanCount: getUsersScanCount, getRowCount: getUsersRowCount } = trackingSource(users)

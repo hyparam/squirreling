@@ -380,7 +380,7 @@ async function scanColumnGroup({ table, specs, limit, offset, signal }) {
   }))
 
   for await (const chunk of values) {
-    if (signal?.aborted) break
+    signal?.throwIfAborted()
     for (let i = 0; i < chunk.length; i++) {
       const v = chunk[i]
       if (v == null) continue
@@ -407,6 +407,7 @@ async function scanColumnGroup({ table, specs, limit, offset, signal }) {
       }
     }
   }
+  signal?.throwIfAborted()
 
   /** @type {Map<string, SqlPrimitive>} */
   const result = new Map()
