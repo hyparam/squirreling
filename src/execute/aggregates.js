@@ -32,12 +32,15 @@ function projectAggregateColumns(selectColumns, group, context) {
       const firstRow = group[0]
       if (firstRow) {
         const prefix = col.table ? `${col.table}.` : undefined
+        const { resolved } = firstRow
         for (const key of firstRow.columns) {
           if (prefix && !key.startsWith(prefix)) continue
           const dotIndex = key.indexOf('.')
           const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
           columns.push(outputKey)
-          cells[outputKey] = firstRow.cells[key]
+          // Lean buffered rows (see executeHashAggregate) carry `resolved` but no
+          // cell closures, so read the value from `resolved` when present.
+          cells[outputKey] = resolved ? () => Promise.resolve(resolved[key]) : firstRow.cells[key]
         }
       }
     } else {
@@ -65,9 +68,20 @@ function projectAggregateColumns(selectColumns, group, context) {
  */
 function aggregateContextRow(group, aggregateRow) {
   const baseRow = group[0] ?? { columns: [], cells: {} }
+  // Lean buffered rows carry `resolved` but no cell closures; rebuild base-column
+  // cells from `resolved` for this one row per group (O(groups), not O(rows)).
+  const { resolved } = baseRow
+  /** @type {AsyncCells} */
+  let baseCells
+  if (resolved) {
+    baseCells = {}
+    for (const key of baseRow.columns) baseCells[key] = () => Promise.resolve(resolved[key])
+  } else {
+    baseCells = baseRow.cells
+  }
   return {
     columns: [...baseRow.columns, ...aggregateRow.columns],
-    cells: { ...baseRow.cells, ...aggregateRow.cells },
+    cells: { ...baseCells, ...aggregateRow.cells },
   }
 }
 
@@ -84,7 +98,11 @@ export function executeHashAggregate(plan, context) {
     columns: selectColumnNames(plan.columns, child.columns),
     maxRows: child.maxRows,
     async *rows() {
-      // Collect all rows
+      // Collect all rows. GROUP BY buffers its whole input; for already
+      // materialized rows (`resolved` present) keep only the plain object and
+      // drop the O(columns) per-column cell closures, so the buffer holds row
+      // data, not N sets of closures. Aggregates and group keys read these lean
+      // rows straight from `resolved`. Rows without `resolved` are kept as-is.
       /** @type {AsyncRow[]} */
       const allRows = []
       let collectCount = 0
@@ -93,7 +111,7 @@ export function executeHashAggregate(plan, context) {
           await yieldToEventLoop()
           if (context.signal?.aborted) return
         }
-        allRows.push(row)
+        allRows.push(row.resolved ? { columns: row.columns, cells: {}, resolved: row.resolved } : row)
       }
       context.signal?.throwIfAborted()
 
@@ -143,9 +161,13 @@ export function executeHashAggregate(plan, context) {
       /** @type {{ row: AsyncRow, rows: AsyncRow[], outputRow: AsyncRow }[]} */
       const aggregateRows = []
 
+      // The context row (base columns + aggregate aliases) is only needed for
+      // HAVING and grouped ORDER BY; skip building it otherwise so a plain
+      // GROUP BY doesn't retain O(groups) extra rows.
+      const needContextRow = Boolean(plan.having) || Boolean(plan.orderBy?.length)
       for (const group of groups.values()) {
         const asyncRow = projectAggregateColumns(plan.columns, group, context)
-        const contextRow = aggregateContextRow(group, asyncRow)
+        const contextRow = needContextRow ? aggregateContextRow(group, asyncRow) : asyncRow
 
         // Apply HAVING filter
         if (plan.having) {

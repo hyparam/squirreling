@@ -94,6 +94,22 @@ describe('executeSql', () => {
       ])
     })
 
+    it('should preserve lazy derived-table cells through GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: {
+          t: [
+            { obj: { k: 'z' } },
+            { obj: { k: 'a' } },
+          ],
+        },
+        query: 'SELECT * FROM (SELECT obj.k AS k, obj FROM t) GROUP BY obj',
+      }))
+      expect(result).toEqual([
+        { k: 'z', obj: { k: 'z' } },
+        { k: 'a', obj: { k: 'a' } },
+      ])
+    })
+
     it('should throw for COUNTIF with wrong argument count', () => {
       expect(() => executeSql({
         tables: { users },
