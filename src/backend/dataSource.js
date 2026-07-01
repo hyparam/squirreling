@@ -1,5 +1,5 @@
 /**
- * @import { AsyncCells, AsyncDataSource, AsyncRow, ScanColumnOptions, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -80,9 +80,6 @@ export function memorySource({ data, columns }) {
 export function cachedDataSource(source) {
   /** @type {WeakMap<object, Map<string, Promise<SqlPrimitive>>>} */
   const cache = new WeakMap()
-  // Keyed on numeric position, so it can't be a WeakMap and stays unbounded.
-  /** @type {Map<string, Promise<SqlPrimitive>>} */
-  const columnCache = new Map()
   return {
     ...source,
     scan(options) {
@@ -126,36 +123,7 @@ export function cachedDataSource(source) {
         appliedLimitOffset,
       }
     },
-    ...source.scanColumn && {
-      /**
-       * @param {ScanColumnOptions} options
-       * @returns {AsyncIterable<ArrayLike<SqlPrimitive>>}
-       */
-      scanColumn(options) {
-        const inner = source.scanColumn(options)
-        const indexOffset = options.offset ?? 0
-        return (async function* () {
-          let chunkStart = 0
-          for await (const chunk of inner) {
-            if (options.signal?.aborted) break
-            /** @type {SqlPrimitive[]} */
-            const cached = new Array(chunk.length)
-            for (let i = 0; i < chunk.length; i++) {
-              const cacheKey = `${chunkStart + i + indexOffset}:${options.column}`
-              const existing = columnCache.get(cacheKey)
-              if (existing) {
-                cached[i] = await existing
-              } else {
-                const value = chunk[i]
-                columnCache.set(cacheKey, Promise.resolve(value))
-                cached[i] = value
-              }
-            }
-            yield cached
-            chunkStart += chunk.length
-          }
-        })()
-      },
-    },
+    // scanColumn passes through from ...source unwrapped: column values are
+    // already materialized, so caching them only retained memory unboundedly.
   }
 }
