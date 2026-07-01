@@ -1,4 +1,4 @@
-import { asyncRow } from '../backend/dataSource.js'
+import { cellThunk, rowCells } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
@@ -33,15 +33,14 @@ function projectAggregateColumns(selectColumns, group, context) {
       const firstRow = group[0]
       if (firstRow) {
         const prefix = col.table ? `${col.table}.` : undefined
-        const { resolved } = firstRow
         for (const key of firstRow.columns) {
           if (prefix && !key.startsWith(prefix)) continue
           const dotIndex = key.indexOf('.')
           const outputKey = prefix ? key.substring(prefix.length) : dotIndex >= 0 ? key.substring(dotIndex + 1) : key
           columns.push(outputKey)
           // Lean buffered rows (see executeHashAggregate) carry `resolved` but no
-          // cell closures, so read the value from `resolved` when present.
-          cells[outputKey] = resolved ? () => Promise.resolve(resolved[key]) : firstRow.cells[key]
+          // cell closures; cellThunk reads from `resolved` when present.
+          cells[outputKey] = cellThunk(firstRow, key)
         }
       }
     } else {
@@ -69,12 +68,11 @@ function projectAggregateColumns(selectColumns, group, context) {
  */
 function aggregateContextRow(group, aggregateRow) {
   const baseRow = group[0] ?? { columns: [], cells: {} }
-  // Lean buffered rows carry `resolved` but no cell closures; rebuild base-column
-  // cells from `resolved` for this one row per group (O(groups), not O(rows)).
-  const baseCells = baseRow.resolved ? asyncRow(baseRow.resolved, baseRow.columns).cells : baseRow.cells
+  // Lean buffered rows carry `resolved` but no cell closures; rowCells rebuilds
+  // base-column cells from `resolved` for this one row per group (O(groups)).
   return {
     columns: [...baseRow.columns, ...aggregateRow.columns],
-    cells: { ...baseCells, ...aggregateRow.cells },
+    cells: { ...rowCells(baseRow), ...aggregateRow.cells },
   }
 }
 
@@ -237,7 +235,7 @@ export function executeScalarAggregate(plan, context) {
         /** @type {AsyncRow} */
         const havingRow = {
           columns: [...baseRow.columns, ...asyncRow.columns],
-          cells: { ...baseRow.cells, ...asyncRow.cells },
+          cells: { ...rowCells(baseRow), ...asyncRow.cells },
         }
         const passes = await evaluateExpr({
           node: plan.having,

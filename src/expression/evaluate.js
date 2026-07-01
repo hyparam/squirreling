@@ -1,3 +1,4 @@
+import { hasCell, readCell } from '../backend/dataSource.js'
 import { executeStatement } from '../execute/execute.js'
 import { isPlainObject, keyify, sqlEquals, stringify } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
@@ -19,34 +20,6 @@ import { evaluateStringFunc } from './strings.js'
 
 // Yield to the event loop every this many iterations so that aborts can actually fire
 const YIELD_INTERVAL = 4000
-
-/**
- * Reads a column value from a row, preferring the pre-materialized `resolved`
- * object for exposed columns. When present, `resolved` is expected to contain
- * every column in row.columns; it may also carry hidden source fields, which
- * are not visible to SQL. Returns a value or a Promise; callers await either.
- *
- * @param {AsyncRow} row
- * @param {string} key
- * @returns {SqlPrimitive | Promise<SqlPrimitive>}
- */
-function readCell(row, key) {
-  if (row.resolved != null && row.columns.includes(key)) return row.resolved[key]
-  return row.cells[key]()
-}
-
-/**
- * Whether a row can read the given key. `resolved` only exposes row.columns;
- * hidden expression caches may live in cells without appearing in row.columns.
- *
- * @param {AsyncRow} row
- * @param {string} key
- * @returns {boolean}
- */
-function hasCell(row, key) {
-  return row.resolved != null && row.columns.includes(key) ||
-    Object.prototype.hasOwnProperty.call(row.cells, key)
-}
 
 /**
  * Evaluates an expression for each row, yielding to the event loop every

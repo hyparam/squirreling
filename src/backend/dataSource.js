@@ -19,6 +19,74 @@ export function asyncRow(obj, columns) {
 }
 
 /**
+ * Reads a column value from a row, preferring the pre-materialized `resolved`
+ * object for exposed columns and falling back to the lazy cell closure. When
+ * present, `resolved` is expected to hold a value for every column in
+ * `row.columns`; it may also carry hidden source fields not visible to SQL.
+ * Returns a value or a Promise; callers await either.
+ *
+ * @param {AsyncRow} row
+ * @param {string} key
+ * @returns {SqlPrimitive | Promise<SqlPrimitive>}
+ */
+export function readCell(row, key) {
+  if (row.resolved != null && row.columns.includes(key)) return row.resolved[key]
+  return row.cells[key]()
+}
+
+/**
+ * Whether a row can read the given key. `resolved` only exposes row.columns;
+ * hidden expression caches may live in cells without appearing in row.columns.
+ *
+ * @param {AsyncRow} row
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function hasCell(row, key) {
+  return row.resolved != null && row.columns.includes(key) ||
+    Object.prototype.hasOwnProperty.call(row.cells, key)
+}
+
+/**
+ * Returns a lazy cell closure for a column, resolve-aware: reuses the row's own
+ * closure when present, otherwise synthesizes one from `resolved` (lean buffered
+ * rows drop their closures to save memory). Returns undefined when the row
+ * exposes neither, so callers can detect an unknown column.
+ *
+ * @param {AsyncRow} row
+ * @param {string} key
+ * @returns {(() => Promise<SqlPrimitive>) | undefined}
+ */
+export function cellThunk(row, key) {
+  const cell = row.cells[key]
+  if (cell) return cell
+  if (row.resolved != null && row.columns.includes(key)) {
+    const { [key]: value } = row.resolved
+    return () => Promise.resolve(value)
+  }
+  return undefined
+}
+
+/**
+ * Resolve-aware view of a row's cells as a complete map. Lean buffered rows
+ * (values in `resolved`, closures dropped to save memory) get their closures
+ * rebuilt from `resolved`, with any hidden non-column cells preserved. Rows
+ * without `resolved` return their own map unchanged so lazy or cached closures
+ * still apply. May return the row's own map, so callers that mutate must copy.
+ *
+ * @param {AsyncRow} row
+ * @returns {AsyncCells}
+ */
+export function rowCells(row) {
+  if (row.resolved == null) return row.cells
+  const { cells } = asyncRow(row.resolved, row.columns)
+  for (const key in row.cells) {
+    if (!(key in cells)) cells[key] = row.cells[key]
+  }
+  return cells
+}
+
+/**
  * Creates an async memory-backed data source from an array of plain objects
  *
  * @param {Object} options
@@ -105,7 +173,7 @@ export function cachedDataSource(source) {
             /** @type {AsyncCells} */
             const cells = {}
             for (const key of row.columns) {
-              const cell = row.cells[key]
+              const cell = cellThunk(row, key)
               cells[key] = () => {
                 let value = rowCache.get(key)
                 if (!value) {

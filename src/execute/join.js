@@ -1,4 +1,4 @@
-import { asyncRow } from '../backend/dataSource.js'
+import { cellThunk, rowCells } from '../backend/dataSource.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { keyify, maxBounds } from './utils.js'
 import { executePlan } from './execute.js'
@@ -317,14 +317,14 @@ function mergeOuterRows(outerRow, leftRow, leftTable) {
   const columns = [...outerRow.columns]
   // The enclosing outer row may be a lean buffered row (empty cells, values in
   // `resolved`) when the correlated subquery runs under an outer ORDER BY or
-  // GROUP BY. Rehydrate its cells from `resolved` so outer columns stay readable.
-  const outerCells = outerRow.resolved ? asyncRow(outerRow.resolved, outerRow.columns).cells : outerRow.cells
+  // GROUP BY. rowCells rehydrates from `resolved` so outer columns stay readable;
+  // copy it since we mutate below.
   /** @type {AsyncCells} */
-  const cells = { ...outerCells }
-  for (const [key, cell] of Object.entries(leftRow.cells)) {
+  const cells = { ...rowCells(outerRow) }
+  for (const key of leftRow.columns) {
     const alias = key.includes('.') ? key : `${leftTable}.${key}`
     if (!(alias in cells)) columns.push(alias)
-    cells[alias] = cell
+    cells[alias] = cellThunk(leftRow, key)
   }
   return { columns, cells }
 }
@@ -375,17 +375,17 @@ function mergeRows(leftRow, rightRow, leftTable, rightTable) {
   const cells = {}
 
   // Add left table columns with prefix
-  for (const [key, cell] of Object.entries(leftRow.cells)) {
+  for (const key of leftRow.columns) {
     const alias = key.includes('.') ? key : `${leftTable}.${key}`
     columns.push(alias)
-    cells[alias] = cell
+    cells[alias] = cellThunk(leftRow, key)
   }
 
   // Add right table columns with prefix
-  for (const [key, cell] of Object.entries(rightRow.cells)) {
+  for (const key of rightRow.columns) {
     const alias = key.includes('.') ? key : `${rightTable}.${key}`
     columns.push(alias)
-    cells[alias] = cell
+    cells[alias] = cellThunk(rightRow, key)
   }
 
   return { columns, cells }

@@ -1,4 +1,4 @@
-import { asyncRow } from '../backend/dataSource.js'
+import { rowCells } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
@@ -170,9 +170,7 @@ export function executeSort(plan, context) {
           yield row
           continue
         }
-        const rebuilt = asyncRow(row.resolved, row.columns)
-        for (const key in row.cells) rebuilt.cells[key] = row.cells[key]
-        yield rebuilt
+        yield { columns: row.columns, cells: rowCells(row), resolved: row.resolved }
       }
     },
   }

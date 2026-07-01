@@ -1,4 +1,4 @@
-import { memorySource } from '../backend/dataSource.js'
+import { cellThunk, hasCell, memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
@@ -548,7 +548,7 @@ function executeProject(plan, context) {
               if (prefix && !key.startsWith(prefix)) continue
               const dotIndex = key.indexOf('.')
               const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
-              cells[outputKey] = row.cells[key]
+              cells[outputKey] = cellThunk(row, key)
               if (resolved && source) resolved[outputKey] = source[key]
               colIdx++
             }
@@ -563,8 +563,8 @@ function executeProject(plan, context) {
             const id = col.expr
             const sourceName = id.prefix ? `${id.prefix}.${id.name}` : id.name
             const alias = columns[colIdx++]
-            if (sourceName in row.cells) {
-              cells[alias] = row.cells[sourceName]
+            if (hasCell(row, sourceName)) {
+              cells[alias] = cellThunk(row, sourceName)
               // Only stay resolveable if the value is actually present in the
               // source's resolved object; a cells-only key (e.g. a cached sort
               // key) would otherwise propagate `undefined` into resolved.

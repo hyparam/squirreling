@@ -1,3 +1,4 @@
+import { rowCells } from '../backend/dataSource.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
 import { compareForTerm, keyify } from './utils.js'
@@ -44,7 +45,7 @@ export function executeWindow(plan, context) {
             await yieldToEventLoop()
             if (context.signal?.aborted) return
           }
-          const cells = { ...row.cells }
+          const cells = { ...rowCells(row) }
           for (const w of plan.windows) {
             const value = i
             cells[w.alias] = () => Promise.resolve(value)
@@ -91,7 +92,7 @@ export function executeWindow(plan, context) {
           if (context.signal?.aborted) return
         }
         const row = rows[i]
-        const cells = { ...row.cells }
+        const cells = { ...rowCells(row) }
         for (let w = 0; w < plan.windows.length; w++) {
           const { alias } = plan.windows[w]
           const value = windowValues[w][i]
