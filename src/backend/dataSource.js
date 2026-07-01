@@ -71,13 +71,18 @@ export function memorySource({ data, columns }) {
 }
 
 /**
- * Wraps a data source that caches all accessed rows in memory
+ * Wraps a data source, memoizing accessed cells. The row cache is a WeakMap
+ * keyed on row identity so entries are collectible once the row is unreachable,
+ * keeping a streaming scan O(1) instead of O(rows).
  * @param {AsyncDataSource} source
  * @returns {AsyncDataSource}
  */
 export function cachedDataSource(source) {
+  /** @type {WeakMap<object, Map<string, Promise<SqlPrimitive>>>} */
+  const cache = new WeakMap()
+  // Keyed on numeric position, so it can't be a WeakMap and stays unbounded.
   /** @type {Map<string, Promise<SqlPrimitive>>} */
-  const cache = new Map()
+  const columnCache = new Map()
   return {
     ...source,
     scan(options) {
@@ -90,32 +95,31 @@ export function cachedDataSource(source) {
         return { rows, appliedWhere, appliedLimitOffset }
       }
 
-      // Adjust index when source applied offset so cache keys match original rows
-      const indexOffset = appliedLimitOffset && options.offset ? options.offset : 0
-
       return {
         async *rows() {
-          let index = 0
           for await (const row of rows()) {
             if (options.signal?.aborted) break
-            const rowIndex = index + indexOffset
+            const anchor = row.resolved ?? row
+            let rowCache = cache.get(anchor)
+            if (!rowCache) {
+              rowCache = new Map()
+              cache.set(anchor, rowCache)
+            }
             /** @type {AsyncCells} */
             const cells = {}
             for (const key of row.columns) {
               const cell = row.cells[key]
-              // Wrap the cell to cache accesses
               cells[key] = () => {
-                const cacheKey = `${rowIndex}:${key}`
-                let value = cache.get(cacheKey)
+                let value = rowCache.get(key)
                 if (!value) {
                   value = cell()
-                  cache.set(cacheKey, value)
+                  rowCache.set(key, value)
                 }
                 return value
               }
             }
-            yield { columns: row.columns, cells }
-            index++
+            // Preserve resolved so downstream fast paths still apply.
+            yield { columns: row.columns, cells, resolved: row.resolved }
           }
         },
         appliedWhere,
@@ -138,12 +142,12 @@ export function cachedDataSource(source) {
             const cached = new Array(chunk.length)
             for (let i = 0; i < chunk.length; i++) {
               const cacheKey = `${chunkStart + i + indexOffset}:${options.column}`
-              const existing = cache.get(cacheKey)
+              const existing = columnCache.get(cacheKey)
               if (existing) {
                 cached[i] = await existing
               } else {
                 const value = chunk[i]
-                cache.set(cacheKey, Promise.resolve(value))
+                columnCache.set(cacheKey, Promise.resolve(value))
                 cached[i] = value
               }
             }
