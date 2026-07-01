@@ -531,13 +531,14 @@ function executeProject(plan, context) {
 
         /** @type {AsyncCells} */
         const cells = {}
-        // Only safe to propagate resolved when every output column comes from
-        // the star branch. Derived expressions evaluate lazily and can't be
-        // pre-materialized here, and a partial resolved would make
-        // collect()/downstream identifier fast paths read undefined.
+        // Only safe to propagate resolved when every output column is actually
+        // pre-materialized here. Derived expressions evaluate lazily, and a
+        // partial resolved would make collect()/downstream identifier fast
+        // paths read undefined.
         const source = resolveable ? row.resolved : undefined
         /** @type {Record<string, SqlPrimitive> | undefined} */
         const resolved = source ? {} : undefined
+        let rowResolveable = Boolean(source)
 
         let colIdx = 0
         for (const col of plan.columns) {
@@ -566,6 +567,7 @@ function executeProject(plan, context) {
               cells[alias] = row.cells[sourceName]
               if (resolved && source) resolved[alias] = source[sourceName]
             } else {
+              rowResolveable = false
               const { expr } = col
               cells[alias] = () => evaluateExpr({
                 node: expr,
@@ -575,6 +577,7 @@ function executeProject(plan, context) {
               })
             }
           } else {
+            rowResolveable = false
             const alias = columns[colIdx++]
             cells[alias] = () => evaluateExpr({
               node: col.expr,
@@ -585,7 +588,7 @@ function executeProject(plan, context) {
           }
         }
 
-        yield { columns, cells, resolved }
+        yield { columns, cells, resolved: rowResolveable ? resolved : undefined }
       }
     },
   }

@@ -35,6 +35,14 @@ describe('string functions', () => {
       expect(result[0].upper_city).toBe('NYC')
     })
 
+    it('should not use hidden resolved fields as cached expression aliases', async () => {
+      const result = await collect(executeSql({
+        tables: { t: [{ name: 'a', upper_name: 'WRONG' }] },
+        query: 'SELECT UPPER(name) FROM t',
+      }))
+      expect(result).toEqual([{ upper_name: 'A' }])
+    })
+
     it('should handle mixed case input', async () => {
       const result = await collect(executeSql({
         tables: { users },
@@ -59,6 +67,22 @@ describe('string functions', () => {
       }))
       expect(result[0].upper_name).toBe('ALICE')
       expect(result[result.length - 1].upper_name).toBe('DIANA')
+    })
+
+    it('should preserve lazy derived-table cells through ORDER BY', async () => {
+      const result = await collect(executeSql({
+        tables: {
+          t: [
+            { obj: { k: 'z' }, a: 2 },
+            { obj: { k: 'a' }, a: 1 },
+          ],
+        },
+        query: 'SELECT UPPER(k), obj FROM (SELECT obj.k AS k, a, obj FROM t) ORDER BY a',
+      }))
+      expect(result).toEqual([
+        { upper_k: 'A', obj: { k: 'a' } },
+        { upper_k: 'Z', obj: { k: 'z' } },
+      ])
     })
   })
 

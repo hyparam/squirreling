@@ -21,6 +21,34 @@ import { evaluateStringFunc } from './strings.js'
 const YIELD_INTERVAL = 4000
 
 /**
+ * Reads a column value from a row, preferring the pre-materialized `resolved`
+ * object for exposed columns. When present, `resolved` is expected to contain
+ * every column in row.columns; it may also carry hidden source fields, which
+ * are not visible to SQL. Returns a value or a Promise; callers await either.
+ *
+ * @param {AsyncRow} row
+ * @param {string} key
+ * @returns {SqlPrimitive | Promise<SqlPrimitive>}
+ */
+function readCell(row, key) {
+  if (row.resolved != null && row.columns.includes(key)) return row.resolved[key]
+  return row.cells[key]()
+}
+
+/**
+ * Whether a row can read the given key. `resolved` only exposes row.columns;
+ * hidden expression caches may live in cells without appearing in row.columns.
+ *
+ * @param {AsyncRow} row
+ * @param {string} key
+ * @returns {boolean}
+ */
+function hasCell(row, key) {
+  return row.resolved != null && row.columns.includes(key) ||
+    Object.prototype.hasOwnProperty.call(row.cells, key)
+}
+
+/**
  * Evaluates an expression for each row, yielding to the event loop every
  * YIELD_INTERVAL rows so signal-based aborts can fire mid-evaluation.
  *
@@ -71,13 +99,13 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     // Try qualified name first (e.g. 'users.id')
     if (node.prefix) {
       const qualified = node.prefix + '.' + node.name
-      if (qualified in row.cells) {
-        return row.cells[qualified]()
+      if (hasCell(row, qualified)) {
+        return readCell(row, qualified)
       }
       const prefix = node.prefix + '.'
       const prefixedColumns = row.columns.filter(col => col.startsWith(prefix))
       if (prefixedColumns.length === 1) {
-        const value = await row.cells[prefixedColumns[0]]()
+        const value = await readCell(row, prefixedColumns[0])
         if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
           return value[node.name]
         }
@@ -88,37 +116,37 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       const suffix = '.' + node.prefix
       const baseColumns = row.columns.filter(col => col === node.prefix || col.endsWith(suffix))
       if (baseColumns.length === 1) {
-        const value = await row.cells[baseColumns[0]]()
+        const value = await readCell(row, baseColumns[0])
         if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
           return value[node.name]
         }
       }
       // Check outer row for correlated subquery references
-      if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
-        return context.outerRow.cells[node.name]()
+      if (context.outerRow && context.outerAliases?.has(node.prefix) && hasCell(context.outerRow, node.name)) {
+        return readCell(context.outerRow, node.name)
       }
       // Standalone `FROM UNNEST(...) AS alias` row has a single bare column;
       // `alias.field` should struct-access that column's element.
       if (context.scope?.includes(node.prefix) && row.columns.length === 1) {
-        const value = await row.cells[row.columns[0]]()
+        const value = await readCell(row, row.columns[0])
         if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
           return value[node.name]
         }
       }
       // Fall back to just the column part
-      if (node.name in row.cells) {
-        return row.cells[node.name]()
+      if (hasCell(row, node.name)) {
+        return readCell(row, node.name)
       }
     } else {
       // Try exact match first
-      if (node.name in row.cells) {
-        return row.cells[node.name]()
+      if (hasCell(row, node.name)) {
+        return readCell(row, node.name)
       }
       // For unqualified names, search for a matching prefixed column (e.g. 'id' to 'a.id')
       const suffix = '.' + node.name
       const match = row.columns.find(col => col.endsWith(suffix))
       if (match) {
-        return row.cells[match]()
+        return readCell(row, match)
       }
     }
     // Unknown identifier
@@ -140,7 +168,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     const { value } = await gen.next()
     gen.return(undefined)
     if (!value) return null
-    return value.cells[value.columns[0]]()
+    return readCell(value, value.columns[0])
   }
 
   // Unary operators
@@ -188,8 +216,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     // with the expression's derived alias.
     if (!rows) {
       const alias = derivedAlias(node)
-      if (alias in row.cells && !row.columns.includes(alias)) {
-        return row.cells[alias]()
+      if (!row.columns.includes(alias) && hasCell(row, alias)) {
+        return readCell(row, alias)
       }
     }
 
@@ -200,7 +228,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         // This is only allowed if same aggregate was in the SELECT list
         const alias = derivedAlias(node)
         if (row.columns.includes(alias)) {
-          return row.cells[alias]()
+          return readCell(row, alias)
         } else {
           throw new ExecutionError({
             message: `Aggregate function ${funcName} is not available in this context`,
@@ -731,7 +759,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         await yieldToEventLoop()
         context.signal?.throwIfAborted()
       }
-      const value = await resRow.cells[resRow.columns[0]]()
+      const value = await readCell(resRow, resRow.columns[0])
       if (sqlEquals(exprVal, value)) return true
     }
     return false

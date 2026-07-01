@@ -1,3 +1,4 @@
+import { asyncRow } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
@@ -73,8 +74,13 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
           const idx = chunk[i]
           const value = values[i]
           evaluatedValues[idx][orderByIdx] = value
-          if (cacheValues && !(alias in entries[idx].row.cells)) {
-            entries[idx].row.cells[alias] = () => Promise.resolve(value)
+          // Cache the evaluated sort key back onto the row so the output
+          // projection can reuse it instead of recomputing (e.g. an ORDER BY UDF
+          // also referenced in SELECT). Skip real columns (read directly) and
+          // rows with no cells map.
+          const entryRow = entries[idx].row
+          if (cacheValues && entryRow.cells && !entryRow.columns.includes(alias) && !(alias in entryRow.cells)) {
+            entryRow.cells[alias] = () => Promise.resolve(value)
           }
         }
         start += chunk.length
@@ -129,12 +135,27 @@ export function executeSort(plan, context) {
     numRows: child.numRows,
     maxRows: child.maxRows,
     async *rows() {
-      // Buffer all rows
+      // ORDER BY must buffer its whole input before it can emit. For rows that
+      // are already fully materialized (`resolved` present), keep only the plain
+      // object plus a fresh empty cells map, dropping the O(columns) per-column
+      // cell closures: the buffer then holds row data, not N sets of closures.
+      // The empty cells map still lets the sort cache derived sort keys. Rows
+      // without `resolved` (e.g. derived expressions) are kept as-is so their
+      // lazy cells still work.
+      /** @type {WeakSet<AsyncRow>} */
+      const leanRows = new WeakSet()
       /** @type {AsyncRow[]} */
       const rows = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
-        rows.push(row)
+        if (row.resolved) {
+          /** @type {AsyncRow} */
+          const lean = { columns: row.columns, cells: {}, resolved: row.resolved }
+          leanRows.add(lean)
+          rows.push(lean)
+        } else {
+          rows.push(row)
+        }
       }
 
       const sortedRows = await sortEntriesByTerms({
@@ -144,9 +165,18 @@ export function executeSort(plan, context) {
         cacheValues: true,
       })
 
-      // Yield sorted rows
+      // Rebuild full cell closures for lean rows only at emit time, one row at a
+      // time, so downstream consumers get the normal cells interface without the
+      // buffer ever holding N sets of closures. Carry over any cached derived
+      // sort-key cells added during the sort.
       for (const { row } of sortedRows) {
-        yield row
+        if (!leanRows.has(row)) {
+          yield row
+          continue
+        }
+        const rebuilt = asyncRow(row.resolved, row.columns)
+        for (const key in row.cells) rebuilt.cells[key] = row.cells[key]
+        yield rebuilt
       }
     },
   }
