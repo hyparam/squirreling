@@ -1,4 +1,4 @@
-import { memorySource } from '../backend/dataSource.js'
+import { cellThunk, hasCell, memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
@@ -531,13 +531,14 @@ function executeProject(plan, context) {
 
         /** @type {AsyncCells} */
         const cells = {}
-        // Only safe to propagate resolved when every output column comes from
-        // the star branch. Derived expressions evaluate lazily and can't be
-        // pre-materialized here, and a partial resolved would make
-        // collect()/downstream identifier fast paths read undefined.
+        // Only safe to propagate resolved when every output column is actually
+        // pre-materialized here. Derived expressions evaluate lazily, and a
+        // partial resolved would make collect()/downstream identifier fast
+        // paths read undefined.
         const source = resolveable ? row.resolved : undefined
         /** @type {Record<string, SqlPrimitive> | undefined} */
         const resolved = source ? {} : undefined
+        let rowResolveable = Boolean(source)
 
         let colIdx = 0
         for (const col of plan.columns) {
@@ -547,7 +548,7 @@ function executeProject(plan, context) {
               if (prefix && !key.startsWith(prefix)) continue
               const dotIndex = key.indexOf('.')
               const outputKey = dotIndex >= 0 ? key.substring(dotIndex + 1) : key
-              cells[outputKey] = row.cells[key]
+              cells[outputKey] = cellThunk(row, key)
               if (resolved && source) resolved[outputKey] = source[key]
               colIdx++
             }
@@ -562,10 +563,15 @@ function executeProject(plan, context) {
             const id = col.expr
             const sourceName = id.prefix ? `${id.prefix}.${id.name}` : id.name
             const alias = columns[colIdx++]
-            if (sourceName in row.cells) {
-              cells[alias] = row.cells[sourceName]
-              if (resolved && source) resolved[alias] = source[sourceName]
+            if (hasCell(row, sourceName)) {
+              cells[alias] = cellThunk(row, sourceName)
+              // Only stay resolveable if the value is actually present in the
+              // source's resolved object; a cells-only key (e.g. a cached sort
+              // key) would otherwise propagate `undefined` into resolved.
+              if (resolved && source && sourceName in source) resolved[alias] = source[sourceName]
+              else rowResolveable = false
             } else {
+              rowResolveable = false
               const { expr } = col
               cells[alias] = () => evaluateExpr({
                 node: expr,
@@ -575,6 +581,7 @@ function executeProject(plan, context) {
               })
             }
           } else {
+            rowResolveable = false
             const alias = columns[colIdx++]
             cells[alias] = () => evaluateExpr({
               node: col.expr,
@@ -585,7 +592,7 @@ function executeProject(plan, context) {
           }
         }
 
-        yield { columns, cells, resolved }
+        yield { columns, cells, resolved: rowResolveable ? resolved : undefined }
       }
     },
   }

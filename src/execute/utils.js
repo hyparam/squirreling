@@ -1,3 +1,5 @@
+import { readCell } from '../backend/dataSource.js'
+
 /**
  * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  */
@@ -80,7 +82,7 @@ export async function collect(results) {
   }
 
   return Promise.all(rows.map(async asyncRow => {
-    const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
+    const values = await Promise.all(asyncRow.columns.map(k => readCell(asyncRow, k)))
     /** @type {Record<string, SqlPrimitive>} */
     const item = {}
     for (let i = 0; i < asyncRow.columns.length; i++) {
@@ -185,6 +187,6 @@ export function keyify(...values) {
  * @returns {Promise<string | number | bigint | boolean>}
  */
 export function stableRowKey(row) {
-  return Promise.all(row.columns.map(k => row.cells[k]()))
+  return Promise.all(row.columns.map(k => readCell(row, k)))
     .then(values => keyify(...values))
 }

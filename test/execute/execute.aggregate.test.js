@@ -94,6 +94,52 @@ describe('executeSql', () => {
       ])
     })
 
+    it('should preserve lazy derived-table cells through GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: {
+          t: [
+            { obj: { k: 'z' } },
+            { obj: { k: 'a' } },
+          ],
+        },
+        query: 'SELECT * FROM (SELECT obj.k AS k, obj FROM t) GROUP BY obj',
+      }))
+      expect(result).toEqual([
+        { k: 'z', obj: { k: 'z' } },
+        { k: 'a', obj: { k: 'a' } },
+      ])
+    })
+
+    it('should aggregate a correlated scalar subquery with nested lateral UNNEST after GROUP BY', async () => {
+      const outers = [
+        { id: 1, arr: [10, 20] },
+        { id: 2, arr: [30] },
+      ]
+      const t = [
+        { k: 1 },
+        { k: 2 },
+      ]
+      const result = await collect(executeSql({
+        tables: { outers, t },
+        query: `
+          SELECT
+            id,
+            SUM((
+              SELECT COUNT(*)
+              FROM t
+              JOIN UNNEST(o.arr) AS u(x) ON TRUE
+            )) AS nested_total
+          FROM outers AS o
+          GROUP BY id, arr
+          ORDER BY id
+        `,
+      }))
+      expect(result).toEqual([
+        { id: 1, nested_total: 4 },
+        { id: 2, nested_total: 2 },
+      ])
+    })
+
     it('should throw for COUNTIF with wrong argument count', () => {
       expect(() => executeSql({
         tables: { users },
