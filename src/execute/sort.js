@@ -124,25 +124,47 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
  */
 export function executeSort(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const { topK } = plan
+  // With a LIMIT bound pushed into the sort, keep at most this many buffered
+  // rows: periodically sort and discard everything past topK, so memory is
+  // bounded by the limit instead of the input size.
+  const bufferLimit = topK === undefined ? Infinity : Math.max(topK * 2, 1024)
   return {
     columns: child.columns,
-    numRows: child.numRows,
-    maxRows: child.maxRows,
+    numRows: topK === undefined || child.numRows === undefined
+      ? child.numRows
+      : Math.min(child.numRows, topK),
+    maxRows: topK === undefined
+      ? child.maxRows
+      : Math.min(child.maxRows ?? Infinity, topK),
     async *rows() {
-      // Buffer all rows
-      /** @type {AsyncRow[]} */
-      const rows = []
+      /** @type {SortEntry[]} */
+      let entries = []
       for await (const row of child.rows()) {
         if (context.signal?.aborted) return
-        rows.push(row)
+        entries.push({ row })
+        if (entries.length >= bufferLimit) {
+          // Sort keys are cached on the rows, so survivors of one truncation
+          // are not re-evaluated by the next
+          const sorted = await sortEntriesByTerms({
+            entries,
+            orderBy: plan.orderBy,
+            context,
+            cacheValues: true,
+          })
+          entries = sorted.slice(0, topK).map(({ row }) => ({ row }))
+        }
       }
 
-      const sortedRows = await sortEntriesByTerms({
-        entries: rows.map(row => ({ row })),
+      let sortedRows = await sortEntriesByTerms({
+        entries,
         orderBy: plan.orderBy,
         context,
         cacheValues: true,
       })
+      if (topK !== undefined && sortedRows.length > topK) {
+        sortedRows = sortedRows.slice(0, topK)
+      }
 
       // Yield sorted rows
       for (const { row } of sortedRows) {

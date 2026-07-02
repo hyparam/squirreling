@@ -54,6 +54,9 @@ export interface ProjectNode {
 export interface SortNode {
   type: 'Sort'
   orderBy: OrderByItem[]
+  // Upper bound on rows needed from this sort (LIMIT + OFFSET pushed down
+  // at plan time), letting the executor discard rows beyond it while sorting
+  topK?: number
   child: QueryPlan
 }
 

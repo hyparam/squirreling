@@ -642,6 +642,7 @@ describe('planSql', () => {
           ],
           child: {
             type: 'Sort',
+            topK: 10,
             orderBy: [
               {
                 expr: {
