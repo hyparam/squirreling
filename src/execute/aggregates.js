@@ -2,6 +2,7 @@ import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan, selectColumnNames } from './execute.js'
 import { sortEntriesByTerms } from './sort.js'
+import { planStreamingAggregates, streamingHashAggregateRows, streamingScalarAggregateRows } from './streamingAggregate.js'
 import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
@@ -80,6 +81,14 @@ function aggregateContextRow(group, aggregateRow) {
  */
 export function executeHashAggregate(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const specs = planStreamingAggregates(plan)
+  if (specs) {
+    return {
+      columns: selectColumnNames(plan.columns, child.columns),
+      maxRows: child.maxRows,
+      rows: streamingHashAggregateRows({ plan, specs, child, context }),
+    }
+  }
   return {
     columns: selectColumnNames(plan.columns, child.columns),
     maxRows: child.maxRows,
@@ -196,6 +205,15 @@ export function executeScalarAggregate(plan, context) {
   }
 
   const child = executePlan({ plan: plan.child, context })
+  const specs = planStreamingAggregates(plan)
+  if (specs) {
+    return {
+      columns: selectColumnNames(plan.columns, child.columns),
+      numRows: plan.having ? undefined : 1,
+      maxRows: 1,
+      rows: streamingScalarAggregateRows({ plan, specs, child, context }),
+    }
+  }
   return {
     columns: selectColumnNames(plan.columns, child.columns),
     numRows: plan.having ? undefined : 1,

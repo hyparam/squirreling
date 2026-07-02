@@ -56,6 +56,7 @@ The main flow inside `executeSql({ tables, query, functions, signal })`:
 **Executor** (`src/execute/`):
 - `execute.js` - `executeSql()` and `executePlan()`, dispatches to node-specific executors
 - `join.js`, `aggregates.js`, `sort.js` - executors for join, aggregate, and sort nodes
+- `streamingAggregate.js` - bounded-memory aggregation for streamable aggregates (COUNT, COUNTIF, SUM, AVG, MIN, MAX); other aggregates buffer rows in `aggregates.js`
 
 **Expression Evaluator** (`src/expression/`):
 - `evaluate.js` - evaluates expression AST nodes against rows
