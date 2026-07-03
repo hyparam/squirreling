@@ -104,6 +104,37 @@ describe('streaming aggregates', () => {
     }))
     expect(result).toEqual([{ mx: 7, n: 10000 }])
   })
+
+  it('falls back to buffered aggregation when pushdown prunes an aggregate argument', async () => {
+    // The outer query never reads s, so projection pushdown prunes v from the
+    // scan; only the buffered path defers sum(v) to the never-read output cell
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }] },
+      query: 'SELECT g2 FROM (SELECT g AS g2, sum(v) AS s FROM t GROUP BY g) q ORDER BY g2',
+    }))
+    expect(result).toEqual([{ g2: 'a' }, { g2: 'b' }])
+  })
+
+  it('ends the stream silently when aborted during accumulation', async () => {
+    const controller = new AbortController()
+    /** @type {Record<string, UserDefinedFunction>} */
+    const functions = {
+      ABORT_NOW: {
+        apply(v) {
+          controller.abort()
+          return v
+        },
+        arguments: { min: 1, max: 1 },
+      },
+    }
+    const result = await collect(executeSql({
+      tables: { big },
+      functions,
+      query: 'SELECT g, count(ABORT_NOW(v)) AS c FROM big GROUP BY g',
+      signal: controller.signal,
+    }))
+    expect(result).toEqual([])
+  })
 })
 
 const sales = [
@@ -171,6 +202,23 @@ describe('streaming aggregate row retention', () => {
 
   it('does not stream aggregates on the short-circuited side of AND', () => {
     expect(streamingPlan('SELECT region FROM sales GROUP BY region HAVING count(*) > 1 AND sum(amount) > 100')).toBeUndefined()
+  })
+
+  it('does not stream aggregates in later IN list values', () => {
+    // IN short-circuits once an earlier value matches, so a later aggregate
+    // may never be evaluated by the buffered path
+    expect(streamingPlan('SELECT 1 IN (1, sum(amount)) AS x FROM sales')).toBeUndefined()
+  })
+
+  it('streams aggregates in the first IN list value', () => {
+    const streaming = streamingPlan('SELECT 1 IN (sum(qty), 2) AS x FROM sales')
+    expect(streaming?.specs.length).toBe(1)
+  })
+
+  it('does not stream aggregates in ORDER BY tie-breaker terms', () => {
+    // The sorter evaluates later ORDER BY terms only within ties on earlier
+    // terms, so a tie-breaker aggregate may never be evaluated
+    expect(streamingPlan('SELECT region, count(*) AS c FROM sales GROUP BY region ORDER BY c, sum(amount)')).toBeUndefined()
   })
 
   it('streams aggregates in the first WHEN condition', () => {
@@ -294,6 +342,38 @@ describe('streaming aggregate results', () => {
       query: 'SELECT CASE WHEN count(*) > 0 THEN 1 ELSE min(BOOM(amount)) END AS r FROM sales',
     }))
     expect(result).toEqual([{ r: 1 }])
+  })
+
+  it('never evaluates aggregates in later IN list values', async () => {
+    const result = await collect(executeSql({
+      tables,
+      functions: boomFunctions,
+      query: 'SELECT 100 IN (100, min(BOOM(amount))) AS x FROM sales',
+    }))
+    expect(result).toEqual([{ x: true }])
+  })
+
+  it('never evaluates aggregate tie-breakers when earlier sort keys are unique', async () => {
+    const t = memorySource({ data: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }, { g: 'b', v: 3 }] })
+    const result = await collect(executeSql({
+      tables: { t },
+      functions: boomFunctions,
+      query: 'SELECT g, count(*) AS c FROM t GROUP BY g ORDER BY c DESC, min(BOOM(v))',
+    }))
+    expect(result).toEqual([
+      { g: 'b', c: 2 },
+      { g: 'a', c: 1 },
+    ])
+  })
+
+  it('leaves group keys over missing columns undefined like the buffered path', async () => {
+    // toEqual ignores undefined properties: this asserts g is undefined, not null
+    const t = memorySource({ data: [{ v: 1 }, { v: 2 }], columns: ['g', 'v'] })
+    const result = await collect(executeSql({
+      tables: { t },
+      query: 'SELECT g, count(*) AS c FROM t GROUP BY g',
+    }))
+    expect(result).toEqual([{ c: 2 }])
   })
 
   it('evaluates later ORDER BY terms only for groups that tie on earlier terms', async () => {

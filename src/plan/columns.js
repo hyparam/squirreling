@@ -226,7 +226,7 @@ export function extractColumns({ select, parentColumns }) {
  * @param {IdentifierNode[]} columns
  * @param {Set<string>} [aliases] - aliases to exclude from columns
  */
-function collectColumnsFromExpr(expr, columns, aliases) {
+export function collectColumnsFromExpr(expr, columns, aliases) {
   if (!expr) return
   if (expr.type === 'identifier') {
     if (expr.prefix || !aliases?.has(expr.name)) {

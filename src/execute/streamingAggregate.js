@@ -1,13 +1,16 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateAll, evaluateExpr } from '../expression/evaluate.js'
+import { collectColumnsFromExpr } from '../plan/columns.js'
 import { isAggregateFunc } from '../validation/functions.js'
+import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
 import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncCells, AsyncRow, ExecuteContext, ExprNode, FunctionNode, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
+ * @import { AsyncCells, AsyncRow, ExecuteContext, ExprNode, FunctionNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
+ * @import { Accumulator } from './accumulator.js'
  */
 
 // Accumulate rows in chunks of this size so aborts can fire and async cells overlap
@@ -31,19 +34,9 @@ const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX'
 
 /**
  * @typedef {{
- *   count: number,
- *   sum: number,
- *   min: SqlPrimitive,
- *   max: SqlPrimitive,
- *   seen: Set<unknown> | null,
- * }} StreamingAccumulator
- */
-
-/**
- * @typedef {{
  *   firstRow: AsyncRow | undefined,
  *   keyValues: SqlPrimitive[],
- *   accumulators: StreamingAccumulator[],
+ *   accumulators: Accumulator[],
  * }} StreamingGroup
  */
 
@@ -52,7 +45,8 @@ const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX'
  * accumulate, which expression nodes are group key references (substituted
  * from the group's key values), and whether any expression still needs a
  * representative row from the group. When needsRow is false, no input rows
- * are retained at all, so memory is bounded by the number of groups even for
+ * are retained, so memory is bounded by the number of groups — plus, for
+ * COUNT(DISTINCT ...), each group's set of distinct values — even for
  * high-cardinality GROUP BY.
  *
  * @typedef {{
@@ -83,11 +77,15 @@ function exprSig(node) {
  * computed incrementally, without buffering the group's rows. Returns
  * undefined when any expression needs a buffered group: an aggregate outside
  * STREAMABLE_FUNCS, an aggregate over a non-scalar argument, or a subquery.
+ * Also returns undefined when an aggregate references a column the child
+ * does not produce: projection pushdown prunes columns whose output cells
+ * are never read, and only the buffered path defers evaluation of those cells.
  *
  * @param {Pick<HashAggregateNode, 'columns' | 'having'> & Partial<Pick<HashAggregateNode, 'orderBy' | 'groupBy'>>} plan
+ * @param {string[]} [childColumns] - columns produced by the child plan
  * @returns {StreamingAggPlan | undefined}
  */
-export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
+export function planStreamingAggregates({ columns, having, orderBy, groupBy }, childColumns) {
   const groupExprs = groupBy ?? []
   const groupSigs = groupExprs.map(exprSig)
   /** @type {StreamingAggSpec[]} */
@@ -158,7 +156,8 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
         node.whenClauses.every((w, i) => walk(w.condition, lazy || i > 0) && walk(w.result, true)) &&
         (!node.elseResult || walk(node.elseResult, true))
     case 'in valuelist':
-      return walk(node.expr, lazy) && node.values.every(v => walk(v, lazy))
+      // values after the first are skipped once an earlier value matches
+      return walk(node.expr, lazy) && node.values.every((v, i) => walk(v, lazy || i > 0))
     case 'function': {
       const funcName = node.funcName.toUpperCase()
       if (!isAggregateFunc(funcName)) {
@@ -188,10 +187,41 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
     if (!walk(col.expr, false)) return
   }
   if (having && !walk(having, false)) return
-  for (const term of orderBy ?? []) {
-    if (!walk(term.expr, false)) return
+  const orderTerms = orderBy ?? []
+  for (let i = 0; i < orderTerms.length; i++) {
+    // the sorter evaluates later terms only to break ties on earlier terms
+    if (!walk(orderTerms[i].expr, i > 0)) return
   }
+  if (childColumns && !specsResolvable(specs, childColumns)) return
   return { specs, keyRefs, needsRow }
+}
+
+/**
+ * Reports whether every identifier the streaming path evaluates eagerly
+ * (aggregate arguments and FILTER conditions) can resolve against the
+ * child's output columns, using the same exact-then-suffix matching as
+ * identifier evaluation. Anything unresolvable means projection pushdown
+ * pruned the column, so the query must buffer instead.
+ *
+ * @param {StreamingAggSpec[]} specs
+ * @param {string[]} childColumns
+ * @returns {boolean}
+ */
+function specsResolvable(specs, childColumns) {
+  /** @type {IdentifierNode[]} */
+  const identifiers = []
+  for (const spec of specs) {
+    collectColumnsFromExpr(spec.node, identifiers)
+  }
+  return identifiers.every(({ prefix, name }) => {
+    if (childColumns.includes(prefix ? `${prefix}.${name}` : name)) return true
+    if (!prefix) return childColumns.some(col => col.endsWith('.' + name))
+    // a qualified name may also resolve as struct access on a base column,
+    // or fall back to the bare column part
+    return childColumns.includes(prefix) ||
+      childColumns.some(col => col.endsWith('.' + prefix)) ||
+      childColumns.includes(name)
+  })
 }
 
 /**
@@ -239,9 +269,13 @@ function isScalarExpr(node) {
  */
 function substituteValues(node, values) {
   if (values.has(node)) {
+    // group keys over missing columns evaluate to undefined; preserve it
+    // so streaming output matches the buffered path's evaluation result
+    // eslint-disable-next-line no-extra-parens
+    const value = /** @type {SqlPrimitive} */ (values.get(node))
     return {
       type: 'literal',
-      value: values.get(node) ?? null,
+      value,
       positionStart: node.positionStart,
       positionEnd: node.positionEnd,
     }
@@ -281,71 +315,6 @@ function substituteValues(node, values) {
   }
   default:
     return node
-  }
-}
-
-/**
- * @param {StreamingAggSpec} spec
- * @returns {StreamingAccumulator}
- */
-function newAccumulator(spec) {
-  return {
-    count: 0,
-    sum: 0,
-    min: null,
-    max: null,
-    seen: spec.funcName === 'COUNT' && spec.node.distinct ? new Set() : null,
-  }
-}
-
-/**
- * Folds one value into an accumulator, matching the buffered semantics in
- * evaluate.js: COUNT counts non-null, COUNTIF counts truthy, MIN/MAX compare
- * raw values, SUM/AVG only accumulate finite numbers.
- *
- * @param {StreamingAggSpec} spec
- * @param {StreamingAccumulator} acc
- * @param {SqlPrimitive} value
- */
-function updateAccumulator(spec, acc, value) {
-  switch (spec.funcName) {
-  case 'COUNT':
-    if (spec.star) acc.count++
-    else if (value != null) {
-      if (acc.seen) acc.seen.add(keyify(value))
-      else acc.count++
-    }
-    break
-  case 'COUNTIF':
-    if (value) acc.count++
-    break
-  default: { // SUM, AVG, MIN, MAX
-    if (value == null) break
-    if (acc.min === null || value < acc.min) acc.min = value
-    if (acc.max === null || value > acc.max) acc.max = value
-    const num = Number(value)
-    if (Number.isFinite(num)) {
-      acc.sum += num
-      acc.count++
-    }
-  }
-  }
-}
-
-/**
- * @param {StreamingAggSpec} spec
- * @param {StreamingAccumulator} acc
- * @returns {SqlPrimitive}
- */
-function finalizeAccumulator(spec, acc) {
-  switch (spec.funcName) {
-  case 'COUNT': return acc.seen ? acc.seen.size : acc.count
-  case 'COUNTIF': return acc.count
-  case 'SUM': return acc.count === 0 ? null : acc.sum
-  case 'AVG': return acc.count === 0 ? null : acc.sum / acc.count
-  case 'MIN': return acc.min
-  case 'MAX': return acc.max
-  default: return null
   }
 }
 
@@ -413,22 +382,28 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
       group = {
         firstRow: needsRow ? chunk[j] : undefined,
         keyValues: keyColumns ? keyColumns.map(c => c[j]) : [],
-        accumulators: specs.map(spec => newAccumulator(spec)),
+        accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)),
       }
       groups.set(key, group)
     }
     for (let s = 0; s < specs.length; s++) {
       const filter = filters[s]
       if (filter && !filter[j]) continue
-      const arg = args[s]
-      updateAccumulator(specs[s], group.accumulators[s], arg ? arg[j] : null)
+      const spec = specs[s]
+      if (spec.star && spec.funcName === 'COUNT') {
+        group.accumulators[s].count++
+      } else {
+        const arg = args[s]
+        updateAccumulator(spec.funcName, group.accumulators[s], arg ? arg[j] : null)
+      }
     }
   }
 }
 
 /**
  * Consumes the child rows into per-group accumulators, holding at most one
- * chunk of rows at a time.
+ * chunk of rows at a time. Returns undefined when aborted mid-collection so
+ * callers end the row stream silently, matching the buffered path.
  *
  * @param {object} options
  * @param {QueryResults} options.child
@@ -436,7 +411,7 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
  * @param {StreamingAggSpec[]} options.specs
  * @param {boolean} options.needsRow
  * @param {ExecuteContext} options.context
- * @returns {Promise<Map<unknown, StreamingGroup>>}
+ * @returns {Promise<Map<unknown, StreamingGroup> | undefined>}
  */
 async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   /** @type {Map<unknown, StreamingGroup>} */
@@ -449,7 +424,7 @@ async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
       await accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context })
       chunk = []
       await yieldToEventLoop()
-      context.signal?.throwIfAborted()
+      if (context.signal?.aborted) return
     }
   }
   if (chunk.length) {
@@ -479,7 +454,7 @@ function finalizeGroup({ selectColumns, specs, keyRefs, group, context }) {
   /** @type {Map<ExprNode, SqlPrimitive>} */
   const values = new Map()
   for (let s = 0; s < specs.length; s++) {
-    values.set(specs[s].node, finalizeAccumulator(specs[s], group.accumulators[s]))
+    values.set(specs[s].node, finalizeAccumulator(specs[s].funcName, group.accumulators[s]))
   }
   for (const [node, keyIndex] of keyRefs) {
     values.set(node, group.keyValues[keyIndex])
@@ -546,6 +521,7 @@ export function streamingHashAggregateRows({ plan, streaming, child, context }) 
   const { specs, keyRefs, needsRow } = streaming
   return async function* () {
     const groups = await accumulateGroups({ child, groupBy: plan.groupBy, specs, needsRow, context })
+    if (!groups) return
     const { orderBy, having } = plan
 
     // Without ORDER BY, groups finalize and yield one at a time so output
@@ -599,8 +575,9 @@ export function streamingScalarAggregateRows({ plan, streaming, child, context }
   const { specs, keyRefs, needsRow } = streaming
   return async function* () {
     const groups = await accumulateGroups({ child, groupBy: [], specs, needsRow, context })
+    if (!groups) return
     /** @type {StreamingGroup} */
-    const group = groups.get(true) ?? { firstRow: undefined, keyValues: [], accumulators: specs.map(spec => newAccumulator(spec)) }
+    const group = groups.get(true) ?? { firstRow: undefined, keyValues: [], accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)) }
 
     const { outputRow, values } = finalizeGroup({ selectColumns: plan.columns, specs, keyRefs, group, context })
     if (plan.having) {

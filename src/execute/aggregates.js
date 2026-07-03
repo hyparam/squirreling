@@ -1,5 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
+import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
 import { executePlan, selectColumnNames } from './execute.js'
 import { sortEntriesByTerms } from './sort.js'
 import { planStreamingAggregates, streamingHashAggregateRows, streamingScalarAggregateRows } from './streamingAggregate.js'
@@ -81,7 +82,7 @@ function aggregateContextRow(group, aggregateRow) {
  */
 export function executeHashAggregate(plan, context) {
   const child = executePlan({ plan: plan.child, context })
-  const streaming = planStreamingAggregates(plan)
+  const streaming = planStreamingAggregates(plan, child.columns)
   if (streaming) {
     return {
       columns: selectColumnNames(plan.columns, child.columns),
@@ -205,7 +206,7 @@ export function executeScalarAggregate(plan, context) {
   }
 
   const child = executePlan({ plan: plan.child, context })
-  const streaming = planStreamingAggregates(plan)
+  const streaming = planStreamingAggregates(plan, child.columns)
   if (streaming) {
     return {
       columns: selectColumnNames(plan.columns, child.columns),
@@ -363,17 +364,6 @@ function extractColumnAggSpec({ expr, alias }) {
 }
 
 /**
- * @typedef {{
- *   spec: ColumnAggSpec,
- *   count: number,
- *   sum: number,
- *   min: SqlPrimitive,
- *   max: SqlPrimitive,
- *   seen: Set<unknown> | null,
- * }} AggAccumulator
- */
-
-/**
  * Scans a column once and computes every aggregate over it in a single pass.
  * All specs share the one scanColumn walk, so MIN(x)/MAX(x)/AVG(x) decode x once.
  *
@@ -389,41 +379,15 @@ async function scanColumnGroup({ table, specs, limit, offset, signal }) {
   const { column } = specs[0]
   const values = table.scanColumn({ column, limit, offset, signal })
 
-  /** @type {AggAccumulator[]} */
-  const accs = specs.map(spec => /** @type {AggAccumulator} */ ({
-    spec,
-    count: 0,
-    sum: 0,
-    min: null,
-    max: null,
-    seen: spec.funcName === 'COUNT' && spec.distinct ? new Set() : null,
-  }))
+  const accs = specs.map(spec => ({ spec, acc: newAccumulator(spec.funcName, spec.distinct) }))
 
   for await (const chunk of values) {
     signal?.throwIfAborted()
     for (let i = 0; i < chunk.length; i++) {
       const v = chunk[i]
       if (v == null) continue
-      for (const acc of accs) {
-        switch (acc.spec.funcName) {
-        case 'COUNT':
-          if (acc.seen) acc.seen.add(keyify(v))
-          else acc.count++
-          break
-        case 'MIN':
-          if (acc.min === null || v < acc.min) acc.min = v
-          break
-        case 'MAX':
-          if (acc.max === null || v > acc.max) acc.max = v
-          break
-        default: { // SUM, AVG
-          const num = Number(v)
-          if (Number.isFinite(num)) {
-            acc.sum += num
-            acc.count++
-          }
-        }
-        }
+      for (const { spec, acc } of accs) {
+        updateAccumulator(spec.funcName, acc, v)
       }
     }
   }
@@ -431,25 +395,8 @@ async function scanColumnGroup({ table, specs, limit, offset, signal }) {
 
   /** @type {Map<string, SqlPrimitive>} */
   const result = new Map()
-  for (const acc of accs) {
-    result.set(acc.spec.alias, finalizeAgg(acc))
+  for (const { spec, acc } of accs) {
+    result.set(spec.alias, finalizeAccumulator(spec.funcName, acc))
   }
   return result
-}
-
-/**
- * Reduces one accumulator to its final aggregate value.
- *
- * @param {AggAccumulator} acc
- * @returns {SqlPrimitive}
- */
-function finalizeAgg(acc) {
-  switch (acc.spec.funcName) {
-  case 'COUNT': return acc.seen ? acc.seen.size : acc.count
-  case 'SUM': return acc.count === 0 ? null : acc.sum
-  case 'AVG': return acc.count === 0 ? null : acc.sum / acc.count
-  case 'MIN': return acc.min
-  case 'MAX': return acc.max
-  default: return null
-  }
 }
