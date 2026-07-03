@@ -131,6 +131,20 @@ describe('streaming aggregate row retention', () => {
     expect(streaming?.needsRow).toBe(true)
   })
 
+  it('retains a representative row when qualification differs from the group key', () => {
+    // A bare identifier can resolve to a different column than a qualified
+    // group key in a join, so it is not treated as a group key reference
+    const streaming = streamingPlan('SELECT region, count(*) FROM sales GROUP BY sales.region')
+    expect(streaming?.needsRow).toBe(true)
+    expect(streaming?.keyRefs.size).toBe(0)
+  })
+
+  it('plans streaming aggregates for queries with bigint literals', () => {
+    const streaming = streamingPlan('SELECT count(*) + 0n AS c, 2n AS two FROM sales')
+    expect(streaming?.needsRow).toBe(false)
+    expect(streaming?.specs.length).toBe(1)
+  })
+
   it('does not stream buffering aggregates like median', () => {
     expect(streamingPlan('SELECT region, median(amount) FROM sales GROUP BY region')).toBeUndefined()
   })
@@ -241,6 +255,36 @@ describe('streaming aggregate results', () => {
       { region: 'east', product: 'banana', c: 1 },
       { region: 'south', product: 'cherry', c: 1 },
       { region: 'west', product: 'apple', c: 2 },
+    ])
+  })
+
+  it('resolves a bare identifier against the joined row, not a qualified group key', async () => {
+    const result = await collect(executeSql({
+      tables: { a: [{ id: 1 }, { id: 2 }], b: [{ id: 10 }] },
+      query: 'SELECT id, count(*) AS c FROM a JOIN b ON TRUE GROUP BY b.id, a.id ORDER BY id',
+    }))
+    expect(result).toEqual([
+      { id: 1, c: 1 },
+      { id: 2, c: 1 },
+    ])
+  })
+
+  it('evaluates bigint literals alongside streamed aggregates', async () => {
+    const result = await collect(executeSql({
+      tables,
+      query: 'SELECT count(*) AS c, 2n AS two FROM sales',
+    }))
+    expect(result).toEqual([{ c: 5, two: 2n }])
+  })
+
+  it('compares bigint literals in HAVING', async () => {
+    const result = await collect(executeSql({
+      tables,
+      query: 'SELECT region, count(*) AS c FROM sales GROUP BY region HAVING count(*) > 1n ORDER BY region',
+    }))
+    expect(result).toEqual([
+      { region: 'east', c: 2 },
+      { region: 'west', c: 2 },
     ])
   })
 

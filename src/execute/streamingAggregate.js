@@ -69,9 +69,12 @@ const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX'
  * @returns {string}
  */
 function exprSig(node) {
-  return JSON.stringify(node, (key, value) =>
-    key === 'positionStart' || key === 'positionEnd' ? undefined : value
-  )
+  return JSON.stringify(node, (key, value) => {
+    if (key === 'positionStart' || key === 'positionEnd') return undefined
+    // JSON.stringify throws on BigInt literal values; wrap so 1n !== '1n'
+    if (typeof value === 'bigint') return { bigint: value.toString() }
+    return value
+  })
 }
 
 /**
@@ -93,8 +96,10 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
   let needsRow = false
 
   /**
-   * Index of the group key the expression refers to, or -1. An unqualified
-   * column reference matches a qualified group key and vice versa.
+   * Index of the group key the expression structurally matches, or -1.
+   * Only exact matches qualify: a bare identifier and a qualified group key
+   * (or vice versa) can resolve to different columns in a join, so mixed
+   * qualification falls back to evaluating against the representative row.
    *
    * @param {ExprNode} node
    * @returns {number}
@@ -103,13 +108,6 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
     const signature = exprSig(node)
     for (let i = 0; i < groupExprs.length; i++) {
       if (groupSigs[i] === signature) return i
-    }
-    if (node.type === 'identifier') {
-      for (let i = 0; i < groupExprs.length; i++) {
-        const expr = groupExprs[i]
-        if (expr.type === 'identifier' && expr.name === node.name &&
-          (!expr.prefix || !node.prefix || expr.prefix === node.prefix)) return i
-      }
     }
     return -1
   }
