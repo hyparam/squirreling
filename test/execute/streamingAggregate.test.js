@@ -4,6 +4,20 @@ import { executeSql } from '../../src/execute/execute.js'
 import { planStreamingAggregates } from '../../src/execute/streamingAggregate.js'
 import { collect, planSql } from '../../src/index.js'
 
+/**
+ * @import { UserDefinedFunction } from '../../src/index.js'
+ */
+
+/** @type {Record<string, UserDefinedFunction>} */
+const boomFunctions = {
+  BOOM: {
+    apply() {
+      throw new Error('should not be called')
+    },
+    arguments: { min: 1, max: 1 },
+  },
+}
+
 // 10000 rows spans multiple 4000-row accumulation chunks, so these tests pin
 // that group state carries across chunk boundaries in the streaming path.
 const N = 10000
@@ -149,6 +163,21 @@ describe('streaming aggregate row retention', () => {
     expect(streamingPlan('SELECT region, median(amount) FROM sales GROUP BY region')).toBeUndefined()
   })
 
+  it('does not stream aggregates in short-circuited CASE branches', () => {
+    // The buffered evaluator never evaluates the ELSE branch when the first
+    // WHEN condition matches, so its aggregate must not accumulate eagerly
+    expect(streamingPlan('SELECT CASE WHEN count(*) > 0 THEN 1 ELSE sum(amount) END AS c FROM sales')).toBeUndefined()
+  })
+
+  it('does not stream aggregates on the short-circuited side of AND', () => {
+    expect(streamingPlan('SELECT region FROM sales GROUP BY region HAVING count(*) > 1 AND sum(amount) > 100')).toBeUndefined()
+  })
+
+  it('streams aggregates in the first WHEN condition', () => {
+    const streaming = streamingPlan('SELECT CASE WHEN count(*) > 0 THEN 1 ELSE 2 END AS c FROM sales')
+    expect(streaming?.specs.length).toBe(1)
+  })
+
   it('does not stream array_agg', () => {
     expect(streamingPlan('SELECT array_agg(product) FROM sales')).toBeUndefined()
   })
@@ -255,6 +284,29 @@ describe('streaming aggregate results', () => {
       { region: 'east', product: 'banana', c: 1 },
       { region: 'south', product: 'cherry', c: 1 },
       { region: 'west', product: 'apple', c: 2 },
+    ])
+  })
+
+  it('never evaluates aggregates in unreachable CASE branches', async () => {
+    const result = await collect(executeSql({
+      tables,
+      functions: boomFunctions,
+      query: 'SELECT CASE WHEN count(*) > 0 THEN 1 ELSE min(BOOM(amount)) END AS r FROM sales',
+    }))
+    expect(result).toEqual([{ r: 1 }])
+  })
+
+  it('evaluates later ORDER BY terms only for groups that tie on earlier terms', async () => {
+    const t = memorySource({ data: [{ g: 'a' }, { g: 'b' }, { g: 'b' }, { g: 'c' }, { g: 'c' }, { g: 'c' }] })
+    const result = await collect(executeSql({
+      tables: { t },
+      functions: boomFunctions,
+      query: 'SELECT g, count(*) AS c FROM t GROUP BY g ORDER BY count(*) DESC, BOOM(g)',
+    }))
+    expect(result).toEqual([
+      { g: 'c', c: 3 },
+      { g: 'b', c: 2 },
+      { g: 'a', c: 1 },
     ])
   })
 

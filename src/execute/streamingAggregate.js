@@ -1,7 +1,8 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateAll, evaluateExpr } from '../expression/evaluate.js'
 import { isAggregateFunc } from '../validation/functions.js'
-import { compareForTerm, keyify } from './utils.js'
+import { sortEntriesByTerms } from './sort.js'
+import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
@@ -115,12 +116,17 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
   /**
    * Walks an expression collecting streamable aggregate calls and group key
    * references. Returns false if the expression cannot be evaluated from
-   * precomputed values plus a representative row.
+   * precomputed values plus a representative row. `lazy` marks positions the
+   * evaluator can skip (short-circuited AND/OR right sides and CASE
+   * branches): an aggregate there may never be evaluated by the buffered
+   * path, so accumulating it eagerly could evaluate expressions the query
+   * never asks for, and the query falls back to buffered aggregation.
    *
    * @param {ExprNode} node
+   * @param {boolean} lazy
    * @returns {boolean}
    */
-  function walk(node) {
+  function walk(node, lazy) {
     const keyIndex = matchGroupKey(node)
     if (keyIndex >= 0) {
       keyRefs.set(node, keyIndex)
@@ -136,22 +142,29 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
       needsRow = true
       return true
     case 'unary':
-      return walk(node.argument)
+      return walk(node.argument, lazy)
     case 'binary':
-      return walk(node.left) && walk(node.right)
+      if (node.op === 'AND' || node.op === 'OR') {
+        // the right side is skipped when the left side short-circuits
+        return walk(node.left, lazy) && walk(node.right, true)
+      }
+      return walk(node.left, lazy) && walk(node.right, lazy)
     case 'cast':
-      return walk(node.expr)
+      return walk(node.expr, lazy)
     case 'case':
-      return (!node.caseExpr || walk(node.caseExpr)) &&
-        node.whenClauses.every(w => walk(w.condition) && walk(w.result)) &&
-        (!node.elseResult || walk(node.elseResult))
+      // only the first WHEN condition is always evaluated; later
+      // conditions, results, and ELSE run only when reached
+      return (!node.caseExpr || walk(node.caseExpr, lazy)) &&
+        node.whenClauses.every((w, i) => walk(w.condition, lazy || i > 0) && walk(w.result, true)) &&
+        (!node.elseResult || walk(node.elseResult, true))
     case 'in valuelist':
-      return walk(node.expr) && node.values.every(walk)
+      return walk(node.expr, lazy) && node.values.every(v => walk(v, lazy))
     case 'function': {
       const funcName = node.funcName.toUpperCase()
       if (!isAggregateFunc(funcName)) {
-        return node.args.every(walk)
+        return node.args.every(arg => walk(arg, lazy))
       }
+      if (lazy) return false
       if (!STREAMABLE_FUNCS.has(funcName)) return false
       const star = node.args[0]?.type === 'star'
       if (!star && !node.args.every(arg => isScalarExpr(arg))) return false
@@ -172,11 +185,11 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
       needsRow = true
       continue
     }
-    if (!walk(col.expr)) return
+    if (!walk(col.expr, false)) return
   }
-  if (having && !walk(having)) return
+  if (having && !walk(having, false)) return
   for (const term of orderBy ?? []) {
-    if (!walk(term.expr)) return
+    if (!walk(term.expr, false)) return
   }
   return { specs, keyRefs, needsRow }
 }
@@ -537,8 +550,8 @@ export function streamingHashAggregateRows({ plan, streaming, child, context }) 
 
     // Without ORDER BY, groups finalize and yield one at a time so output
     // rows are never all held at once; sorting needs the full set below.
-    /** @type {{ outputRow: AsyncRow, contextRow: AsyncRow, values: Map<ExprNode, SqlPrimitive>, orderValues: SqlPrimitive[] }[] | undefined} */
-    const outputRows = orderBy?.length ? [] : undefined
+    /** @type {{ row: AsyncRow, exprs: ExprNode[], outputRow: AsyncRow }[] | undefined} */
+    const entries = orderBy?.length ? [] : undefined
     for (const group of groups.values()) {
       const { outputRow, values } = finalizeGroup({ selectColumns: plan.columns, specs, keyRefs, group, context })
       if (having) {
@@ -549,42 +562,22 @@ export function streamingHashAggregateRows({ plan, streaming, child, context }) 
         })
         if (!passes) continue
       }
-      if (outputRows) {
-        outputRows.push({ outputRow, contextRow: groupContextRow(group, outputRow), values, orderValues: [] })
+      if (entries && orderBy) {
+        entries.push({
+          row: groupContextRow(group, outputRow),
+          exprs: orderBy.map(term => substituteValues(term.expr, values)),
+          outputRow,
+        })
       } else {
         yield outputRow
       }
     }
 
-    if (outputRows && orderBy) {
-      // Evaluate each sort key across all groups in concurrent chunks so
-      // async cells and UDFs overlap
-      for (let t = 0; t < orderBy.length; t++) {
-        const term = orderBy[t]
-        for (let start = 0; start < outputRows.length; start += CHUNK_SIZE) {
-          if (start > 0) {
-            await yieldToEventLoop()
-            context.signal?.throwIfAborted()
-          }
-          const chunk = outputRows.slice(start, start + CHUNK_SIZE)
-          const termValues = await Promise.all(chunk.map(entry => evaluateExpr({
-            node: substituteValues(term.expr, entry.values),
-            row: entry.contextRow,
-            context,
-          })))
-          for (let j = 0; j < chunk.length; j++) {
-            chunk[j].orderValues[t] = termValues[j]
-          }
-        }
-      }
-      outputRows.sort((a, b) => {
-        for (let i = 0; i < orderBy.length; i++) {
-          const cmp = compareForTerm(a.orderValues[i], b.orderValues[i], orderBy[i])
-          if (cmp) return cmp
-        }
-        return 0
-      })
-      for (const { outputRow } of outputRows) {
+    if (entries && orderBy) {
+      // The shared sorter evaluates later ORDER BY terms only within ties
+      // on earlier terms, so expensive sort keys are skipped when possible
+      const sorted = await sortEntriesByTerms({ entries, orderBy, context })
+      for (const { outputRow } of sorted) {
         yield outputRow
       }
     }
