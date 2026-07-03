@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.12.26]
+ - Bound `ORDER BY` memory with top-k sort when `LIMIT` is present
+ - Reduce join memory usage
+
 ## [0.12.25]
  - Reject aborted aggregates and joins instead of finalizing partial results
  - Bound cached data source memory
