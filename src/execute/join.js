@@ -24,43 +24,65 @@ export function executeNestedLoopJoin(plan, context) {
   }
   const left = executePlan({ plan: plan.left, context })
   const right = executePlan({ plan: plan.right, context })
+  // Buffer the smaller side when both sizes are known, streaming the larger
+  // side through the outer loop. Swapping reorders output rows, which SQL
+  // leaves unspecified.
+  const leftSize = left.numRows ?? left.maxRows
+  const rightSize = right.numRows ?? right.maxRows
+  const swap = leftSize !== undefined && rightSize !== undefined && leftSize < rightSize
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows() {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
+      const inner = swap ? left : right
+      const outer = swap ? right : left
+      // Which sides must also emit their unmatched rows
+      const innerOuter = plan.joinType === 'FULL' || plan.joinType === (swap ? 'LEFT' : 'RIGHT')
+      const outerOuter = plan.joinType === 'FULL' || plan.joinType === (swap ? 'RIGHT' : 'LEFT')
 
-      // Buffer right rows
-      /** @type {AsyncRow[]} */
-      const rightRows = []
-      for await (const row of right.rows()) {
-        if (context.signal?.aborted) return
-        rightRows.push(row)
+      /**
+       * @param {AsyncRow} outerRow
+       * @param {AsyncRow} innerRow
+       * @returns {AsyncRow}
+       */
+      function merge(outerRow, innerRow) {
+        return swap
+          ? mergeRows(innerRow, outerRow, leftTable, rightTable)
+          : mergeRows(outerRow, innerRow, leftTable, rightTable)
       }
 
-      const rightCols = rightRows.length ? rightRows[0].columns : []
+      // Buffer the inner side
+      /** @type {AsyncRow[]} */
+      const innerRows = []
+      for await (const row of inner.rows()) {
+        if (context.signal?.aborted) return
+        innerRows.push(row)
+      }
+
+      const innerCols = innerRows.length ? innerRows[0].columns : []
 
       /** @type {string[] | undefined} */
-      let leftCols = undefined
+      let outerCols = undefined
       /** @type {Set<AsyncRow> | undefined} */
-      const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
+      const matchedInnerRows = innerOuter ? new Set() : undefined
 
       let innerCount = 0
-      for await (const leftRow of left.rows()) {
+      for await (const outerRow of outer.rows()) {
         if (context.signal?.aborted) return
 
-        if (!leftCols) {
-          leftCols = leftRow.columns
+        if (!outerCols) {
+          outerCols = outerRow.columns
         }
 
         let hasMatch = false
 
-        for (const rightRow of rightRows) {
+        for (const innerRow of innerRows) {
           if (++innerCount % YIELD_INTERVAL === 0) {
             await yieldToEventLoop()
             if (context.signal?.aborted) return
           }
-          const tempMerged = mergeRows(leftRow, rightRow, leftTable, rightTable)
+          const tempMerged = merge(outerRow, innerRow)
           const matches = await evaluateExpr({
             node: plan.condition,
             row: tempMerged,
@@ -69,25 +91,23 @@ export function executeNestedLoopJoin(plan, context) {
 
           if (matches) {
             hasMatch = true
-            matchedRightRows?.add(rightRow)
+            matchedInnerRows?.add(innerRow)
             yield tempMerged
           }
         }
 
-        if (!hasMatch && (plan.joinType === 'LEFT' || plan.joinType === 'FULL')) {
-          const nullRight = createNullRow(rightCols)
-          yield mergeRows(leftRow, nullRight, leftTable, rightTable)
+        if (!hasMatch && outerOuter) {
+          yield merge(outerRow, createNullRow(innerCols))
         }
       }
 
       if (context.signal?.aborted) return
 
-      // Unmatched right rows for RIGHT/FULL joins
-      if (matchedRightRows) {
-        for (const rightRow of rightRows) {
-          if (!matchedRightRows.has(rightRow)) {
-            const nullLeft = createNullRow(leftCols ?? [])
-            yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
+      // Unmatched inner rows for outer joins on the buffered side
+      if (matchedInnerRows) {
+        for (const innerRow of innerRows) {
+          if (!matchedInnerRows.has(innerRow)) {
+            yield merge(createNullRow(outerCols ?? []), innerRow)
           }
         }
       }
@@ -167,29 +187,27 @@ export function executePositionalJoin(plan, context) {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
 
-      // Buffer both sides (required for positional join)
-      /** @type {AsyncRow[]} */
-      const leftRows = []
-      for await (const row of left.rows()) {
+      // Zip both sides in lockstep without buffering either; the shorter
+      // side is padded with NULL rows until the longer side is exhausted
+      const leftRows = left.rows()
+      const rightRows = right.rows()
+      /** @type {string[]} */
+      let leftCols = []
+      /** @type {string[]} */
+      let rightCols = []
+      let tick = 0
+      while (true) {
+        const [leftResult, rightResult] = await Promise.all([leftRows.next(), rightRows.next()])
+        if (leftResult.done && rightResult.done) return
         if (signal?.aborted) return
-        leftRows.push(row)
-      }
-
-      /** @type {AsyncRow[]} */
-      const rightRows = []
-      for await (const row of right.rows()) {
-        if (signal?.aborted) return
-        rightRows.push(row)
-      }
-
-      const maxLen = Math.max(leftRows.length, rightRows.length)
-      const leftCols = leftRows[0]?.columns ?? []
-      const rightCols = rightRows[0]?.columns ?? []
-
-      for (let i = 0; i < maxLen; i++) {
-        if (signal?.aborted) return
-        const leftRow = leftRows[i] ?? createNullRow(leftCols)
-        const rightRow = rightRows[i] ?? createNullRow(rightCols)
+        if (++tick % YIELD_INTERVAL === 0) {
+          await yieldToEventLoop()
+          if (signal?.aborted) return
+        }
+        if (!leftResult.done && !leftCols.length) leftCols = leftResult.value.columns
+        if (!rightResult.done && !rightCols.length) rightCols = rightResult.value.columns
+        const leftRow = leftResult.done ? createNullRow(leftCols) : leftResult.value
+        const rightRow = rightResult.done ? createNullRow(rightCols) : rightResult.value
         yield mergeRows(leftRow, rightRow, leftTable, rightTable)
       }
     },
@@ -206,26 +224,59 @@ export function executePositionalJoin(plan, context) {
 export function executeHashJoin(plan, context) {
   const left = executePlan({ plan: plan.left, context })
   const right = executePlan({ plan: plan.right, context })
+  // Build the hash table on the smaller side when both sizes are known,
+  // so joining a small table against a large one buffers the small one.
+  // Swapping reorders output rows, which SQL leaves unspecified.
+  const leftSize = left.numRows ?? left.maxRows
+  const rightSize = right.numRows ?? right.maxRows
+  const swap = leftSize !== undefined && rightSize !== undefined && leftSize < rightSize
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows() {
       const leftTable = plan.leftAlias
       const rightTable = plan.rightAlias
-      const { leftKeys, rightKeys, residual } = plan
+      const { residual } = plan
+      const build = swap ? left : right
+      const probe = swap ? right : left
+      const buildKeys = swap ? plan.leftKeys : plan.rightKeys
+      const probeKeys = swap ? plan.rightKeys : plan.leftKeys
+      // Which sides must also emit their unmatched rows
+      const buildOuter = plan.joinType === 'FULL' || plan.joinType === (swap ? 'LEFT' : 'RIGHT')
+      const probeOuter = plan.joinType === 'FULL' || plan.joinType === (swap ? 'RIGHT' : 'LEFT')
 
-      // Buffer right rows and build hash map
-      /** @type {AsyncRow[]} */
-      const rightRows = []
-      for await (const row of right.rows()) {
-        if (context.signal?.aborted) return
-        rightRows.push(row)
+      /**
+       * @param {AsyncRow} probeRow
+       * @param {AsyncRow} buildRow
+       * @returns {AsyncRow}
+       */
+      function merge(probeRow, buildRow) {
+        return swap
+          ? mergeRows(buildRow, probeRow, leftTable, rightTable)
+          : mergeRows(probeRow, buildRow, leftTable, rightTable)
       }
 
+      // Build phase: stream one side into the hash map. The full row list is
+      // only retained when unmatched build rows must be emitted afterwards;
+      // otherwise rows with NULL join keys are released immediately.
       /** @type {Map<string | number | bigint | boolean, AsyncRow[]>} */
       const hashMap = new Map()
-      for (const rightRow of rightRows) {
+      /** @type {AsyncRow[] | undefined} */
+      const buildRows = buildOuter ? [] : undefined
+      /** @type {string[]} */
+      let buildCols = []
+      let innerCount = 0
+      for await (const buildRow of build.rows()) {
+        if (context.signal?.aborted) return
+        if (++innerCount % YIELD_INTERVAL === 0) {
+          await yieldToEventLoop()
+          if (context.signal?.aborted) return
+        }
+        if (!buildCols.length) {
+          buildCols = buildRow.columns
+        }
+        buildRows?.push(buildRow)
         const keyValues = await Promise.all(
-          rightKeys.map(node => evaluateExpr({ node, row: rightRow, context }))
+          buildKeys.map(node => evaluateExpr({ node, row: buildRow, context }))
         )
         // SQL semantics: NULL never equals anything, so a row with any NULL
         // join key is excluded from the hash table.
@@ -236,65 +287,59 @@ export function executeHashJoin(plan, context) {
           bucket = []
           hashMap.set(key, bucket)
         }
-        bucket.push(rightRow)
+        bucket.push(buildRow)
       }
 
-      // Get column info for NULL row generation
-      const rightCols = rightRows.length ? rightRows[0].columns : []
-
       /** @type {string[] | undefined} */
-      let leftCols
+      let probeCols
       /** @type {Set<AsyncRow> | undefined} */
-      const matchedRightRows = plan.joinType === 'RIGHT' || plan.joinType === 'FULL' ? new Set() : undefined
+      const matchedBuildRows = buildOuter ? new Set() : undefined
 
-      // Probe phase: stream left rows
-      let innerCount = 0
-      for await (const leftRow of left.rows()) {
+      // Probe phase: stream the other side
+      for await (const probeRow of probe.rows()) {
         if (context.signal?.aborted) return
 
-        if (!leftCols) {
-          leftCols = leftRow.columns
+        if (!probeCols) {
+          probeCols = probeRow.columns
         }
 
         const keyValues = await Promise.all(
-          leftKeys.map(node => evaluateExpr({ node, row: leftRow, context }))
+          probeKeys.map(node => evaluateExpr({ node, row: probeRow, context }))
         )
         let matched = false
         if (!keyValues.some(v => v == null)) {
           const key = keyify(...keyValues)
           const candidates = hashMap.get(key)
           if (candidates?.length) {
-            for (const rightRow of candidates) {
+            for (const buildRow of candidates) {
               if (++innerCount % YIELD_INTERVAL === 0) {
                 await yieldToEventLoop()
                 if (context.signal?.aborted) return
               }
-              const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)
+              const merged = merge(probeRow, buildRow)
               if (residual) {
                 const ok = await evaluateExpr({ node: residual, row: merged, context })
                 if (!ok) continue
               }
               matched = true
-              matchedRightRows?.add(rightRow)
+              matchedBuildRows?.add(buildRow)
               yield merged
             }
           }
         }
 
-        if (!matched && (plan.joinType === 'LEFT' || plan.joinType === 'FULL')) {
-          const nullRight = createNullRow(rightCols)
-          yield mergeRows(leftRow, nullRight, leftTable, rightTable)
+        if (!matched && probeOuter) {
+          yield merge(probeRow, createNullRow(buildCols))
         }
       }
 
       if (context.signal?.aborted) return
 
-      // Unmatched right rows for RIGHT/FULL joins
-      if (matchedRightRows) {
-        for (const rightRow of rightRows) {
-          if (!matchedRightRows.has(rightRow)) {
-            const nullLeft = createNullRow(leftCols ?? [])
-            yield mergeRows(nullLeft, rightRow, leftTable, rightTable)
+      // Unmatched build rows for outer joins on the build side
+      if (buildRows && matchedBuildRows) {
+        for (const buildRow of buildRows) {
+          if (!matchedBuildRows.has(buildRow)) {
+            yield merge(createNullRow(probeCols ?? []), buildRow)
           }
         }
       }
