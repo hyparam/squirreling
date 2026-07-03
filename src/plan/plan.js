@@ -88,6 +88,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     plan = { type: 'Sort', orderBy: compound.orderBy, child: plan }
   }
   if (compound.limit !== undefined || compound.offset) {
+    if (compound.limit !== undefined) pushLimitIntoSort(plan, compound.limit, compound.offset)
     plan = { type: 'Limit', limit: compound.limit, offset: compound.offset, child: plan }
   }
 
@@ -273,6 +274,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
     // LIMIT/OFFSET
     if (select.limit !== undefined || select.offset) {
+      if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   } else {
@@ -321,11 +323,30 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
 
     if (!(isOwnScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset)) {
+      if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   }
 
   return plan
+}
+
+/**
+ * Pushes a LIMIT bound into a Sort node below, descending only through
+ * row-preserving Project nodes, so the sort can discard rows beyond
+ * LIMIT + OFFSET while sorting. A Distinct between blocks the pushdown,
+ * since deduplication after truncation could need more input rows.
+ *
+ * @param {QueryPlan} plan
+ * @param {number} limit
+ * @param {number} [offset]
+ */
+function pushLimitIntoSort(plan, limit, offset) {
+  let node = plan
+  while (node.type === 'Project') node = node.child
+  if (node.type === 'Sort') {
+    node.topK = limit + (offset ?? 0)
+  }
 }
 
 /**
