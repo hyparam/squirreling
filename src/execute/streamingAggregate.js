@@ -41,9 +41,38 @@ const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX'
 /**
  * @typedef {{
  *   firstRow: AsyncRow | undefined,
+ *   keyValues: SqlPrimitive[],
  *   accumulators: StreamingAccumulator[],
  * }} StreamingGroup
  */
+
+/**
+ * The streaming plan for an aggregate node: which aggregate calls to
+ * accumulate, which expression nodes are group key references (substituted
+ * from the group's key values), and whether any expression still needs a
+ * representative row from the group. When needsRow is false, no input rows
+ * are retained at all, so memory is bounded by the number of groups even for
+ * high-cardinality GROUP BY.
+ *
+ * @typedef {{
+ *   specs: StreamingAggSpec[],
+ *   keyRefs: Map<ExprNode, number>,
+ *   needsRow: boolean,
+ * }} StreamingAggPlan
+ */
+
+/**
+ * Structural signature of an expression node, ignoring source positions, so
+ * an expression repeated in SELECT and GROUP BY compares equal.
+ *
+ * @param {ExprNode} node
+ * @returns {string}
+ */
+function exprSig(node) {
+  return JSON.stringify(node, (key, value) =>
+    key === 'positionStart' || key === 'positionEnd' ? undefined : value
+  )
+}
 
 /**
  * Extracts the aggregate calls an aggregate node needs so they can be
@@ -51,69 +80,107 @@ const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX'
  * undefined when any expression needs a buffered group: an aggregate outside
  * STREAMABLE_FUNCS, an aggregate over a non-scalar argument, or a subquery.
  *
- * @param {Pick<HashAggregateNode, 'columns' | 'having'> & Partial<Pick<HashAggregateNode, 'orderBy'>>} plan
- * @returns {StreamingAggSpec[] | undefined}
+ * @param {Pick<HashAggregateNode, 'columns' | 'having'> & Partial<Pick<HashAggregateNode, 'orderBy' | 'groupBy'>>} plan
+ * @returns {StreamingAggPlan | undefined}
  */
-export function planStreamingAggregates({ columns, having, orderBy }) {
+export function planStreamingAggregates({ columns, having, orderBy, groupBy }) {
+  const groupExprs = groupBy ?? []
+  const groupSigs = groupExprs.map(exprSig)
   /** @type {StreamingAggSpec[]} */
   const specs = []
-  for (const col of columns) {
-    if (col.type === 'star') continue
-    if (!collectAggregates(col.expr, specs)) return
-  }
-  if (having && !collectAggregates(having, specs)) return
-  for (const term of orderBy ?? []) {
-    if (!collectAggregates(term.expr, specs)) return
-  }
-  return specs
-}
+  /** @type {Map<ExprNode, number>} */
+  const keyRefs = new Map()
+  let needsRow = false
 
-/**
- * Walks an expression collecting streamable aggregate calls into specs.
- * Returns false if the expression cannot be evaluated from precomputed
- * aggregate values plus a single representative row.
- *
- * @param {ExprNode} node
- * @param {StreamingAggSpec[]} specs
- * @returns {boolean}
- */
-function collectAggregates(node, specs) {
-  switch (node.type) {
-  case 'literal':
-  case 'identifier':
-  case 'star':
-  case 'interval':
-    return true
-  case 'unary':
-    return collectAggregates(node.argument, specs)
-  case 'binary':
-    return collectAggregates(node.left, specs) && collectAggregates(node.right, specs)
-  case 'cast':
-    return collectAggregates(node.expr, specs)
-  case 'case':
-    return (!node.caseExpr || collectAggregates(node.caseExpr, specs)) &&
-      node.whenClauses.every(w => collectAggregates(w.condition, specs) && collectAggregates(w.result, specs)) &&
-      (!node.elseResult || collectAggregates(node.elseResult, specs))
-  case 'in valuelist':
-    return collectAggregates(node.expr, specs) && node.values.every(v => collectAggregates(v, specs))
-  case 'function': {
-    const funcName = node.funcName.toUpperCase()
-    if (!isAggregateFunc(funcName)) {
-      return node.args.every(arg => collectAggregates(arg, specs))
+  /**
+   * Index of the group key the expression refers to, or -1. An unqualified
+   * column reference matches a qualified group key and vice versa.
+   *
+   * @param {ExprNode} node
+   * @returns {number}
+   */
+  function matchGroupKey(node) {
+    const signature = exprSig(node)
+    for (let i = 0; i < groupExprs.length; i++) {
+      if (groupSigs[i] === signature) return i
     }
-    if (!STREAMABLE_FUNCS.has(funcName)) return false
-    const star = node.args[0]?.type === 'star'
-    if (!star && !node.args.every(arg => isScalarExpr(arg))) return false
-    if (node.filter && !isScalarExpr(node.filter)) return false
-    if (!specs.some(spec => spec.node === node)) {
-      specs.push({ node, funcName, star })
+    if (node.type === 'identifier') {
+      for (let i = 0; i < groupExprs.length; i++) {
+        const expr = groupExprs[i]
+        if (expr.type === 'identifier' && expr.name === node.name &&
+          (!expr.prefix || !node.prefix || expr.prefix === node.prefix)) return i
+      }
     }
-    return true
+    return -1
   }
-  default:
-    // subqueries, EXISTS, IN (subquery), window functions
-    return false
+
+  /**
+   * Walks an expression collecting streamable aggregate calls and group key
+   * references. Returns false if the expression cannot be evaluated from
+   * precomputed values plus a representative row.
+   *
+   * @param {ExprNode} node
+   * @returns {boolean}
+   */
+  function walk(node) {
+    const keyIndex = matchGroupKey(node)
+    if (keyIndex >= 0) {
+      keyRefs.set(node, keyIndex)
+      return true
+    }
+    switch (node.type) {
+    case 'literal':
+    case 'interval':
+      return true
+    case 'identifier':
+    case 'star':
+      // resolves against the group's representative row
+      needsRow = true
+      return true
+    case 'unary':
+      return walk(node.argument)
+    case 'binary':
+      return walk(node.left) && walk(node.right)
+    case 'cast':
+      return walk(node.expr)
+    case 'case':
+      return (!node.caseExpr || walk(node.caseExpr)) &&
+        node.whenClauses.every(w => walk(w.condition) && walk(w.result)) &&
+        (!node.elseResult || walk(node.elseResult))
+    case 'in valuelist':
+      return walk(node.expr) && node.values.every(walk)
+    case 'function': {
+      const funcName = node.funcName.toUpperCase()
+      if (!isAggregateFunc(funcName)) {
+        return node.args.every(walk)
+      }
+      if (!STREAMABLE_FUNCS.has(funcName)) return false
+      const star = node.args[0]?.type === 'star'
+      if (!star && !node.args.every(arg => isScalarExpr(arg))) return false
+      if (node.filter && !isScalarExpr(node.filter)) return false
+      if (!specs.some(spec => spec.node === node)) {
+        specs.push({ node, funcName, star })
+      }
+      return true
+    }
+    default:
+      // subqueries, EXISTS, IN (subquery), window functions
+      return false
+    }
   }
+
+  for (const col of columns) {
+    if (col.type === 'star') {
+      needsRow = true
+      continue
+    }
+    if (!walk(col.expr)) return
+  }
+  if (having && !walk(having)) return
+  for (const term of orderBy ?? []) {
+    if (!walk(term.expr)) return
+  }
+  return { specs, keyRefs, needsRow }
 }
 
 /**
@@ -150,54 +217,55 @@ function isScalarExpr(node) {
 }
 
 /**
- * Replaces each aggregate call in an expression with its computed value as a
- * literal, so the rest of the expression can be evaluated against a single
- * representative row. Nodes without aggregates are returned unchanged.
+ * Replaces each precomputed node in an expression with its value as a
+ * literal: aggregate calls (keyed by node identity) and group key references,
+ * so the rest of the expression can be evaluated against a representative
+ * row. Nodes without precomputed values are returned unchanged.
  *
  * @param {ExprNode} node
- * @param {Map<FunctionNode, SqlPrimitive>} values - computed value per aggregate node
+ * @param {Map<ExprNode, SqlPrimitive>} values - computed value per substituted node
  * @returns {ExprNode}
  */
-function substituteAggregates(node, values) {
+function substituteValues(node, values) {
+  if (values.has(node)) {
+    return {
+      type: 'literal',
+      value: values.get(node) ?? null,
+      positionStart: node.positionStart,
+      positionEnd: node.positionEnd,
+    }
+  }
   switch (node.type) {
   case 'unary': {
-    const argument = substituteAggregates(node.argument, values)
+    const argument = substituteValues(node.argument, values)
     return argument === node.argument ? node : { ...node, argument }
   }
   case 'binary': {
-    const left = substituteAggregates(node.left, values)
-    const right = substituteAggregates(node.right, values)
+    const left = substituteValues(node.left, values)
+    const right = substituteValues(node.right, values)
     return left === node.left && right === node.right ? node : { ...node, left, right }
   }
   case 'cast': {
-    const expr = substituteAggregates(node.expr, values)
+    const expr = substituteValues(node.expr, values)
     return expr === node.expr ? node : { ...node, expr }
   }
   case 'case': {
-    const caseExpr = node.caseExpr && substituteAggregates(node.caseExpr, values)
+    const caseExpr = node.caseExpr && substituteValues(node.caseExpr, values)
     const whenClauses = node.whenClauses.map(w => {
-      const condition = substituteAggregates(w.condition, values)
-      const result = substituteAggregates(w.result, values)
+      const condition = substituteValues(w.condition, values)
+      const result = substituteValues(w.result, values)
       return condition === w.condition && result === w.result ? w : { ...w, condition, result }
     })
-    const elseResult = node.elseResult && substituteAggregates(node.elseResult, values)
+    const elseResult = node.elseResult && substituteValues(node.elseResult, values)
     return { ...node, caseExpr, whenClauses, elseResult }
   }
   case 'in valuelist': {
-    const expr = substituteAggregates(node.expr, values)
-    const valueNodes = node.values.map(v => substituteAggregates(v, values))
+    const expr = substituteValues(node.expr, values)
+    const valueNodes = node.values.map(v => substituteValues(v, values))
     return { ...node, expr, values: valueNodes }
   }
   case 'function': {
-    if (values.has(node)) {
-      return {
-        type: 'literal',
-        value: values.get(node) ?? null,
-        positionStart: node.positionStart,
-        positionEnd: node.positionEnd,
-      }
-    }
-    const args = node.args.map(arg => substituteAggregates(arg, values))
+    const args = node.args.map(arg => substituteValues(arg, values))
     return args.every((arg, i) => arg === node.args[i]) ? node : { ...node, args }
   }
   default:
@@ -280,18 +348,15 @@ function finalizeAccumulator(spec, acc) {
  * @param {ExprNode[]} options.groupBy
  * @param {StreamingAggSpec[]} options.specs
  * @param {Map<unknown, StreamingGroup>} options.groups
+ * @param {boolean} options.needsRow - retain each group's first row?
  * @param {ExecuteContext} options.context
  * @returns {Promise<void>}
  */
-async function accumulateChunk({ chunk, groupBy, specs, groups, context }) {
-  /** @type {unknown[] | undefined} */
-  let keys
-  if (groupBy.length === 1) {
-    const values = await evaluateAll(groupBy[0], chunk, context)
-    keys = values.map(v => keyify(v))
-  } else if (groupBy.length > 1) {
-    const columns = await Promise.all(groupBy.map(expr => evaluateAll(expr, chunk, context)))
-    keys = chunk.map((_, j) => keyify(...columns.map(c => c[j])))
+async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context }) {
+  /** @type {SqlPrimitive[][] | undefined} */
+  let keyColumns
+  if (groupBy.length) {
+    keyColumns = await Promise.all(groupBy.map(expr => evaluateAll(expr, chunk, context)))
   }
 
   /** @type {(SqlPrimitive[] | undefined)[]} */
@@ -300,15 +365,45 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, context }) {
   const args = new Array(specs.length)
   for (let s = 0; s < specs.length; s++) {
     const { node, star } = specs[s]
-    filters[s] = node.filter ? await evaluateAll(node.filter, chunk, context) : undefined
-    args[s] = star ? undefined : await evaluateAll(node.args[0], chunk, context)
+    if (node.filter) {
+      const passes = await evaluateAll(node.filter, chunk, context)
+      filters[s] = passes
+      if (!star) {
+        // The buffered path filters the group before evaluating arguments,
+        // so only evaluate the argument for rows that pass the FILTER
+        /** @type {AsyncRow[]} */
+        const passingRows = []
+        /** @type {number[]} */
+        const passingIndices = []
+        for (let j = 0; j < chunk.length; j++) {
+          if (passes[j]) {
+            passingRows.push(chunk[j])
+            passingIndices.push(j)
+          }
+        }
+        const values = await evaluateAll(node.args[0], passingRows, context)
+        const spread = new Array(chunk.length).fill(null)
+        for (let k = 0; k < passingIndices.length; k++) {
+          spread[passingIndices[k]] = values[k]
+        }
+        args[s] = spread
+      }
+    } else {
+      args[s] = star ? undefined : await evaluateAll(node.args[0], chunk, context)
+    }
   }
 
   for (let j = 0; j < chunk.length; j++) {
-    const key = keys ? keys[j] : true
+    const key = keyColumns
+      ? keyColumns.length === 1 ? keyify(keyColumns[0][j]) : keyify(...keyColumns.map(c => c[j]))
+      : true
     let group = groups.get(key)
     if (!group) {
-      group = { firstRow: chunk[j], accumulators: specs.map(spec => newAccumulator(spec)) }
+      group = {
+        firstRow: needsRow ? chunk[j] : undefined,
+        keyValues: keyColumns ? keyColumns.map(c => c[j]) : [],
+        accumulators: specs.map(spec => newAccumulator(spec)),
+      }
       groups.set(key, group)
     }
     for (let s = 0; s < specs.length; s++) {
@@ -328,10 +423,11 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, context }) {
  * @param {QueryResults} options.child
  * @param {ExprNode[]} options.groupBy
  * @param {StreamingAggSpec[]} options.specs
+ * @param {boolean} options.needsRow
  * @param {ExecuteContext} options.context
  * @returns {Promise<Map<unknown, StreamingGroup>>}
  */
-async function accumulateGroups({ child, groupBy, specs, context }) {
+async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   /** @type {Map<unknown, StreamingGroup>} */
   const groups = new Map()
   /** @type {AsyncRow[]} */
@@ -339,39 +435,43 @@ async function accumulateGroups({ child, groupBy, specs, context }) {
   for await (const row of child.rows()) {
     chunk.push(row)
     if (chunk.length >= CHUNK_SIZE) {
-      await accumulateChunk({ chunk, groupBy, specs, groups, context })
+      await accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context })
       chunk = []
       await yieldToEventLoop()
       context.signal?.throwIfAborted()
     }
   }
   if (chunk.length) {
-    await accumulateChunk({ chunk, groupBy, specs, groups, context })
+    await accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context })
   }
   context.signal?.throwIfAborted()
   return groups
 }
 
 /**
- * Builds a group's output row and the context row visible to HAVING and
- * grouped ORDER BY, by substituting the group's finalized aggregate values
- * into the select expressions and evaluating them against the group's
- * representative row.
+ * Builds a group's output row by substituting the group's finalized
+ * aggregate and group key values into the select expressions and evaluating
+ * them against the group's representative row (an empty row when no
+ * expression needs one).
  *
  * @param {object} options
  * @param {SelectColumn[]} options.selectColumns
  * @param {StreamingAggSpec[]} options.specs
+ * @param {Map<ExprNode, number>} options.keyRefs
  * @param {StreamingGroup} options.group
  * @param {ExecuteContext} options.context
- * @returns {{ contextRow: AsyncRow, outputRow: AsyncRow, values: Map<FunctionNode, SqlPrimitive> }}
+ * @returns {{ outputRow: AsyncRow, values: Map<ExprNode, SqlPrimitive> }}
  */
-function finalizeGroup({ selectColumns, specs, group, context }) {
+function finalizeGroup({ selectColumns, specs, keyRefs, group, context }) {
   const firstRow = group.firstRow ?? { columns: [], cells: {} }
 
-  /** @type {Map<FunctionNode, SqlPrimitive>} */
+  /** @type {Map<ExprNode, SqlPrimitive>} */
   const values = new Map()
   for (let s = 0; s < specs.length; s++) {
     values.set(specs[s].node, finalizeAccumulator(specs[s], group.accumulators[s]))
+  }
+  for (const [node, keyIndex] of keyRefs) {
+    values.set(node, group.keyValues[keyIndex])
   }
 
   /** @type {string[]} */
@@ -392,22 +492,31 @@ function finalizeGroup({ selectColumns, specs, group, context }) {
       }
     } else {
       const alias = col.alias ?? derivedAlias(col.expr)
-      const expr = substituteAggregates(col.expr, values)
+      const expr = substituteValues(col.expr, values)
       columns.push(alias)
       cells[alias] = () => evaluateExpr({ node: expr, row: firstRow, context })
     }
   }
   /** @type {AsyncRow} */
   const outputRow = { columns, cells }
+  return { outputRow, values }
+}
 
-  // Row visible to HAVING and grouped ORDER BY: the group's columns plus the
-  // select output aliases, mirroring the buffered aggregate context row.
-  /** @type {AsyncRow} */
-  const contextRow = {
-    columns: [...firstRow.columns, ...columns],
-    cells: { ...firstRow.cells, ...cells },
+/**
+ * Builds the row visible to HAVING and grouped ORDER BY: the group's
+ * representative columns plus the select output aliases, mirroring the
+ * buffered aggregate context row.
+ *
+ * @param {StreamingGroup} group
+ * @param {AsyncRow} outputRow
+ * @returns {AsyncRow}
+ */
+function groupContextRow(group, outputRow) {
+  const firstRow = group.firstRow ?? { columns: [], cells: {} }
+  return {
+    columns: [...firstRow.columns, ...outputRow.columns],
+    cells: { ...firstRow.cells, ...outputRow.cells },
   }
-  return { contextRow, outputRow, values }
 }
 
 /**
@@ -417,32 +526,39 @@ function finalizeGroup({ selectColumns, specs, group, context }) {
  *
  * @param {object} options
  * @param {HashAggregateNode} options.plan
- * @param {StreamingAggSpec[]} options.specs
+ * @param {StreamingAggPlan} options.streaming
  * @param {QueryResults} options.child
  * @param {ExecuteContext} options.context
  * @returns {() => AsyncGenerator<AsyncRow>}
  */
-export function streamingHashAggregateRows({ plan, specs, child, context }) {
+export function streamingHashAggregateRows({ plan, streaming, child, context }) {
+  const { specs, keyRefs, needsRow } = streaming
   return async function* () {
-    const groups = await accumulateGroups({ child, groupBy: plan.groupBy, specs, context })
-    const { orderBy } = plan
+    const groups = await accumulateGroups({ child, groupBy: plan.groupBy, specs, needsRow, context })
+    const { orderBy, having } = plan
 
-    /** @type {{ outputRow: AsyncRow, contextRow: AsyncRow, values: Map<FunctionNode, SqlPrimitive>, orderValues: SqlPrimitive[] }[]} */
-    const outputRows = []
+    // Without ORDER BY, groups finalize and yield one at a time so output
+    // rows are never all held at once; sorting needs the full set below.
+    /** @type {{ outputRow: AsyncRow, contextRow: AsyncRow, values: Map<ExprNode, SqlPrimitive>, orderValues: SqlPrimitive[] }[] | undefined} */
+    const outputRows = orderBy?.length ? [] : undefined
     for (const group of groups.values()) {
-      const { contextRow, outputRow, values } = finalizeGroup({ selectColumns: plan.columns, specs, group, context })
-      if (plan.having) {
+      const { outputRow, values } = finalizeGroup({ selectColumns: plan.columns, specs, keyRefs, group, context })
+      if (having) {
         const passes = await evaluateExpr({
-          node: substituteAggregates(plan.having, values),
-          row: contextRow,
+          node: substituteValues(having, values),
+          row: groupContextRow(group, outputRow),
           context,
         })
         if (!passes) continue
       }
-      outputRows.push({ outputRow, contextRow, values, orderValues: [] })
+      if (outputRows) {
+        outputRows.push({ outputRow, contextRow: groupContextRow(group, outputRow), values, orderValues: [] })
+      } else {
+        yield outputRow
+      }
     }
 
-    if (orderBy?.length) {
+    if (outputRows && orderBy) {
       // Evaluate each sort key across all groups in concurrent chunks so
       // async cells and UDFs overlap
       for (let t = 0; t < orderBy.length; t++) {
@@ -454,7 +570,7 @@ export function streamingHashAggregateRows({ plan, specs, child, context }) {
           }
           const chunk = outputRows.slice(start, start + CHUNK_SIZE)
           const termValues = await Promise.all(chunk.map(entry => evaluateExpr({
-            node: substituteAggregates(term.expr, entry.values),
+            node: substituteValues(term.expr, entry.values),
             row: entry.contextRow,
             context,
           })))
@@ -470,10 +586,9 @@ export function streamingHashAggregateRows({ plan, specs, child, context }) {
         }
         return 0
       })
-    }
-
-    for (const { outputRow } of outputRows) {
-      yield outputRow
+      for (const { outputRow } of outputRows) {
+        yield outputRow
+      }
     }
   }
 }
@@ -484,22 +599,23 @@ export function streamingHashAggregateRows({ plan, specs, child, context }) {
  *
  * @param {object} options
  * @param {ScalarAggregateNode} options.plan
- * @param {StreamingAggSpec[]} options.specs
+ * @param {StreamingAggPlan} options.streaming
  * @param {QueryResults} options.child
  * @param {ExecuteContext} options.context
  * @returns {() => AsyncGenerator<AsyncRow>}
  */
-export function streamingScalarAggregateRows({ plan, specs, child, context }) {
+export function streamingScalarAggregateRows({ plan, streaming, child, context }) {
+  const { specs, keyRefs, needsRow } = streaming
   return async function* () {
-    const groups = await accumulateGroups({ child, groupBy: [], specs, context })
+    const groups = await accumulateGroups({ child, groupBy: [], specs, needsRow, context })
     /** @type {StreamingGroup} */
-    const group = groups.get(true) ?? { firstRow: undefined, accumulators: specs.map(spec => newAccumulator(spec)) }
+    const group = groups.get(true) ?? { firstRow: undefined, keyValues: [], accumulators: specs.map(spec => newAccumulator(spec)) }
 
-    const { contextRow, outputRow, values } = finalizeGroup({ selectColumns: plan.columns, specs, group, context })
+    const { outputRow, values } = finalizeGroup({ selectColumns: plan.columns, specs, keyRefs, group, context })
     if (plan.having) {
       const passes = await evaluateExpr({
-        node: substituteAggregates(plan.having, values),
-        row: contextRow,
+        node: substituteValues(plan.having, values),
+        row: groupContextRow(group, outputRow),
         context,
       })
       if (!passes) return

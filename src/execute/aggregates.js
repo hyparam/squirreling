@@ -81,12 +81,12 @@ function aggregateContextRow(group, aggregateRow) {
  */
 export function executeHashAggregate(plan, context) {
   const child = executePlan({ plan: plan.child, context })
-  const specs = planStreamingAggregates(plan)
-  if (specs) {
+  const streaming = planStreamingAggregates(plan)
+  if (streaming) {
     return {
       columns: selectColumnNames(plan.columns, child.columns),
       maxRows: child.maxRows,
-      rows: streamingHashAggregateRows({ plan, specs, child, context }),
+      rows: streamingHashAggregateRows({ plan, streaming, child, context }),
     }
   }
   return {
@@ -205,13 +205,13 @@ export function executeScalarAggregate(plan, context) {
   }
 
   const child = executePlan({ plan: plan.child, context })
-  const specs = planStreamingAggregates(plan)
-  if (specs) {
+  const streaming = planStreamingAggregates(plan)
+  if (streaming) {
     return {
       columns: selectColumnNames(plan.columns, child.columns),
       numRows: plan.having ? undefined : 1,
       maxRows: 1,
-      rows: streamingScalarAggregateRows({ plan, specs, child, context }),
+      rows: streamingScalarAggregateRows({ plan, streaming, child, context }),
     }
   }
   return {
