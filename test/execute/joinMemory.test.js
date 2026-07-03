@@ -113,6 +113,52 @@ describe('hash join build-side swap', () => {
   })
 })
 
+describe('nested loop join buffer-side swap', () => {
+  it('non-equi inner join with smaller left side', async () => {
+    const result = await collect(executeSql({
+      tables: { small, large },
+      query: 'SELECT s.name, l.v FROM small s JOIN large l ON s.id > l.ref AND l.v < 40',
+    }))
+    expect(sorted(result)).toEqual(sorted([
+      { name: 'b', v: 10 },
+      { name: 'b', v: 11 },
+      { name: 'c', v: 10 },
+      { name: 'c', v: 11 },
+    ]))
+  })
+
+  it('non-equi left join keeps unmatched rows from the smaller left side', async () => {
+    const result = await collect(executeSql({
+      tables: { small, large },
+      query: 'SELECT s.name, l.v FROM small s LEFT JOIN large l ON s.id > l.ref AND l.v < 40',
+    }))
+    expect(sorted(result)).toEqual(sorted([
+      { name: 'a', v: null },
+      { name: 'b', v: 10 },
+      { name: 'b', v: 11 },
+      { name: 'c', v: 10 },
+      { name: 'c', v: 11 },
+    ]))
+  })
+
+  it('non-equi full join keeps unmatched rows from both sides', async () => {
+    const result = await collect(executeSql({
+      tables: { small, large },
+      query: 'SELECT s.name, l.v FROM small s FULL JOIN large l ON s.id > l.ref AND l.v < 40',
+    }))
+    expect(sorted(result)).toEqual(sorted([
+      { name: 'a', v: null },
+      { name: 'b', v: 10 },
+      { name: 'b', v: 11 },
+      { name: 'c', v: 10 },
+      { name: 'c', v: 11 },
+      { name: null, v: 30 },
+      { name: null, v: 90 },
+      { name: null, v: 80 },
+    ]))
+  })
+})
+
 describe('positional join streaming', () => {
   it('zips uneven sides with NULL padding', async () => {
     const a = memorySource({ data: [{ x: 1 }, { x: 2 }, { x: 3 }, { x: 4 }] })
