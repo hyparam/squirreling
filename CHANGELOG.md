@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.12.27]
+ - Stream aggregates with bounded memory instead of buffering all rows
+
 ## [0.12.26]
  - Bound `ORDER BY` memory with top-k sort when `LIMIT` is present
  - Reduce join memory usage
