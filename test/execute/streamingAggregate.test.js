@@ -151,6 +151,33 @@ describe('streaming aggregates', () => {
     expect(result).toEqual([{ g2: 'a' }])
   })
 
+  it('does not evaluate SELECT aggregate arguments for groups HAVING rejects', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 'a', v: 1 }] },
+      functions: boomFunctions,
+      query: 'SELECT g, count(BOOM(v)) AS c FROM t GROUP BY g HAVING count(*) > 1',
+    }))
+    expect(result).toEqual([])
+  })
+
+  it('does not evaluate scalar SELECT aggregate arguments when HAVING rejects the row', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ v: 1 }] },
+      functions: boomFunctions,
+      query: 'SELECT count(BOOM(v)) AS c FROM t HAVING FALSE',
+    }))
+    expect(result).toEqual([])
+  })
+
+  it('does not evaluate ORDER BY aggregate arguments for groups HAVING rejects', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 'a', v: 1 }] },
+      functions: boomFunctions,
+      query: 'SELECT g FROM t GROUP BY g HAVING count(*) > 1 ORDER BY min(BOOM(v))',
+    }))
+    expect(result).toEqual([])
+  })
+
   it('ends the stream silently when aborted during accumulation', async () => {
     const controller = new AbortController()
     /** @type {Record<string, UserDefinedFunction>} */
@@ -217,9 +244,26 @@ describe('streaming aggregate row retention', () => {
   }
 
   it('retains no rows when expressions only use group keys and aggregates', () => {
-    const streaming = streamingPlan('SELECT region, count(*) FROM sales GROUP BY region HAVING count(*) > 1 ORDER BY sum(amount)')
+    const streaming = streamingPlan('SELECT region, count(*) FROM sales GROUP BY region HAVING count(*) > 1 ORDER BY count(*) DESC')
     expect(streaming?.needsRow).toBe(false)
     expect(streaming?.keyRefs.size).toBe(1)
+  })
+
+  it('does not stream non-star SELECT aggregates when HAVING can reject the group', () => {
+    // HAVING can reject a group before its output cells are read, so the
+    // buffered path may never evaluate sum(amount); star aggregates like the
+    // count(*) in HAVING stay streamable since accumulating them evaluates nothing
+    expect(streamingPlan('SELECT region, sum(amount) AS s FROM sales GROUP BY region HAVING count(*) > 1')).toBeUndefined()
+  })
+
+  it('does not stream non-star ORDER BY aggregates when HAVING can reject the group', () => {
+    expect(streamingPlan('SELECT region, count(*) AS c FROM sales GROUP BY region HAVING count(*) > 1 ORDER BY sum(amount)')).toBeUndefined()
+  })
+
+  it('does not stream star aggregates with FILTER when HAVING can reject the group', () => {
+    // the FILTER condition is evaluated per input row, which the buffered
+    // path skips entirely for groups HAVING rejects
+    expect(streamingPlan('SELECT region, count(*) FILTER (WHERE amount > 100) AS c FROM sales GROUP BY region HAVING count(*) > 1')).toBeUndefined()
   })
 
   it('retains no rows for function group keys', () => {

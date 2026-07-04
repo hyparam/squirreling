@@ -115,10 +115,13 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }, c
    * Walks an expression collecting streamable aggregate calls and group key
    * references. Returns false if the expression cannot be evaluated from
    * precomputed values plus a representative row. `lazy` marks positions the
-   * evaluator can skip (short-circuited AND/OR right sides and CASE
-   * branches): an aggregate there may never be evaluated by the buffered
-   * path, so accumulating it eagerly could evaluate expressions the query
-   * never asks for, and the query falls back to buffered aggregation.
+   * evaluator can skip (short-circuited AND/OR right sides, CASE branches,
+   * and select or sort expressions of a group HAVING may reject): an
+   * aggregate there may never be evaluated by the buffered path, so
+   * accumulating it eagerly could evaluate expressions the query never asks
+   * for, and the query falls back to buffered aggregation. A FILTER-less
+   * star aggregate is exempt: accumulating it evaluates nothing against
+   * input rows, so eager accumulation is unobservable.
    *
    * @param {ExprNode} node
    * @param {boolean} lazy
@@ -163,9 +166,9 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }, c
       if (!isAggregateFunc(funcName)) {
         return node.args.every(arg => walk(arg, lazy))
       }
-      if (lazy) return false
       if (!STREAMABLE_FUNCS.has(funcName)) return false
       const star = node.args[0]?.type === 'star'
+      if (lazy && !(star && !node.filter)) return false
       if (!star && !node.args.every(arg => isScalarExpr(arg))) return false
       if (node.filter && !isScalarExpr(node.filter)) return false
       if (!specs.some(spec => spec.node === node)) {
@@ -179,18 +182,22 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }, c
     }
   }
 
+  // HAVING can reject a group before its output cells are ever read, so
+  // with HAVING present the buffered path may never evaluate SELECT or
+  // ORDER BY aggregates; treat those positions as lazy
+  const rejectable = Boolean(having)
   for (const col of columns) {
     if (col.type === 'star') {
       needsRow = true
       continue
     }
-    if (!walk(col.expr, false)) return
+    if (!walk(col.expr, rejectable)) return
   }
   if (having && !walk(having, false)) return
   const orderTerms = orderBy ?? []
   for (let i = 0; i < orderTerms.length; i++) {
     // the sorter evaluates later terms only to break ties on earlier terms
-    if (!walk(orderTerms[i].expr, i > 0)) return
+    if (!walk(orderTerms[i].expr, rejectable || i > 0)) return
   }
   if (childColumns && !specsResolvable(specs, childColumns)) return
   return { specs, keyRefs, needsRow }
