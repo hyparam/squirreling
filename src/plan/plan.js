@@ -4,7 +4,7 @@ import { findAggregate } from '../validation/aggregates.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
-import { collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
+import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
@@ -208,6 +208,10 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const hints = {}
   const perTableColumns = extractColumns({ select: originalSelect, parentColumns })
   if (sourceAlias !== undefined) hints.columns = perTableColumns.get(sourceAlias)
+  // Capture what the parent reads from a FROM subquery before the reset
+  // below, so aggregate outputs it never reads can still be pruned when the
+  // parent reads nothing at all (an empty array here means exactly that).
+  const subqueryNeeds = select.from?.type === 'subquery' ? hints.columns : undefined
   // Empty columns array means no columns were referenced, but a FROM subquery
   // still needs its own columns (e.g. for DISTINCT). Treat empty as unrestricted.
   if (hints.columns?.length === 0 && select.from?.type === 'subquery') {
@@ -224,6 +228,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
   let plan = planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope })
+  pruneAggregateColumns(plan, subqueryNeeds)
 
   // Add JOINs
   if (select.joins.length) {
@@ -347,6 +352,38 @@ function pushLimitIntoSort(plan, limit, offset) {
   if (node.type === 'Sort') {
     node.topK = limit + (offset ?? 0)
   }
+}
+
+/**
+ * Drops derived columns from a subquery's aggregate node when the parent
+ * query never reads them. The buffered path defers aggregate cells so unread
+ * outputs are never evaluated, but the streaming path accumulates every
+ * planned aggregate eagerly, so unread aggregates must be removed at plan
+ * time to preserve that lazy behavior. Columns referenced by HAVING or the
+ * aggregate's ORDER BY are kept: both evaluate against the group context
+ * row, which exposes output aliases. Descends only through Subquery and
+ * Limit wrappers; Sort and Distinct depend on the full column set, so
+ * anything below them is left untouched.
+ *
+ * @param {QueryPlan} plan
+ * @param {string[] | undefined} needed - output column names the parent reads
+ */
+function pruneAggregateColumns(plan, needed) {
+  if (!needed) return
+  let node = plan
+  while (node.type === 'Subquery' || node.type === 'Limit') node = node.child
+  if (node.type !== 'HashAggregate' && node.type !== 'ScalarAggregate') return
+  /** @type {IdentifierNode[]} */
+  const identifiers = []
+  collectColumnsFromExpr(node.having, identifiers)
+  if (node.type === 'HashAggregate' && node.orderBy) {
+    for (const term of node.orderBy) collectColumnsFromExpr(term.expr, identifiers)
+  }
+  const keep = new Set(needed)
+  for (const { name } of identifiers) keep.add(name)
+  node.columns = node.columns.filter(col =>
+    col.type === 'star' || keep.has(col.alias ?? derivedAlias(col.expr))
+  )
 }
 
 /**
@@ -487,6 +524,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
         outerScope,
         parentColumns: subColumns?.map(name => ({ type: 'identifier', name, positionStart: 0, positionEnd: 0 })),
       })
+      pruneAggregateColumns(subPlan, perTableColumns.get(rightTable))
       const availableColumns = inferStatementColumns({ stmt: join.subquery.query, cteColumns, tables })
       if (subColumns && availableColumns.length) {
         const missingColumn = subColumns.find(col => !availableColumns.includes(col))

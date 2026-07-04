@@ -4,16 +4,21 @@ import { executePlan } from './execute.js'
 import { compareForTerm } from './utils.js'
 
 /**
- * @import { AsyncRow, ExecuteContext, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
+ * @import { AsyncRow, ExecuteContext, ExprNode, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  * @import { SortNode } from '../plan/types.js'
  */
 
 const MAX_CHUNK = 256
 
 /**
+ * When exprs is set, exprs[i] is evaluated for ORDER BY term i instead of the
+ * term's own expression, so callers can pre-substitute per-entry values (for
+ * example, finalized aggregates) while keeping tie-aware term evaluation.
+ *
  * @typedef {{
  *   row: AsyncRow,
  *   rows?: AsyncRow[],
+ *   exprs?: ExprNode[],
  * }} SortEntry
  */
 
@@ -63,7 +68,7 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
         const chunk = missing.slice(start, start + chunkSize)
         const values = await Promise.all(chunk.map(idx =>
           evaluateExpr({
-            node: term.expr,
+            node: entries[idx].exprs?.[orderByIdx] ?? term.expr,
             row: entries[idx].row,
             rows: entries[idx].rows,
             context,

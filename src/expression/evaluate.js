@@ -29,7 +29,7 @@ const YIELD_INTERVAL = 4000
  * @param {ExecuteContext} context
  * @returns {Promise<SqlPrimitive[]>}
  */
-async function evaluateAll(node, rows, context) {
+export async function evaluateAll(node, rows, context) {
   /** @type {SqlPrimitive[]} */
   const results = new Array(rows.length)
   /** @type {Promise<SqlPrimitive>[]} */
