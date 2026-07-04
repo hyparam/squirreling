@@ -105,14 +105,50 @@ describe('streaming aggregates', () => {
     expect(result).toEqual([{ mx: 7, n: 10000 }])
   })
 
-  it('falls back to buffered aggregation when pushdown prunes an aggregate argument', async () => {
-    // The outer query never reads s, so projection pushdown prunes v from the
-    // scan; only the buffered path defers sum(v) to the never-read output cell
+  it('prunes aggregate outputs the parent query never reads', async () => {
+    // The outer query never reads s, so the planner drops it from the
+    // aggregate node and sum(v) is never accumulated
     const result = await collect(executeSql({
       tables: { t: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }] },
       query: 'SELECT g2 FROM (SELECT g AS g2, sum(v) AS s FROM t GROUP BY g) q ORDER BY g2',
     }))
     expect(result).toEqual([{ g2: 'a' }, { g2: 'b' }])
+  })
+
+  it('does not evaluate unread scalar aggregate arguments in a subquery', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ v: 1 }, { v: 2 }] },
+      functions: boomFunctions,
+      query: 'SELECT 1 AS one FROM (SELECT COUNT(BOOM(v)) AS c FROM t) q',
+    }))
+    expect(result).toEqual([{ one: 1 }])
+  })
+
+  it('does not evaluate unread grouped aggregate arguments in a subquery', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }] },
+      functions: boomFunctions,
+      query: 'SELECT g2 FROM (SELECT g AS g2, COUNT(BOOM(v)) AS c FROM t GROUP BY g) q ORDER BY g2',
+    }))
+    expect(result).toEqual([{ g2: 'a' }, { g2: 'b' }])
+  })
+
+  it('does not evaluate unread aggregate arguments in a joined subquery', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ id: 1 }], u: [{ id: 1, v: 5 }] },
+      functions: boomFunctions,
+      query: 'SELECT t.id FROM t JOIN (SELECT id, COUNT(BOOM(v)) AS c FROM u GROUP BY id) q ON t.id = q.id',
+    }))
+    expect(result).toEqual([{ id: 1 }])
+  })
+
+  it('applies HAVING while pruning unread aggregate outputs', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 'a', v: 1 }, { g: 'a', v: 2 }, { g: 'b', v: 3 }] },
+      functions: boomFunctions,
+      query: 'SELECT g2 FROM (SELECT g AS g2, COUNT(BOOM(v)) AS c FROM t GROUP BY g HAVING COUNT(*) > 1) q',
+    }))
+    expect(result).toEqual([{ g2: 'a' }])
   })
 
   it('ends the stream silently when aborted during accumulation', async () => {
@@ -131,6 +167,27 @@ describe('streaming aggregates', () => {
       tables: { big },
       functions,
       query: 'SELECT g, count(ABORT_NOW(v)) AS c FROM big GROUP BY g',
+      signal: controller.signal,
+    }))
+    expect(result).toEqual([])
+  })
+
+  it('ends the stream silently when aborted during the final partial chunk', async () => {
+    const controller = new AbortController()
+    /** @type {Record<string, UserDefinedFunction>} */
+    const functions = {
+      ABORT_NOW: {
+        apply(v) {
+          controller.abort()
+          return v
+        },
+        arguments: { min: 1, max: 1 },
+      },
+    }
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }] },
+      functions,
+      query: 'SELECT g, count(ABORT_NOW(v)) AS c FROM t GROUP BY g',
       signal: controller.signal,
     }))
     expect(result).toEqual([])

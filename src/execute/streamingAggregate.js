@@ -429,6 +429,9 @@ async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   }
   if (chunk.length) {
     await accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context })
+    // An abort during the final partial chunk ends the stream silently,
+    // consistent with the full-chunk check above
+    if (context.signal?.aborted) return
   }
   context.signal?.throwIfAborted()
   return groups
