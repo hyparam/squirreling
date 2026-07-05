@@ -56,7 +56,7 @@ export function executeNestedLoopJoin(plan, context) {
       /** @type {AsyncRow[]} */
       const innerRows = []
       for await (const row of inner.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
         innerRows.push(row)
       }
 
@@ -69,7 +69,7 @@ export function executeNestedLoopJoin(plan, context) {
 
       let innerCount = 0
       for await (const outerRow of outer.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
 
         if (!outerCols) {
           outerCols = outerRow.columns
@@ -80,7 +80,7 @@ export function executeNestedLoopJoin(plan, context) {
         for (const innerRow of innerRows) {
           if (++innerCount % YIELD_INTERVAL === 0) {
             await yieldToEventLoop()
-            if (context.signal?.aborted) return
+            context.signal?.throwIfAborted()
           }
           const tempMerged = merge(outerRow, innerRow)
           const matches = await evaluateExpr({
@@ -101,7 +101,7 @@ export function executeNestedLoopJoin(plan, context) {
         }
       }
 
-      if (context.signal?.aborted) return
+      context.signal?.throwIfAborted()
 
       // Unmatched inner rows for outer joins on the buffered side
       if (matchedInnerRows) {
@@ -134,7 +134,7 @@ function executeLateralJoin(plan, context) {
       const rightTable = plan.rightAlias
 
       for await (const leftRow of left.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
 
         // When nested inside a correlated subquery, preserve the enclosing
         // outer row so UNNEST args can reference its columns (e.g. o.arr).
@@ -146,7 +146,7 @@ function executeLateralJoin(plan, context) {
 
         let hasMatch = false
         for await (const rightRow of right.rows()) {
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
           const merged = mergeRows(leftRow, rightRow, leftTable, rightTable)
           const matches = plan.condition === undefined
             ? true
@@ -199,10 +199,10 @@ export function executePositionalJoin(plan, context) {
       while (true) {
         const [leftResult, rightResult] = await Promise.all([leftRows.next(), rightRows.next()])
         if (leftResult.done && rightResult.done) return
-        if (signal?.aborted) return
+        signal?.throwIfAborted()
         if (++tick % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (signal?.aborted) return
+          signal?.throwIfAborted()
         }
         if (!leftResult.done && !leftCols.length) leftCols = leftResult.value.columns
         if (!rightResult.done && !rightCols.length) rightCols = rightResult.value.columns
@@ -266,10 +266,10 @@ export function executeHashJoin(plan, context) {
       let buildCols = []
       let innerCount = 0
       for await (const buildRow of build.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
         if (++innerCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         if (!buildCols.length) {
           buildCols = buildRow.columns
@@ -297,7 +297,7 @@ export function executeHashJoin(plan, context) {
 
       // Probe phase: stream the other side
       for await (const probeRow of probe.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
 
         if (!probeCols) {
           probeCols = probeRow.columns
@@ -314,7 +314,7 @@ export function executeHashJoin(plan, context) {
             for (const buildRow of candidates) {
               if (++innerCount % YIELD_INTERVAL === 0) {
                 await yieldToEventLoop()
-                if (context.signal?.aborted) return
+                context.signal?.throwIfAborted()
               }
               const merged = merge(probeRow, buildRow)
               if (residual) {
@@ -333,7 +333,7 @@ export function executeHashJoin(plan, context) {
         }
       }
 
-      if (context.signal?.aborted) return
+      context.signal?.throwIfAborted()
 
       // Unmatched build rows for outer joins on the build side
       if (buildRows && matchedBuildRows) {

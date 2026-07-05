@@ -28,7 +28,7 @@ export type {
  * @param options.tables - source data as a list of objects or an AsyncDataSource
  * @param options.query - SQL query string
  * @param options.functions - user-defined functions available in the SQL context
- * @param options.signal - AbortSignal to cancel the query
+ * @param options.signal - AbortSignal to cancel the query; an aborted query rejects with the signal's reason
  * @returns async generator yielding rows matching the query
  */
 export function executeSql(options: ExecuteSqlOptions): QueryResults

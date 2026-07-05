@@ -409,8 +409,8 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
 
 /**
  * Consumes the child rows into per-group accumulators, holding at most one
- * chunk of rows at a time. Returns undefined when aborted mid-collection so
- * callers end the row stream silently, matching the buffered path.
+ * chunk of rows at a time. Throws when aborted so partial accumulators are
+ * never finalized into results.
  *
  * @param {object} options
  * @param {QueryResults} options.child
@@ -418,7 +418,7 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
  * @param {StreamingAggSpec[]} options.specs
  * @param {boolean} options.needsRow
  * @param {ExecuteContext} options.context
- * @returns {Promise<Map<unknown, StreamingGroup> | undefined>}
+ * @returns {Promise<Map<unknown, StreamingGroup>>}
  */
 async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   /** @type {Map<unknown, StreamingGroup>} */
@@ -431,14 +431,11 @@ async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
       await accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context })
       chunk = []
       await yieldToEventLoop()
-      if (context.signal?.aborted) return
+      context.signal?.throwIfAborted()
     }
   }
   if (chunk.length) {
     await accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context })
-    // An abort during the final partial chunk ends the stream silently,
-    // consistent with the full-chunk check above
-    if (context.signal?.aborted) return
   }
   context.signal?.throwIfAborted()
   return groups
@@ -531,7 +528,6 @@ export function streamingHashAggregateRows({ plan, streaming, child, context }) 
   const { specs, keyRefs, needsRow } = streaming
   return async function* () {
     const groups = await accumulateGroups({ child, groupBy: plan.groupBy, specs, needsRow, context })
-    if (!groups) return
     const { orderBy, having } = plan
 
     // Without ORDER BY, groups finalize and yield one at a time so output
@@ -585,7 +581,6 @@ export function streamingScalarAggregateRows({ plan, streaming, child, context }
   const { specs, keyRefs, needsRow } = streaming
   return async function* () {
     const groups = await accumulateGroups({ child, groupBy: [], specs, needsRow, context })
-    if (!groups) return
     /** @type {StreamingGroup} */
     const group = groups.get(true) ?? { firstRow: undefined, keyValues: [], accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)) }
 

@@ -178,7 +178,7 @@ describe('streaming aggregates', () => {
     expect(result).toEqual([])
   })
 
-  it('ends the stream silently when aborted during accumulation', async () => {
+  it('rejects when aborted during accumulation', async () => {
     const controller = new AbortController()
     /** @type {Record<string, UserDefinedFunction>} */
     const functions = {
@@ -190,16 +190,15 @@ describe('streaming aggregates', () => {
         arguments: { min: 1, max: 1 },
       },
     }
-    const result = await collect(executeSql({
+    await expect(collect(executeSql({
       tables: { big },
       functions,
       query: 'SELECT g, count(ABORT_NOW(v)) AS c FROM big GROUP BY g',
       signal: controller.signal,
-    }))
-    expect(result).toEqual([])
+    }))).rejects.toThrow('This operation was aborted')
   })
 
-  it('ends the stream silently when aborted during the final partial chunk', async () => {
+  it('rejects when aborted during the final partial chunk', async () => {
     const controller = new AbortController()
     /** @type {Record<string, UserDefinedFunction>} */
     const functions = {
@@ -211,13 +210,12 @@ describe('streaming aggregates', () => {
         arguments: { min: 1, max: 1 },
       },
     }
-    const result = await collect(executeSql({
+    await expect(collect(executeSql({
       tables: { t: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }] },
       functions,
       query: 'SELECT g, count(ABORT_NOW(v)) AS c FROM t GROUP BY g',
       signal: controller.signal,
-    }))
-    expect(result).toEqual([])
+    }))).rejects.toThrow('This operation was aborted')
   })
 })
 

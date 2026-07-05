@@ -146,7 +146,7 @@ export function executeSort(plan, context) {
       /** @type {SortEntry[]} */
       let entries = []
       for await (const row of child.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
         entries.push({ row })
         if (entries.length >= bufferLimit) {
           // Sort keys are cached on the rows, so survivors of one truncation

@@ -42,7 +42,7 @@ export function executeWindow(plan, context) {
         for await (const row of child.rows()) {
           if (++i % YIELD_INTERVAL === 0) {
             await yieldToEventLoop()
-            if (context.signal?.aborted) return
+            context.signal?.throwIfAborted()
           }
           const cells = { ...row.cells }
           for (const w of plan.windows) {
@@ -69,7 +69,7 @@ export function executeWindow(plan, context) {
       for await (const row of child.rows()) {
         if (++collectCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         rows.push(row)
       }
@@ -81,14 +81,14 @@ export function executeWindow(plan, context) {
 
       for (let w = 0; w < plan.windows.length; w++) {
         await computeWindow(plan.windows[w], rows, windowValues[w], context)
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
       }
 
       let emitCount = 0
       for (let i = 0; i < rows.length; i++) {
         if (++emitCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         const row = rows[i]
         const cells = { ...row.cells }
@@ -122,7 +122,7 @@ async function computeWindow(spec, rows, output, context) {
   for (let chunkStart = 0; chunkStart < rows.length; chunkStart += YIELD_INTERVAL) {
     if (chunkStart > 0) {
       await yieldToEventLoop()
-      if (context.signal?.aborted) return
+      context.signal?.throwIfAborted()
     }
     const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, rows.length)
     const chunkKeys = await Promise.all(
@@ -142,7 +142,7 @@ async function computeWindow(spec, rows, output, context) {
   }
 
   for (const bucket of partitions.values()) {
-    if (context.signal?.aborted) return
+    context.signal?.throwIfAborted()
 
     // Order within the partition. Empty ORDER BY → input order.
     /** @type {number[]} */
@@ -153,7 +153,7 @@ async function computeWindow(spec, rows, output, context) {
       for (let chunkStart = 0; chunkStart < bucket.length; chunkStart += YIELD_INTERVAL) {
         if (chunkStart > 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, bucket.length)
         const chunkValues = await Promise.all(
@@ -205,7 +205,7 @@ async function applyWindowFunction(spec, ordered, rows, output, context) {
     for (let k = 0; k < ordered.length; k++) {
       if (++tick % YIELD_INTERVAL === 0) {
         await yieldToEventLoop()
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
       }
       const idx = ordered[k]
       const row = rows[idx]

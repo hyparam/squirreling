@@ -129,7 +129,7 @@ describe('UNNEST', () => {
     })).toThrow('UNNEST produces a single column; only one column alias is allowed')
   })
 
-  it('should stop yielding when the signal aborts', async () => {
+  it('should reject when the signal aborts', async () => {
     const controller = new AbortController()
     const iter = executeSql({
       tables: {},
@@ -139,8 +139,7 @@ describe('UNNEST', () => {
     const first = await iter.next()
     expect(await first.value?.cells.x()).toBe(1)
     controller.abort()
-    const second = await iter.next()
-    expect(second.done).toBe(true)
+    await expect(iter.next()).rejects.toThrow('This operation was aborted')
   })
 
   it('should join UNNEST on the left side with a regular table', async () => {
@@ -411,7 +410,7 @@ describe('LATERAL UNNEST', () => {
     }))).rejects.toThrow('Column "tc_item" not found. Available columns: t.id, t.arr, tc_item.unnest (row 1)')
   })
 
-  it('should stop yielding when the signal aborts mid-stream', async () => {
+  it('should reject when the signal aborts mid-stream', async () => {
     const t = [
       { id: 1, arr: [1, 2, 3] },
       { id: 2, arr: [4, 5, 6] },
@@ -425,8 +424,7 @@ describe('LATERAL UNNEST', () => {
     const first = await iter.next()
     expect(await first.value?.cells.x()).toBe(1)
     controller.abort()
-    const second = await iter.next()
-    expect(second.done).toBe(true)
+    await expect(iter.next()).rejects.toThrow('This operation was aborted')
   })
 })
 

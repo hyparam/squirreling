@@ -174,7 +174,7 @@ function executeUnnest(plan, context) {
       const value = await evaluateExpr({ node: plan.args[0], row, rowIndex: 1, context })
       if (!Array.isArray(value)) return
       for (const element of value) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
         yield {
           columns,
           cells: { [columnName]: () => Promise.resolve(element) },
@@ -209,7 +209,7 @@ function executeJsonEach(plan, context) {
       }
       if (Array.isArray(parsed)) {
         for (let i = 0; i < parsed.length; i++) {
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
           const k = i
           const v = parsed[i]
           yield {
@@ -224,7 +224,7 @@ function executeJsonEach(plan, context) {
       }
       if (typeof parsed === 'object' && parsed !== null) {
         for (const [k, v] of Object.entries(parsed)) {
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
           yield {
             columns,
             cells: {
@@ -294,7 +294,7 @@ function executeScan(plan, context) {
       async *rows() {
         const columns = [column]
         for await (const chunk of chunks) {
-          if (signal?.aborted) return
+          signal?.throwIfAborted()
           for (let i = 0; i < chunk.length; i++) {
             const value = chunk[i]
             yield {
@@ -303,6 +303,9 @@ function executeScan(plan, context) {
             }
           }
         }
+        // A data source may end its stream cooperatively on abort; surface
+        // the abort so a truncated scan is not mistaken for a complete one
+        signal?.throwIfAborted()
       },
     }
   }
@@ -335,6 +338,10 @@ function executeScan(plan, context) {
       }
 
       yield* result
+
+      // A data source may end its stream cooperatively on abort; surface
+      // the abort so a truncated scan is not mistaken for a complete one
+      signal?.throwIfAborted()
     },
   }
 }
@@ -420,10 +427,10 @@ async function* filterRows(rows, condition, context, limit) {
   let buffer = []
 
   for await (const row of rows) {
-    if (context.signal?.aborted) return
+    context.signal?.throwIfAborted()
     if (++innerCount % YIELD_INTERVAL === 0) {
       await yieldToEventLoop()
-      if (context.signal?.aborted) return
+      context.signal?.throwIfAborted()
     }
     rowIndex++
     buffer.push({ row, rowIndex })
@@ -466,10 +473,10 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
   let yielded = 0
   let innerCount = 0
   for await (const row of rows) {
-    if (signal?.aborted) return
+    signal?.throwIfAborted()
     if (++innerCount % YIELD_INTERVAL === 0) {
       await yieldToEventLoop()
-      if (signal?.aborted) return
+      signal?.throwIfAborted()
     }
     if (skipped < offset) {
       skipped++
@@ -521,10 +528,10 @@ function executeProject(plan, context) {
       let innerCount = 0
 
       for await (const row of child.rows()) {
-        if (context.signal?.aborted) return
+        context.signal?.throwIfAborted()
         if (++innerCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         rowIndex++
         const currentRowIndex = rowIndex
@@ -614,10 +621,10 @@ function executeDistinct(plan, context) {
       let innerCount = 0
 
       for await (const row of child.rows()) {
-        if (signal?.aborted) return
+        signal?.throwIfAborted()
         if (++innerCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (signal?.aborted) return
+          signal?.throwIfAborted()
         }
         buffer.push(row)
 
@@ -701,10 +708,10 @@ function executeSetOperation(plan, context) {
           const seen = new Set()
           let count = 0
           for await (const row of left.rows()) {
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
             if (++count % YIELD_INTERVAL === 0) {
               await yieldToEventLoop()
-              if (signal?.aborted) return
+              signal?.throwIfAborted()
             }
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
@@ -713,10 +720,10 @@ function executeSetOperation(plan, context) {
             }
           }
           for await (const row of right.rows()) {
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
             if (++count % YIELD_INTERVAL === 0) {
               await yieldToEventLoop()
-              if (signal?.aborted) return
+              signal?.throwIfAborted()
             }
             const key = await stableRowKey(row)
             if (!seen.has(key)) {
@@ -739,10 +746,10 @@ function executeSetOperation(plan, context) {
         const rightKeys = new Map()
         let tick = 0
         for await (const row of right.rows()) {
-          if (signal?.aborted) return
+          signal?.throwIfAborted()
           if (++tick % YIELD_INTERVAL === 0) {
             await yieldToEventLoop()
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
           }
           const key = await stableRowKey(row)
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
@@ -751,10 +758,10 @@ function executeSetOperation(plan, context) {
         if (plan.all) {
           // INTERSECT ALL: yield each left row that matches, consuming right counts
           for await (const row of left.rows()) {
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
             if (++tick % YIELD_INTERVAL === 0) {
               await yieldToEventLoop()
-              if (signal?.aborted) return
+              signal?.throwIfAborted()
             }
             const key = await stableRowKey(row)
             const count = rightKeys.get(key)
@@ -767,10 +774,10 @@ function executeSetOperation(plan, context) {
           // INTERSECT: yield deduplicated rows present in both
           const seen = new Set()
           for await (const row of left.rows()) {
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
             if (++tick % YIELD_INTERVAL === 0) {
               await yieldToEventLoop()
-              if (signal?.aborted) return
+              signal?.throwIfAborted()
             }
             const key = await stableRowKey(row)
             if (rightKeys.has(key) && !seen.has(key)) {
@@ -794,10 +801,10 @@ function executeSetOperation(plan, context) {
         const rightKeys = new Map()
         let tick = 0
         for await (const row of right.rows()) {
-          if (signal?.aborted) return
+          signal?.throwIfAborted()
           if (++tick % YIELD_INTERVAL === 0) {
             await yieldToEventLoop()
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
           }
           const key = await stableRowKey(row)
           rightKeys.set(key, (rightKeys.get(key) ?? 0) + 1)
@@ -806,10 +813,10 @@ function executeSetOperation(plan, context) {
         if (plan.all) {
           // EXCEPT ALL: yield left rows, consuming right counts
           for await (const row of left.rows()) {
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
             if (++tick % YIELD_INTERVAL === 0) {
               await yieldToEventLoop()
-              if (signal?.aborted) return
+              signal?.throwIfAborted()
             }
             const key = await stableRowKey(row)
             const count = rightKeys.get(key)
@@ -823,10 +830,10 @@ function executeSetOperation(plan, context) {
           // EXCEPT: yield deduplicated left rows not in right
           const seen = new Set()
           for await (const row of left.rows()) {
-            if (signal?.aborted) return
+            signal?.throwIfAborted()
             if (++tick % YIELD_INTERVAL === 0) {
               await yieldToEventLoop()
-              if (signal?.aborted) return
+              signal?.throwIfAborted()
             }
             const key = await stableRowKey(row)
             if (!rightKeys.has(key) && !seen.has(key)) {

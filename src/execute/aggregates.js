@@ -101,7 +101,7 @@ export function executeHashAggregate(plan, context) {
       for await (const row of child.rows()) {
         if (++collectCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         allRows.push(row)
       }
@@ -121,7 +121,7 @@ export function executeHashAggregate(plan, context) {
       for (let chunkStart = 0; chunkStart < allRows.length; chunkStart += YIELD_INTERVAL) {
         if (chunkStart > 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, allRows.length)
         const chunkLen = chunkEnd - chunkStart
@@ -227,7 +227,7 @@ export function executeScalarAggregate(plan, context) {
       for await (const row of child.rows()) {
         if (++collectCount % YIELD_INTERVAL === 0) {
           await yieldToEventLoop()
-          if (context.signal?.aborted) return
+          context.signal?.throwIfAborted()
         }
         group.push(row)
       }

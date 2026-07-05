@@ -4,7 +4,7 @@ import { memorySource } from '../../src/backend/dataSource.js'
 import { trackingSource } from './trackingSource.js'
 
 /**
- * @import { AsyncDataSource } from '../../src/types.js'
+ * @import { AsyncDataSource, SqlPrimitive } from '../../src/types.js'
  */
 
 const users = [
@@ -25,39 +25,39 @@ const orders = [
 
 describe('abort signal', () => {
   describe('executeSql with signal', () => {
-    it('should stop execution when signal is aborted before query starts', async () => {
+    it('should reject when signal is aborted before query starts', async () => {
       const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
       controller.abort()
 
-      const rows = []
-      for await (const row of executeSql({
+      await expect(collect(executeSql({
         tables: { users: source },
         query: 'SELECT * FROM users',
         signal: controller.signal,
-      }).rows()) {
-        rows.push(row)
-      }
-      expect(rows).toHaveLength(0)
+      }))).rejects.toThrow('This operation was aborted')
       expect(getScanCount()).toBe(1)
       expect(getRowCount()).toBe(0)
     })
 
-    it('should stop execution when signal is aborted during query', async () => {
+    it('should reject when signal is aborted during query', async () => {
       const { source, getScanCount, getRowCount } = trackingSource(users)
       const controller = new AbortController()
 
+      /** @type {SqlPrimitive[]} */
       const rows = []
-      for await (const row of executeSql({
-        tables: { users: source },
-        query: 'SELECT * FROM users',
-        signal: controller.signal,
-      }).rows()) {
-        rows.push(await row.cells['name']())
-        if (rows.length === 2) {
-          controller.abort()
+      async function run() {
+        for await (const row of executeSql({
+          tables: { users: source },
+          query: 'SELECT * FROM users',
+          signal: controller.signal,
+        }).rows()) {
+          rows.push(await row.cells['name']())
+          if (rows.length === 2) {
+            controller.abort()
+          }
         }
       }
+      await expect(run()).rejects.toThrow('This operation was aborted')
       expect(rows).toEqual(['Alice', 'Bob'])
       expect(getScanCount()).toBe(1) // scan is started but should stop early
       expect(getRowCount()).toBe(2)
@@ -146,14 +146,16 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT COUNT(*) AS n FROM s a JOIN s b ON a.bucket = b.bucket AND b.id > a.id',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
@@ -161,6 +163,8 @@ describe('abort signal', () => {
       const ms = performance.now() - start
       // The timer should have fired during the long join
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       // And the query should have stopped soon after, not run to completion
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
@@ -177,20 +181,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT bucket, COUNT(*) AS n FROM s GROUP BY bucket',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -206,20 +214,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT id FROM s WHERE bucket > 50',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -235,20 +247,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT DISTINCT id FROM s',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -265,20 +281,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT id FROM s UNION SELECT id FROM s',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -295,20 +315,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT id, LAG(id) OVER (PARTITION BY bucket ORDER BY id) AS prev FROM s',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -340,6 +364,8 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         const result = executeSql({
           tables: { s: memorySource({ data }) },
@@ -351,14 +377,16 @@ describe('abort signal', () => {
         for await (const row of result.rows()) rows.push(row)
         // Collection done; SUM evaluation happens here when cells resolve
         for (const row of rows) await row.cells['n']()
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -377,6 +405,8 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: {
@@ -386,14 +416,16 @@ describe('abort signal', () => {
           query: 'SELECT x FROM small WHERE x IN (SELECT * FROM big)',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -411,6 +443,8 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         // Stream-consume to avoid buffering all rows when abort doesn't fire
         // eslint-disable-next-line no-unused-vars
@@ -421,14 +455,16 @@ describe('abort signal', () => {
         }).rows()) {
           // no-op
         }
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -467,20 +503,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: source },
           query: 'SELECT id FROM s LIMIT 1 OFFSET 1999999',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -497,20 +537,24 @@ describe('abort signal', () => {
       const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs)
       const start = performance.now()
 
+      /** @type {unknown} */
+      let error
       try {
         await collect(executeSql({
           tables: { s: memorySource({ data }) },
           query: 'SELECT SUM(id + 1) AS n FROM s',
           signal: controller.signal,
         }))
-      } catch {
-        // expected on abort
+      } catch (e) {
+        error = e
       } finally {
         clearTimeout(timer)
       }
 
       const ms = performance.now() - start
       expect(controller.signal.aborted).toBe(true)
+      // The abort must surface as a rejection, not a silently truncated result
+      expect(error).toBe(controller.signal.reason)
       expect(ms).toBeLessThan(timeoutMs * 4)
     }, 60_000)
   })
@@ -578,7 +622,7 @@ describe('abort signal', () => {
   })
 
   describe('right join abort after cooperative source stop', () => {
-    it('should stop hash joins before emitting unmatched right rows after abort', async () => {
+    it('should reject hash joins before emitting unmatched right rows after abort', async () => {
       const controller = new AbortController()
       /** @type {AsyncDataSource} */
       const usersSource = {
@@ -623,19 +667,26 @@ describe('abort signal', () => {
         query: 'SELECT users.name, orders.product FROM users RIGHT JOIN orders ON users.id = orders.user_id',
       })
       if (plan.type !== 'Project' || plan.child.type !== 'HashJoin') throw new Error('expected Project over HashJoin')
+      const joinPlan = plan.child
 
-      const result = await collect(executePlan({
-        plan: plan.child,
-        context: { tables, signal: controller.signal },
-      }))
-
-      expect(result.map(row => ({
-        name: row['users.name'],
-        product: row['orders.product'],
-      }))).toEqual([{ name: 'Alice', product: 'Laptop' }])
+      /** @type {{ name: SqlPrimitive, product: SqlPrimitive }[]} */
+      const collected = []
+      async function run() {
+        for await (const row of executePlan({
+          plan: joinPlan,
+          context: { tables, signal: controller.signal },
+        }).rows()) {
+          collected.push({
+            name: await row.cells['users.name'](),
+            product: await row.cells['orders.product'](),
+          })
+        }
+      }
+      await expect(run()).rejects.toThrow('hash join aborted')
+      expect(collected).toEqual([{ name: 'Alice', product: 'Laptop' }])
     })
 
-    it('should stop nested loop joins before emitting unmatched right rows after abort', async () => {
+    it('should reject nested loop joins before emitting unmatched right rows after abort', async () => {
       const controller = new AbortController()
       /** @type {AsyncDataSource} */
       const usersSource = {
@@ -680,16 +731,23 @@ describe('abort signal', () => {
         query: 'SELECT users.name, orders.product FROM users RIGHT JOIN orders ON users.id < orders.user_id',
       })
       if (plan.type !== 'Project' || plan.child.type !== 'NestedLoopJoin') throw new Error('expected Project over NestedLoopJoin')
+      const joinPlan = plan.child
 
-      const result = await collect(executePlan({
-        plan: plan.child,
-        context: { tables, signal: controller.signal },
-      }))
-
-      expect(result.map(row => ({
-        name: row['users.name'],
-        product: row['orders.product'],
-      }))).toEqual([{ name: 'Alice', product: 'Keyboard' }])
+      /** @type {{ name: SqlPrimitive, product: SqlPrimitive }[]} */
+      const collected = []
+      async function run() {
+        for await (const row of executePlan({
+          plan: joinPlan,
+          context: { tables, signal: controller.signal },
+        }).rows()) {
+          collected.push({
+            name: await row.cells['users.name'](),
+            product: await row.cells['orders.product'](),
+          })
+        }
+      }
+      await expect(run()).rejects.toThrow('nested join aborted')
+      expect(collected).toEqual([{ name: 'Alice', product: 'Keyboard' }])
     })
   })
 
