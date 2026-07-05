@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.13.0]
+ - Reject aborted queries instead of silently truncating results
+
 ## [0.12.27]
  - Stream aggregates with bounded memory instead of buffering all rows
 
