@@ -162,6 +162,13 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     return parts[partIdx] ?? ''
   }
 
+  if (funcName === 'STRING_SPLIT') {
+    const delimiter = args[1]
+    if (delimiter == null) return null
+    const delim = String(delimiter)
+    return delim === '' ? [str] : str.split(delim)
+  }
+
   if (funcName === 'INSTR' || funcName === 'POSITION' || funcName === 'STRPOS') {
     const search = args[1]
     if (search == null) return null

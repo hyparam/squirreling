@@ -96,7 +96,7 @@ export function isCastType(name) {
 export function isStringFunc(name) {
   return [
     'UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'OCTET_LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM',
-    'REPLACE', 'LEFT', 'RIGHT', 'INSTR', 'POSITION', 'STRPOS', 'SPLIT_PART',
+    'REPLACE', 'LEFT', 'RIGHT', 'INSTR', 'POSITION', 'STRPOS', 'SPLIT_PART', 'STRING_SPLIT',
   ].includes(name)
 }
 
@@ -129,6 +129,7 @@ export const FUNCTION_SIGNATURES = {
   POSITION: { min: 2, max: 2, signature: 'string, substring' },
   STRPOS: { min: 2, max: 2, signature: 'string, substring' },
   SPLIT_PART: { min: 3, max: 3, signature: 'string, delimiter, index' },
+  STRING_SPLIT: { min: 2, max: 2, signature: 'string, delimiter' },
   REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
   REGEXP_EXTRACT: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
   REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, occurrence]]' },

@@ -409,6 +409,60 @@ describe('string functions', () => {
     })
   })
 
+  describe('STRING_SPLIT', () => {
+    it('should split a string into an array by delimiter', async () => {
+      const data = [{ id: 1, path: 'a,b,c' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_SPLIT(path, \',\') AS parts FROM data',
+      }))
+      expect(result).toEqual([{ parts: ['a', 'b', 'c'] }])
+    })
+
+    it('should return a single-element array when delimiter is not found', async () => {
+      const data = [{ id: 1, path: 'abc' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_SPLIT(path, \',\') AS parts FROM data',
+      }))
+      expect(result).toEqual([{ parts: ['abc'] }])
+    })
+
+    it('should return a single-element array for an empty delimiter', async () => {
+      const data = [{ id: 1, path: 'abc' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_SPLIT(path, \'\') AS parts FROM data',
+      }))
+      expect(result).toEqual([{ parts: ['abc'] }])
+    })
+
+    it('should return null for null string', async () => {
+      const data = [{ id: 1, path: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_SPLIT(path, \',\') AS parts FROM data',
+      }))
+      expect(result).toEqual([{ parts: null }])
+    })
+
+    it('should return null for null delimiter', async () => {
+      const data = [{ id: 1, path: 'a,b,c', delim: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_SPLIT(path, delim) AS parts FROM data',
+      }))
+      expect(result).toEqual([{ parts: null }])
+    })
+
+    it('should reject wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT STRING_SPLIT(email) FROM users',
+      })).toThrow('STRING_SPLIT(string, delimiter) function requires 2 arguments, got 1')
+    })
+  })
+
   describe('SUBSTRING', () => {
     it('should extract substring with start position', async () => {
       const data = [
