@@ -1,5 +1,13 @@
 # Squirreling Changelog
 
+## [0.14.0]
+ - Add `OCTET_LENGTH`, `SPLIT_PART`, and `STRING_SPLIT` string functions
+ - Support ANSI `POSITION(needle IN haystack)` syntax
+ - Support `CAST` to `TIMESTAMP` and `TIMESTAMP '...'` typed literals
+ - Support `||` string concatenation operator
+ - Support numeric array subscripts `col[0]` and `col[0].field`
+ - Add clear error for unsupported `WITH RECURSIVE`
+
 ## [0.13.0]
  - Reject aborted queries instead of silently truncating results
 
