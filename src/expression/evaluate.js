@@ -7,7 +7,7 @@ import { UnknownFunctionError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
 import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
-import { applyIntervalToDate, dateDiff, dateTrunc, extractField } from './date.js'
+import { applyIntervalToDate, dateDiff, dateTrunc, extractField, toDate } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
 import { evaluateSpatialFunc } from '../spatial/spatial.js'
@@ -709,6 +709,14 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
     if (toType === 'BOOLEAN' || toType === 'BOOL') {
       return Boolean(val)
+    }
+    if (toType === 'TIMESTAMP') {
+      if (typeof val === 'number' || typeof val === 'bigint') {
+        const date = new Date(Number(val))
+        if (isNaN(date.getTime())) return null
+        return date
+      }
+      return toDate(val)
     }
   }
 

@@ -82,7 +82,7 @@ export function parsePrimary(state) {
       const toType = typeTok.value.toUpperCase()
       if (!isCastType(toType)) {
         throw new SyntaxError({
-          expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL)',
+          expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL, TIMESTAMP)',
           after: 'AS',
           ...typeTok,
         })

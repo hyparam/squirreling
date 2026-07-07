@@ -74,6 +74,40 @@ describe('CAST calls', () => {
     ])
   })
 
+  it('should handle CAST to TIMESTAMP', async () => {
+    const data = [
+      { v: '2024-01-01T00:00:00Z' },
+      { v: '2024-06-15' },
+      { v: 1704067200000 },
+      { v: 1704067200000n },
+      { v: new Date('2024-01-01T00:00:00Z') },
+      { v: null },
+      { v: 'not a date' },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT CAST(v AS TIMESTAMP) as ts FROM data',
+    }))
+    expect(result.map(r => r.ts)).toEqual([
+      new Date('2024-01-01T00:00:00Z'),
+      new Date('2024-06-15T00:00:00Z'),
+      new Date('2024-01-01T00:00:00Z'),
+      new Date('2024-01-01T00:00:00Z'),
+      new Date('2024-01-01T00:00:00Z'),
+      null,
+      null,
+    ])
+  })
+
+  it('should round-trip CAST TIMESTAMP through BIGINT', async () => {
+    const data = [{ ts: new Date('2024-01-01T00:00:00Z') }]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT CAST(CAST(ts AS BIGINT) AS TIMESTAMP) as ts2 FROM data',
+    }))
+    expect(result[0].ts2).toEqual(new Date('2024-01-01T00:00:00Z'))
+  })
+
   it('should handle CAST object to STRING as JSON', async () => {
     // bigint serialization test
     const data = [

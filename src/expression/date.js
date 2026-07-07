@@ -130,7 +130,7 @@ export function dateDiff(unit, startVal, endVal) {
  * @param {SqlPrimitive} val
  * @returns {Date | null}
  */
-function toDate(val) {
+export function toDate(val) {
   if (val instanceof Date) return val
   const dateOrTime = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/
   if (typeof val === 'string' && dateOrTime.test(val)) {

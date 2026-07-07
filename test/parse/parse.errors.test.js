@@ -239,7 +239,7 @@ describe('parseSql error handling', () => {
   describe('CAST errors', () => {
     it('should throw error for unsupported CAST type', () => {
       expect(() => parseSql({ query: 'SELECT CAST(x AS BINARY) FROM t' }))
-        .toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL) after "AS" but found "BINARY" at position 17')
+        .toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL, TIMESTAMP) after "AS" but found "BINARY" at position 17')
     })
   })
 

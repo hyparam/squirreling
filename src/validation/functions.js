@@ -86,7 +86,7 @@ export function isExtractField(name) {
  * @returns {name is CastType}
  */
 export function isCastType(name) {
-  return ['TEXT', 'STRING', 'VARCHAR', 'INTEGER', 'INT', 'BIGINT', 'FLOAT', 'REAL', 'DOUBLE', 'BOOLEAN', 'BOOL'].includes(name)
+  return ['TEXT', 'STRING', 'VARCHAR', 'INTEGER', 'INT', 'BIGINT', 'FLOAT', 'REAL', 'DOUBLE', 'BOOLEAN', 'BOOL', 'TIMESTAMP'].includes(name)
 }
 
 /**

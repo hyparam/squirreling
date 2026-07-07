@@ -114,7 +114,7 @@ export interface WindowFunctionNode extends AstBase {
   orderBy: OrderByItem[]
 }
 
-export type CastType = 'TEXT' | 'STRING' | 'VARCHAR' | 'INTEGER' | 'INT' | 'BIGINT' | 'FLOAT' | 'REAL' | 'DOUBLE' | 'BOOLEAN' | 'BOOL'
+export type CastType = 'TEXT' | 'STRING' | 'VARCHAR' | 'INTEGER' | 'INT' | 'BIGINT' | 'FLOAT' | 'REAL' | 'DOUBLE' | 'BOOLEAN' | 'BOOL' | 'TIMESTAMP'
 
 export interface CastNode extends AstBase {
   type: 'cast'
