@@ -150,6 +150,24 @@ function parsePrimaryBase(state) {
       }
     }
 
+    // TIMESTAMP '2026-01-01 00:00:00' typed literal
+    if (funcNameUpper === 'TIMESTAMP' && next.type === 'string') {
+      consume(state) // TIMESTAMP
+      const strTok = consume(state) // string literal
+      return {
+        type: 'cast',
+        expr: {
+          type: 'literal',
+          value: strTok.value,
+          positionStart: strTok.positionStart,
+          positionEnd: strTok.positionEnd,
+        },
+        toType: 'TIMESTAMP',
+        positionStart,
+        positionEnd: state.lastPos,
+      }
+    }
+
     // EXTRACT(field FROM expr)
     if (funcNameUpper === 'EXTRACT' && next.type === 'paren' && next.value === '(') {
       consume(state) // EXTRACT

@@ -478,4 +478,44 @@ describe('date/time functions', () => {
       expect(result[0].d).toBe(6)
     })
   })
+
+  describe('TIMESTAMP literals', () => {
+    const dummy = [{ id: 1 }]
+
+    it('should parse a TIMESTAMP literal with date and time', async () => {
+      const result = await collect(executeSql({
+        tables: { dummy },
+        query: 'SELECT TIMESTAMP \'2027-01-01T00:00:00Z\' AS ts FROM dummy',
+      }))
+      expect(result[0].ts).toEqual(new Date('2027-01-01T00:00:00Z'))
+    })
+
+    it('should parse a TIMESTAMP literal with a date only', async () => {
+      const result = await collect(executeSql({
+        tables: { dummy },
+        query: 'SELECT TIMESTAMP \'2024-06-15\' AS ts FROM dummy',
+      }))
+      expect(result[0].ts).toEqual(new Date('2024-06-15T00:00:00Z'))
+    })
+
+    it('should compare against a TIMESTAMP literal in WHERE', async () => {
+      const events = [
+        { name: 'a', ts: new Date('2026-01-01T00:00:00Z') },
+        { name: 'b', ts: new Date('2028-01-01T00:00:00Z') },
+      ]
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT name FROM events WHERE ts >= TIMESTAMP \'2027-01-01T00:00:00Z\'',
+      }))
+      expect(result).toEqual([{ name: 'b' }])
+    })
+
+    it('should return null for an invalid TIMESTAMP literal', async () => {
+      const result = await collect(executeSql({
+        tables: { dummy },
+        query: 'SELECT TIMESTAMP \'not a date\' AS ts FROM dummy',
+      }))
+      expect(result[0].ts).toBe(null)
+    })
+  })
 })
