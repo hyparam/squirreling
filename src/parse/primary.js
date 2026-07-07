@@ -11,12 +11,65 @@ import { consume, current, expect, match, parseError, peekToken } from './state.
  */
 
 /**
- * Parse a primary expression, which is the innermost order of operations.
+ * Parse a primary expression, which is the innermost order of operations,
+ * followed by any postfix subscript operators.
  *
  * @param {ParserState} state
  * @returns {ExprNode}
  */
 export function parsePrimary(state) {
+  return parsePostfix(state, parsePrimaryBase(state))
+}
+
+/**
+ * Parses postfix subscript operators after a primary expression: bracket
+ * indexing (`expr[0]`, `expr['key']`) and struct field access on a subscript
+ * result (`expr[0].field`).
+ *
+ * @param {ParserState} state
+ * @param {ExprNode} expr
+ * @returns {ExprNode}
+ */
+function parsePostfix(state, expr) {
+  while (true) {
+    if (match(state, 'bracket', '[')) {
+      const index = parseExpression(state)
+      expect(state, 'bracket', ']')
+      expr = {
+        type: 'subscript',
+        expr,
+        index,
+        positionStart: expr.positionStart,
+        positionEnd: state.lastPos,
+      }
+    } else if (expr.type === 'subscript' && current(state).type === 'dot') {
+      consume(state)
+      const fieldTok = expect(state, 'identifier')
+      expr = {
+        type: 'subscript',
+        expr,
+        index: {
+          type: 'literal',
+          value: fieldTok.value,
+          positionStart: fieldTok.positionStart,
+          positionEnd: fieldTok.positionEnd,
+        },
+        positionStart: expr.positionStart,
+        positionEnd: state.lastPos,
+      }
+    } else {
+      return expr
+    }
+  }
+}
+
+/**
+ * Parse a primary expression without postfix operators.
+ *
+ * @param {ParserState} state
+ * @returns {ExprNode}
+ */
+function parsePrimaryBase(state) {
   const tok = current(state)
   const { positionStart } = tok
 
@@ -157,16 +210,21 @@ export function parsePrimary(state) {
     if (match(state, 'dot')) {
       prefix = name
       name = expect(state, 'identifier').value
-    } else if (match(state, 'bracket', '[')) {
-      // table['column'] string subscript is equivalent to dot access
-      const fieldTok = current(state)
-      if (fieldTok.type !== 'string') {
-        throw parseError(state, 'string literal')
+    } else {
+      // table['column'] string subscript is equivalent to dot access; other
+      // subscripts (numeric, expression) are left for the postfix parser
+      const open = current(state)
+      const fieldTok = peekToken(state, 1)
+      const close = peekToken(state, 2)
+      if (open.type === 'bracket' && open.value === '[' &&
+          fieldTok.type === 'string' &&
+          close.type === 'bracket' && close.value === ']') {
+        consume(state) // '['
+        consume(state) // string
+        consume(state) // ']'
+        prefix = name
+        name = fieldTok.value
       }
-      consume(state)
-      expect(state, 'bracket', ']')
-      prefix = name
-      name = fieldTok.value
     }
 
     return {

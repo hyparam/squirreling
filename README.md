@@ -147,6 +147,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - `GROUP BY` and `HAVING` clauses
 - Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
 - Expressions: `CASE`, `CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`
+- Subscript access: zero-based array indexing `col[0]`, struct field access `col['field']`, and chains like `col[0].field`
 
 ### Quoting
 

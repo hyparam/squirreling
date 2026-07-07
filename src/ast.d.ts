@@ -168,6 +168,12 @@ export interface StarNode extends AstBase {
   type: 'star'
 }
 
+export interface SubscriptNode extends AstBase {
+  type: 'subscript'
+  expr: ExprNode
+  index: ExprNode
+}
+
 export type ExprNode =
   | LiteralNode
   | IdentifierNode
@@ -183,6 +189,7 @@ export type ExprNode =
   | SubqueryNode
   | IntervalNode
   | StarNode
+  | SubscriptNode
 
 export interface StarColumn extends AstBase {
   type: 'star'

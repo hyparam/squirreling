@@ -31,6 +31,9 @@ export function findAggregate(expr) {
   if (expr.type === 'cast') {
     return findAggregate(expr.expr)
   }
+  if (expr.type === 'subscript') {
+    return findAggregate(expr.expr) || findAggregate(expr.index)
+  }
   if (expr.type === 'case') {
     if (expr.caseExpr) {
       const found = findAggregate(expr.caseExpr)

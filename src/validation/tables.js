@@ -90,6 +90,9 @@ export function validateNoIdentifiers(expr, context, outerScope) {
   } else if (expr.type === 'in') {
     // LHS is in our scope; subquery is self-contained and planned separately.
     validateNoIdentifiers(expr.expr, context, outerScope)
+  } else if (expr.type === 'subscript') {
+    validateNoIdentifiers(expr.expr, context, outerScope)
+    validateNoIdentifiers(expr.index, context, outerScope)
   } else if (expr.type === 'case') {
     validateNoIdentifiers(expr.caseExpr, context, outerScope)
     for (const w of expr.whenClauses) {
@@ -144,6 +147,9 @@ export function validateTableRefs(expr, tables, scopeColumns) {
     for (const val of expr.values) {
       validateTableRefs(val, tables, scopeColumns)
     }
+  } else if (expr.type === 'subscript') {
+    validateTableRefs(expr.expr, tables, scopeColumns)
+    validateTableRefs(expr.index, tables, scopeColumns)
   } else if (expr.type === 'case') {
     validateTableRefs(expr.caseExpr, tables, scopeColumns)
     for (const w of expr.whenClauses) {

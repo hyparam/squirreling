@@ -161,6 +161,8 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }, c
     case 'in valuelist':
       // values after the first are skipped once an earlier value matches
       return walk(node.expr, lazy) && node.values.every((v, i) => walk(v, lazy || i > 0))
+    case 'subscript':
+      return walk(node.expr, lazy) && walk(node.index, lazy)
     case 'function': {
       const funcName = node.funcName.toUpperCase()
       if (!isAggregateFunc(funcName)) {
@@ -257,6 +259,8 @@ function isScalarExpr(node) {
       (!node.elseResult || isScalarExpr(node.elseResult))
   case 'in valuelist':
     return isScalarExpr(node.expr) && node.values.every(v => isScalarExpr(v))
+  case 'subscript':
+    return isScalarExpr(node.expr) && isScalarExpr(node.index)
   case 'function':
     return !isAggregateFunc(node.funcName.toUpperCase()) && node.args.every(arg => isScalarExpr(arg))
   default:
@@ -315,6 +319,11 @@ function substituteValues(node, values) {
     const expr = substituteValues(node.expr, values)
     const valueNodes = node.values.map(v => substituteValues(v, values))
     return { ...node, expr, values: valueNodes }
+  }
+  case 'subscript': {
+    const expr = substituteValues(node.expr, values)
+    const index = substituteValues(node.index, values)
+    return expr === node.expr && index === node.index ? node : { ...node, expr, index }
   }
   case 'function': {
     const args = node.args.map(arg => substituteValues(arg, values))

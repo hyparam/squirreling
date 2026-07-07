@@ -637,6 +637,9 @@ function resolveAliases(node, aliases) {
     const values = node.values.map(v => resolveAliases(v, aliases))
     return { ...node, expr, values }
   }
+  if (node.type === 'subscript') {
+    return { ...node, expr: resolveAliases(node.expr, aliases), index: resolveAliases(node.index, aliases) }
+  }
   if (node.type === 'case') {
     const caseExpr = resolveAliases(node.caseExpr, aliases)
     const whenClauses = node.whenClauses.map(w => {
@@ -695,6 +698,13 @@ function normalizeIdentifiers(node, sourceColumns) {
       ...node,
       expr: normalizeIdentifiers(node.expr, sourceColumns),
       values: node.values.map(v => normalizeIdentifiers(v, sourceColumns)),
+    }
+  }
+  if (node.type === 'subscript') {
+    return {
+      ...node,
+      expr: normalizeIdentifiers(node.expr, sourceColumns),
+      index: normalizeIdentifiers(node.index, sourceColumns),
     }
   }
   if (node.type === 'case') {
@@ -872,6 +882,9 @@ function validateLateralSubqueries({ expr, ctePlans, cteColumns, tables, outerSc
     for (const val of expr.values) {
       validateLateralSubqueries({ expr: val, ctePlans, cteColumns, tables, outerScope })
     }
+  } else if (expr.type === 'subscript') {
+    validateLateralSubqueries({ expr: expr.expr, ctePlans, cteColumns, tables, outerScope })
+    validateLateralSubqueries({ expr: expr.index, ctePlans, cteColumns, tables, outerScope })
   } else if (expr.type === 'case') {
     validateLateralSubqueries({ expr: expr.caseExpr, ctePlans, cteColumns, tables, outerScope })
     for (const w of expr.whenClauses) {
@@ -930,6 +943,13 @@ function collectWindows(expr, windows) {
       values: expr.values.map(v => collectWindows(v, windows)),
     }
   }
+  if (expr.type === 'subscript') {
+    return {
+      ...expr,
+      expr: collectWindows(expr.expr, windows),
+      index: collectWindows(expr.index, windows),
+    }
+  }
   if (expr.type === 'case') {
     return {
       ...expr,
@@ -979,6 +999,7 @@ function findWindow(expr) {
     return undefined
   }
   if (expr.type === 'cast') return findWindow(expr.expr)
+  if (expr.type === 'subscript') return findWindow(expr.expr) || findWindow(expr.index)
   if (expr.type === 'in valuelist') {
     const found = findWindow(expr.expr)
     if (found) return found

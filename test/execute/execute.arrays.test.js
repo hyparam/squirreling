@@ -567,4 +567,183 @@ describe('array functions', () => {
       expect(result).toEqual([{ combined: [1, 2, 3, 4] }])
     })
   })
+
+  describe('array subscript', () => {
+    it('should index an array column with a numeric subscript', async () => {
+      const data = [
+        { id: 1, items: [10, 20, 30] },
+        { id: 2, items: [40] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[0] AS first FROM data',
+      }))
+      expect(result).toEqual([{ first: 10 }, { first: 40 }])
+    })
+
+    it('should generate a default alias for a numeric subscript', async () => {
+      const data = [{ id: 1, items: [10, 20] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[1] FROM data',
+      }))
+      expect(result).toEqual([{ 'items[1]': 20 }])
+    })
+
+    it('should return null for an out-of-range index', async () => {
+      const data = [{ id: 1, items: [10, 20] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[5] AS missing FROM data',
+      }))
+      expect(result).toEqual([{ missing: null }])
+    })
+
+    it('should return null for a null array', async () => {
+      const data = [{ id: 1, items: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[0] AS first FROM data',
+      }))
+      expect(result).toEqual([{ first: null }])
+    })
+
+    it('should return null for numeric subscript on a non-array', async () => {
+      const data = [{ id: 1, name: 'Alice' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT name[0] AS first FROM data',
+      }))
+      expect(result).toEqual([{ first: null }])
+    })
+
+    it('should support an expression as the index', async () => {
+      const data = [{ id: 1, items: [10, 20, 30] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[1 + 1] AS third FROM data',
+      }))
+      expect(result).toEqual([{ third: 30 }])
+    })
+
+    it('should support a column as the index', async () => {
+      const data = [
+        { idx: 0, items: [10, 20, 30] },
+        { idx: 2, items: [10, 20, 30] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[idx] AS value FROM data',
+      }))
+      expect(result).toEqual([{ value: 10 }, { value: 30 }])
+    })
+
+    it('should access struct fields of an indexed element with dot notation', async () => {
+      const data = [
+        { id: 1, tools: [{ name: 'web_search', calls: 3 }, { name: 'calculator', calls: 1 }] },
+        { id: 2, tools: [{ name: 'code', calls: 7 }] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT tools[0].name FROM data',
+      }))
+      expect(result).toEqual([{ name: 'web_search' }, { name: 'code' }])
+    })
+
+    it('should access struct fields of an indexed element with string subscript', async () => {
+      const data = [{ id: 1, tools: [{ name: 'web_search' }] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT tools[0][\'name\'] AS tool FROM data',
+      }))
+      expect(result).toEqual([{ tool: 'web_search' }])
+    })
+
+    it('should return null for a missing struct field', async () => {
+      const data = [{ id: 1, tools: [{ name: 'web_search' }] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT tools[0].missing AS field FROM data',
+      }))
+      expect(result).toEqual([{ field: null }])
+    })
+
+    it('should support chained numeric subscripts on nested arrays', async () => {
+      const data = [{ id: 1, matrix: [[1, 2], [3, 4]] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT matrix[1][0] AS cell FROM data',
+      }))
+      expect(result).toEqual([{ cell: 3 }])
+    })
+
+    it('should index a table-qualified column', async () => {
+      const data = [{ id: 1, items: [10, 20] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT data.items[1] AS second FROM data',
+      }))
+      expect(result).toEqual([{ second: 20 }])
+    })
+
+    it('should support subscripts in the WHERE clause', async () => {
+      const data = [
+        { id: 1, items: [10, 20] },
+        { id: 2, items: [30, 40] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE items[0] = 30',
+      }))
+      expect(result).toEqual([{ id: 2 }])
+    })
+
+    it('should support subscripts in GROUP BY', async () => {
+      const data = [
+        { id: 1, items: ['a', 'x'] },
+        { id: 2, items: ['a', 'y'] },
+        { id: 3, items: ['b', 'z'] },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[0] AS key, COUNT(*) AS cnt FROM data GROUP BY items[0] ORDER BY key',
+      }))
+      expect(result).toEqual([{ key: 'a', cnt: 2 }, { key: 'b', cnt: 1 }])
+    })
+
+    it('should index an array literal', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: 'SELECT [10, 20, 30][2] AS third',
+      }))
+      expect(result).toEqual([{ third: 30 }])
+    })
+
+    it('should index the result of a function call', async () => {
+      const data = [{ id: 1, csv: 'a,b,c' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT STRING_SPLIT(csv, \',\')[1] AS second FROM data',
+      }))
+      expect(result).toEqual([{ second: 'b' }])
+    })
+
+    it('should return null for a negative index', async () => {
+      const data = [{ id: 1, items: [10, 20] }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[-1] AS last FROM data',
+      }))
+      expect(result).toEqual([{ last: null }])
+    })
+
+    it('should return null for a null index', async () => {
+      const data = [{ id: 1, items: [10, 20], idx: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT items[idx] AS value FROM data',
+      }))
+      expect(result).toEqual([{ value: null }])
+    })
+  })
 })

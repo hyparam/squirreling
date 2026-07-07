@@ -130,6 +130,23 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     })
   }
 
+  // Subscript access: array indexing (arr[0]) or struct field access (obj['key'])
+  if (node.type === 'subscript') {
+    const value = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
+    if (value == null) return null
+    const index = await evaluateExpr({ node: node.index, row, rowIndex, rows, context })
+    if (index == null) return null
+    if (typeof index === 'number' || typeof index === 'bigint') {
+      if (!Array.isArray(value)) return null
+      return value[Number(index)] ?? null
+    }
+    const key = String(index)
+    if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, key)) {
+      return value[key]
+    }
+    return null
+  }
+
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
     const outerScope = context.scope

@@ -110,6 +110,10 @@ function walkExpr(expr, cteScope, refs) {
     walkExpr(expr.expr, cteScope, refs)
     for (const v of expr.values) walkExpr(v, cteScope, refs)
     return
+  case 'subscript':
+    walkExpr(expr.expr, cteScope, refs)
+    walkExpr(expr.index, cteScope, refs)
+    return
   case 'exists':
   case 'not exists':
     walkStatement(expr.subquery, cteScope, refs)

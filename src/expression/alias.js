@@ -37,5 +37,12 @@ export function derivedAlias(expr) {
   if (expr.type === 'interval') {
     return `interval_${expr.value}_${expr.unit.toLowerCase()}`
   }
+  if (expr.type === 'subscript') {
+    // string subscript is struct field access, alias to the field name
+    if (expr.index.type === 'literal' && typeof expr.index.value === 'string') {
+      return expr.index.value
+    }
+    return `${derivedAlias(expr.expr)}[${derivedAlias(expr.index)}]`
+  }
   return 'expr'
 }

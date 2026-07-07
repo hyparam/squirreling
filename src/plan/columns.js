@@ -255,6 +255,9 @@ export function collectColumnsFromExpr(expr, columns, aliases) {
     }
   } else if (expr.type === 'in') {
     collectColumnsFromExpr(expr.expr, columns, aliases)
+  } else if (expr.type === 'subscript') {
+    collectColumnsFromExpr(expr.expr, columns, aliases)
+    collectColumnsFromExpr(expr.index, columns, aliases)
   } else if (expr.type === 'case') {
     if (expr.caseExpr) {
       collectColumnsFromExpr(expr.caseExpr, columns, aliases)
