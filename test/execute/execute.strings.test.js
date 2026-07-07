@@ -165,6 +165,74 @@ describe('string functions', () => {
     })
   })
 
+  describe('|| operator', () => {
+    it('should concatenate two columns', async () => {
+      const users = [
+        { id: 1, first_name: 'Alice', last_name: 'Smith' },
+        { id: 2, first_name: 'Bob', last_name: 'Jones' },
+      ]
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT first_name || last_name AS full_name FROM users',
+      }))
+      expect(result).toEqual([
+        { full_name: 'AliceSmith' },
+        { full_name: 'BobJones' },
+      ])
+    })
+
+    it('should chain multiple concatenations', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT name || \' (\' || city || \')\' AS name_city FROM users WHERE id = 1',
+      }))
+      expect(result).toEqual([{ name_city: 'Alice (NYC)' }])
+    })
+
+    it('should return null if any operand is null', async () => {
+      const data = [{ id: 1, first: 'Alice', last: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT first || last AS full FROM data',
+      }))
+      expect(result).toEqual([{ full: NULL }])
+    })
+
+    it('should coerce numbers to strings', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT id || \': \' || name AS labeled FROM users WHERE id = 2',
+      }))
+      expect(result).toEqual([{ labeled: '2: Bob' }])
+    })
+
+    it('should bind tighter than comparison', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT name FROM users WHERE name || city = \'AliceNYC\'',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }])
+    })
+
+    it('should bind looser than addition', async () => {
+      const data = [{ id: 1, a: 1, b: 2 }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT a || a + b AS result FROM data',
+      }))
+      expect(result).toEqual([{ result: '13' }])
+    })
+
+    it('should concatenate in a LIKE pattern', async () => {
+      const data = [{ id: 1, name: 'Alice', pattern: 'lic' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT name FROM data WHERE name LIKE \'%\' || pattern || \'%\'',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }])
+    })
+  })
+
   describe('LENGTH', () => {
     it('should return length of string column', async () => {
       const result = await collect(executeSql({

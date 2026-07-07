@@ -9,7 +9,7 @@ import { consume, current, expect, match } from './state.js'
  */
 
 // Precedence (lowest to highest):
-// OR, AND, NOT, Comparison, Additive, Multiplicative, Primary
+// OR, AND, NOT, Comparison, Concat, Additive, Multiplicative, Primary
 
 /**
  * @param {ParserState} state
@@ -88,7 +88,7 @@ function parseNot(state) {
  * @returns {ExprNode}
  */
 function parseComparison(state) {
-  const left = parseAdditive(state)
+  const left = parseConcat(state)
   const { positionStart } = left
 
   // IS [NOT] NULL
@@ -108,7 +108,7 @@ function parseComparison(state) {
   if (match(state, 'keyword', 'NOT')) {
     // NOT LIKE
     if (match(state, 'keyword', 'LIKE')) {
-      const right = parseAdditive(state)
+      const right = parseConcat(state)
       return {
         type: 'unary',
         op: 'NOT',
@@ -127,9 +127,9 @@ function parseComparison(state) {
 
     // NOT BETWEEN - convert to range comparison
     if (match(state, 'keyword', 'BETWEEN')) {
-      const lower = parseAdditive(state)
+      const lower = parseConcat(state)
       expect(state, 'keyword', 'AND')
-      const upper = parseAdditive(state)
+      const upper = parseConcat(state)
       // NOT BETWEEN -> expr < lower OR expr > upper
       return {
         type: 'binary',
@@ -163,7 +163,7 @@ function parseComparison(state) {
 
   // LIKE
   if (match(state, 'keyword', 'LIKE')) {
-    const right = parseAdditive(state)
+    const right = parseConcat(state)
     return {
       type: 'binary',
       op: 'LIKE',
@@ -176,9 +176,9 @@ function parseComparison(state) {
 
   // BETWEEN - convert to range comparison
   if (match(state, 'keyword', 'BETWEEN')) {
-    const lower = parseAdditive(state)
+    const lower = parseConcat(state)
     expect(state, 'keyword', 'AND')
-    const upper = parseAdditive(state)
+    const upper = parseConcat(state)
     // BETWEEN -> expr >= lower AND expr <= upper
     return {
       type: 'binary',
@@ -198,7 +198,7 @@ function parseComparison(state) {
   const opTok = current(state)
   if (opTok.type === 'operator' && isBinaryOp(opTok.value)) {
     consume(state)
-    const right = parseAdditive(state)
+    const right = parseConcat(state)
     return {
       type: 'binary',
       op: opTok.value,
@@ -216,7 +216,34 @@ function parseComparison(state) {
  * @param {ParserState} state
  * @returns {ExprNode}
  */
-export function parseAdditive(state) {
+export function parseConcat(state) {
+  let left = parseAdditive(state)
+  while (true) {
+    const tok = current(state)
+    if (tok.type === 'operator' && tok.value === '||') {
+      consume(state)
+      const right = parseAdditive(state)
+      // Recursive left-associative binary operator
+      left = {
+        type: 'binary',
+        op: '||',
+        left,
+        right,
+        positionStart: left.positionStart,
+        positionEnd: right.positionEnd,
+      }
+    } else {
+      break
+    }
+  }
+  return left
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {ExprNode}
+ */
+function parseAdditive(state) {
   let left = parseMultiplicative(state)
   while (true) {
     const tok = current(state)

@@ -146,7 +146,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - `JOIN` operations: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN`, `POSITIONAL JOIN`, `LATERAL VIEW [OUTER] EXPLODE(...)`, with `ON` or `USING (col, ...)` conditions
 - `GROUP BY` and `HAVING` clauses
 - Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
-- Expressions: `CASE`, `CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`
+- Expressions: `CASE`, `CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`, string concatenation `||`
 - Subscript access: zero-based array indexing `col[0]`, struct field access `col['field']`, and chains like `col[0].field`
 
 ### Quoting

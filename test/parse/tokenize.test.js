@@ -138,8 +138,12 @@ describe('tokenize', () => {
   })
 
   it('should tokenize operators', () => {
-    const tokens = tokenizeSql('= == != <> < > <= >= + - * / % // !!')
-    expect(tokens.map(t => t.value)).toEqual(['=', '==', '!=', '<>', '<', '>', '<=', '>=', '+', '-', '*', '/', '%', '/', '/', '!', '!', ''])
+    const tokens = tokenizeSql('= == != <> < > <= >= + - * / % // !! ||')
+    expect(tokens.map(t => t.value)).toEqual(['=', '==', '!=', '<>', '<', '>', '<=', '>=', '+', '-', '*', '/', '%', '/', '/', '!', '!', '||', ''])
+  })
+
+  it('should throw on single pipe character', () => {
+    expect(() => tokenizeSql('SELECT a | b')).toThrow('Unexpected character "|" at position 9')
   })
 
   it('should skip whitespace', () => {

@@ -172,6 +172,18 @@ export function tokenizeSql(query) {
       continue
     }
 
+    // string concatenation operator
+    if (ch === '|' && next === '|') {
+      i += 2
+      tokens.push({
+        type: 'operator',
+        value: '||',
+        positionStart,
+        positionEnd: i,
+      })
+      continue
+    }
+
     // operators
     if ('<>!=+-*/%'.includes(ch)) {
       let op = nextChar()

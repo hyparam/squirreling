@@ -23,6 +23,12 @@ export function applyBinaryOp(op, a, b) {
     if (op === '%') return numB === 0 ? null : numA % numB
   }
 
+  // String concatenation returns null if either operand is null
+  if (op === '||') {
+    if (a == null || b == null) return null
+    return String(a) + String(b)
+  }
+
   // Comparison and logical operators
   if (a == null || b == null) {
     return false
