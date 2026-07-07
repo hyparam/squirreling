@@ -143,6 +143,25 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     return str.substring(str.length - len)
   }
 
+  if (funcName === 'SPLIT_PART') {
+    const delimiter = args[1]
+    if (delimiter == null) return null
+    const index = Number(args[2])
+    if (!Number.isInteger(index) || index === 0) {
+      throw new ArgValueError({
+        ...node,
+        message: `index must be a non-zero integer, got ${args[2]}`,
+        hint: 'Field indexes are 1-based.',
+        rowIndex,
+      })
+    }
+    const delim = String(delimiter)
+    const parts = delim === '' ? [str] : str.split(delim)
+    // Negative index counts from the end
+    const partIdx = index < 0 ? parts.length + index : index - 1
+    return parts[partIdx] ?? ''
+  }
+
   if (funcName === 'INSTR' || funcName === 'POSITION' || funcName === 'STRPOS') {
     const search = args[1]
     if (search == null) return null

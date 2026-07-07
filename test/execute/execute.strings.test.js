@@ -320,6 +320,95 @@ describe('string functions', () => {
     })
   })
 
+  describe('SPLIT_PART', () => {
+    it('should return the nth field split by delimiter', async () => {
+      const data = [{ id: 1, path: 'a,b,c' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', 2) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: 'b' }])
+    })
+
+    it('should return the first field', async () => {
+      const data = [{ id: 1, path: 'a,b,c' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', 1) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: 'a' }])
+    })
+
+    it('should count from the end for negative index', async () => {
+      const data = [{ id: 1, path: 'a,b,c' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', -1) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: 'c' }])
+    })
+
+    it('should return empty string when index is out of range', async () => {
+      const data = [{ id: 1, path: 'a,b,c' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', 5) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: '' }])
+    })
+
+    it('should return the whole string when delimiter is not found', async () => {
+      const data = [{ id: 1, path: 'abc' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', 1) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: 'abc' }])
+    })
+
+    it('should work without alias', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT SPLIT_PART(email, \'@\', 2) FROM users',
+      }))
+      expect(result[0]).toHaveProperty('split_part_email_@_2')
+      expect(result[0]['split_part_email_@_2']).toBe('example.com')
+    })
+
+    it('should return null for null string', async () => {
+      const data = [{ id: 1, path: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', 1) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: null }])
+    })
+
+    it('should return null for null delimiter', async () => {
+      const data = [{ id: 1, path: 'a,b,c', delim: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, delim, 1) AS part FROM data',
+      }))
+      expect(result).toEqual([{ part: null }])
+    })
+
+    it('should reject a zero index', async () => {
+      const data = [{ id: 1, path: 'a,b,c' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT SPLIT_PART(path, \',\', 0) FROM data',
+      }))).rejects.toThrow('SPLIT_PART(string, delimiter, index): index must be a non-zero integer, got 0. Field indexes are 1-based. (row 1)')
+    })
+
+    it('should reject wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT SPLIT_PART(email, \'@\') FROM users',
+      })).toThrow('SPLIT_PART(string, delimiter, index) function requires 3 arguments, got 2')
+    })
+  })
+
   describe('SUBSTRING', () => {
     it('should extract substring with start position', async () => {
       const data = [

@@ -176,6 +176,7 @@ export type StringFunc =
   | 'INSTR'
   | 'POSITION'
   | 'STRPOS'
+  | 'SPLIT_PART'
 
 export type SpatialFunc =
   | 'ST_INTERSECTS'
