@@ -4,6 +4,8 @@ import { ArgValueError } from '../validation/executionErrors.js'
  * @import { FunctionNode, SqlPrimitive, StringFunc } from '../types.js'
  */
 
+const textEncoder = new TextEncoder()
+
 /**
  * Evaluate a string function
  *
@@ -38,6 +40,16 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     throw new ArgValueError({
       ...node,
       message: `expected string or array, got ${typeof val === 'object' ? val instanceof Date ? 'date' : 'object' : typeof val}`,
+      hint: 'Use CAST to convert to a string first.',
+      rowIndex,
+    })
+  }
+
+  if (funcName === 'OCTET_LENGTH') {
+    if (typeof val === 'string') return textEncoder.encode(val).length
+    throw new ArgValueError({
+      ...node,
+      message: `expected string, got ${typeof val === 'object' ? val instanceof Date ? 'date' : 'object' : typeof val}`,
       hint: 'Use CAST to convert to a string first.',
       rowIndex,
     })

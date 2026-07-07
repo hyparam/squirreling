@@ -166,6 +166,7 @@ export type StringFunc =
   | 'LOWER'
   | 'CONCAT'
   | 'LENGTH'
+  | 'OCTET_LENGTH'
   | 'SUBSTRING'
   | 'SUBSTR'
   | 'TRIM'

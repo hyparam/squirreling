@@ -95,7 +95,7 @@ export function isCastType(name) {
  */
 export function isStringFunc(name) {
   return [
-    'UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM',
+    'UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'OCTET_LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM',
     'REPLACE', 'LEFT', 'RIGHT', 'INSTR', 'POSITION', 'STRPOS',
   ].includes(name)
 }
@@ -117,6 +117,7 @@ export const FUNCTION_SIGNATURES = {
   UPPER: { min: 1, max: 1, signature: 'string' },
   LOWER: { min: 1, max: 1, signature: 'string' },
   LENGTH: { min: 1, max: 1, signature: 'string' },
+  OCTET_LENGTH: { min: 1, max: 1, signature: 'string' },
   TRIM: { min: 1, max: 1, signature: 'string' },
   REPLACE: { min: 3, max: 3, signature: 'string, search, replacement' },
   SUBSTRING: { min: 2, max: 3, signature: 'string, start[, length]' },

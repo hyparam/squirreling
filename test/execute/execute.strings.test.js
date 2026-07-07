@@ -249,6 +249,77 @@ describe('string functions', () => {
     })
   })
 
+  describe('OCTET_LENGTH', () => {
+    it('should return byte length of string column', async () => {
+      const data = [
+        { id: 1, text: 'hello' },
+        { id: 2, text: 'héllo' },
+        { id: 3, text: '日本語' },
+        { id: 4, text: '😀' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT OCTET_LENGTH(text) AS len FROM data',
+      }))
+      expect(result).toEqual([
+        { len: 5 }, // ascii
+        { len: 6 }, // é is 2 bytes
+        { len: 9 }, // 3 bytes each
+        { len: 4 }, // emoji is 4 bytes
+      ])
+    })
+
+    it('should work without alias', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT OCTET_LENGTH(city) FROM users',
+      }))
+      expect(result[0]).toHaveProperty('octet_length_city')
+      expect(result[0].octet_length_city).toBe(3) // NYC
+    })
+
+    it('should handle empty strings', async () => {
+      const data = [{ id: 1, value: '' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT OCTET_LENGTH(value) AS len FROM data',
+      }))
+      expect(result[0].len).toBe(0)
+    })
+
+    it('should return null for null input', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT OCTET_LENGTH(text) AS len FROM data',
+      }))
+      expect(result).toEqual([{ len: null }])
+    })
+
+    it('should reject number arguments', async () => {
+      const data = [{ id: 1, n: 42 }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT OCTET_LENGTH(n) FROM data',
+      }))).rejects.toThrow('OCTET_LENGTH(string): expected string, got number. Use CAST to convert to a string first. (row 1)')
+    })
+
+    it('should reject object arguments', async () => {
+      const data = [{ id: 1, obj: { a: 1 } }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT OCTET_LENGTH(obj) FROM data',
+      }))).rejects.toThrow('OCTET_LENGTH(string): expected string, got object. Use CAST to convert to a string first. (row 1)')
+    })
+
+    it('should reject wrong argument count', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT OCTET_LENGTH(name, city) FROM users',
+      })).toThrow('OCTET_LENGTH(string) function requires 1 argument, got 2')
+    })
+  })
+
   describe('SUBSTRING', () => {
     it('should extract substring with start position', async () => {
       const data = [
