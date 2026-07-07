@@ -260,6 +260,12 @@ describe('parseSql - CTE (WITH clause)', () => {
     }).toThrow('CTE "cte" is defined more than once at position 0')
   })
 
+  it('should throw a clear error for WITH RECURSIVE', () => {
+    expect(() => {
+      parseSql({ query: 'WITH RECURSIVE nums(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM nums WHERE i < 5) SELECT i FROM nums' })
+    }).toThrow('WITH RECURSIVE is not supported at position 5')
+  })
+
   it('should throw error for duplicate CTE names (case-insensitive)', () => {
     expect(() => {
       parseSql({ query: 'WITH Cte AS (SELECT 1 FROM a), CTE AS (SELECT 2 FROM b) SELECT * FROM cte' })

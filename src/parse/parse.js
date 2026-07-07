@@ -48,6 +48,14 @@ export function parseSql({ query, functions }) {
 export function parseStatement(state) {
   const positionStart = state.lastPos
   if (match(state, 'keyword', 'WITH')) {
+    const recursiveTok = current(state)
+    if (recursiveTok.type === 'identifier' && recursiveTok.value.toUpperCase() === 'RECURSIVE') {
+      throw new ParseError({
+        message: `WITH RECURSIVE is not supported at position ${recursiveTok.positionStart}`,
+        ...recursiveTok,
+      })
+    }
+
     /** @type {CTEDefinition[]} */
     const ctes = []
     /** @type {Set<string>} */
