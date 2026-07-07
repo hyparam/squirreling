@@ -833,6 +833,70 @@ describe('string functions', () => {
       }))
       expect(result[0].pos).toBeNull()
     })
+
+    it('should support POSITION(needle IN haystack) syntax', async () => {
+      const data = [
+        { id: 1, text: 'Hello World' },
+        { id: 2, text: 'Goodbye' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(\'o\' IN text) AS pos FROM data',
+      }))
+      expect(result).toEqual([
+        { pos: 5 }, // 'o' in 'Hello' at position 5
+        { pos: 2 }, // 'o' in 'Goodbye' at position 2
+      ])
+    })
+
+    it('should return 0 when needle not found with IN syntax', async () => {
+      const data = [{ id: 1, text: 'Hello World' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(\'xyz\' IN text) AS pos FROM data',
+      }))
+      expect(result[0].pos).toBe(0)
+    })
+
+    it('should handle null haystack with IN syntax', async () => {
+      const data = [{ id: 1, text: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(\'a\' IN text) AS pos FROM data',
+      }))
+      expect(result[0].pos).toBeNull()
+    })
+
+    it('should handle null needle with IN syntax', async () => {
+      const data = [{ id: 1, text: 'Hello', search: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT POSITION(search IN text) AS pos FROM data',
+      }))
+      expect(result[0].pos).toBeNull()
+    })
+
+    it('should work in WHERE clause with IN syntax', async () => {
+      const data = [
+        { id: 1, email: 'alice@example.com' },
+        { id: 2, email: 'bob@test.org' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT email FROM data WHERE POSITION(\'@example\' IN email) > 0',
+      }))
+      expect(result).toEqual([{ email: 'alice@example.com' }])
+    })
+
+    it('should throw for wrong argument count', async () => {
+      const data = [{ id: 1, text: 'Hello' }]
+      await expect(async () => {
+        await collect(executeSql({
+          tables: { data },
+          query: 'SELECT POSITION(text) FROM data',
+        }))
+      }).rejects.toThrow('POSITION(string, substring) function requires 2 arguments, got 1')
+    })
   })
 
   describe('STRPOS', () => {

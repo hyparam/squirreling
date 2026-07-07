@@ -216,7 +216,7 @@ function parseComparison(state) {
  * @param {ParserState} state
  * @returns {ExprNode}
  */
-function parseAdditive(state) {
+export function parseAdditive(state) {
   let left = parseMultiplicative(state)
   while (true) {
     const tok = current(state)

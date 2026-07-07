@@ -165,6 +165,32 @@ describe('parseSql - string functions', () => {
     ])
   })
 
+  it('should parse POSITION(needle IN haystack) as POSITION(haystack, needle)', () => {
+    const select = parseSelect('SELECT POSITION(\'lo\' IN name) FROM users')
+    expect(select.columns).toEqual([
+      {
+        type: 'derived',
+        expr: {
+          type: 'function',
+          funcName: 'POSITION',
+          args: [
+            {
+              type: 'identifier',
+              name: 'name',
+              positionStart: 24,
+              positionEnd: 28,
+            },
+            { type: 'literal', value: 'lo', positionStart: 16, positionEnd: 20 },
+          ],
+          positionStart: 7,
+          positionEnd: 29,
+        },
+        positionStart: 7,
+        positionEnd: 29,
+      },
+    ])
+  })
+
   it('should parse SUBSTRING function with three arguments', () => {
     const select = parseSelect('SELECT SUBSTRING(name, 1, 3) FROM users')
     expect(select.columns).toEqual([

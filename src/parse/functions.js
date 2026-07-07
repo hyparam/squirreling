@@ -1,6 +1,6 @@
 import { isAggregateFunc, isKnownFunction, isWindowFunc, niladicFuncs, validateFunctionArgs } from '../validation/functions.js'
 import { ParseError, UnknownFunctionError } from '../validation/parseErrors.js'
-import { parseExpression } from './expression.js'
+import { parseAdditive, parseExpression } from './expression.js'
 import { consume, current, expect, match } from './state.js'
 
 /**
@@ -60,6 +60,17 @@ export function parseFunctionCall(state, positionStart) {
         positionStart: next.positionStart,
         positionEnd: state.lastPos,
       })
+    } else if (funcNameUpper === 'POSITION' && !args.length) {
+      // ANSI syntax: POSITION(needle IN haystack), stored as (haystack, needle).
+      // The needle is parsed below comparison precedence so IN is not consumed
+      // as the set-membership operator.
+      const needle = parseAdditive(state)
+      if (match(state, 'keyword', 'IN')) {
+        const haystack = parseExpression(state)
+        args.push(haystack, needle)
+        break
+      }
+      args.push(needle)
     } else {
       args.push(parseExpression(state))
     }
