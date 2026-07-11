@@ -103,37 +103,71 @@ export function parquetDataSource(file, metadata, compressors) {
       }
     },
 
-    async *scanColumn({ column, limit, offset, signal }) {
-      const rowStart = offset ?? 0
-      const rowEnd = limit !== undefined ? rowStart + limit : undefined
-      const asyncGroups = parquetReadAsync({
-        file,
-        metadata,
-        rowStart,
-        rowEnd,
-        columns: [column],
-        compressors,
-      })
-      // assemble struct columns
-      const schemaTree = parquetSchema(metadata)
-      const assembled = asyncGroups.map(arg => assembleAsync(arg, schemaTree))
+    scanColumn({ column, where, limit, offset, signal }) {
+      const filter = whereToParquetFilter(where)
+      const appliedWhere = !where || Boolean(filter)
+      // Filtered ranges are over matching rows, not physical parquet rows.
+      const appliedLimitOffset = !where ||
+        appliedWhere && limit === undefined && offset === undefined
 
-      for (const rg of assembled) {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-        const { skipped, data } = await rg.asyncColumns[0].data
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-        let dataStart = rg.groupStart + skipped
-        for (const page of data) {
-          const pageRows = page.length
-          const selectStart = Math.max(rowStart - dataStart, 0)
-          const selectEnd = Math.min((rowEnd ?? Infinity) - dataStart, pageRows)
-          if (selectEnd > selectStart) {
-            yield selectStart > 0 || selectEnd < pageRows
-              ? page.slice(selectStart, selectEnd)
-              : page
+      return {
+        appliedWhere,
+        appliedLimitOffset,
+        async *chunks() {
+          // The object reader decodes predicate columns, prunes row groups from
+          // statistics, and projects filter-only columns away again.
+          if (filter) {
+            let groupStart = 0
+            for (const rowGroup of metadata.row_groups) {
+              if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+              const groupEnd = groupStart + Number(rowGroup.num_rows)
+              const rows = await parquetReadObjects({
+                file,
+                metadata,
+                rowStart: groupStart,
+                rowEnd: groupEnd,
+                columns: [column],
+                filter,
+                filterStrict: false,
+                compressors,
+              })
+              if (rows.length) yield rows.map(row => row[column])
+              groupStart = groupEnd
+            }
+            return
           }
-          dataStart += pageRows
-        }
+
+          const rowStart = offset ?? 0
+          const rowEnd = limit !== undefined ? rowStart + limit : undefined
+          const asyncGroups = parquetReadAsync({
+            file,
+            metadata,
+            rowStart,
+            rowEnd,
+            columns: [column],
+            compressors,
+          })
+
+          const schemaTree = parquetSchema(metadata)
+          const assembled = asyncGroups.map(arg => assembleAsync(arg, schemaTree))
+          for (const rg of assembled) {
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+            const { skipped, data } = await rg.asyncColumns[0].data
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+            let dataStart = rg.groupStart + skipped
+            for (const page of data) {
+              const pageRows = page.length
+              const selectStart = Math.max(rowStart - dataStart, 0)
+              const selectEnd = Math.min((rowEnd ?? Infinity) - dataStart, pageRows)
+              if (selectEnd > selectStart) {
+                yield selectStart > 0 || selectEnd < pageRows
+                  ? page.slice(selectStart, selectEnd)
+                  : page
+              }
+              dataStart += pageRows
+            }
+          }
+        },
       }
     },
   }

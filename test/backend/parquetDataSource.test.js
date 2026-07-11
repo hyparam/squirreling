@@ -141,4 +141,20 @@ describe('parquet backend', async () => {
     expect(counting.fetches).toBe(1)
     expect(counting.bytes).toBe(437)
   })
+
+  it('should count a filtered column scan with row-group pruning', async () => {
+    const alphaFile = await asyncBufferFromFile('test/files/alpha.parquet')
+    const alphaMetadata = await parquetMetadataAsync(alphaFile)
+    const counting = countingBuffer(alphaFile)
+    const alpha = parquetDataSource(counting, alphaMetadata, compressors)
+
+    const result = await collect(executeSql({
+      tables: { alpha },
+      query: 'SELECT COUNT(*) AS count FROM alpha WHERE id = \'kk\'',
+    }))
+
+    expect(result).toEqual([{ count: 1 }])
+    expect(counting.fetches).toBe(1)
+    expect(counting.bytes).toBe(437)
+  })
 })
