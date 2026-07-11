@@ -1033,6 +1033,56 @@ describe('executeSql', () => {
       expect(result).toEqual([{ total: 155 }])
     })
 
+    it('should use filtered scanColumn for COUNT(*) when the source accepts the predicate', async () => {
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['status'],
+        scan() {
+          throw new Error('scan should not be called')
+        },
+        scanColumn({ column, where }) {
+          expect(column).toBe('status')
+          expect(where).toBeDefined()
+          return {
+            appliedWhere: true,
+            appliedLimitOffset: true,
+            async *chunks() {
+              // COUNT(*) must count the row whose carrier column is null too.
+              yield ['complete', null]
+              yield ['complete']
+            },
+          }
+        },
+      }
+      const result = await collect(executeSql({
+        tables: { orders: source },
+        query: 'SELECT COUNT(*) AS cnt FROM orders WHERE status = \'complete\'',
+      }))
+      expect(result).toEqual([{ cnt: 3 }])
+    })
+
+    it('should apply WHERE over unfiltered scanColumn chunks when the source declines it', async () => {
+      const data = [{ status: 'complete' }, { status: 'pending' }]
+      const source = memorySource({ data })
+      let columnScanIterated = false
+      source.scanColumn = function () {
+        return {
+          appliedWhere: false,
+          appliedLimitOffset: false,
+          async *chunks() {
+            columnScanIterated = true
+            yield ['complete', 'pending']
+          },
+        }
+      }
+      const result = await collect(executeSql({
+        tables: { orders: source },
+        query: 'SELECT COUNT(*) AS cnt FROM orders WHERE status = \'complete\'',
+      }))
+      expect(result).toEqual([{ cnt: 1 }])
+      expect(columnScanIterated).toBe(true)
+    })
+
     it('should not optimize COUNT(*) FILTER', async () => {
       const orders = [
         { status: 'complete', amount: 100 },
