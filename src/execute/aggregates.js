@@ -1,7 +1,7 @@
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
-import { executePlan, selectColumnNames } from './execute.js'
+import { executePlan, executeScan, selectColumnNames } from './execute.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { sortEntriesByTerms } from './sort.js'
 import { planStreamingAggregates, streamingHashAggregateRows, streamingScalarAggregateRows } from './streamingAggregate.js'
@@ -196,17 +196,21 @@ export function executeHashAggregate(plan, context) {
  */
 export function executeScalarAggregate(plan, context) {
   // Fast path: use scanColumn when available
-  const fast = tryColumnScanAggregate(plan, context)
-  if (fast) {
+  const columnScan = tryColumnScanAggregate(plan, context)
+  if (columnScan?.rows) {
     return {
       columns: selectColumnNames(plan.columns, []),
       numRows: 1,
       maxRows: 1,
-      rows: fast,
+      rows: columnScan.rows,
     }
   }
 
-  const child = executePlan({ plan: plan.child, context })
+  // A declined pushdown still returned a usable one-column scan. Transfer it
+  // to the ordinary scan path instead of calling the source a second time.
+  const child = columnScan?.fallback
+    ? executeScan(columnScan.fallback.plan, context, columnScan.fallback.result)
+    : executePlan({ plan: plan.child, context })
   const streaming = planStreamingAggregates(plan, child.columns)
   if (streaming) {
     return {
@@ -274,7 +278,13 @@ export function executeScalarAggregate(plan, context) {
  *
  * @param {ScalarAggregateNode} plan
  * @param {ExecuteContext} context
- * @returns {(() => AsyncGenerator<AsyncRow>) | undefined}
+ * @returns {{
+ *   rows?: () => AsyncGenerator<AsyncRow>,
+ *   fallback?: {
+ *     plan: import('../plan/types.js').ScanNode,
+ *     result: import('../types.js').ScanColumnResults,
+ *   },
+ * } | undefined}
  */
 function tryColumnScanAggregate(plan, { tables, signal }) {
   // No HAVING support in fast path
@@ -302,6 +312,17 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
     specs.push(spec)
   }
 
+  const physicalColumns = new Set(specs.map(spec => spec.column))
+  const hasPushdown = where || limit !== undefined || offset !== undefined
+  if (hasPushdown) {
+    // If negotiation fails, the returned column stream can only replace the
+    // ordinary scan when that scan needs the same single column. Otherwise a
+    // probe could allocate work that no correct fallback is able to consume.
+    const scanColumns = scanNode.hints.columns
+    if (physicalColumns.size !== 1 || scanColumns?.length !== 1 ||
+      !physicalColumns.has(scanColumns[0])) return
+  }
+
   // Ask once per physical column and retain the returned chunks. Sources
   // report applied hints just like scan(); declined hints use the normal path.
   /** @type {Map<string, import('../types.js').ScanColumnResults>} */
@@ -310,52 +331,58 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
     if (columnScans.has(column)) continue
     const options = { column, where, limit, offset, signal }
     const result = normalizeScanColumnResult(table.scanColumn(options), options)
-    if (where && !result.appliedWhere) return
-    if ((limit !== undefined || offset !== undefined) && !result.appliedLimitOffset) return
+    if (where && !result.appliedWhere) {
+      return { fallback: { plan: scanNode, result } }
+    }
+    if ((limit !== undefined || offset !== undefined) && !result.appliedLimitOffset) {
+      return { fallback: { plan: scanNode, result } }
+    }
     columnScans.set(column, result)
   }
 
-  return async function* () {
-    /** @type {string[]} */
-    const columns = []
-    /** @type {AsyncCells} */
-    const cells = {}
+  return {
+    async *rows() {
+      /** @type {string[]} */
+      const columns = []
+      /** @type {AsyncCells} */
+      const cells = {}
 
-    // Group specs by column so each column is scanned at most once no matter how
-    // many aggregates read it (e.g. MIN(x), MAX(x), AVG(x) share one pass).
-    /** @type {Map<string, ColumnAggSpec[]>} */
-    const specsByColumn = new Map()
-    for (const spec of specs) {
-      const group = specsByColumn.get(spec.column)
-      if (group) group.push(spec)
-      else specsByColumn.set(spec.column, [spec])
-    }
-
-    // Each column's single pass is computed once and shared by all its cells;
-    // a column is only scanned if one of its aggregates is actually read.
-    /** @type {Map<string, Promise<Map<string, SqlPrimitive>>>} */
-    const passes = new Map()
-    /**
-     * @param {string} column
-     * @returns {Promise<Map<string, SqlPrimitive>>}
-     */
-    function scanOnce(column) {
-      let pass = passes.get(column)
-      if (!pass) {
-        const scan = columnScans.get(column)
-        if (!scan) throw new Error(`missing scanColumn result for ${column}`)
-        pass = scanColumnGroup({ values: scan.chunks(), specs: specsByColumn.get(column) ?? [], signal })
-        passes.set(column, pass)
+      // Group specs by column so each column is scanned at most once no matter how
+      // many aggregates read it (e.g. MIN(x), MAX(x), AVG(x) share one pass).
+      /** @type {Map<string, ColumnAggSpec[]>} */
+      const specsByColumn = new Map()
+      for (const spec of specs) {
+        const group = specsByColumn.get(spec.column)
+        if (group) group.push(spec)
+        else specsByColumn.set(spec.column, [spec])
       }
-      return pass
-    }
 
-    for (const spec of specs) {
-      columns.push(spec.alias)
-      cells[spec.alias] = async () => (await scanOnce(spec.column)).get(spec.alias) ?? null
-    }
+      // Each column's single pass is computed once and shared by all its cells;
+      // a column is only scanned if one of its aggregates is actually read.
+      /** @type {Map<string, Promise<Map<string, SqlPrimitive>>>} */
+      const passes = new Map()
+      /**
+       * @param {string} column
+       * @returns {Promise<Map<string, SqlPrimitive>>}
+       */
+      function scanOnce(column) {
+        let pass = passes.get(column)
+        if (!pass) {
+          const scan = columnScans.get(column)
+          if (!scan) throw new Error(`missing scanColumn result for ${column}`)
+          pass = scanColumnGroup({ values: scan.chunks(), specs: specsByColumn.get(column) ?? [], signal })
+          passes.set(column, pass)
+        }
+        return pass
+      }
 
-    yield { columns, cells }
+      for (const spec of specs) {
+        columns.push(spec.alias)
+        cells[spec.alias] = async () => (await scanOnce(spec.column)).get(spec.alias) ?? null
+      }
+
+      yield { columns, cells }
+    },
   }
 }
 

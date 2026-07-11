@@ -203,6 +203,38 @@ describe('scanColumn fast path', () => {
       { id: 15 },
     ])
   })
+
+  it('should defer creating scanColumn chunks until rows are consumed', async () => {
+    let chunksCalled = false
+    /** @type {AsyncDataSource} */
+    const source = {
+      columns: ['id'],
+      scan() {
+        throw new Error('scan should not be called')
+      },
+      scanColumn() {
+        return {
+          appliedWhere: true,
+          appliedLimitOffset: true,
+          chunks() {
+            chunksCalled = true
+            return (async function* () {
+              yield [1, 2]
+            })()
+          },
+        }
+      },
+    }
+
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data',
+    })
+    expect(chunksCalled).toBe(false)
+
+    expect(await collect(results)).toEqual([{ id: 1 }, { id: 2 }])
+    expect(chunksCalled).toBe(true)
+  })
 })
 
 

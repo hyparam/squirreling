@@ -270,9 +270,10 @@ export function selectColumnNames(selectColumns, childColumns) {
 /**
  * @param {ScanNode} plan
  * @param {ExecuteContext} context
+ * @param {import('../types.js').ScanColumnResults} [existingColumnResult]
  * @returns {QueryResults}
  */
-function executeScan(plan, context) {
+export function executeScan(plan, context, existingColumnResult) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
@@ -287,12 +288,11 @@ function executeScan(plan, context) {
       ? { column: plan.hints.columns[0], where: plan.hints.where, signal }
       : { column: plan.hints.columns[0], ...plan.hints, signal }
     : undefined
-  const columnResult = table.scanColumn && scanColumnOptions
+  const columnResult = existingColumnResult ?? (table.scanColumn && scanColumnOptions
     ? normalizeScanColumnResult(table.scanColumn(scanColumnOptions), scanColumnOptions)
-    : undefined
+    : undefined)
   if (columnResult && scanColumnOptions) {
     const column = plan.hints.columns[0]
-    const chunks = columnResult.chunks()
     const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
     return {
       columns: [column],
@@ -301,7 +301,9 @@ function executeScan(plan, context) {
       async *rows() {
         const columns = [column]
         let result = (async function* () {
-          for await (const chunk of chunks) {
+          // Creating the chunk stream may itself start I/O, so leave it until
+          // the returned rows are actually consumed.
+          for await (const chunk of columnResult.chunks()) {
             signal?.throwIfAborted()
             for (let i = 0; i < chunk.length; i++) {
               const value = chunk[i]
