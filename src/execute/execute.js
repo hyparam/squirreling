@@ -7,6 +7,7 @@ import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
+import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 import { executeWindow } from './window.js'
@@ -269,40 +270,63 @@ export function selectColumnNames(selectColumns, childColumns) {
 /**
  * @param {ScanNode} plan
  * @param {ExecuteContext} context
+ * @param {import('../types.js').ScanColumnResults} [existingColumnResult]
  * @returns {QueryResults}
  */
-function executeScan(plan, context) {
+export function executeScan(plan, context, existingColumnResult) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
   const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
 
-  // Fast path: single column scan without WHERE
-  if (table.scanColumn && plan.hints.columns?.length === 1 && !plan.hints.where) {
+  // Fast path: single column scan. As with scan(), hints the source did not
+  // apply are handled by the engine over the returned column values.
+  const scanColumnOptions = plan.hints.columns?.length === 1
+    ? plan.hints.where
+      // Do not push a filtered range until WHERE is known to be applied: an
+      // older source may ignore WHERE but eagerly apply LIMIT/OFFSET.
+      ? { column: plan.hints.columns[0], where: plan.hints.where, signal }
+      : { column: plan.hints.columns[0], ...plan.hints, signal }
+    : undefined
+  const columnResult = existingColumnResult ?? (table.scanColumn && scanColumnOptions
+    ? normalizeScanColumnResult(table.scanColumn(scanColumnOptions), scanColumnOptions)
+    : undefined)
+  if (columnResult && scanColumnOptions) {
     const column = plan.hints.columns[0]
-    const chunks = table.scanColumn({
-      column,
-      limit: plan.hints.limit,
-      offset: plan.hints.offset,
-      signal,
-    })
     const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
     return {
       columns: [column],
-      numRows: scanRows,
+      numRows: plan.hints.where ? undefined : scanRows,
       maxRows: scanRows,
       async *rows() {
         const columns = [column]
-        for await (const chunk of chunks) {
-          signal?.throwIfAborted()
-          for (let i = 0; i < chunk.length; i++) {
-            const value = chunk[i]
-            yield {
-              columns,
-              cells: { [column]: () => Promise.resolve(value) },
+        let result = (async function* () {
+          // Creating the chunk stream may itself start I/O, so leave it until
+          // the returned rows are actually consumed.
+          for await (const chunk of columnResult.chunks()) {
+            signal?.throwIfAborted()
+            for (let i = 0; i < chunk.length; i++) {
+              const value = chunk[i]
+              yield {
+                columns,
+                cells: { [column]: () => Promise.resolve(value) },
+              }
             }
           }
+        })()
+
+        if (!columnResult.appliedWhere && plan.hints.where) {
+          result = filterRows(result, plan.hints.where, context, plan.hints.limit)
         }
+        // Filtered LIMIT/OFFSET was intentionally not passed to scanColumn.
+        const appliedLimitOffset = plan.hints.where
+          ? false
+          : columnResult.appliedLimitOffset
+        if (!appliedLimitOffset && hasLimitOffset) {
+          result = limitRows(result, plan.hints.limit, plan.hints.offset, signal)
+        }
+
+        yield* result
         // A data source may end its stream cooperatively on abort; surface
         // the abort so a truncated scan is not mistaken for a complete one
         signal?.throwIfAborted()

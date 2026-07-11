@@ -1033,6 +1033,87 @@ describe('executeSql', () => {
       expect(result).toEqual([{ total: 155 }])
     })
 
+    it('should use filtered scanColumn for COUNT(*) when the source accepts the predicate', async () => {
+      /** @type {AsyncDataSource} */
+      const source = {
+        columns: ['status'],
+        scan() {
+          throw new Error('scan should not be called')
+        },
+        scanColumn({ column, where }) {
+          expect(column).toBe('status')
+          expect(where).toBeDefined()
+          return {
+            appliedWhere: true,
+            appliedLimitOffset: true,
+            async *chunks() {
+              // COUNT(*) must count the row whose carrier column is null too.
+              yield ['complete', null]
+              yield ['complete']
+            },
+          }
+        },
+      }
+      const result = await collect(executeSql({
+        tables: { orders: source },
+        query: 'SELECT COUNT(*) AS cnt FROM orders WHERE status = \'complete\'',
+      }))
+      expect(result).toEqual([{ cnt: 3 }])
+    })
+
+    it('should apply WHERE over unfiltered scanColumn chunks when the source declines it', async () => {
+      const data = [{ status: 'complete' }, { status: 'pending' }]
+      const source = memorySource({ data })
+      let scanCalls = 0
+      const { scan } = source
+      source.scan = function (options) {
+        scanCalls++
+        return scan.call(this, options)
+      }
+      let scanColumnCalls = 0
+      let columnScanIterated = false
+      source.scanColumn = function () {
+        scanColumnCalls++
+        return {
+          appliedWhere: false,
+          appliedLimitOffset: false,
+          async *chunks() {
+            columnScanIterated = true
+            yield ['complete', 'pending']
+          },
+        }
+      }
+      const result = await collect(executeSql({
+        tables: { orders: source },
+        query: 'SELECT COUNT(*) AS cnt FROM orders WHERE status = \'complete\'',
+      }))
+      expect(result).toEqual([{ cnt: 1 }])
+      expect(scanColumnCalls).toBe(1)
+      expect(scanCalls).toBe(0)
+      expect(columnScanIterated).toBe(true)
+    })
+
+    it('should not probe scanColumn when fallback would need additional columns', async () => {
+      const source = memorySource({
+        data: [
+          { status: 'complete', amount: 10 },
+          { status: 'pending', amount: 20 },
+        ],
+      })
+      let scanColumnCalls = 0
+      source.scanColumn = function () {
+        scanColumnCalls++
+        throw new Error('scanColumn should not be called')
+      }
+
+      const result = await collect(executeSql({
+        tables: { orders: source },
+        query: 'SELECT SUM(amount) AS total FROM orders WHERE status = \'complete\'',
+      }))
+      expect(result).toEqual([{ total: 10 }])
+      expect(scanColumnCalls).toBe(0)
+    })
+
     it('should not optimize COUNT(*) FILTER', async () => {
       const orders = [
         { status: 'complete', amount: 100 },

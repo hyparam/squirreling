@@ -79,7 +79,7 @@ export interface AsyncDataSource {
   columns: string[]
   scan(options: ScanOptions): ScanResults
   // Optional method for fast column scans
-  scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>>
+  scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>> | ScanColumnResults
 }
 
 /**
@@ -113,9 +113,17 @@ export interface ScanOptions {
  */
 export interface ScanColumnOptions {
   column: string
+  where?: ExprNode
   limit?: number
   offset?: number
   signal?: AbortSignal
+}
+
+/** Result of a column scan, mirroring the ScanResults hint flags. */
+export interface ScanColumnResults {
+  chunks(): AsyncIterable<ArrayLike<SqlPrimitive>>
+  appliedWhere: boolean
+  appliedLimitOffset: boolean
 }
 
 export interface FunctionSignature {
