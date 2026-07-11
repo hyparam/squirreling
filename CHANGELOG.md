@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.15.0]
+ - Support filter pushdown for `scanColumn`
+
 ## [0.14.0]
  - Add `OCTET_LENGTH`, `SPLIT_PART`, and `STRING_SPLIT` string functions
  - Support ANSI `POSITION(needle IN haystack)` syntax
