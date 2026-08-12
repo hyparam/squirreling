@@ -78,7 +78,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     return null
   }
 
-  if (funcName === 'REGEXP_MATCHES') {
+  if (funcName === 'REGEXP_MATCHES' || funcName === 'REGEXP_LIKE') {
     const str = args[0]
     const pattern = args[1]
     if (str == null || pattern == null) return null
