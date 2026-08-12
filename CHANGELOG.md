@@ -1,5 +1,12 @@
 # Squirreling Changelog
 
+## [0.15.2]
+ - Add `MIN_BY` and `MAX_BY` aggregate functions
+ - Add `ANY_VALUE` aggregate function
+ - Add `JSON_EXTRACT_STRING` function
+ - Add `REGEXP_LIKE` function
+ - Add `TRY_CAST`
+
 ## [0.15.1]
  - Fix lazy evaluation of SQL function arguments
 
