@@ -164,6 +164,13 @@ describe('executeSql error handling', () => {
         query: 'SELECT CAST(obj AS INTEGER) FROM data',
       }))).rejects.toThrow('Cannot CAST object to INTEGER (row 1)')
     })
+
+    it('should throw error for invalid TRY_CAST type', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT TRY_CAST(age AS BINARY) FROM users',
+      })).toThrow('Expected cast type (STRING, INT, BIGINT, FLOAT, BOOL, TIMESTAMP) after "AS" but found "BINARY"')
+    })
   })
 
   describe('INTERVAL errors', () => {

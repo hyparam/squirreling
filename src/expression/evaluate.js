@@ -716,6 +716,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
     // Can only cast primitives (and Dates) to other primitive types
     if (typeof val === 'object' && !(val instanceof Date)) {
+      if (node.tryCast) return null
       throw new ExecutionError({ message: `Cannot CAST object to ${toType}`, rowIndex, ...node })
     }
     if (toType === 'INTEGER' || toType === 'INT') {
@@ -726,7 +727,8 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (toType === 'BIGINT') {
       if (typeof val === 'bigint') return val
       const num = Number(val)
-      if (isNaN(num)) return null
+      // NaN and Infinity have no bigint representation
+      if (!isFinite(num)) return null
       return BigInt(Math.trunc(num))
     }
     if (toType === 'FLOAT' || toType === 'REAL' || toType === 'DOUBLE') {

@@ -49,12 +49,13 @@ describe('CAST calls', () => {
       { v: 100n },
       { v: null },
       { v: 'not a number' },
+      { v: '1e999' },
     ]
     const result = await collect(executeSql({
       tables: { data },
       query: 'SELECT CAST(v AS BIGINT) as b FROM data',
     }))
-    expect(result.map(r => r.b)).toEqual([30n, 885728114n, 42n, -3n, 100n, null, null])
+    expect(result.map(r => r.b)).toEqual([30n, 885728114n, 42n, -3n, 100n, null, null, null])
   })
 
   it('should handle CAST Date to numeric types', async () => {
@@ -106,6 +107,53 @@ describe('CAST calls', () => {
       query: 'SELECT CAST(CAST(ts AS BIGINT) AS TIMESTAMP) as ts2 FROM data',
     }))
     expect(result[0].ts2).toEqual(new Date('2024-01-01T00:00:00Z'))
+  })
+
+  it('should handle TRY_CAST like CAST for valid values', async () => {
+    const result = await collect(executeSql({
+      tables: { users },
+      query: 'SELECT id, TRY_CAST(age AS INTEGER) as age_int FROM users',
+    }))
+    expect(result.map(r => r.age_int)).toEqual([30, 25, 35, 28, 5])
+  })
+
+  it('should return null from TRY_CAST of object to non-string type', async () => {
+    const data = [
+      { v: { a: 1 } },
+      { v: [1, 2] },
+      { v: '42' },
+      { v: null },
+      { v: 'not a number' },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT TRY_CAST(v AS INTEGER) as i, TRY_CAST(v AS BIGINT) as b, TRY_CAST(v AS TIMESTAMP) as t FROM data',
+    }))
+    expect(result).toEqual([
+      { i: null, b: null, t: null },
+      { i: null, b: null, t: null },
+      { i: 42, b: 42n, t: null },
+      { i: null, b: null, t: null },
+      { i: null, b: null, t: null },
+    ])
+  })
+
+  it('should handle TRY_CAST object to STRING as JSON', async () => {
+    const data = [{ info: { name: 'Alice' } }]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT TRY_CAST(info AS STRING) as info_str FROM data',
+    }))
+    expect(result).toEqual([{ info_str: '{"name":"Alice"}' }])
+  })
+
+  it('should derive an alias for TRY_CAST', async () => {
+    const data = [{ v: '42' }]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT TRY_CAST(v AS INTEGER) FROM data',
+    }))
+    expect(result).toEqual([{ v_as_INTEGER: 42 }])
   })
 
   it('should handle CAST object to STRING as JSON', async () => {

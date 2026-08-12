@@ -125,8 +125,8 @@ function parsePrimaryBase(state) {
     const next = peekToken(state, 1)
     const funcNameUpper = tok.value.toUpperCase()
 
-    // CAST(expr AS type)
-    if (funcNameUpper === 'CAST' && next.type === 'paren' && next.value === '(') {
+    // CAST(expr AS type) and TRY_CAST(expr AS type)
+    if ((funcNameUpper === 'CAST' || funcNameUpper === 'TRY_CAST') && next.type === 'paren' && next.value === '(') {
       consume(state) // CAST
       consume(state) // '('
       const expr = parseExpression(state)
@@ -145,6 +145,7 @@ function parsePrimaryBase(state) {
         type: 'cast',
         expr,
         toType,
+        tryCast: funcNameUpper === 'TRY_CAST' ? true : undefined,
         positionStart,
         positionEnd: state.lastPos,
       }

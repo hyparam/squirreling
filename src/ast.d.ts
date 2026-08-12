@@ -120,6 +120,8 @@ export interface CastNode extends AstBase {
   type: 'cast'
   expr: ExprNode
   toType: CastType
+  /** TRY_CAST returns null instead of throwing when the value cannot be cast */
+  tryCast?: boolean
 }
 
 export interface InSubqueryNode extends AstBase {
