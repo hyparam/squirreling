@@ -11,7 +11,7 @@ export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP'
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX', 'ANY_VALUE', 'ARRAY_AGG', 'LIST', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG'].includes(name)
+  return ['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX', 'MIN_BY', 'ARG_MIN', 'MAX_BY', 'ARG_MAX', 'ANY_VALUE', 'ARRAY_AGG', 'LIST', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG'].includes(name)
 }
 
 /**
@@ -223,6 +223,10 @@ export const FUNCTION_SIGNATURES = {
   AVG: { min: 1, max: 1, signature: 'expression' },
   MIN: { min: 1, max: 1, signature: 'expression' },
   MAX: { min: 1, max: 1, signature: 'expression' },
+  MIN_BY: { min: 2, max: 2, signature: 'value, key' },
+  ARG_MIN: { min: 2, max: 2, signature: 'value, key' },
+  MAX_BY: { min: 2, max: 2, signature: 'value, key' },
+  ARG_MAX: { min: 2, max: 2, signature: 'value, key' },
   ANY_VALUE: { min: 1, max: 1, signature: 'expression' },
   STDDEV_SAMP: { min: 1, max: 1, signature: 'expression' },
   STDDEV_POP: { min: 1, max: 1, signature: 'expression' },

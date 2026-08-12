@@ -137,7 +137,7 @@ export interface UserDefinedFunction {
   arguments: FunctionSignature
 }
 
-export type AggregateFunc = 'COUNT' | 'COUNTIF' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'ANY_VALUE' | 'ARRAY_AGG' | 'LIST' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP' | 'MEDIAN' | 'PERCENTILE_CONT' | 'APPROX_QUANTILE' | 'STRING_AGG'
+export type AggregateFunc = 'COUNT' | 'COUNTIF' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'MIN_BY' | 'ARG_MIN' | 'MAX_BY' | 'ARG_MAX' | 'ANY_VALUE' | 'ARRAY_AGG' | 'LIST' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP' | 'MEDIAN' | 'PERCENTILE_CONT' | 'APPROX_QUANTILE' | 'STRING_AGG'
 
 export type RegExpFunction = 'REGEXP_SUBSTR' | 'REGEXP_EXTRACT' | 'REGEXP_REPLACE' | 'REGEXP_MATCHES' | 'REGEXP_LIKE'
 

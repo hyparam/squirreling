@@ -289,6 +289,28 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (funcName === 'MAX') return max
       }
 
+      if (funcName === 'MIN_BY' || funcName === 'ARG_MIN' || funcName === 'MAX_BY' || funcName === 'ARG_MAX') {
+        // Returns the value at the row with the smallest (or largest) key.
+        // Rows with a null value or key are ignored, and ties keep the first row.
+        const isMin = funcName === 'MIN_BY' || funcName === 'ARG_MIN'
+        const values = await evaluateAll(argNode, filteredRows, context)
+        const keys = await evaluateAll(node.args[1], filteredRows, context)
+        /** @type {SqlPrimitive} */
+        let best = null
+        /** @type {SqlPrimitive} */
+        let bestKey = null
+        for (let i = 0; i < values.length; i++) {
+          const value = values[i]
+          const key = keys[i]
+          if (value == null || key == null) continue
+          if (bestKey === null || (isMin ? key < bestKey : key > bestKey)) {
+            best = value
+            bestKey = key
+          }
+        }
+        return best
+      }
+
       if (funcName === 'ANY_VALUE') {
         // Returns an arbitrary non-null value from the group; we pick the first
         const values = await evaluateAll(argNode, filteredRows, context)

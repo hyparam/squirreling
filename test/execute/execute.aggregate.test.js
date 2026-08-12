@@ -703,6 +703,116 @@ describe('executeSql', () => {
     })
   })
 
+  describe('MIN_BY and MAX_BY', () => {
+    it('should return the value at the minimum key', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT MIN_BY(name, age) AS youngest FROM users',
+      }))
+      expect(result).toEqual([{ youngest: 'Bob' }])
+    })
+
+    it('should return the value at the maximum key', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT MAX_BY(name, age) AS oldest FROM users',
+      }))
+      expect(result).toEqual([{ oldest: 'Charlie' }])
+    })
+
+    it('should support ARG_MIN and ARG_MAX aliases', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT ARG_MIN(name, age) AS youngest, ARG_MAX(name, age) AS oldest FROM users',
+      }))
+      expect(result).toEqual([{ youngest: 'Bob', oldest: 'Charlie' }])
+    })
+
+    it('should generate a default alias', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT MIN_BY(name, age) FROM users',
+      }))
+      expect(result).toEqual([{ min_by_name_age: 'Bob' }])
+    })
+
+    it('should handle MIN_BY with GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, MIN_BY(name, age) AS youngest, MAX_BY(name, age) AS oldest FROM users GROUP BY city ORDER BY city',
+      }))
+      expect(result).toEqual([
+        { city: 'LA', youngest: 'Bob', oldest: 'Diana' },
+        { city: 'NYC', youngest: 'Alice', oldest: 'Charlie' },
+      ])
+    })
+
+    it('should keep the first row on ties', async () => {
+      const data = [
+        { name: 'Alice', score: 1 },
+        { name: 'Bob', score: 1 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MIN_BY(name, score) AS a, MAX_BY(name, score) AS b FROM data',
+      }))
+      expect(result).toEqual([{ a: 'Alice', b: 'Alice' }])
+    })
+
+    it('should ignore rows with a null key', async () => {
+      /** @type {Record<string, number | string | null>[]} */
+      const data = [
+        { name: 'Alice', score: null },
+        { name: 'Bob', score: 5 },
+        { name: 'Charlie', score: 9 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MIN_BY(name, score) AS a, MAX_BY(name, score) AS b FROM data',
+      }))
+      expect(result).toEqual([{ a: 'Bob', b: 'Charlie' }])
+    })
+
+    it('should ignore rows with a null value', async () => {
+      /** @type {Record<string, number | string | null>[]} */
+      const data = [
+        { name: null, score: 1 },
+        { name: 'Bob', score: 5 },
+        { name: 'Charlie', score: 9 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT MIN_BY(name, score) AS a, MAX_BY(name, score) AS b FROM data',
+      }))
+      expect(result).toEqual([{ a: 'Bob', b: 'Charlie' }])
+    })
+
+    it('should return null for MIN_BY of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { empty },
+        query: 'SELECT MIN_BY(name, age) AS a, MAX_BY(name, age) AS b FROM empty',
+      }))
+      expect(result).toEqual([{ a: null, b: null }])
+    })
+
+    it('should handle MIN_BY with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT MIN_BY(name, age) FILTER (WHERE city = \'NYC\') AS youngest FROM users',
+      }))
+      expect(result).toEqual([{ youngest: 'Alice' }])
+    })
+
+    it('should throw for wrong argument count', async () => {
+      await expect(async () => {
+        await collect(executeSql({
+          tables: { users },
+          query: 'SELECT MIN_BY(name) FROM users',
+        }))
+      }).rejects.toThrow('MIN_BY(value, key) function requires 2 arguments, got 1')
+    })
+  })
+
   describe('null handling in aggregates', () => {
     it('should handle null in aggregate functions correctly', async () => {
       const data = [
