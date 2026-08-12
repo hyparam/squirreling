@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.15.1]
+ - Fix lazy evaluation of SQL function arguments
+
 ## [0.15.0]
  - Support filter pushdown for `scanColumn`
 
