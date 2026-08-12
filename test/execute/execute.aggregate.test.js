@@ -631,6 +631,78 @@ describe('executeSql', () => {
     })
   })
 
+  describe('ANY_VALUE', () => {
+    it('should return a value with ANY_VALUE', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT ANY_VALUE(name) AS name FROM users',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }])
+    })
+
+    it('should handle ANY_VALUE with GROUP BY', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, ANY_VALUE(name) AS name FROM users GROUP BY city ORDER BY city',
+      }))
+      expect(result).toEqual([
+        { city: 'LA', name: 'Bob' },
+        { city: 'NYC', name: 'Alice' },
+      ])
+    })
+
+    it('should skip nulls in ANY_VALUE', async () => {
+      const data = [
+        { id: 1, name: null },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ANY_VALUE(name) AS name FROM data',
+      }))
+      expect(result).toEqual([{ name: 'Bob' }])
+    })
+
+    it('should return null for ANY_VALUE of all nulls', async () => {
+      /** @type {Record<string, number | string | null>[]} */
+      const data = [
+        { id: 1, name: null },
+        { id: 2, name: null },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT ANY_VALUE(name) AS name FROM data',
+      }))
+      expect(result).toEqual([{ name: null }])
+    })
+
+    it('should return null for ANY_VALUE of empty set', async () => {
+      const result = await collect(executeSql({
+        tables: { empty },
+        query: 'SELECT ANY_VALUE(name) AS name FROM empty',
+      }))
+      expect(result).toEqual([{ name: null }])
+    })
+
+    it('should handle ANY_VALUE with FILTER clause', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT ANY_VALUE(name) FILTER (WHERE city = \'LA\') AS name FROM users',
+      }))
+      expect(result).toEqual([{ name: 'Bob' }])
+    })
+
+    it('should throw for wrong argument count', async () => {
+      await expect(async () => {
+        await collect(executeSql({
+          tables: { users },
+          query: 'SELECT ANY_VALUE(name, age) FROM users',
+        }))
+      }).rejects.toThrow('ANY_VALUE(expression) function requires 1 argument, got 2')
+    })
+  })
+
   describe('null handling in aggregates', () => {
     it('should handle null in aggregate functions correctly', async () => {
       const data = [

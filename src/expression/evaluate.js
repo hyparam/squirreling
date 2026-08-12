@@ -289,6 +289,15 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (funcName === 'MAX') return max
       }
 
+      if (funcName === 'ANY_VALUE') {
+        // Returns an arbitrary non-null value from the group; we pick the first
+        const values = await evaluateAll(argNode, filteredRows, context)
+        for (const v of values) {
+          if (v != null) return v
+        }
+        return null
+      }
+
       if (funcName === 'STDDEV_SAMP' || funcName === 'STDDEV_POP') {
         const rawValues = await evaluateAll(argNode, filteredRows, context)
         let sum = 0

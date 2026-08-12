@@ -157,7 +157,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 
 ### Functions
 
-- Aggregate: `COUNT`, `COUNTIF`, `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE`, `STDDEV_POP`, `STDDEV_SAMP`, `ARRAY_AGG`, `JSON_ARRAYAGG`, `STRING_AGG`
+- Aggregate: `COUNT`, `COUNTIF`, `SUM`, `AVG`, `MIN`, `MAX`, `ANY_VALUE`, `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE`, `STDDEV_POP`, `STDDEV_SAMP`, `ARRAY_AGG`, `JSON_ARRAYAGG`, `STRING_AGG`
 - Window: `ROW_NUMBER`, `LAG`, `LEAD`
 - String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `OCTET_LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`, `POSITION`, `STRPOS`, `SPLIT_PART`, `STRING_SPLIT`
 - Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
