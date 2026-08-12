@@ -394,6 +394,18 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
     }
 
+    // COALESCE must be handled before the eager arg evaluation below, or it
+    // evaluates every argument once eagerly and the arguments up to the first
+    // non-null value a second time. Nested calls compound that duplication.
+    if (funcName === 'COALESCE') {
+      // Short-circuit: evaluate args one at a time, return first non-null
+      for (const arg of node.args) {
+        const val = await evaluateExpr({ node: arg, row, rowIndex, rows, context })
+        if (val != null) return val
+      }
+      return null
+    }
+
     /** @type {SqlPrimitive[]} */
     const args = node.args.length === 1
       ? [await evaluateExpr({ node: node.args[0], row, rowIndex, rows, context })]
@@ -415,20 +427,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       return evaluateSpatialFunc({ funcName, args })
     }
 
-    if (funcName === 'COALESCE') {
-      // Short-circuit: evaluate args one at a time, return first non-null
-      for (const arg of node.args) {
-        const val = await evaluateExpr({ node: arg, row, rowIndex, rows, context })
-        if (val != null) return val
-      }
-      return null
-    }
-
     if (funcName === 'NULLIF') {
       // NULLIF(a, b) returns null if a = b, otherwise returns a
-      const val2 = evaluateExpr({ node: node.args[1], row, rowIndex, rows, context })
-      const val1 = await evaluateExpr({ node: node.args[0], row, rowIndex, rows, context })
-      return val1 == await val2 ? null : val1
+      return args[0] == args[1] ? null : args[0]
     }
 
     if (funcName === 'GREATEST' || funcName === 'LEAST') {

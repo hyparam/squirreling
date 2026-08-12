@@ -299,6 +299,10 @@ describe('streaming aggregate row retention', () => {
     expect(streamingPlan('SELECT CASE WHEN count(*) > 0 THEN 1 ELSE sum(amount) END AS c FROM sales')).toBeUndefined()
   })
 
+  it('does not stream aggregates in later COALESCE arguments', () => {
+    expect(streamingPlan('SELECT COALESCE(1, sum(amount)) AS c FROM sales')).toBeUndefined()
+  })
+
   it('does not stream aggregates on the short-circuited side of AND', () => {
     expect(streamingPlan('SELECT region FROM sales GROUP BY region HAVING count(*) > 1 AND sum(amount) > 100')).toBeUndefined()
   })
@@ -439,6 +443,15 @@ describe('streaming aggregate results', () => {
       tables,
       functions: boomFunctions,
       query: 'SELECT CASE WHEN count(*) > 0 THEN 1 ELSE min(BOOM(amount)) END AS r FROM sales',
+    }))
+    expect(result).toEqual([{ r: 1 }])
+  })
+
+  it('never evaluates aggregates in later COALESCE arguments', async () => {
+    const result = await collect(executeSql({
+      tables,
+      functions: boomFunctions,
+      query: 'SELECT COALESCE(1, min(BOOM(amount))) AS r FROM sales',
     }))
     expect(result).toEqual([{ r: 1 }])
   })

@@ -166,6 +166,9 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }, c
     case 'function': {
       const funcName = node.funcName.toUpperCase()
       if (!isAggregateFunc(funcName)) {
+        if (funcName === 'COALESCE') {
+          return node.args.every((arg, i) => walk(arg, lazy || i > 0))
+        }
         return node.args.every(arg => walk(arg, lazy))
       }
       if (!STREAMABLE_FUNCS.has(funcName)) return false

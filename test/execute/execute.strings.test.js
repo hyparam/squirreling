@@ -1342,6 +1342,28 @@ describe('string functions', () => {
         { result: null },
       ])
     })
+
+    it('should surface a rejected second argument through the query promise', async () => {
+      await expect(collect(executeSql({
+        tables: { data: [{ value: 1 }] },
+        functions: {
+          SLOW: {
+            apply: async value => {
+              await new Promise(resolve => setTimeout(resolve, 1))
+              return value
+            },
+            arguments: { min: 1, max: 1 },
+          },
+          BOOM: {
+            apply() {
+              throw new Error('expected query error')
+            },
+            arguments: { min: 1, max: 1 },
+          },
+        },
+        query: 'SELECT NULLIF(SLOW(value), BOOM(value)) AS result FROM data',
+      }))).rejects.toThrow('expected query error')
+    })
   })
 
   describe('GREATEST', () => {
