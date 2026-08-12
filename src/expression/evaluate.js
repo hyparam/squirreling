@@ -642,7 +642,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       })
     }
 
-    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT') {
+    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING') {
       let jsonArg = args[0]
       const pathArg = args[1]
       if (jsonArg == null || pathArg == null) return null
@@ -691,6 +691,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       }
 
       if (current == null) return null
+      // JSON_EXTRACT_STRING returns text: unquoted scalars, JSON text for objects and arrays
+      if (funcName === 'JSON_EXTRACT_STRING') {
+        if (typeof current === 'object') return JSON.stringify(current)
+        return String(current)
+      }
       return current
     }
 

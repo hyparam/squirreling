@@ -198,6 +198,96 @@ describe('string functions', () => {
     })
   })
 
+  describe('JSON_EXTRACT_STRING', () => {
+    it('should extract a string property', async () => {
+      const data = [{ id: 1, json: { name: 'Alice' } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.name\') AS name FROM data',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }])
+    })
+
+    it('should convert a number to a string', async () => {
+      const data = [{ id: 1, json: { age: 30 } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.age\') AS age FROM data',
+      }))
+      expect(result).toEqual([{ age: '30' }])
+    })
+
+    it('should convert a boolean to a string', async () => {
+      const data = [{ id: 1, json: { active: true } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.active\') AS active FROM data',
+      }))
+      expect(result).toEqual([{ active: 'true' }])
+    })
+
+    it('should serialize an object as JSON text', async () => {
+      const data = [{ id: 1, json: { user: { name: 'Bob', age: 30 } } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.user\') AS user FROM data',
+      }))
+      expect(result).toEqual([{ user: '{"name":"Bob","age":30}' }])
+    })
+
+    it('should serialize an array as JSON text', async () => {
+      const data = [{ id: 1, json: { tags: ['a', 'b'] } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.tags\') AS tags FROM data',
+      }))
+      expect(result).toEqual([{ tags: '["a","b"]' }])
+    })
+
+    it('should extract from a JSON string input', async () => {
+      const data = [{ id: 1, json: '{"items":[{"name":"foo"}]}' }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.items[0].name\') AS name FROM data',
+      }))
+      expect(result).toEqual([{ name: 'foo' }])
+    })
+
+    it('should return null for non-existent path', async () => {
+      const data = [{ id: 1, json: { name: 'Alice' } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.age\') AS age FROM data',
+      }))
+      expect(result).toEqual([{ age: null }])
+    })
+
+    it('should return null when JSON input is null', async () => {
+      const data = [{ id: 1, json: NULL }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.name\') AS name FROM data',
+      }))
+      expect(result).toEqual([{ name: null }])
+    })
+
+    it('should throw for invalid JSON string', async () => {
+      const data = [{ id: 1, json: 'not valid json' }]
+      await expect(collect(executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json, \'$.name\') AS name FROM data' })))
+        .rejects.toThrow('JSON_EXTRACT_STRING(expression, path): invalid JSON string. First argument must be valid JSON. (row 1)')
+    })
+
+    it('should throw for wrong argument count', () => {
+      const data = [{ id: 1 }]
+      expect(() => executeSql({
+        tables: { data },
+        query: 'SELECT JSON_EXTRACT_STRING(json) FROM data',
+      })).toThrow('JSON_EXTRACT_STRING(expression, path) function requires 2 arguments, got 1')
+    })
+  })
+
   describe('JSON_ARRAY_LENGTH', () => {
     it('should return the length of a JSON array', async () => {
       const data = [{ id: 1, json: [10, 20, 30] }]
