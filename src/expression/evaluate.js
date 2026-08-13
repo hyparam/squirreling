@@ -167,7 +167,9 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (val == null) return null
       return -val
     }
-    if (node.op === 'NOT') return !val
+    // NOT UNKNOWN is UNKNOWN: JS ! would flip null to true and return rows
+    // SQL excludes, e.g. WHERE NOT (nullable < 300)
+    if (node.op === 'NOT') return val == null ? null : !val
     if (node.op === 'IS NULL') return val == null
     if (node.op === 'IS NOT NULL') return val != null
   }
@@ -186,9 +188,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
     const left = await evaluateExpr({ node: node.left, row, rowIndex, rows, context })
 
-    // Short-circuit evaluation for AND and OR
-    if (node.op === 'AND' && !left) return false
-    if (node.op === 'OR' && left) return true
+    // Short-circuit evaluation for AND and OR. A null left cannot
+    // short-circuit AND: NULL AND FALSE is false but NULL AND TRUE is null,
+    // so the right side decides
+    if (node.op === 'AND' && left != null && !left) return false
+    if (node.op === 'OR' && left != null && Boolean(left)) return true
 
     const right = await evaluateExpr({ node: node.right, row, rowIndex, rows, context })
     return applyBinaryOp(node.op, left, right)
@@ -776,19 +780,28 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
   }
 
-  // IN and NOT IN with value lists
+  // IN and NOT IN with value lists. IN is a chain of OR'd equalities, so it
+  // inherits their three-valued logic: a null on either side of any equality
+  // makes a non-match UNKNOWN rather than false, and NOT above it must not
+  // turn that into true
   if (node.type === 'in valuelist') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
+    let sawNull = exprVal == null
     for (const valueNode of node.values) {
       const val = await evaluateExpr({ node: valueNode, row, rowIndex, rows, context })
-      if (sqlEquals(exprVal, val)) return true
+      if (val == null) {
+        sawNull = true
+      } else if (exprVal != null && sqlEquals(exprVal, val)) {
+        return true
+      }
     }
-    return false
+    return sawNull ? null : false
   }
-  // IN with subqueries
+  // IN with subqueries, same three-valued logic as the value-list form
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     const subResult = executeStatement({ query: node.subquery, context })
+    let sawNull = false
     let innerCount = 0
     for await (const resRow of subResult.rows()) {
       if (++innerCount % YIELD_INTERVAL === 0) {
@@ -796,9 +809,13 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         context.signal?.throwIfAborted()
       }
       const value = await resRow.cells[resRow.columns[0]]()
-      if (sqlEquals(exprVal, value)) return true
+      if (exprVal == null || value == null) {
+        sawNull = true
+      } else if (exprVal != null && sqlEquals(exprVal, value)) {
+        return true
+      }
     }
-    return false
+    return sawNull ? null : false
   }
 
   // EXISTS and NOT EXISTS with subqueries

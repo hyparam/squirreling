@@ -29,12 +29,25 @@ export function applyBinaryOp(op, a, b) {
     return String(a) + String(b)
   }
 
-  // Comparison and logical operators
-  if (a == null || b == null) {
+  // Logical operators use Kleene three-valued logic: null is UNKNOWN, which
+  // only resolves when the other operand decides the answer on its own
+  if (op === 'AND') {
+    if (a != null && !a || b != null && !b) return false
+    if (a == null || b == null) return null
+    return true
+  }
+  if (op === 'OR') {
+    if (a != null && Boolean(a) || b != null && Boolean(b)) return true
+    if (a == null || b == null) return null
     return false
   }
-  if (op === 'AND') return Boolean(a) && Boolean(b)
-  if (op === 'OR') return Boolean(a) || Boolean(b)
+
+  // A comparison with a null operand is UNKNOWN, not false. The difference is
+  // invisible to a WHERE (both exclude the row) but not to a NOT above it,
+  // which must keep UNKNOWN as UNKNOWN rather than flip false to true
+  if (a == null || b == null) {
+    return null
+  }
   // Compare Date values by their time so distinct instances for the same
   // instant are equal, matching SQL TIMESTAMP semantics rather than JS identity.
   if (a instanceof Date && b instanceof Date) {

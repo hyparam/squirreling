@@ -373,3 +373,113 @@ describe('WHERE clause', () => {
     expect(result).toEqual([{ id: 1 }, { id: 3 }])
   })
 })
+
+describe('WHERE three-valued logic over nulls', () => {
+  // UNKNOWN and false both exclude a row, so the difference only shows
+  // through NOT, which must keep UNKNOWN as UNKNOWN instead of flipping a
+  // null comparison to true
+  const readings = [
+    { id: 1, ts: 100 },
+    { id: 2, ts: null },
+    { id: 3, ts: 300 },
+    { id: 4, ts: null },
+    { id: 5, ts: 500 },
+  ]
+
+  /**
+   * @param {string} where
+   * @returns {Promise<number[]>}
+   */
+  async function ids(where) {
+    const rows = await collect(executeSql({ tables: { readings }, query: `SELECT id FROM readings WHERE ${where}` }))
+    return rows.map(r => {
+      if (typeof r.id !== 'number') throw new TypeError('Expected id to be a number')
+      return r.id
+    })
+  }
+
+  it('excludes null rows from a negated comparison', async () => {
+    expect(await ids('NOT (ts < 300)')).toEqual([3, 5])
+    expect(await ids('NOT (ts = 300)')).toEqual([1, 5])
+    expect(await ids('NOT (ts >= 100)')).toEqual([])
+  })
+
+  it('returns no rows for a comparison against NULL, negated or not', async () => {
+    expect(await ids('ts = NULL')).toEqual([])
+    expect(await ids('NOT (ts = NULL)')).toEqual([])
+    expect(await ids('NOT NOT (ts = NULL)')).toEqual([])
+  })
+
+  it('excludes null rows from negated AND / OR trees', async () => {
+    expect(await ids('NOT (ts > 300 OR ts < 100)')).toEqual([1, 3])
+    expect(await ids('NOT (ts >= 300 OR ts <= 100)')).toEqual([])
+    expect(await ids('NOT (ts = 300 AND ts = 100)')).toEqual([1, 3, 5])
+  })
+
+  it('resolves AND / OR with a null operand only when the other side decides', async () => {
+    // ts = NULL is UNKNOWN for every row. Where ts is non-null the false
+    // conjunct decides and NOT flips it; where ts is null both conjuncts are
+    // UNKNOWN and the row stays excluded
+    expect(await ids('ts = NULL AND ts = -1')).toEqual([])
+    expect(await ids('NOT (ts = NULL AND ts = -1)')).toEqual([1, 3, 5])
+    // and the true disjunct decides
+    expect(await ids('ts = NULL OR ts = 300')).toEqual([3])
+    expect(await ids('NOT (ts = NULL OR ts = 300)')).toEqual([])
+  })
+
+  it('treats IN as a chain of equalities for null purposes', async () => {
+    expect(await ids('ts IN (100, 500)')).toEqual([1, 5])
+    expect(await ids('ts NOT IN (100, 500)')).toEqual([3])
+    // a null member makes every non-match UNKNOWN
+    expect(await ids('ts IN (100, NULL)')).toEqual([1])
+    expect(await ids('ts NOT IN (100, NULL)')).toEqual([])
+    expect(await ids('ts IN (NULL)')).toEqual([])
+  })
+
+  it('excludes null rows from NOT BETWEEN', async () => {
+    expect(await ids('NOT (ts BETWEEN 100 AND 300)')).toEqual([5])
+  })
+
+  it('excludes null rows from NOT LIKE', async () => {
+    const names = [
+      { id: 1, name: 'alpha' },
+      { id: 2, name: null },
+      { id: 3, name: 'beta' },
+    ]
+    const rows = await collect(executeSql({ tables: { names }, query: 'SELECT id FROM names WHERE name NOT LIKE \'a%\'' }))
+    expect(rows.map(r => r.id)).toEqual([3])
+  })
+
+  it('still answers IS NULL / IS NOT NULL two-valued', async () => {
+    expect(await ids('ts IS NULL')).toEqual([2, 4])
+    expect(await ids('NOT (ts IS NULL)')).toEqual([1, 3, 5])
+  })
+
+  it('excludes null rows when IN matches against a subquery with nulls', async () => {
+    const rows = await collect(executeSql({
+      tables: { readings, probe: [{ t: 100 }, { t: null }] },
+      query: 'SELECT id FROM readings WHERE ts NOT IN (SELECT t FROM probe)',
+    }))
+    expect(rows.map(r => r.id)).toEqual([])
+  })
+
+  it('treats every value as outside an empty subquery', async () => {
+    const rows = await collect(executeSql({
+      tables: { readings, probe: [{ t: 100 }] },
+      query: `
+        SELECT
+          id,
+          ts IN (SELECT t FROM probe WHERE t < 0) AS is_in,
+          ts NOT IN (SELECT t FROM probe WHERE t < 0) AS is_not_in
+        FROM readings
+      `,
+    }))
+    expect(rows).toEqual([
+      { id: 1, is_in: false, is_not_in: true },
+      { id: 2, is_in: false, is_not_in: true },
+      { id: 3, is_in: false, is_not_in: true },
+      { id: 4, is_in: false, is_not_in: true },
+      { id: 5, is_in: false, is_not_in: true },
+    ])
+  })
+})
