@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.15.3]
+ - Use SQL three-valued logic for `NULL` in comparisons and boolean operators
+
 ## [0.15.2]
  - Add `MIN_BY` and `MAX_BY` aggregate functions
  - Add `ANY_VALUE` aggregate function
