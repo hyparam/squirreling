@@ -18,7 +18,7 @@ import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { AsyncBatch, BatchProjection, ColumnVector, CompiledBatchExpression } from '../internalTypes.js'
- * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
+ * @import { AsyncCells, AsyncDataSource, AsyncRow, ColumnDemand, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, PreparedScan, QueryResults, RelationSchema, ScanRequest, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
 
@@ -284,6 +284,11 @@ export function executeScan(plan, context, existingColumnResult) {
   const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
   const scanContext = { ...context, scope: [plan.alias ?? plan.table] }
 
+  if (!existingColumnResult && table.prepareScan && table.schema) {
+    const prepared = table.prepareScan(scanRequest(plan, table.schema))
+    return executePreparedScan({ plan, prepared, context: scanContext, table })
+  }
+
   // Fast path: single column scan. As with scan(), hints the source did not
   // apply are handled by the engine over the returned column values.
   const scanColumnOptions = plan.hints.columns?.length === 1
@@ -401,6 +406,104 @@ export function executeScan(plan, context, existingColumnResult) {
       // the abort so a truncated scan is not mistaken for a complete one
       signal?.throwIfAborted()
     },
+  }
+}
+
+/**
+ * Executes a prepared native-batch scan and applies only the residual work
+ * reported by the source.
+ *
+ * @param {Object} options
+ * @param {ScanNode} options.plan
+ * @param {PreparedScan} options.prepared
+ * @param {ExecuteContext} options.context
+ * @param {AsyncDataSource} options.table
+ * @returns {QueryResults}
+ */
+function executePreparedScan({ plan, prepared, context, table }) {
+  const { signal } = context
+  const { residual, properties, schema } = prepared
+  const columns = schema.fields.map(function fieldName(field) { return field.name })
+  const residualFilter = residual.filter
+    ? compileBatchExpression({ expression: residual.filter, schema })
+    : undefined
+  const canUseBatches = !residual.filter || residualFilter !== undefined
+
+  /** @returns {AsyncIterable<AsyncBatch>} */
+  function makeBatches() {
+    /** @type {AsyncIterable<AsyncBatch>} */
+    let batches = prepared.batches({ signal })
+    if (residualFilter) batches = filterBatches(batches, residualFilter, signal)
+    if (residual.limit !== undefined || residual.offset) {
+      batches = limitBatches(batches, residual.limit, residual.offset, signal)
+    }
+    return batches
+  }
+
+  const exactRows = properties.exactRows ?? (plan.hints.where ? undefined : table.numRows)
+  const maxRows = properties.maxRows ?? properties.exactRows ?? table.numRows
+  return {
+    columns,
+    schema: canUseBatches ? schema : undefined,
+    numRows: residual.filter
+      ? undefined
+      : computeScanRows(exactRows, residual.limit, residual.offset),
+    maxRows: computeScanRows(maxRows, residual.limit, residual.offset),
+    batches: canUseBatches ? makeBatches : undefined,
+    async *rows() {
+      if (canUseBatches) {
+        yield* batchesToRows(makeBatches())
+        signal?.throwIfAborted()
+        return
+      }
+
+      let result = batchesToRows(prepared.batches({ signal }))
+      if (residual.filter) result = filterRows(result, residual.filter, context, residual.limit)
+      if (residual.limit !== undefined || residual.offset) {
+        result = limitRows(result, residual.limit, residual.offset, signal)
+      }
+      yield* result
+      signal?.throwIfAborted()
+    },
+  }
+}
+
+/**
+ * Builds a generic demand schedule from the scan's logical columns. Predicate
+ * fields are required in phase zero; remaining output fields stay deferred.
+ *
+ * @param {ScanNode} plan
+ * @param {RelationSchema} schema
+ * @returns {ScanRequest}
+ */
+function scanRequest(plan, schema) {
+  /** @type {IdentifierNode[]} */
+  const predicateIdentifiers = []
+  collectColumnsFromExpr(plan.hints.where, predicateIdentifiers)
+  const predicateNames = new Set(predicateIdentifiers.map(function identifierName(identifier) {
+    return identifier.name
+  }))
+  const requestedNames = plan.hints.columns ?? schema.fields.map(function fieldName(field) {
+    return field.name
+  })
+  /** @type {ColumnDemand[]} */
+  const columns = requestedNames.map(function columnDemand(name) {
+    const field = schema.fields.find(function fieldName(candidate) { return candidate.name === name })
+    if (!field) throw new Error(`Prepared source schema does not contain column "${name}"`)
+    const predicate = predicateNames.has(name)
+    return {
+      field: field.id,
+      phase: predicate ? 0 : 1,
+      purpose: predicate ? 'filter' : 'output',
+      mode: predicate ? 'required' : 'deferred',
+    }
+  })
+  columns.sort(function demandPhase(a, b) { return a.phase - b.phase })
+  return {
+    columns,
+    filter: plan.hints.where,
+    limit: plan.hints.limit,
+    offset: plan.hints.offset,
   }
 }
 

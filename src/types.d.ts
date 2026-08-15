@@ -160,6 +160,77 @@ export interface RowsToBatchesOptions {
   signal?: AbortSignal
 }
 
+export interface ColumnStats {
+  field: FieldId
+  estimatedEncodedBytes?: number
+  estimatedDecodedBytes?: number
+  valueCount?: number
+  nullCount?: number
+  distinctCount?: number
+  lowerBound?: SqlPrimitive
+  upperBound?: SqlPrimitive
+}
+
+export interface RelationStats {
+  exactRows?: number
+  estimatedRows?: number
+  columns?: readonly ColumnStats[]
+}
+
+export interface ColumnDemand {
+  field: FieldId
+  phase: number
+  purpose: 'filter' | 'join-key' | 'group-key' | 'sort-key' | 'output'
+  mode: 'required' | 'prefetch' | 'deferred'
+}
+
+export interface ScanRequest {
+  columns: readonly ColumnDemand[]
+  filter?: ExprNode
+  limit?: number
+  offset?: number
+  targetBatchRows?: number
+  targetBatchBytes?: number
+}
+
+export interface ColumnReadProperties {
+  field: FieldId
+  estimatedEncodedBytes?: number
+  estimatedDecodedBytes?: number
+  selectionGranularity: 'whole-column' | 'ranges' | 'arbitrary'
+}
+
+export interface ScanProperties {
+  exactRows?: number
+  estimatedRows?: number
+  maxRows?: number
+  estimatedBytes?: number
+  columns: readonly ColumnReadProperties[]
+  estimatedStartupMs?: number
+  restartable?: boolean
+}
+
+export interface ScanResidual {
+  filter?: ExprNode
+  limit?: number
+  offset?: number
+}
+
+export interface ReadBatchesOptions {
+  signal?: AbortSignal
+}
+
+export type ReadBatches = (options?: ReadBatchesOptions) => AsyncIterable<AsyncBatch>
+
+export interface PreparedScan {
+  schema: RelationSchema
+  residual: ScanResidual
+  properties: ScanProperties
+  batches: ReadBatches
+}
+
+export type PrepareScan = (request: ScanRequest) => PreparedScan
+
 // parseSql(options)
 export interface ParseSqlOptions {
   query: string
@@ -222,6 +293,9 @@ export type Row = Record<string, SqlPrimitive>[]
 export interface AsyncDataSource {
   numRows?: number
   columns: string[]
+  schema?: RelationSchema
+  stats?: RelationStats
+  prepareScan?: PrepareScan
   scan(options: ScanOptions): ScanResults
   // Optional method for fast column scans
   scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>> | ScanColumnResults
