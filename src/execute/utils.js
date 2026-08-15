@@ -6,6 +6,22 @@ import { collectBatches } from '../backend/batchAdapters.js'
 
 const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
 
+/** @type {WeakMap<QueryResults, AbortSignal>} */
+const querySignals = new WeakMap()
+
+/**
+ * Associates an execution signal with results without expanding the public
+ * result shape solely for the collection adapter.
+ *
+ * @param {QueryResults} results
+ * @param {AbortSignal} [signal]
+ * @returns {QueryResults}
+ */
+export function bindQuerySignal(results, signal) {
+  if (signal) querySignals.set(results, signal)
+  return results
+}
+
 /**
  * Compares two values for a single ORDER BY term, handling nulls and direction
  *
@@ -51,7 +67,7 @@ export function compareForTerm(a, b, term) {
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
 export async function collect(results) {
-  if (results.batches) return await collectBatches(results.batches())
+  if (results.batches) return await collectBatches(results.batches(), querySignals.get(results))
 
   // Collect all rows first, then materialize cells concurrently
   // This enables dataloader-style batching of cell accessors

@@ -7,10 +7,8 @@ export type {
   BatchColumn,
   ColumnDemand,
   ColumnEvaluationRequest,
-  ColumnReadProperties,
   ColumnReadRequest,
   ColumnResult,
-  ColumnStats,
   ColumnVector,
   ExecuteContext,
   ExecuteSqlOptions,
@@ -28,7 +26,6 @@ export type {
   ReadBatchesOptions,
   ReadBatchColumnOptions,
   RelationSchema,
-  RelationStats,
   RowRange,
   RowsToBatchesOptions,
   RowSelection,
@@ -140,7 +137,10 @@ export function rowsToBatches(
   options?: RowsToBatchesOptions,
 ): AsyncIterable<AsyncBatch>
 
-export function batchesToRows(batches: AsyncIterable<AsyncBatch>): AsyncIterable<AsyncRow>
+export function batchesToRows(
+  batches: AsyncIterable<AsyncBatch>,
+  signal?: AbortSignal,
+): AsyncIterable<AsyncRow>
 
 /**
  * Generates a default alias for a derived column expression.

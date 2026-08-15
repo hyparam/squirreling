@@ -78,6 +78,8 @@ export function memorySource({ data, columns }) {
  * @returns {AsyncDataSource}
  */
 export function cachedDataSource(source) {
+  const { scan } = source
+  if (!scan) return source
   /** @type {WeakMap<object, Map<string, Promise<SqlPrimitive>>>} */
   const cache = new WeakMap()
   return {
@@ -85,7 +87,7 @@ export function cachedDataSource(source) {
     scan(options) {
       // Does re-run the scan, but cache avoids re-computing expensive async cells
       // TODO: check cache first to avoid re-scanning when possible
-      const { rows, appliedWhere, appliedLimitOffset } = source.scan(options)
+      const { rows, appliedWhere, appliedLimitOffset } = scan(options)
 
       // Applied where clause changes which rows are returned so can't be cached
       if (appliedWhere && options.where) {

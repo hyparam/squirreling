@@ -58,7 +58,6 @@ export type RowSelection =
       type: 'bitmap'
       values: Uint8Array
       length: number
-      selectedCount: number
     }
 
 export type NumericArray =
@@ -110,6 +109,7 @@ export interface ColumnEvaluationRequest {
   batch: AsyncBatch
   selection: RowSelection
   signal?: AbortSignal
+  rowOffset?: number
 }
 
 export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
@@ -131,19 +131,15 @@ export type BatchProjection =
 
 export type BatchColumn =
   | { type: 'loaded', vector: ColumnVector }
-  | { type: 'source', length: number, read: ReadColumn }
+  | { type: 'source', read: ReadColumn }
   | {
       type: 'computed'
-      length: number
       input: AsyncBatch
-      dependencies: readonly number[]
       evaluate: EvaluateColumn
     }
 
 export interface AsyncBatch {
   schema: RelationSchema
-  baseRowCount: number
-  rowCount: number
   selection: RowSelection
   columns: readonly BatchColumn[]
 }
@@ -160,28 +156,11 @@ export interface RowsToBatchesOptions {
   signal?: AbortSignal
 }
 
-export interface ColumnStats {
-  field: FieldId
-  estimatedEncodedBytes?: number
-  estimatedDecodedBytes?: number
-  valueCount?: number
-  nullCount?: number
-  distinctCount?: number
-  lowerBound?: SqlPrimitive
-  upperBound?: SqlPrimitive
-}
-
-export interface RelationStats {
-  exactRows?: number
-  estimatedRows?: number
-  columns?: readonly ColumnStats[]
-}
-
 export interface ColumnDemand {
   field: FieldId
   phase: number
-  purpose: 'filter' | 'join-key' | 'group-key' | 'sort-key' | 'output'
-  mode: 'required' | 'prefetch' | 'deferred'
+  purpose: 'filter' | 'output'
+  mode: 'required' | 'deferred'
 }
 
 export interface ScanRequest {
@@ -189,25 +168,11 @@ export interface ScanRequest {
   filter?: ExprNode
   limit?: number
   offset?: number
-  targetBatchRows?: number
-  targetBatchBytes?: number
-}
-
-export interface ColumnReadProperties {
-  field: FieldId
-  estimatedEncodedBytes?: number
-  estimatedDecodedBytes?: number
-  selectionGranularity: 'whole-column' | 'ranges' | 'arbitrary'
 }
 
 export interface ScanProperties {
   exactRows?: number
-  estimatedRows?: number
   maxRows?: number
-  estimatedBytes?: number
-  columns: readonly ColumnReadProperties[]
-  estimatedStartupMs?: number
-  restartable?: boolean
 }
 
 export interface ScanResidual {
@@ -294,9 +259,8 @@ export interface AsyncDataSource {
   numRows?: number
   columns: string[]
   schema?: RelationSchema
-  stats?: RelationStats
   prepareScan?: PrepareScan
-  scan(options: ScanOptions): ScanResults
+  scan?(options: ScanOptions): ScanResults
   // Optional method for fast column scans
   scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>> | ScanColumnResults
 }
