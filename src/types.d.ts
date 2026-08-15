@@ -11,6 +11,9 @@ export { QueryPlan } from './plan/types.js'
 export interface QueryResults {
   columns: string[]
   rows(): AsyncGenerator<AsyncRow>
+  /** Native batch output during the row-to-batch executor migration. */
+  batches?(): AsyncIterable<AsyncBatch>
+  schema?: RelationSchema
   numRows?: number
   maxRows?: number
 }
@@ -111,12 +114,28 @@ export interface ColumnEvaluationRequest {
 
 export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
 
+export interface CompileBatchExpressionOptions {
+  expression: ExprNode
+  schema: RelationSchema
+}
+
+export interface CompiledBatchExpression {
+  dependencies: readonly number[]
+  evaluate: EvaluateColumn
+}
+
+export type BatchProjection =
+  | { type: 'column', columnIndex: number }
+  | { type: 'constant', value: SqlPrimitive }
+  | { type: 'expression', expression: CompiledBatchExpression }
+
 export type BatchColumn =
   | { type: 'loaded', vector: ColumnVector }
   | { type: 'source', length: number, read: ReadColumn }
   | {
       type: 'computed'
       length: number
+      input: AsyncBatch
       dependencies: readonly number[]
       evaluate: EvaluateColumn
     }
@@ -133,6 +152,11 @@ export interface ReadBatchColumnOptions {
   batch: AsyncBatch
   columnIndex: number
   selection?: RowSelection
+  signal?: AbortSignal
+}
+
+export interface RowsToBatchesOptions {
+  batchRows?: number
   signal?: AbortSignal
 }
 

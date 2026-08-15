@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
-import { batchResultsFor } from '../../src/execute/batchResults.js'
 
 /**
  * @import { AsyncDataSource, ScanColumnResults } from '../../src/types.js'
@@ -15,10 +14,9 @@ describe('native batch execution', () => {
       query: 'SELECT data.id AS value FROM data',
     })
 
-    expect(Object.keys(results)).toEqual(['columns', 'numRows', 'maxRows', 'rows'])
-    const batchResults = batchResultsFor(results)
-    if (!batchResults) throw new Error('expected internal batches')
-    const iterator = batchResults.batches()[Symbol.asyncIterator]()
+    expect(results.batches).toBeTypeOf('function')
+    if (!results.batches) throw new Error('expected native batches')
+    const iterator = results.batches()[Symbol.asyncIterator]()
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     const column = first.value.columns[0]
@@ -50,17 +48,16 @@ describe('native batch execution', () => {
     expect(rows).toEqual([4, 5])
   })
 
-  it('keeps computed projection private and lazy at column granularity', async () => {
+  it('keeps computed projection lazy at column granularity', async () => {
     const source = columnSource(function chunks() { return [['a', 'abcd', null]] })
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT LENGTH(id) + 1 AS size FROM data',
     })
 
-    expect(Object.keys(results)).toEqual(['columns', 'numRows', 'maxRows', 'rows'])
-    const batchResults = batchResultsFor(results)
-    if (!batchResults) throw new Error('expected internal batches')
-    const iterator = batchResults.batches()[Symbol.asyncIterator]()
+    expect(results.batches).toBeTypeOf('function')
+    if (!results.batches) throw new Error('expected native batches')
+    const iterator = results.batches()[Symbol.asyncIterator]()
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     const [column] = first.value.columns
@@ -92,33 +89,30 @@ describe('native batch execution', () => {
       query: 'SELECT CASE WHEN id IS NULL THEN 0 ELSE id END AS value FROM data',
     })
 
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ value: 0 }, { value: 2 }])
   })
 
-  it('turns a residual predicate into a private batch selection', async () => {
+  it('turns a residual predicate into a batch selection', async () => {
     const source = columnSource(function chunks() { return [[null, 2, 3, 4]] }, false)
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT id FROM data WHERE id > 2',
     })
 
-    expect(Object.keys(results)).toEqual(['columns', 'numRows', 'maxRows', 'rows'])
-    expect(Object.hasOwn(results, 'batches')).toBe(false)
-    expect(Object.hasOwn(results, 'schema')).toBe(false)
-    const batchResults = batchResultsFor(results)
-    if (!batchResults) throw new Error('expected internal batches')
-    const iterator = batchResults.batches()[Symbol.asyncIterator]()
+    expect(results.batches).toBeTypeOf('function')
+    if (!results.batches) throw new Error('expected native batches')
+    const iterator = results.batches()[Symbol.asyncIterator]()
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     expect(first.value.selection).toEqual({
       type: 'indices',
       indices: new Uint32Array([2, 3]),
       length: 4,
+      selectedCount: 2,
     })
     expect(await collect(results)).toEqual([{ id: 3 }, { id: 4 }])
   })
-
   it('applies a residual predicate before limit and offset', async () => {
     const source = columnSource(function chunks() { return [[1, 2, 3, 4], [5, 6, 7, 8]] }, false)
     const results = executeSql({
@@ -126,7 +120,7 @@ describe('native batch execution', () => {
       query: 'SELECT id FROM data WHERE id % 2 = 0 LIMIT 2 OFFSET 1',
     })
 
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ id: 4 }, { id: 6 }])
   })
 
@@ -137,7 +131,7 @@ describe('native batch execution', () => {
       query: 'SELECT id FROM data WHERE (id > 1 AND id < 4) OR id = 5',
     })
 
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ id: 2 }, { id: 3 }, { id: 5 }])
   })
 
@@ -148,20 +142,19 @@ describe('native batch execution', () => {
       query: 'SELECT id FROM data WHERE CASE WHEN id IS NULL THEN 0 ELSE id END > 2',
     })
 
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ id: 3 }])
   })
 
-  it('filters a computed subquery through private batches', async () => {
+  it('filters a computed subquery through batches', async () => {
     const source = columnSource(function chunks() { return [[1, 2, 3, 4]] })
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT value FROM (SELECT id * 3 AS value FROM data) WHERE value > 6',
     })
 
-    expect(Object.hasOwn(results, 'batches')).toBe(false)
-    expect(Object.hasOwn(results, 'schema')).toBe(false)
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
+    expect(results.schema).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 9 }, { value: 12 }])
   })
 
@@ -172,7 +165,7 @@ describe('native batch execution', () => {
       query: 'SELECT value FROM (SELECT id AS value FROM data) WHERE CASE WHEN value IS NULL THEN 0 ELSE value END > 2',
     })
 
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ value: 3 }])
   })
 
@@ -204,16 +197,15 @@ describe('native batch execution', () => {
     ])
   })
 
-  it('executes distinct over private computed batches', async () => {
+  it('executes distinct over computed batches', async () => {
     const source = columnSource(function chunks() { return [[1, 2, 3], [4, 5]] })
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT DISTINCT id % 2 AS value FROM data',
     })
 
-    expect(Object.hasOwn(results, 'batches')).toBe(false)
-    expect(Object.hasOwn(results, 'schema')).toBe(false)
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
+    expect(results.schema).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 1 }, { value: 0 }])
   })
 

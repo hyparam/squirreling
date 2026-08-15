@@ -13,4 +13,5 @@ export {
   selectVector,
   valueAt,
 } from './backend/batch.js'
+export { batchesToRows, rowsToBatches } from './backend/batchAdapters.js'
 export { derivedAlias } from './expression/alias.js'

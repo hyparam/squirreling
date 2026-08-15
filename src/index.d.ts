@@ -1,4 +1,4 @@
-import type { AsyncBatch, AsyncDataSource, AsyncRow, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncBatch, AsyncDataSource, AsyncRow, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RelationSchema, RowsToBatchesOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncBatch,
   AsyncCells,
@@ -22,6 +22,7 @@ export type {
   ReadBatchColumnOptions,
   RelationSchema,
   RowRange,
+  RowsToBatchesOptions,
   RowSelection,
   ScanOptions,
   ScanResults,
@@ -121,6 +122,14 @@ export function selectVector(vector: ColumnVector, selection: RowSelection): Col
 export function readBatchColumn(options: ReadBatchColumnOptions): ColumnResult
 
 export function selectBatch(batch: AsyncBatch, selection: RowSelection): AsyncBatch
+
+export function rowsToBatches(
+  rows: AsyncIterable<AsyncRow>,
+  schema: RelationSchema,
+  options?: RowsToBatchesOptions,
+): AsyncIterable<AsyncBatch>
+
+export function batchesToRows(batches: AsyncIterable<AsyncBatch>): AsyncIterable<AsyncRow>
 
 /**
  * Generates a default alias for a derived column expression.
