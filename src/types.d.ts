@@ -15,6 +15,127 @@ export interface QueryResults {
   maxRows?: number
 }
 
+export type FieldId = number
+
+export type SqlType =
+  | { type: 'unknown' }
+  | { type: 'string' }
+  | { type: 'number' }
+  | { type: 'bigint' }
+  | { type: 'boolean' }
+  | { type: 'date' }
+  | { type: 'array', items: SqlType }
+  | { type: 'struct', fields: readonly Field[] }
+
+export interface Field {
+  id: FieldId
+  name: string
+  dataType: SqlType
+  nullable: boolean
+}
+
+export interface RelationSchema {
+  fields: readonly Field[]
+}
+
+export interface RowRange {
+  start: number
+  end: number
+}
+
+/**
+ * A selection over a base domain of `length` rows.
+ */
+export type RowSelection =
+  | { type: 'all', length: number }
+  | { type: 'range', start: number, end: number, length: number }
+  | { type: 'ranges', ranges: readonly RowRange[], length: number }
+  | { type: 'indices', indices: Uint32Array, length: number }
+  | {
+      type: 'bitmap'
+      values: Uint8Array
+      length: number
+      selectedCount: number
+    }
+
+export type NumericArray =
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array
+  | BigInt64Array
+  | BigUint64Array
+
+export type ColumnVector =
+  | {
+      type: 'values'
+      values: readonly SqlPrimitive[]
+      length: number
+    }
+  | {
+      type: 'typed'
+      values: NumericArray
+      validity?: Uint8Array
+      length: number
+    }
+  | {
+      type: 'constant'
+      value: SqlPrimitive
+      length: number
+    }
+  | {
+      type: 'selected'
+      source: ColumnVector
+      selection: RowSelection
+      length: number
+    }
+
+export interface ColumnReadRequest {
+  selection: RowSelection
+  signal?: AbortSignal
+}
+
+export type ColumnResult = ColumnVector | Promise<ColumnVector>
+export type ReadColumn = (request: ColumnReadRequest) => ColumnResult
+
+export interface ColumnEvaluationRequest {
+  batch: AsyncBatch
+  selection: RowSelection
+  signal?: AbortSignal
+}
+
+export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
+
+export type BatchColumn =
+  | { type: 'loaded', vector: ColumnVector }
+  | { type: 'source', length: number, read: ReadColumn }
+  | {
+      type: 'computed'
+      length: number
+      dependencies: readonly number[]
+      evaluate: EvaluateColumn
+    }
+
+export interface AsyncBatch {
+  schema: RelationSchema
+  baseRowCount: number
+  rowCount: number
+  selection: RowSelection
+  columns: readonly BatchColumn[]
+}
+
+export interface ReadBatchColumnOptions {
+  batch: AsyncBatch
+  columnIndex: number
+  selection?: RowSelection
+  signal?: AbortSignal
+}
+
 // parseSql(options)
 export interface ParseSqlOptions {
   query: string
