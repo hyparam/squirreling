@@ -66,6 +66,7 @@ export interface ColumnEvaluationRequest {
   batch: AsyncBatch
   selection: RowSelection
   signal?: AbortSignal
+  rowOffset?: number
 }
 
 export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
@@ -80,7 +81,11 @@ export interface CompiledBatchExpression {
   evaluate: EvaluateColumn
 }
 
-export type ValueKernel = (vectors: ColumnVector[], rowIndex: number) => SqlPrimitive
+export type ValueKernel = (
+  vectors: ColumnVector[],
+  rowIndex: number,
+  streamRowIndex: number,
+) => SqlPrimitive
 
 export interface CompileState {
   dependencies: number[]

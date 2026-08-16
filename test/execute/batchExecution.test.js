@@ -91,7 +91,7 @@ describe('native batch execution', () => {
     const source = columnSource(function chunks() { return [[null, 2]] })
     const results = executeSql({
       tables: { data: source },
-      query: 'SELECT COALESCE(id, 0) AS value FROM data',
+      query: 'SELECT CASE WHEN id IS NULL THEN 0 ELSE id END AS value FROM data',
     })
 
     expect(batchResultsFor(results)).toBeUndefined()
@@ -136,7 +136,7 @@ describe('native batch execution', () => {
     const source = columnSource(function chunks() { return [[null, 2, 3]] }, false)
     const results = executeSql({
       tables: { data: source },
-      query: 'SELECT id FROM data WHERE COALESCE(id, 0) > 2',
+      query: 'SELECT id FROM data WHERE CASE WHEN id IS NULL THEN 0 ELSE id END > 2',
     })
 
     expect(batchResultsFor(results)).toBeUndefined()
@@ -160,7 +160,7 @@ describe('native batch execution', () => {
     const source = columnSource(function chunks() { return [[null, 2, 3]] })
     const results = executeSql({
       tables: { data: source },
-      query: 'SELECT value FROM (SELECT id AS value FROM data) WHERE COALESCE(value, 0) > 2',
+      query: 'SELECT value FROM (SELECT id AS value FROM data) WHERE CASE WHEN value IS NULL THEN 0 ELSE value END > 2',
     })
 
     expect(batchResultsFor(results)).toBeUndefined()

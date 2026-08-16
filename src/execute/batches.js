@@ -61,12 +61,14 @@ export async function* limitBatches(batches, limit = Infinity, offset = 0, signa
  * @yields {AsyncBatch}
  */
 export async function* filterBatches(batches, expression, signal) {
+  let rowOffset = 0
   for await (const batch of batches) {
     signal?.throwIfAborted()
-    const result = expression.evaluate({ batch, selection: batch.selection, signal })
-    const predicate = result instanceof Promise ? await result : result
     const rowCount = selectedRowCount(batch.selection)
+    const result = expression.evaluate({ batch, selection: batch.selection, signal, rowOffset })
+    const predicate = result instanceof Promise ? await result : result
     const { selection, selectedCount } = predicateSelection(predicate, rowCount)
+    rowOffset += rowCount
     if (selectedCount === 0) continue
     if (selectedCount === rowCount) {
       yield batch
@@ -140,7 +142,10 @@ export async function* distinctBatches(batches, signal) {
  * @yields {AsyncBatch}
  */
 export async function* projectExpressionBatches(batches, schema, projections) {
+  let rowOffset = 0
   for await (const batch of batches) {
+    const currentRowOffset = rowOffset
+    rowOffset += selectedRowCount(batch.selection)
     yield {
       schema,
       selection: batch.selection,
@@ -163,7 +168,9 @@ export async function* projectExpressionBatches(batches, schema, projections) {
             type: 'computed',
             input: batch,
             dependencies: projection.expression.dependencies,
-            evaluate: projection.expression.evaluate,
+            evaluate(request) {
+              return projection.expression.evaluate({ ...request, rowOffset: currentRowOffset })
+            },
           }
         }
         return column

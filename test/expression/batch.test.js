@@ -76,20 +76,74 @@ describe('batch expressions', () => {
     expect(read).toHaveBeenCalledTimes(1)
   })
 
-  it('preserves scalar short-circuit behavior', () => {
-    const compiled = compile('FALSE AND LENGTH(n) > 0')
+  it('declines expressions whose short-circuited branches read columns', () => {
+    expect(compile('FALSE AND LENGTH(n) > 0')).toBeUndefined()
+    expect(compile('TRUE OR LENGTH(n) > 0')).toBeUndefined()
+    expect(compile('COALESCE(1, n)')).toBeUndefined()
+  })
+
+  it('compiles production JSON token expressions', () => {
+    const compiled = compile('COALESCE(CAST(JSON_EXTRACT(text, \'$.usage.input_tokens\') AS BIGINT), 0)')
+    if (!compiled) throw new Error('expected expression to compile')
+    const batch = loadedBatch([1, 2, 3], [
+      { usage: { input_tokens: 42 } },
+      { usage: {} },
+      null,
+    ])
+
+    expect(compiled.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values',
+      values: [42n, 0, 0],
+      length: 3,
+    })
+  })
+
+  it('resolves qualified identifiers against a bare scan schema', () => {
+    const compiled = compile('data.n + 1')
     if (!compiled) throw new Error('expected expression to compile')
     const batch = loadedBatch([1, 2], ['a', 'b'])
 
     expect(compiled.evaluate({ batch, selection: batch.selection })).toEqual({
       type: 'values',
-      values: [false, false],
+      values: [2, 3],
       length: 2,
     })
   })
 
+  it('uses a stream row offset in execution errors', () => {
+    const compiled = compile('LENGTH(n)')
+    if (!compiled) throw new Error('expected expression to compile')
+    const batch = loadedBatch([1], ['unused'])
+
+    expect(() => compiled.evaluate({
+      batch,
+      selection: batch.selection,
+      rowOffset: 2,
+    })).toThrow('LENGTH(string): expected string or array, got number. Use CAST to convert to a string first. (row 3)')
+  })
+
+  it('yields during large cancellable kernel evaluation', async () => {
+    const compiled = compile('n + 1')
+    if (!compiled) throw new Error('expected expression to compile')
+    const values = Array.from({ length: 50_000 }, function value(_item, index) { return index })
+    const batch = loadedBatch(values, values)
+    const controller = new AbortController()
+    const reason = new Error('timeout')
+    const timer = setTimeout(function abort() { controller.abort(reason) }, 0)
+
+    try {
+      await expect(compiled.evaluate({
+        batch,
+        selection: batch.selection,
+        signal: controller.signal,
+      })).rejects.toBe(reason)
+    } finally {
+      clearTimeout(timer)
+    }
+  })
+
   it('declines unsupported expressions and missing identifiers', () => {
-    expect(compileBatchExpression({ expression: expression('COALESCE(n, 0)'), schema })).toBeUndefined()
+    expect(compileBatchExpression({ expression: expression('CASE WHEN n > 0 THEN n END'), schema })).toBeUndefined()
     expect(compileBatchExpression({ expression: expression('missing + 1'), schema })).toBeUndefined()
   })
 })
