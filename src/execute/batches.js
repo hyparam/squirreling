@@ -1,7 +1,7 @@
 import { selectBatch, selectedRowCount, valueAt } from '../backend/batch.js'
 
 /**
- * @import { AsyncBatch, ColumnVector, CompiledBatchExpression, RelationSchema, RowSelection } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchColumn, BatchProjection, ColumnVector, CompiledBatchExpression, RelationSchema, RowSelection } from '../internalTypes.js'
  */
 
 /**
@@ -75,21 +75,43 @@ export async function* filterBatches(batches, expression, signal) {
 }
 
 /**
- * Projects batches by positional column reference without reading or copying
- * their vectors.
+ * Projects batches into direct, constant, or lazily computed columns. A
+ * computed column retains the input batch that owns its dependency indices,
+ * so output columns remain schema-aligned without hidden dependency columns.
  *
  * @param {AsyncIterable<AsyncBatch>} batches
  * @param {RelationSchema} schema
- * @param {number[]} columnIndices
+ * @param {readonly BatchProjection[]} projections
  * @yields {AsyncBatch}
  */
-export async function* projectBatches(batches, schema, columnIndices) {
+export async function* projectExpressionBatches(batches, schema, projections) {
   for await (const batch of batches) {
     yield {
       schema,
       selection: batch.selection,
-      columns: columnIndices.map(function selectColumn(columnIndex) {
-        return batch.columns[columnIndex]
+      columns: projections.map(function projectColumn(projection) {
+        /** @type {BatchColumn} */
+        let column
+        if (projection.type === 'column') {
+          column = batch.columns[projection.columnIndex]
+        } else if (projection.type === 'constant') {
+          column = {
+            type: 'loaded',
+            vector: {
+              type: 'constant',
+              value: projection.value,
+              length: batch.selection.length,
+            },
+          }
+        } else {
+          column = {
+            type: 'computed',
+            input: batch,
+            dependencies: projection.expression.dependencies,
+            evaluate: projection.expression.evaluate,
+          }
+        }
+        return column
       }),
     }
   }

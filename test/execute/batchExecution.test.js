@@ -52,6 +52,52 @@ describe('native batch execution', () => {
     expect(rows).toEqual([4, 5])
   })
 
+  it('keeps computed projection private and lazy at column granularity', async () => {
+    const source = columnSource(function chunks() { return [['a', 'abcd', null]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT LENGTH(id) + 1 AS size FROM data',
+    })
+
+    expect(Object.keys(results)).toEqual(['columns', 'numRows', 'maxRows', 'rows'])
+    const batchResults = batchResultsFor(results)
+    if (!batchResults) throw new Error('expected internal batches')
+    const iterator = batchResults.batches()[Symbol.asyncIterator]()
+    const first = await iterator.next()
+    if (first.done) throw new Error('expected a batch')
+    const [column] = first.value.columns
+    expect(column.type).toBe('computed')
+    if (column.type !== 'computed') throw new Error('expected a computed column')
+    expect(column.dependencies).toEqual([0])
+
+    expect(await collect(results)).toEqual([{ size: 2 }, { size: 5 }, { size: null }])
+  })
+
+  it('collects computed projections without constructing compatibility rows', async () => {
+    const source = columnSource(function chunks() { return [['one', 'three']] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT UPPER(id) AS value FROM data',
+    })
+
+    results.rows = vi.fn(function rows() {
+      throw new Error('row adapter should not be called')
+    })
+    expect(await collect(results)).toEqual([{ value: 'ONE' }, { value: 'THREE' }])
+    expect(results.rows).not.toHaveBeenCalled()
+  })
+
+  it('retains row projection for an unsupported batch expression', async () => {
+    const source = columnSource(function chunks() { return [[null, 2]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT COALESCE(id, 0) AS value FROM data',
+    })
+
+    expect(batchResultsFor(results)).toBeUndefined()
+    expect(await collect(results)).toEqual([{ value: 0 }, { value: 2 }])
+  })
+
   it('turns a residual predicate into a private batch selection', async () => {
     const source = columnSource(function chunks() { return [[null, 2, 3, 4]] }, false)
     const results = executeSql({

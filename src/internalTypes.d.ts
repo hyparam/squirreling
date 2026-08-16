@@ -88,10 +88,20 @@ export interface CompileState {
   schema: RelationSchema
 }
 
+export type BatchProjection =
+  | { type: 'column', columnIndex: number }
+  | { type: 'constant', value: SqlPrimitive }
+  | { type: 'expression', expression: CompiledBatchExpression }
+
 export type BatchColumn =
   | { type: 'loaded', vector: ColumnVector }
   | { type: 'source', read: ReadColumn }
-  | { type: 'computed', input: AsyncBatch, evaluate: EvaluateColumn }
+  | {
+      type: 'computed'
+      input: AsyncBatch
+      dependencies: readonly number[]
+      evaluate: EvaluateColumn
+    }
 
 export interface AsyncBatch {
   schema: RelationSchema

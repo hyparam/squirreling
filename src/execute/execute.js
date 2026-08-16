@@ -9,7 +9,7 @@ import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { batchResultsFor, registerBatchResults } from './batchResults.js'
-import { filterBatches, limitBatches, projectBatches } from './batches.js'
+import { filterBatches, limitBatches, projectExpressionBatches } from './batches.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
@@ -18,7 +18,7 @@ import { executeWindow } from './window.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, ColumnVector, RelationSchema } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchProjection, ColumnVector, RelationSchema } from '../internalTypes.js'
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
@@ -574,14 +574,14 @@ function executeProject(plan, context) {
   )
 
   const childBatches = batchResultsFor(child)
-  const projection = childBatches && resolveable
-    ? simpleProjection(plan.columns, columns, child.columns, childBatches.schema)
+  const projection = childBatches
+    ? batchProjection(plan.columns, columns, child.columns, childBatches.schema)
     : undefined
   if (projection && childBatches) {
     const readChildBatches = childBatches.batches
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
-      return projectBatches(readChildBatches(), projection.schema, projection.columnIndices)
+      return projectExpressionBatches(readChildBatches(), projection.schema, projection.projections)
     }
     const results = {
       columns,
@@ -846,53 +846,75 @@ function unknownSchema(columns) {
 }
 
 /**
- * Resolves a simple star/identifier projection to positional batch columns.
+ * Compiles a projection to direct, constant, or computed batch columns.
  *
  * @param {SelectColumn[]} planColumns
  * @param {string[]} outputColumns
  * @param {string[]} childColumns
  * @param {RelationSchema} childSchema
- * @returns {{ schema: RelationSchema, columnIndices: number[] } | undefined}
+ * @returns {{ schema: RelationSchema, projections: BatchProjection[] } | undefined}
  */
-function simpleProjection(planColumns, outputColumns, childColumns, childSchema) {
-  /** @type {number[]} */
-  const columnIndices = []
+function batchProjection(planColumns, outputColumns, childColumns, childSchema) {
+  /** @type {BatchProjection[]} */
+  const projections = []
   for (const column of planColumns) {
     if (column.type === 'star') {
       const prefix = column.table ? `${column.table}.` : undefined
       for (let i = 0; i < childColumns.length; i++) {
-        if (!prefix || childColumns[i].startsWith(prefix)) columnIndices.push(i)
+        if (!prefix || childColumns[i].startsWith(prefix)) {
+          projections.push({ type: 'column', columnIndex: i })
+        }
       }
       continue
     }
 
-    if (column.expr.type !== 'identifier') return undefined
-    const identifier = column.expr
-    const sourceName = identifier.prefix
-      ? `${identifier.prefix}.${identifier.name}`
-      : identifier.name
-    let index = childColumns.indexOf(sourceName)
-    if (index < 0) {
-      const suffix = `.${identifier.name}`
-      const matches = childColumns
-        .map(function childColumn(name, childIndex) { return { name, childIndex } })
-        .filter(function suffixMatch(candidate) { return candidate.name.endsWith(suffix) })
-      if (matches.length !== 1) return undefined
-      index = matches[0].childIndex
+    if (column.expr.type === 'literal') {
+      projections.push({ type: 'constant', value: column.expr.value })
+      continue
     }
-    columnIndices.push(index)
+    if (column.expr.type === 'identifier') {
+      const index = identifierColumnIndex(column.expr, childColumns)
+      if (index === undefined) return undefined
+      projections.push({ type: 'column', columnIndex: index })
+      continue
+    }
+    const expression = compileBatchExpression({ expression: column.expr, schema: childSchema })
+    if (!expression) return undefined
+    projections.push({ type: 'expression', expression })
   }
-  if (columnIndices.length !== outputColumns.length) return undefined
+  if (projections.length !== outputColumns.length) return undefined
 
   return {
     schema: {
-      fields: columnIndices.map(function projectedField(childIndex, id) {
-        const field = childSchema.fields[childIndex]
-        return { ...field, id, name: outputColumns[id] }
+      fields: projections.map(function projectedField(projection, id) {
+        if (projection.type === 'column') {
+          const field = childSchema.fields[projection.columnIndex]
+          return { ...field, id, name: outputColumns[id] }
+        }
+        return { id, name: outputColumns[id], dataType: { type: 'unknown' }, nullable: true }
       }),
     },
-    columnIndices,
+    projections,
   }
+}
+
+/**
+ * @param {IdentifierNode} identifier
+ * @param {string[]} childColumns
+ * @returns {number | undefined}
+ */
+function identifierColumnIndex(identifier, childColumns) {
+  const sourceName = identifier.prefix
+    ? `${identifier.prefix}.${identifier.name}`
+    : identifier.name
+  const index = childColumns.indexOf(sourceName)
+  if (index >= 0) return index
+
+  const suffix = `.${identifier.name}`
+  const matches = childColumns
+    .map(function childColumn(name, childIndex) { return { name, childIndex } })
+    .filter(function suffixMatch(candidate) { return candidate.name.endsWith(suffix) })
+  return matches.length === 1 ? matches[0].childIndex : undefined
 }
 
 /**
