@@ -9,7 +9,7 @@ import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { batchResultsFor, registerBatchResults } from './batchResults.js'
-import { filterBatches, limitBatches, projectExpressionBatches } from './batches.js'
+import { distinctBatches, filterBatches, limitBatches, projectExpressionBatches } from './batches.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
@@ -709,6 +709,26 @@ function executeProject(plan, context) {
  */
 function executeDistinct(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const childBatches = batchResultsFor(child)
+  if (childBatches) {
+    const readChildBatches = childBatches.batches
+    /** @returns {AsyncIterable<AsyncBatch>} */
+    function makeBatches() {
+      return distinctBatches(readChildBatches(), context.signal)
+    }
+    const results = {
+      columns: child.columns,
+      maxRows: child.maxRows,
+      async *rows() {
+        yield* batchesToRows(makeBatches(), context.signal)
+      },
+    }
+    return registerBatchResults(results, {
+      schema: childBatches.schema,
+      batches: makeBatches,
+      signal: context.signal,
+    })
+  }
   return {
     columns: child.columns,
     maxRows: child.maxRows,

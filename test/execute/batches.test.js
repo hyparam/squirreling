@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readBatchColumn, selectedRowCount } from '../../src/backend/batch.js'
-import { filterBatches } from '../../src/execute/batches.js'
+import { distinctBatches, filterBatches } from '../../src/execute/batches.js'
 import { compileBatchExpression } from '../../src/expression/batch.js'
 import { parseSql } from '../../src/parse/parse.js'
 
@@ -53,6 +53,28 @@ describe('batch operators', () => {
     })
     expect(read).toHaveBeenCalledTimes(1)
   })
+
+  it('deduplicates across batches with zero-copy selections', async () => {
+    const first = valueBatch(['a', 'b', 'a'])
+    const second = valueBatch(['b', 'c'])
+
+    const distinct = []
+    for await (const result of distinctBatches(asyncValues([first, second]))) distinct.push(result)
+
+    expect(distinct).toHaveLength(2)
+    expect(distinct[0].columns[0]).toBe(first.columns[0])
+    expect(distinct[0].selection).toEqual({
+      type: 'indices',
+      indices: new Uint32Array([0, 1]),
+      length: 3,
+    })
+    expect(distinct[1].columns[0]).toBe(second.columns[0])
+    expect(distinct[1].selection).toEqual({
+      type: 'indices',
+      indices: new Uint32Array([1]),
+      length: 2,
+    })
+  })
 })
 
 /**
@@ -74,4 +96,25 @@ function parseExpression(sql) {
  */
 async function* asyncValues(values) {
   yield* values
+}
+
+/**
+ * @param {import('../../src/types.js').SqlPrimitive[]} values
+ * @returns {AsyncBatch}
+ */
+function valueBatch(values) {
+  /** @type {RelationSchema} */
+  const valueSchema = {
+    fields: [
+      { id: 0, name: 'value', dataType: { type: 'unknown' }, nullable: true },
+    ],
+  }
+  return {
+    schema: valueSchema,
+    selection: { type: 'all', length: values.length },
+    columns: [{
+      type: 'loaded',
+      vector: { type: 'values', values, length: values.length },
+    }],
+  }
 }

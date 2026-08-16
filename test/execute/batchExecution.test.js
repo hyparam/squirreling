@@ -166,6 +166,19 @@ describe('native batch execution', () => {
     expect(batchResultsFor(results)).toBeUndefined()
     expect(await collect(results)).toEqual([{ value: 3 }])
   })
+
+  it('executes distinct over private computed batches', async () => {
+    const source = columnSource(function chunks() { return [[1, 2, 3], [4, 5]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT DISTINCT id % 2 AS value FROM data',
+    })
+
+    expect(Object.hasOwn(results, 'batches')).toBe(false)
+    expect(Object.hasOwn(results, 'schema')).toBe(false)
+    expect(batchResultsFor(results)).toBeDefined()
+    expect(await collect(results)).toEqual([{ value: 1 }, { value: 0 }])
+  })
 })
 
 /**

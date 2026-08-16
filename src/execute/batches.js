@@ -1,7 +1,10 @@
-import { selectBatch, selectedRowCount, valueAt } from '../backend/batch.js'
+import { readBatchColumn, selectBatch, selectedRowCount, valueAt } from '../backend/batch.js'
+import { keyify } from './utils.js'
+import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, BatchColumn, BatchProjection, ColumnVector, CompiledBatchExpression, RelationSchema, RowSelection } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchColumn, BatchProjection, ColumnResult, ColumnVector, CompiledBatchExpression, RelationSchema, RowSelection } from '../internalTypes.js'
+ * @import { SqlPrimitive } from '../types.js'
  */
 
 /**
@@ -75,6 +78,58 @@ export async function* filterBatches(batches, expression, signal) {
 }
 
 /**
+ * Removes duplicate rows while retaining zero-copy selections over the input
+ * batches. DISTINCT requires every output column as both a key and payload, so
+ * resolving all batch columns here does not introduce eager payload work.
+ *
+ * @param {AsyncIterable<AsyncBatch>} batches
+ * @param {AbortSignal} [signal]
+ * @yields {AsyncBatch}
+ */
+export async function* distinctBatches(batches, signal) {
+  const seen = new Set()
+  for await (const batch of batches) {
+    signal?.throwIfAborted()
+    const results = batch.columns.map(function readColumn(_column, columnIndex) {
+      return readBatchColumn({ batch, columnIndex, signal })
+    })
+    const resolved = resolveVectors(results)
+    const vectors = resolved instanceof Promise ? await resolved : resolved
+    const rowCount = selectedRowCount(batch.selection)
+    const indices = new Uint32Array(rowCount)
+    /** @type {SqlPrimitive[]} */
+    const row = new Array(vectors.length)
+    let selectedCount = 0
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      if (signal && rowIndex > 0 && rowIndex % 4000 === 0) {
+        await yieldToEventLoop()
+        signal.throwIfAborted()
+      }
+      for (let columnIndex = 0; columnIndex < vectors.length; columnIndex++) {
+        row[columnIndex] = valueAt(vectors[columnIndex], rowIndex)
+      }
+      const key = keyify(...row)
+      if (seen.has(key)) continue
+      seen.add(key)
+      indices[selectedCount++] = rowIndex
+    }
+
+    if (selectedCount === 0) continue
+    if (selectedCount === rowCount) {
+      yield batch
+    } else {
+      yield selectBatch(batch, {
+        type: 'indices',
+        indices: indices.subarray(0, selectedCount),
+        length: rowCount,
+      })
+    }
+  }
+  signal?.throwIfAborted()
+}
+
+/**
  * Projects batches into direct, constant, or lazily computed columns. A
  * computed column retains the input batch that owns its dependency indices,
  * so output columns remain schema-aligned without hidden dependency columns.
@@ -137,4 +192,21 @@ function predicateSelection(predicate, rowCount) {
     selection: { type: 'bitmap', values, length: rowCount },
     selectedCount,
   }
+}
+
+/**
+ * @param {ColumnResult[]} results
+ * @returns {ColumnVector[] | Promise<ColumnVector[]>}
+ */
+function resolveVectors(results) {
+  if (results.some(function isPromise(result) { return result instanceof Promise })) {
+    return Promise.all(results)
+  }
+  /** @type {ColumnVector[]} */
+  const vectors = []
+  for (const result of results) {
+    if (result instanceof Promise) throw new Error('Unexpected asynchronous column result')
+    vectors.push(result)
+  }
+  return vectors
 }
