@@ -76,10 +76,150 @@ describe('batch expressions', () => {
     expect(read).toHaveBeenCalledTimes(1)
   })
 
-  it('declines expressions whose short-circuited branches read columns', () => {
-    expect(compile('FALSE AND LENGTH(n) > 0')).toBeUndefined()
-    expect(compile('TRUE OR LENGTH(n) > 0')).toBeUndefined()
-    expect(compile('COALESCE(1, n)')).toBeUndefined()
+  it('reads logical right-side columns only for undecided rows', async () => {
+    /** @type {ReadColumn} */
+    function readText({ selection }) {
+      expect(selection).toEqual({
+        type: 'indices',
+        indices: new Uint32Array([0, 2]),
+        length: 3,
+      })
+      return { type: 'values', values: ['a', ''], length: 2 }
+    }
+    const read = vi.fn(readText)
+    const compiled = compile('n < 0 AND LENGTH(text) > 0')
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      schema,
+      selection: { type: 'all', length: 3 },
+      columns: [
+        { type: 'loaded', vector: { type: 'values', values: [-1, 1, -2], length: 3 } },
+        { type: 'source', read },
+      ],
+    }
+
+    await expect(compiled.evaluate({ batch, selection: batch.selection })).resolves.toEqual({
+      type: 'values',
+      values: [true, false, false],
+      length: 3,
+    })
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads later COALESCE arguments only for null rows', async () => {
+    /** @type {ReadColumn} */
+    function readText({ selection }) {
+      expect(selection).toEqual({
+        type: 'indices',
+        indices: new Uint32Array([1, 2]),
+        length: 3,
+      })
+      return { type: 'values', values: ['fallback', null], length: 2 }
+    }
+    const read = vi.fn(readText)
+    const compiled = compile('COALESCE(n, text)')
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      schema,
+      selection: { type: 'all', length: 3 },
+      columns: [
+        { type: 'loaded', vector: { type: 'values', values: [1, null, null], length: 3 } },
+        { type: 'source', read },
+      ],
+    }
+
+    await expect(compiled.evaluate({ batch, selection: batch.selection })).resolves.toEqual({
+      type: 'values',
+      values: [1, 'fallback', null],
+      length: 3,
+    })
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('evaluates searched CASE branches over matching row selections', async () => {
+    /** @type {ReadColumn} */
+    function readText({ selection }) {
+      expect(selection).toEqual({
+        type: 'indices',
+        indices: new Uint32Array([0]),
+        length: 3,
+      })
+      return { type: 'values', values: ['yes'], length: 1 }
+    }
+    const read = vi.fn(readText)
+    const compiled = compile(`CASE
+      WHEN n > 0 THEN UPPER(text)
+      WHEN n = 0 THEN 'zero'
+      ELSE NULL
+    END`)
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      schema,
+      selection: { type: 'all', length: 3 },
+      columns: [
+        { type: 'loaded', vector: { type: 'values', values: [1, 0, -1], length: 3 } },
+        { type: 'source', read },
+      ],
+    }
+
+    await expect(compiled.evaluate({ batch, selection: batch.selection })).resolves.toEqual({
+      type: 'values',
+      values: ['YES', 'zero', null],
+      length: 3,
+    })
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('composes CASE branch selections and preserves stream row numbers', async () => {
+    /** @type {ReadColumn} */
+    function readText({ selection }) {
+      expect(selection).toEqual({
+        type: 'indices',
+        indices: new Uint32Array([3]),
+        length: 4,
+      })
+      return { type: 'values', values: [3], length: 1 }
+    }
+    const read = vi.fn(readText)
+    const compiled = compile('CASE WHEN n > 0 THEN LENGTH(text) ELSE 0 END')
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      schema,
+      selection: { type: 'indices', indices: new Uint32Array([1, 3]), length: 4 },
+      columns: [
+        { type: 'loaded', vector: { type: 'values', values: [0, -1, 0, 1], length: 4 } },
+        { type: 'source', read },
+      ],
+    }
+
+    await expect(compiled.evaluate({
+      batch,
+      selection: batch.selection,
+      rowOffset: 10,
+    })).rejects.toThrow(
+      'LENGTH(string): expected string or array, got number. Use CAST to convert to a string first. (row 12)'
+    )
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('compiles simple CASE and NULLIF combinations', async () => {
+    const compiled = compile(`CASE n
+      WHEN 1 THEN COALESCE(NULLIF(text, ''), 'empty')
+      WHEN 2 THEN NULLIF(text, 'same')
+      ELSE 'other'
+    END`)
+    if (!compiled) throw new Error('expected expression to compile')
+    const batch = loadedBatch([1, 2, 3], ['', 'same', 'value'])
+
+    await expect(compiled.evaluate({ batch, selection: batch.selection })).resolves.toEqual({
+      type: 'values',
+      values: ['empty', null, 'other'],
+      length: 3,
+    })
   })
 
   it('compiles production JSON token expressions', () => {
@@ -143,7 +283,7 @@ describe('batch expressions', () => {
   })
 
   it('declines unsupported expressions and missing identifiers', () => {
-    expect(compileBatchExpression({ expression: expression('CASE WHEN n > 0 THEN n END'), schema })).toBeUndefined()
+    expect(compileBatchExpression({ expression: expression('CASE WHEN n > 0 THEN ABS(n) END'), schema })).toBeUndefined()
     expect(compileBatchExpression({ expression: expression('missing + 1'), schema })).toBeUndefined()
   })
 })

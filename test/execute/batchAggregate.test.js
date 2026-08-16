@@ -34,6 +34,19 @@ describe('private batch aggregate execution', () => {
       query: 'SELECT SUM(id * 10) FILTER (WHERE id > 2) AS total FROM data',
     }))).resolves.toEqual([{ total: 70 }])
   })
+
+  it('aggregates CASE, compound predicates, and NULLIF from private batches', async () => {
+    const source = columnSource([1, 2, 3, 4])
+
+    await expect(collect(executeSql({
+      tables: { data: source },
+      query: `SELECT
+        SUM(CASE WHEN id > 1 AND id < 4 THEN id ELSE 0 END) AS middle_total,
+        SUM(NULLIF(id, 2)) AS without_two
+        FROM data`,
+    }))).resolves.toEqual([{ middle_total: 5, without_two: 8 }])
+    expect(source.scan).not.toHaveBeenCalled()
+  })
 })
 
 /**

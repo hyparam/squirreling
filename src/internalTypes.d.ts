@@ -99,6 +99,19 @@ export interface BatchAggregateInputs {
   args: (CompiledBatchExpression | undefined)[]
 }
 
+export interface EvaluationContext {
+  batch: AsyncBatch
+  selection: RowSelection
+  signal?: AbortSignal
+  rowOffset: number
+  positions?: Uint32Array
+}
+
+export interface CompiledEvaluator {
+  dependencies: readonly number[]
+  evaluate(context: EvaluationContext): ColumnResult
+}
+
 export type BatchProjection =
   | { type: 'column', columnIndex: number }
   | { type: 'constant', value: SqlPrimitive }

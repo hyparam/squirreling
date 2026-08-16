@@ -87,14 +87,14 @@ describe('native batch execution', () => {
     expect(results.rows).not.toHaveBeenCalled()
   })
 
-  it('retains row projection for an unsupported batch expression', async () => {
+  it('executes CASE projections through private batches', async () => {
     const source = columnSource(function chunks() { return [[null, 2]] })
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT CASE WHEN id IS NULL THEN 0 ELSE id END AS value FROM data',
     })
 
-    expect(batchResultsFor(results)).toBeUndefined()
+    expect(batchResultsFor(results)).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 0 }, { value: 2 }])
   })
 
@@ -132,14 +132,25 @@ describe('native batch execution', () => {
     expect(await collect(results)).toEqual([{ id: 4 }, { id: 6 }])
   })
 
-  it('retains row filtering for an unsupported batch predicate', async () => {
+  it('executes compound logical predicates through private batches', async () => {
+    const source = columnSource(function chunks() { return [[1, 2, 3, 4, 5]] }, false)
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data WHERE (id > 1 AND id < 4) OR id = 5',
+    })
+
+    expect(batchResultsFor(results)).toBeDefined()
+    expect(await collect(results)).toEqual([{ id: 2 }, { id: 3 }, { id: 5 }])
+  })
+
+  it('executes CASE predicates through private batches', async () => {
     const source = columnSource(function chunks() { return [[null, 2, 3]] }, false)
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT id FROM data WHERE CASE WHEN id IS NULL THEN 0 ELSE id END > 2',
     })
 
-    expect(batchResultsFor(results)).toBeUndefined()
+    expect(batchResultsFor(results)).toBeDefined()
     expect(await collect(results)).toEqual([{ id: 3 }])
   })
 
@@ -156,14 +167,14 @@ describe('native batch execution', () => {
     expect(await collect(results)).toEqual([{ value: 9 }, { value: 12 }])
   })
 
-  it('uses rows for an unsupported predicate over a batched subquery', async () => {
+  it('keeps CASE predicates over subqueries in private batches', async () => {
     const source = columnSource(function chunks() { return [[null, 2, 3]] })
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT value FROM (SELECT id AS value FROM data) WHERE CASE WHEN value IS NULL THEN 0 ELSE value END > 2',
     })
 
-    expect(batchResultsFor(results)).toBeUndefined()
+    expect(batchResultsFor(results)).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 3 }])
   })
 
