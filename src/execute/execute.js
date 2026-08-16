@@ -1,4 +1,5 @@
 import { memorySource } from '../backend/dataSource.js'
+import { batchesToRows } from '../backend/batchAdapters.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
@@ -6,6 +7,8 @@ import { planSql, planStatement } from '../plan/plan.js'
 import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
+import { batchResultsFor, registerBatchResults } from './batchResults.js'
+import { limitBatches, projectBatches } from './batches.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
@@ -14,6 +17,7 @@ import { executeWindow } from './window.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
+ * @import { AsyncBatch, ColumnVector, RelationSchema } from '../internalTypes.js'
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
@@ -294,11 +298,31 @@ export function executeScan(plan, context, existingColumnResult) {
   if (columnResult && scanColumnOptions) {
     const column = plan.hints.columns[0]
     const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
-    return {
+    const schema = unknownSchema([column])
+    const appliedLimitOffset = plan.hints.where
+      ? false
+      : columnResult.appliedLimitOffset
+
+    /** @returns {AsyncIterable<AsyncBatch>} */
+    function makeBatches() {
+      /** @type {AsyncIterable<AsyncBatch>} */
+      let batches = columnBatches(columnResult.chunks(), schema, signal)
+      if (!appliedLimitOffset && hasLimitOffset) {
+        batches = limitBatches(batches, plan.hints.limit, plan.hints.offset, signal)
+      }
+      return batches
+    }
+
+    const canUseBatches = !plan.hints.where || columnResult.appliedWhere
+    const results = {
       columns: [column],
       numRows: plan.hints.where ? undefined : scanRows,
       maxRows: scanRows,
       async *rows() {
+        if (canUseBatches) {
+          yield* batchesToRows(makeBatches(), signal)
+          return
+        }
         const columns = [column]
         let result = (async function* () {
           // Creating the chunk stream may itself start I/O, so leave it until
@@ -319,9 +343,6 @@ export function executeScan(plan, context, existingColumnResult) {
           result = filterRows(result, plan.hints.where, context, plan.hints.limit)
         }
         // Filtered LIMIT/OFFSET was intentionally not passed to scanColumn.
-        const appliedLimitOffset = plan.hints.where
-          ? false
-          : columnResult.appliedLimitOffset
         if (!appliedLimitOffset && hasLimitOffset) {
           result = limitRows(result, plan.hints.limit, plan.hints.offset, signal)
         }
@@ -332,6 +353,8 @@ export function executeScan(plan, context, existingColumnResult) {
         signal?.throwIfAborted()
       },
     }
+    if (!canUseBatches) return results
+    return registerBatchResults(results, { schema, batches: makeBatches, signal })
   }
 
   // do the scan
@@ -543,6 +566,31 @@ function executeProject(plan, context) {
     col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
   )
 
+  const childBatches = batchResultsFor(child)
+  const projection = childBatches && resolveable
+    ? simpleProjection(plan.columns, columns, child.columns, childBatches.schema)
+    : undefined
+  if (projection && childBatches) {
+    const readChildBatches = childBatches.batches
+    /** @returns {AsyncIterable<AsyncBatch>} */
+    function makeBatches() {
+      return projectBatches(readChildBatches(), projection.schema, projection.columnIndices)
+    }
+    const results = {
+      columns,
+      numRows: child.numRows,
+      maxRows: child.maxRows,
+      async *rows() {
+        yield* batchesToRows(makeBatches(), context.signal)
+      },
+    }
+    return registerBatchResults(results, {
+      schema: projection.schema,
+      batches: makeBatches,
+      signal: context.signal,
+    })
+  }
+
   return {
     columns,
     numRows: child.numRows,
@@ -689,11 +737,154 @@ function executeDistinct(plan, context) {
  */
 function executeLimit(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const childBatches = batchResultsFor(child)
+  if (childBatches) {
+    const readChildBatches = childBatches.batches
+    /** @returns {AsyncIterable<AsyncBatch>} */
+    function makeBatches() {
+      return limitBatches(readChildBatches(), plan.limit, plan.offset, context.signal)
+    }
+    const results = {
+      columns: child.columns,
+      numRows: computeScanRows(child.numRows, plan.limit, plan.offset),
+      maxRows: computeScanRows(child.maxRows, plan.limit, plan.offset),
+      async *rows() {
+        yield* batchesToRows(makeBatches(), context.signal)
+      },
+    }
+    return registerBatchResults(results, {
+      schema: childBatches.schema,
+      batches: makeBatches,
+      signal: context.signal,
+    })
+  }
   return {
     columns: child.columns,
     numRows: computeScanRows(child.numRows, plan.limit, plan.offset),
     maxRows: computeScanRows(child.maxRows, plan.limit, plan.offset),
     rows: () => limitRows(child.rows(), plan.limit, plan.offset, context.signal),
+  }
+}
+
+/**
+ * Wraps one-column source chunks as loaded batches without copying their
+ * arrays. Each source chunk remains the async scheduling unit.
+ *
+ * @param {AsyncIterable<ArrayLike<SqlPrimitive>>} chunks
+ * @param {RelationSchema} schema
+ * @param {AbortSignal} [signal]
+ * @yields {AsyncBatch}
+ */
+async function* columnBatches(chunks, schema, signal) {
+  for await (const chunk of chunks) {
+    signal?.throwIfAborted()
+    const vector = vectorFromChunk(chunk)
+    /** @type {AsyncBatch} */
+    const batch = {
+      schema,
+      selection: { type: 'all', length: vector.length },
+      columns: [{ type: 'loaded', vector }],
+    }
+    yield batch
+  }
+  signal?.throwIfAborted()
+}
+
+/**
+ * @param {ArrayLike<SqlPrimitive>} chunk
+ * @returns {ColumnVector}
+ */
+function vectorFromChunk(chunk) {
+  if (Array.isArray(chunk)) {
+    return { type: 'values', values: chunk, length: chunk.length }
+  }
+  if (isNumericArray(chunk)) {
+    return {
+      type: 'typed',
+      values: chunk,
+      length: chunk.length,
+    }
+  }
+  return { type: 'values', values: Array.from(chunk), length: chunk.length }
+}
+
+/**
+ * @param {ArrayLike<SqlPrimitive>} values
+ * @returns {values is import('../internalTypes.js').NumericArray}
+ */
+function isNumericArray(values) {
+  return values instanceof Int8Array
+    || values instanceof Uint8Array
+    || values instanceof Uint8ClampedArray
+    || values instanceof Int16Array
+    || values instanceof Uint16Array
+    || values instanceof Int32Array
+    || values instanceof Uint32Array
+    || values instanceof Float32Array
+    || values instanceof Float64Array
+    || values instanceof BigInt64Array
+    || values instanceof BigUint64Array
+}
+
+/**
+ * @param {string[]} columns
+ * @returns {RelationSchema}
+ */
+function unknownSchema(columns) {
+  return {
+    fields: columns.map(function unknownField(name, id) {
+      return { id, name, dataType: { type: 'unknown' }, nullable: true }
+    }),
+  }
+}
+
+/**
+ * Resolves a simple star/identifier projection to positional batch columns.
+ *
+ * @param {SelectColumn[]} planColumns
+ * @param {string[]} outputColumns
+ * @param {string[]} childColumns
+ * @param {RelationSchema} childSchema
+ * @returns {{ schema: RelationSchema, columnIndices: number[] } | undefined}
+ */
+function simpleProjection(planColumns, outputColumns, childColumns, childSchema) {
+  /** @type {number[]} */
+  const columnIndices = []
+  for (const column of planColumns) {
+    if (column.type === 'star') {
+      const prefix = column.table ? `${column.table}.` : undefined
+      for (let i = 0; i < childColumns.length; i++) {
+        if (!prefix || childColumns[i].startsWith(prefix)) columnIndices.push(i)
+      }
+      continue
+    }
+
+    if (column.expr.type !== 'identifier') return undefined
+    const identifier = column.expr
+    const sourceName = identifier.prefix
+      ? `${identifier.prefix}.${identifier.name}`
+      : identifier.name
+    let index = childColumns.indexOf(sourceName)
+    if (index < 0) {
+      const suffix = `.${identifier.name}`
+      const matches = childColumns
+        .map(function childColumn(name, childIndex) { return { name, childIndex } })
+        .filter(function suffixMatch(candidate) { return candidate.name.endsWith(suffix) })
+      if (matches.length !== 1) return undefined
+      index = matches[0].childIndex
+    }
+    columnIndices.push(index)
+  }
+  if (columnIndices.length !== outputColumns.length) return undefined
+
+  return {
+    schema: {
+      fields: columnIndices.map(function projectedField(childIndex, id) {
+        const field = childSchema.fields[childIndex]
+        return { ...field, id, name: outputColumns[id] }
+      }),
+    },
+    columnIndices,
   }
 }
 
