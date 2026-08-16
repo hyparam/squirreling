@@ -142,6 +142,30 @@ describe('native batch execution', () => {
     expect(batchResultsFor(results)).toBeUndefined()
     expect(await collect(results)).toEqual([{ id: 3 }])
   })
+
+  it('filters a computed subquery through private batches', async () => {
+    const source = columnSource(function chunks() { return [[1, 2, 3, 4]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT value FROM (SELECT id * 3 AS value FROM data) WHERE value > 6',
+    })
+
+    expect(Object.hasOwn(results, 'batches')).toBe(false)
+    expect(Object.hasOwn(results, 'schema')).toBe(false)
+    expect(batchResultsFor(results)).toBeDefined()
+    expect(await collect(results)).toEqual([{ value: 9 }, { value: 12 }])
+  })
+
+  it('uses rows for an unsupported predicate over a batched subquery', async () => {
+    const source = columnSource(function chunks() { return [[null, 2, 3]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT value FROM (SELECT id AS value FROM data) WHERE COALESCE(value, 0) > 2',
+    })
+
+    expect(batchResultsFor(results)).toBeUndefined()
+    expect(await collect(results)).toEqual([{ value: 3 }])
+  })
 })
 
 /**

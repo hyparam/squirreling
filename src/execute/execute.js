@@ -551,6 +551,29 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
  */
 function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
+  const childBatches = batchResultsFor(child)
+  const expression = childBatches
+    ? compileBatchExpression({ expression: plan.condition, schema: childBatches.schema })
+    : undefined
+  if (expression && childBatches) {
+    const readChildBatches = childBatches.batches
+    /** @returns {AsyncIterable<AsyncBatch>} */
+    function makeBatches() {
+      return filterBatches(readChildBatches(), expression, context.signal)
+    }
+    const results = {
+      columns: child.columns,
+      maxRows: child.maxRows,
+      async *rows() {
+        yield* batchesToRows(makeBatches(), context.signal)
+      },
+    }
+    return registerBatchResults(results, {
+      schema: childBatches.schema,
+      batches: makeBatches,
+      signal: context.signal,
+    })
+  }
   return {
     columns: child.columns,
     maxRows: child.maxRows,
