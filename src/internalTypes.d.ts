@@ -1,4 +1,4 @@
-import type { AsyncRow, QueryResults, SqlPrimitive } from './types.js'
+import type { AsyncRow, ExprNode, QueryResults, SqlPrimitive } from './types.js'
 
 export type FieldId = number
 
@@ -69,6 +69,24 @@ export interface ColumnEvaluationRequest {
 }
 
 export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
+
+export interface CompileBatchExpressionOptions {
+  expression: ExprNode
+  schema: RelationSchema
+}
+
+export interface CompiledBatchExpression {
+  dependencies: readonly number[]
+  evaluate: EvaluateColumn
+}
+
+export type ValueKernel = (vectors: ColumnVector[], rowIndex: number) => SqlPrimitive
+
+export interface CompileState {
+  dependencies: number[]
+  dependencyPositions: Map<number, number>
+  schema: RelationSchema
+}
 
 export type BatchColumn =
   | { type: 'loaded', vector: ColumnVector }

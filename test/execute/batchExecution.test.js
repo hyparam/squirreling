@@ -52,17 +52,49 @@ describe('native batch execution', () => {
     expect(rows).toEqual([4, 5])
   })
 
-  it('uses row execution when a source declines filter pushdown', async () => {
-    const source = columnSource(function chunks() { return [[1, 2, 3, 4]] }, false)
+  it('turns a residual predicate into a private batch selection', async () => {
+    const source = columnSource(function chunks() { return [[null, 2, 3, 4]] }, false)
     const results = executeSql({
       tables: { data: source },
       query: 'SELECT id FROM data WHERE id > 2',
     })
 
-    expect(batchResultsFor(results)).toBeUndefined()
+    expect(Object.keys(results)).toEqual(['columns', 'numRows', 'maxRows', 'rows'])
     expect(Object.hasOwn(results, 'batches')).toBe(false)
     expect(Object.hasOwn(results, 'schema')).toBe(false)
+    const batchResults = batchResultsFor(results)
+    if (!batchResults) throw new Error('expected internal batches')
+    const iterator = batchResults.batches()[Symbol.asyncIterator]()
+    const first = await iterator.next()
+    if (first.done) throw new Error('expected a batch')
+    expect(first.value.selection).toEqual({
+      type: 'bitmap',
+      values: new Uint8Array([0, 0, 1, 1]),
+      length: 4,
+    })
     expect(await collect(results)).toEqual([{ id: 3 }, { id: 4 }])
+  })
+
+  it('applies a residual predicate before limit and offset', async () => {
+    const source = columnSource(function chunks() { return [[1, 2, 3, 4], [5, 6, 7, 8]] }, false)
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data WHERE id % 2 = 0 LIMIT 2 OFFSET 1',
+    })
+
+    expect(batchResultsFor(results)).toBeDefined()
+    expect(await collect(results)).toEqual([{ id: 4 }, { id: 6 }])
+  })
+
+  it('retains row filtering for an unsupported batch predicate', async () => {
+    const source = columnSource(function chunks() { return [[null, 2, 3]] }, false)
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data WHERE COALESCE(id, 0) > 2',
+    })
+
+    expect(batchResultsFor(results)).toBeUndefined()
+    expect(await collect(results)).toEqual([{ id: 3 }])
   })
 })
 

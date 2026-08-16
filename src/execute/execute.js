@@ -1,6 +1,7 @@
 import { memorySource } from '../backend/dataSource.js'
 import { batchesToRows } from '../backend/batchAdapters.js'
 import { derivedAlias } from '../expression/alias.js'
+import { compileBatchExpression } from '../expression/batch.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { planSql, planStatement } from '../plan/plan.js'
@@ -8,7 +9,7 @@ import { statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { batchResultsFor, registerBatchResults } from './batchResults.js'
-import { limitBatches, projectBatches } from './batches.js'
+import { filterBatches, limitBatches, projectBatches } from './batches.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
@@ -302,18 +303,24 @@ export function executeScan(plan, context, existingColumnResult) {
     const appliedLimitOffset = plan.hints.where
       ? false
       : columnResult.appliedLimitOffset
+    const residualFilter = plan.hints.where && !columnResult.appliedWhere
+      ? compileBatchExpression({ expression: plan.hints.where, schema })
+      : undefined
 
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
       /** @type {AsyncIterable<AsyncBatch>} */
       let batches = columnBatches(columnResult.chunks(), schema, signal)
+      if (residualFilter) {
+        batches = filterBatches(batches, residualFilter, signal)
+      }
       if (!appliedLimitOffset && hasLimitOffset) {
         batches = limitBatches(batches, plan.hints.limit, plan.hints.offset, signal)
       }
       return batches
     }
 
-    const canUseBatches = !plan.hints.where || columnResult.appliedWhere
+    const canUseBatches = !plan.hints.where || columnResult.appliedWhere || residualFilter !== undefined
     const results = {
       columns: [column],
       numRows: plan.hints.where ? undefined : scanRows,
