@@ -8,8 +8,8 @@ import { applyCast, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
 
 /**
- * @import { AsyncBatch, ColumnResult, ColumnVector, CompiledBatchExpression, CompileState, EvaluationContext, RowSelection, ValueKernel } from '../internalTypes.js'
- * @import { ExprNode, FunctionNode, SqlPrimitive } from '../types.js'
+ * @import { CompiledBatchExpression, CompileState, ValueKernel } from '../internalTypes.js'
+ * @import { AsyncBatch, ColumnReadRequest, ColumnResult, ColumnVector, ExprNode, FunctionNode, RowSelection, SqlPrimitive } from '../types.js'
  */
 
 const YIELD_INTERVAL = 4000
@@ -343,7 +343,7 @@ function compileCaseEvaluator(node, columns) {
  * @param {'AND' | 'OR'} operator
  * @param {CompiledBatchExpression} left
  * @param {CompiledBatchExpression} right
- * @param {EvaluationContext} context
+ * @param {ColumnReadRequest} context
  * @returns {Promise<ColumnVector>}
  */
 async function evaluateLogical(operator, left, right, context) {
@@ -383,7 +383,7 @@ async function evaluateLogical(operator, left, right, context) {
  * @param {CompiledBatchExpression | undefined} caseExpression
  * @param {{ condition: CompiledBatchExpression, result: CompiledBatchExpression }[]} clauses
  * @param {CompiledBatchExpression | undefined} elseResult
- * @param {EvaluationContext} context
+ * @param {ColumnReadRequest} context
  * @returns {Promise<ColumnVector>}
  */
 async function evaluateCase(caseExpression, clauses, elseResult, context) {
@@ -437,7 +437,7 @@ async function evaluateCase(caseExpression, clauses, elseResult, context) {
  * argument, matching COALESCE's lazy row semantics.
  *
  * @param {CompiledBatchExpression[]} arguments_
- * @param {EvaluationContext} context
+ * @param {ColumnReadRequest} context
  * @returns {Promise<ColumnVector>}
  */
 async function evaluateCoalesce(arguments_, context) {
@@ -463,9 +463,9 @@ async function evaluateCoalesce(arguments_, context) {
 }
 
 /**
- * @param {EvaluationContext} context
+ * @param {ColumnReadRequest} context
  * @param {Uint32Array} indices - positions in the context's selected rows
- * @returns {EvaluationContext}
+ * @returns {ColumnReadRequest}
  */
 function subsetContext(context, indices) {
   const length = selectedRowCount(context.selection)
@@ -492,7 +492,7 @@ function allIndices(length) {
 }
 
 /**
- * @param {EvaluationContext} context
+ * @param {ColumnReadRequest} context
  * @param {(rowIndex: number, streamRowIndex: number) => SqlPrimitive} evaluate
  * @returns {Promise<ColumnVector>}
  */
@@ -522,7 +522,7 @@ async function visitRows(length, signal, visit) {
 }
 
 /**
- * @param {EvaluationContext} context
+ * @param {ColumnReadRequest} context
  * @param {number} rowIndex
  * @returns {number}
  */

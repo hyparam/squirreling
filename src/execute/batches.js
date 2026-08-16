@@ -3,8 +3,8 @@ import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, BatchColumn, BatchProjection, ColumnResult, ColumnVector, CompiledBatchExpression, RowSelection } from '../internalTypes.js'
- * @import { SqlPrimitive } from '../types.js'
+ * @import { BatchProjection, CompiledBatchExpression } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchColumn, ColumnResult, ColumnVector, RowSelection, SqlPrimitive } from '../types.js'
  */
 
 const INITIAL_FILTER_WINDOW_ROWS = 256
@@ -180,11 +180,10 @@ export async function* distinctBatches(batches, signal) {
  * so output columns remain aligned without hidden dependency columns.
  *
  * @param {AsyncIterable<AsyncBatch>} batches
- * @param {string[]} columnNames
  * @param {readonly BatchProjection[]} projections
  * @yields {AsyncBatch}
  */
-export async function* projectExpressionBatches(batches, columnNames, projections) {
+export async function* projectExpressionBatches(batches, projections) {
   let rowOffset = 0
   for await (const batch of batches) {
     const currentRowOffset = rowOffset
@@ -192,7 +191,6 @@ export async function* projectExpressionBatches(batches, columnNames, projection
     /** @type {ColumnVector | undefined} */
     let rowOrdinals
     yield {
-      columnNames,
       selection: batch.selection,
       columns: projections.map(function projectColumn(projection) {
         /** @type {BatchColumn} */
@@ -208,9 +206,8 @@ export async function* projectExpressionBatches(batches, columnNames, projection
         } else {
           rowOrdinals ??= selectionOrdinals(batch.selection)
           column = {
-            type: 'computed',
+            read: projection.expression.evaluate,
             input: batch,
-            expression: projection.expression,
             rowOffset: currentRowOffset,
             rowOrdinals,
           }

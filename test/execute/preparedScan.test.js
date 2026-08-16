@@ -28,13 +28,11 @@ describe('prepared scans', () => {
     }
     const payload = vi.fn(readPayload)
     /** @type {AsyncBatch} */
-    /** @type {AsyncBatch} */
     const batch = {
-      schema,
       selection: { type: 'all', length: 3 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [false, true, true], length: 3 } },
-        { type: 'source', read: payload },
+        { type: 'values', values: [false, true, true], length: 3 },
+        { read: payload },
       ],
     }
     /** @type {PrepareScan} */
@@ -67,22 +65,21 @@ describe('prepared scans', () => {
     expect(prepare).toHaveBeenCalledTimes(1)
     const [request] = prepare.mock.calls[0]
     expect(request.columns).toEqual([
-      { field: 10, phase: 0, purpose: 'filter', mode: 'required' },
       { field: 20, phase: 1, purpose: 'output', mode: 'deferred' },
+      { field: 10, phase: 0, purpose: 'filter', mode: 'required' },
     ])
     expect(payload).not.toHaveBeenCalled()
     expect(await collect(results)).toEqual([{ payload: 'second' }])
     expect(payload).toHaveBeenCalledTimes(1)
   })
 
-  it('uses the row compatibility boundary for an unsupported residual', async () => {
+  it('keeps CASE residuals in native batches', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
       selection: { type: 'all', length: 2 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [false, true], length: 2 } },
-        { type: 'loaded', vector: { type: 'values', values: ['first', 'second'], length: 2 } },
+        { type: 'values', values: [false, true], length: 2 },
+        { type: 'values', values: ['first', 'second'], length: 2 },
       ],
     }
     const source = preparedSource(function prepareScan(request) {
@@ -98,6 +95,32 @@ describe('prepared scans', () => {
       query: 'SELECT payload FROM data WHERE CASE WHEN keep THEN TRUE ELSE FALSE END',
     })
 
+    expect(results.batches).toBeTypeOf('function')
+    expect(await collect(results)).toEqual([{ payload: 'second' }])
+  })
+
+  it('uses the row compatibility boundary for an unsupported residual', async () => {
+    /** @type {AsyncBatch} */
+    const batch = {
+      selection: { type: 'all', length: 2 },
+      columns: [
+        { type: 'values', values: [false, true], length: 2 },
+        { type: 'values', values: ['first', 'second'], length: 2 },
+      ],
+    }
+    const source = preparedSource(function prepareScan(request) {
+      return {
+        schema,
+        residual: { filter: request.filter },
+        properties: { maxRows: 2 },
+        async *batches() { yield batch },
+      }
+    })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT payload FROM data WHERE REGEXP_LIKE(payload, \'^second$\')',
+    })
+
     expect(results.batches).toBeUndefined()
     expect(await collect(results)).toEqual([{ payload: 'second' }])
   })
@@ -108,11 +131,10 @@ describe('prepared scans', () => {
     })
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
       selection: { type: 'all', length: 2 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [true, false], length: 2 } },
-        { type: 'source', read: payload },
+        { type: 'values', values: [true, false], length: 2 },
+        { read: payload },
       ],
     }
     const source = preparedSource(function prepareScan(request) {
@@ -142,8 +164,8 @@ describe('prepared scans', () => {
         residual: {},
         properties: {},
         async *batches() {
-          yield { schema: emptySchema, selection: { type: 'all', length: 2 }, columns: [] }
-          yield { schema: emptySchema, selection: { type: 'all', length: 1 }, columns: [] }
+          yield { selection: { type: 'all', length: 2 }, columns: [] }
+          yield { selection: { type: 'all', length: 1 }, columns: [] }
         },
       }
     }
@@ -165,19 +187,17 @@ describe('prepared scans', () => {
     /** @type {AsyncBatch[]} */
     const batches = [
       {
-        schema,
         selection: { type: 'all', length: 2 },
         columns: [
-          { type: 'loaded', vector: { type: 'values', values: [true, true], length: 2 } },
-          { type: 'loaded', vector: { type: 'values', values: ['a', 'bb'], length: 2 } },
+          { type: 'values', values: [true, true], length: 2 },
+          { type: 'values', values: ['a', 'bb'], length: 2 },
         ],
       },
       {
-        schema,
         selection: { type: 'all', length: 1 },
         columns: [
-          { type: 'loaded', vector: { type: 'values', values: [true], length: 1 } },
-          { type: 'loaded', vector: { type: 'values', values: [3], length: 1 } },
+          { type: 'values', values: [true], length: 1 },
+          { type: 'values', values: [3], length: 1 },
         ],
       },
     ]
@@ -213,7 +233,182 @@ describe('prepared scans', () => {
       query: 'SELECT payload FROM data WHERE keep LIMIT 1',
     })).toThrow('Data source "data" applied limit/offset without applying where')
   })
+
+  it('preserves logical schema order while assigning filter phases', async () => {
+    /** @type {RelationSchema} */
+    const orderedSchema = {
+      fields: [
+        { id: 1, name: 'first', dataType: { type: 'string' }, nullable: false },
+        { id: 2, name: 'keep', dataType: { type: 'boolean' }, nullable: false },
+        { id: 3, name: 'last', dataType: { type: 'string' }, nullable: false },
+      ],
+    }
+    /** @type {PrepareScan} */
+    function prepareScan(request) {
+      const fields = request.columns.map(function requestedField(demand) {
+        const field = orderedSchema.fields.find(function fieldById(candidate) {
+          return candidate.id === demand.field
+        })
+        if (!field) throw new Error(`unknown field: ${demand.field}`)
+        return field
+      })
+      /** @type {Record<string, import('../../src/types.js').SqlPrimitive[]>} */
+      const values = {
+        first: ['a'],
+        keep: [true],
+        last: ['z'],
+      }
+      return {
+        schema: { fields },
+        residual: { filter: request.filter },
+        properties: { exactRows: 1 },
+        async *batches() {
+          yield {
+            selection: { type: 'all', length: 1 },
+            columns: fields.map(function loadedField(field) {
+              return { type: 'values', values: values[field.name], length: 1 }
+            }),
+          }
+        },
+      }
+    }
+    const prepare = vi.fn(prepareScan)
+    const source = {
+      schema: orderedSchema,
+      prepareScan: prepare,
+    }
+
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT * FROM data WHERE keep',
+    })
+
+    expect(results.columns).toEqual(['first', 'keep', 'last'])
+    expect(prepare.mock.calls[0][0].columns).toEqual([
+      { field: 1, phase: 1, purpose: 'output', mode: 'deferred' },
+      { field: 2, phase: 0, purpose: 'filter', mode: 'required' },
+      { field: 3, phase: 1, purpose: 'output', mode: 'deferred' },
+    ])
+    await expect(collect(results)).resolves.toEqual([{ first: 'a', keep: true, last: 'z' }])
+  })
+
+  it('requests a struct base field used by a residual filter', async () => {
+    /** @type {RelationSchema} */
+    const structSchema = {
+      fields: [
+        {
+          id: 1,
+          name: 'obj',
+          dataType: {
+            type: 'struct',
+            fields: [{ id: 2, name: 'x', dataType: { type: 'number' }, nullable: false }],
+          },
+          nullable: false,
+        },
+        { id: 3, name: 'payload', dataType: { type: 'string' }, nullable: false },
+      ],
+    }
+    /** @type {PrepareScan} */
+    function prepareScan(request) {
+      const fields = request.columns.map(function requestedField(demand) {
+        const field = structSchema.fields.find(function fieldById(candidate) {
+          return candidate.id === demand.field
+        })
+        if (!field) throw new Error(`unknown field: ${demand.field}`)
+        return field
+      })
+      return {
+        schema: { fields },
+        residual: { filter: request.filter },
+        properties: { exactRows: 2 },
+        async *batches() {
+          yield {
+            selection: { type: 'all', length: 2 },
+            columns: fields.map(function loadedField(field) {
+              const values = field.name === 'obj' ? [{ x: 1 }, { x: 2 }] : ['yes', 'no']
+              return { type: 'values', values, length: 2 }
+            }),
+          }
+        },
+      }
+    }
+    const prepare = vi.fn(prepareScan)
+    const source = {
+      columns: ['obj', 'payload'],
+      schema: structSchema,
+      prepareScan: prepare,
+    }
+
+    await expect(collect(executeSql({
+      tables: { data: source },
+      query: 'SELECT payload FROM data WHERE obj.x = 1',
+    }))).resolves.toEqual([{ payload: 'yes' }])
+    expect(prepare.mock.calls[0][0].columns).toEqual([
+      { field: 3, phase: 1, purpose: 'output', mode: 'deferred' },
+      { field: 1, phase: 0, purpose: 'filter', mode: 'required' },
+    ])
+  })
+
+  it('surfaces cooperative aborts from direct batch iteration', async () => {
+    const { results } = abortingPreparedResults()
+    if (!results.batches) throw new Error('expected native batches')
+    async function consumeBatches() {
+      const batches = []
+      for await (const batch of results.batches()) batches.push(batch)
+      return batches
+    }
+
+    await expect(consumeBatches()).rejects.toThrow('prepared scan aborted')
+  })
+
+  it('surfaces cooperative aborts from direct row iteration', async () => {
+    const { results } = abortingPreparedResults()
+    async function consumeRows() {
+      const rows = []
+      for await (const row of results.rows()) rows.push(row)
+      return rows
+    }
+
+    await expect(consumeRows()).rejects.toThrow('prepared scan aborted')
+  })
+
+  it('surfaces cooperative aborts while collecting batches', async () => {
+    const { results } = abortingPreparedResults()
+    await expect(collect(results)).rejects.toThrow('prepared scan aborted')
+  })
 })
+
+/**
+ * @returns {{ results: import('../../src/types.js').QueryResults }}
+ */
+function abortingPreparedResults() {
+  const controller = new AbortController()
+  const source = preparedSource(function prepareScan() {
+    return {
+      schema,
+      residual: {},
+      properties: { exactRows: 1 },
+      async *batches({ signal } = {}) {
+        yield {
+          selection: { type: 'all', length: 1 },
+          columns: [
+            { type: 'constant', value: true, length: 1 },
+            { type: 'constant', value: 'value', length: 1 },
+          ],
+        }
+        controller.abort(new Error('prepared scan aborted'))
+        if (!signal?.aborted) throw new Error('expected prepared signal to be aborted')
+      },
+    }
+  })
+  return {
+    results: executeSql({
+      tables: { data: source },
+      query: 'SELECT payload FROM data',
+      signal: controller.signal,
+    }),
+  }
+}
 
 /**
  * @param {PrepareScan} prepareScan

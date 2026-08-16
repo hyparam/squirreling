@@ -1,6 +1,5 @@
 /**
- * @import { AsyncBatch, ColumnResult, ColumnVector, ReadBatchColumnOptions, RowSelection } from '../internalTypes.js'
- * @import { SqlPrimitive } from '../types.js'
+ * @import { AsyncBatch, ColumnResult, ColumnVector, ReadBatchColumnOptions, RowSelection, SqlPrimitive } from '../types.js'
  */
 
 /** @type {WeakMap<AsyncBatch, Map<number, Map<RowSelection, { resolved?: ColumnVector, pending: Map<AbortSignal | undefined, Promise<ColumnVector>> }>>>} */
@@ -126,7 +125,7 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
   if (selection.length !== batch.selection.length) {
     throw new Error(`Selection length ${selection.length} does not match batch length ${batch.selection.length}`)
   }
-  if (column.type !== 'source' && column.type !== 'computed') {
+  if (!('read' in column)) {
     return selectVector(column, selection)
   }
 
@@ -149,15 +148,15 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
   if (pending) return pending
   if (cache.resolved) return cache.resolved
 
-  const result = column.type === 'source'
-    ? column.read({ selection, signal })
-    : column.expression.evaluate({
-      batch: column.input,
-      selection,
-      signal,
-      rowOffset: column.rowOffset,
-      rowOrdinals: selectVector(column.rowOrdinals, selection),
-    })
+  const result = column.read({
+    batch: column.input ?? batch,
+    selection,
+    signal,
+    rowOffset: column.rowOffset,
+    rowOrdinals: column.rowOrdinals
+      ? selectVector(column.rowOrdinals, selection)
+      : undefined,
+  })
   const validated = validateColumnResult(result, selectedRowCount(selection))
   if (validated instanceof Promise) {
     const settled = validated.then(function cacheResolved(vector) {
@@ -185,7 +184,6 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
 export function selectBatch(batch, selection) {
   const composed = composeSelections(batch.selection, selection)
   return {
-    columnNames: batch.columnNames,
     selection: composed,
     columns: batch.columns,
   }

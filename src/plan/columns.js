@@ -1,5 +1,6 @@
-import { tableFunctionDefaultColumns } from '../parse/parse.js'
+import { dataSourceColumns } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
+import { tableFunctionDefaultColumns } from '../parse/parse.js'
 
 /**
  * @import { AsyncDataSource, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, SelectStatement, Statement } from '../types.js'
@@ -483,7 +484,8 @@ export function inferSelectSourceColumns({ select, cteColumns, tables }) {
  * @returns {string[]}
  */
 function lookupTableColumns(table, cteColumns, tables) {
-  return cteColumns?.get(table.toLowerCase()) ?? tables?.[table]?.columns ?? []
+  const source = tables?.[table]
+  return cteColumns?.get(table.toLowerCase()) ?? (source ? dataSourceColumns(source) : [])
 }
 
 /**

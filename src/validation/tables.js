@@ -1,3 +1,4 @@
+import { dataSourceColumns } from '../backend/dataSource.js'
 import { ExecutionError } from './executionErrors.js'
 
 /**
@@ -34,11 +35,12 @@ export function validateTable({ table, qualified, tables, positionStart, positio
 export function validateScan({ table, hints, tables, positionStart, positionEnd }) {
   if (!tables) return
   const resolved = validateTable({ table, tables, positionStart, positionEnd })
-  const missingColumn = hints.columns?.find(col => !resolved.columns.includes(col))
+  const columns = dataSourceColumns(resolved)
+  const missingColumn = hints.columns?.find(col => !columns.includes(col))
   if (missingColumn) {
     throw new ColumnNotFoundError({
       missingColumn,
-      availableColumns: resolved.columns,
+      availableColumns: columns,
       positionStart,
       positionEnd,
     })

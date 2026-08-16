@@ -21,6 +21,27 @@ const other = [
 ]
 
 describe('expensive cell access', () => {
+  it('preserves the source receiver through the cache wrapper', async () => {
+    const base = memorySource({ data: [{ id: 1 }] })
+    const source = {
+      ...base,
+      marker: 'configured',
+      /**
+       * @param {ScanOptions} options
+       * @returns {ScanResults}
+       */
+      scan(options) {
+        expect(this.marker).toBe('configured')
+        return base.scan(options)
+      },
+    }
+
+    await expect(collect(executeSql({
+      tables: { data: cachedDataSource(source) },
+      query: 'SELECT id FROM data',
+    }))).resolves.toEqual([{ id: 1 }])
+  })
+
   it('should make no expensive calls when not accessing expensive columns', async () => {
     await expect(countExpensiveCalls('SELECT id, name FROM data')).resolves.toBe(0)
   })

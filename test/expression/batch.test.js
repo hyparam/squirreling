@@ -3,8 +3,7 @@ import { compileBatchExpression } from '../../src/expression/batch.js'
 import { parseSql } from '../../src/parse/parse.js'
 
 /**
- * @import { AsyncBatch, ReadColumn, RowSelection } from '../../src/internalTypes.js'
- * @import { ExprNode } from '../../src/types.js'
+ * @import { AsyncBatch, ExprNode, ReadColumn, RowSelection } from '../../src/types.js'
  */
 
 const schema = ['n', 'text']
@@ -53,11 +52,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 2 },
       columns: [
         { type: 'values', values: [1, 2], length: 2 },
-        { type: 'source', read },
+        { read },
       ],
     }
 
@@ -84,11 +82,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [
         { type: 'values', values: [-1, 1, -2], length: 3 },
-        { type: 'source', read },
+        { read },
       ],
     }
 
@@ -115,11 +112,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [
         { type: 'values', values: [1, null, null], length: 3 },
-        { type: 'source', read },
+        { read },
       ],
     }
 
@@ -150,11 +146,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [
         { type: 'values', values: [1, 0, -1], length: 3 },
-        { type: 'source', read },
+        { read },
       ],
     }
 
@@ -181,11 +176,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'indices', indices: new Uint32Array([1, 3]), length: 4 },
       columns: [
         { type: 'values', values: [0, -1, 0, 1], length: 4 },
-        { type: 'source', read },
+        { read },
       ],
     }
 
@@ -249,7 +243,6 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: structSchema,
       selection: { type: 'all', length: 2 },
       columns: [
         { type: 'values', values: [{ x: 2 }, 7], length: 2 },
@@ -329,7 +322,6 @@ function expression(sql) {
  */
 function loadedBatch(numbers, texts) {
   return {
-    columnNames: schema,
     selection: { type: 'all', length: numbers.length },
     columns: [
       { type: 'values', values: numbers, length: numbers.length },

@@ -11,14 +11,10 @@ export { QueryPlan } from './plan/types.js'
 export interface QueryResults {
   columns: string[]
   rows(): AsyncGenerator<AsyncRow>
-  /** Native batch output during the row-to-batch executor migration. */
   batches?(): AsyncIterable<AsyncBatch>
-  schema?: RelationSchema
   numRows?: number
   maxRows?: number
 }
-
-export type FieldId = number
 
 export type SqlType =
   | { type: 'unknown' }
@@ -31,7 +27,7 @@ export type SqlType =
   | { type: 'struct', fields: readonly Field[] }
 
 export interface Field {
-  id: FieldId
+  id: number
   name: string
   dataType: SqlType
   nullable: boolean
@@ -41,24 +37,13 @@ export interface RelationSchema {
   fields: readonly Field[]
 }
 
-export interface RowRange {
-  start: number
-  end: number
-}
-
 /**
  * A selection over a base domain of `length` rows.
  */
 export type RowSelection =
   | { type: 'all', length: number }
   | { type: 'range', start: number, end: number, length: number }
-  | { type: 'ranges', ranges: readonly RowRange[], length: number }
   | { type: 'indices', indices: Uint32Array, length: number }
-  | {
-      type: 'bitmap'
-      values: Uint8Array
-      length: number
-    }
 
 export type NumericArray =
   | Int8Array
@@ -98,48 +83,26 @@ export type ColumnVector =
     }
 
 export interface ColumnReadRequest {
+  batch: AsyncBatch
   selection: RowSelection
   signal?: AbortSignal
+  rowOffset?: number
+  rowOrdinals?: ColumnVector
 }
 
 export type ColumnResult = ColumnVector | Promise<ColumnVector>
 export type ReadColumn = (request: ColumnReadRequest) => ColumnResult
 
-export interface ColumnEvaluationRequest {
-  batch: AsyncBatch
-  selection: RowSelection
-  signal?: AbortSignal
-  rowOffset?: number
-}
-
-export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
-
-export interface CompileBatchExpressionOptions {
-  expression: ExprNode
-  schema: RelationSchema
-}
-
-export interface CompiledBatchExpression {
-  dependencies: readonly number[]
-  evaluate: EvaluateColumn
-}
-
-export type BatchProjection =
-  | { type: 'column', columnIndex: number }
-  | { type: 'constant', value: SqlPrimitive }
-  | { type: 'expression', expression: CompiledBatchExpression }
-
 export type BatchColumn =
-  | { type: 'loaded', vector: ColumnVector }
-  | { type: 'source', read: ReadColumn }
+  | ColumnVector
   | {
-      type: 'computed'
-      input: AsyncBatch
-      evaluate: EvaluateColumn
+      read: ReadColumn
+      input?: AsyncBatch
+      rowOffset?: number
+      rowOrdinals?: ColumnVector
     }
 
 export interface AsyncBatch {
-  schema: RelationSchema
   selection: RowSelection
   columns: readonly BatchColumn[]
 }
@@ -157,7 +120,7 @@ export interface RowsToBatchesOptions {
 }
 
 export interface ColumnDemand {
-  field: FieldId
+  field: number
   phase: number
   purpose: 'filter' | 'output'
   mode: 'required' | 'deferred'
@@ -181,17 +144,11 @@ export interface ScanResidual {
   offset?: number
 }
 
-export interface ReadBatchesOptions {
-  signal?: AbortSignal
-}
-
-export type ReadBatches = (options?: ReadBatchesOptions) => AsyncIterable<AsyncBatch>
-
 export interface PreparedScan {
   schema: RelationSchema
   residual: ScanResidual
   properties: ScanProperties
-  batches: ReadBatches
+  batches(options?: { signal?: AbortSignal }): AsyncIterable<AsyncBatch>
 }
 
 export type PrepareScan = (request: ScanRequest) => PreparedScan
@@ -253,11 +210,12 @@ export type AsyncCell = () => Promise<SqlPrimitive>
 export type Row = Record<string, SqlPrimitive>[]
 
 /**
- * Async data source for streaming SQL execution.
+ * Async data source for streaming SQL execution. A source must implement
+ * either scan() or prepareScan().
  */
 export interface AsyncDataSource {
   numRows?: number
-  columns: string[]
+  columns?: string[]
   schema?: RelationSchema
   prepareScan?: PrepareScan
   scan?(options: ScanOptions): ScanResults

@@ -5,8 +5,7 @@ import { compileBatchExpression } from '../../src/expression/batch.js'
 import { parseSql } from '../../src/parse/parse.js'
 
 /**
- * @import { AsyncBatch, ReadColumn } from '../../src/internalTypes.js'
- * @import { ExprNode } from '../../src/types.js'
+ * @import { AsyncBatch, ExprNode, ReadColumn } from '../../src/types.js'
  */
 
 const schema = ['keep', 'payload']
@@ -20,11 +19,10 @@ describe('batch operators', () => {
     const read = vi.fn(readPayload)
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 4 },
       columns: [
         { type: 'values', values: [true, false, true, false], length: 4 },
-        { type: 'source', read },
+        { read },
       ],
     }
     const expression = compileBatchExpression(parseExpression('keep'), schema)
@@ -129,6 +127,28 @@ describe('batch operators', () => {
       length: 2,
     })
   })
+
+  it('yields while deduplicating a large loaded batch so timer aborts can fire', async () => {
+    const controller = new AbortController()
+    const batch = valueBatch(Array.from({ length: 20_000 }, function value(_item, index) {
+      return index
+    }))
+    const timer = setTimeout(function abortDistinct() {
+      controller.abort(new Error('distinct timed out'))
+    }, 0)
+
+    async function consumeDistinct() {
+      for await (const result of distinctBatches(asyncValues([batch]), controller.signal)) {
+        selectedRowCount(result.selection)
+      }
+    }
+
+    try {
+      await expect(consumeDistinct()).rejects.toThrow('distinct timed out')
+    } finally {
+      clearTimeout(timer)
+    }
+  })
 })
 
 /**
@@ -158,7 +178,6 @@ async function* asyncValues(values) {
  */
 function valueBatch(values) {
   return {
-    columnNames: ['value'],
     selection: { type: 'all', length: values.length },
     columns: [{
       type: 'values',

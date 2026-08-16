@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
 /**
- * @import { AsyncBatch, AsyncDataSource, PrepareScan, ReadColumn, RelationSchema } from '../../src/types.js'
+ * @import { AsyncBatch, AsyncDataSource, PrepareScan, ReadColumn, RelationSchema, ScanColumnResults } from '../../src/types.js'
  */
 
 /** @type {RelationSchema} */
@@ -66,7 +66,7 @@ describe('batch aggregate execution', () => {
     expect(attributes).toHaveBeenCalledTimes(1)
   })
 
-  it('aggregates CASE, compound predicates, and NULLIF from private batches', async () => {
+  it('aggregates CASE, compound predicates, and NULLIF from native batches', async () => {
     const source = columnSource([1, 2, 3, 4])
 
     await expect(collect(executeSql({
@@ -110,12 +110,33 @@ describe('batch aggregate execution', () => {
  */
 function loadedBatch(readAttributes) {
   return {
-    schema,
     selection: { type: 'all', length: 4 },
     columns: [
-      { type: 'loaded', vector: { type: 'values', values: ['claude', 'codex', 'claude', 'codex'], length: 4 } },
-      { type: 'loaded', vector: { type: 'values', values: ['a', 'b', 'c', 'b'], length: 4 } },
-      { type: 'source', read: readAttributes },
+      { type: 'values', values: ['claude', 'codex', 'claude', 'codex'], length: 4 },
+      { type: 'values', values: ['a', 'b', 'c', 'b'], length: 4 },
+      { read: readAttributes },
     ],
+  }
+}
+
+/**
+ * @param {import('../../src/types.js').SqlPrimitive[]} values
+ * @returns {AsyncDataSource}
+ */
+function columnSource(values) {
+  return {
+    columns: ['id'],
+    scan: vi.fn(function scan() {
+      throw new Error('row scan should not be called')
+    }),
+    scanColumn() {
+      /** @type {ScanColumnResults} */
+      const results = {
+        appliedWhere: false,
+        appliedLimitOffset: false,
+        async *chunks() { yield values },
+      }
+      return results
+    },
   }
 }

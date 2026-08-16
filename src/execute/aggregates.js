@@ -1,3 +1,4 @@
+import { dataSourceColumns } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
@@ -299,7 +300,7 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
 
   // COUNT(*) needs a physical column whose filtered chunk lengths can be
   // counted. Prefer a predicate/projection column, then any table column.
-  const starColumn = scanNode.hints.columns?.[0] ?? table.columns[0]
+  const starColumn = scanNode.hints.columns?.[0] ?? dataSourceColumns(table)[0]
   if (!starColumn) return
 
   // All columns must be simple aggregates on plain identifiers

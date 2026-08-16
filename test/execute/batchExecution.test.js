@@ -20,10 +20,10 @@ describe('native batch execution', () => {
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     const column = first.value.columns[0]
-    expect(column.type).toBe('typed')
-    if (column.type !== 'typed') throw new Error('expected a typed vector')
+    expect('type' in column && column.type).toBe('typed')
+    if (!('type' in column) || column.type !== 'typed') throw new Error('expected a typed vector')
     expect(column.values).toBe(values)
-    expect(first.value.columnNames[0]).toBe('value')
+    expect(results.columns[0]).toBe('value')
   })
 
   it('applies limit and offset as a zero-copy selection across chunks', async () => {
@@ -61,9 +61,7 @@ describe('native batch execution', () => {
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     const [column] = first.value.columns
-    expect(column.type).toBe('computed')
-    if (column.type !== 'computed') throw new Error('expected a computed column')
-    expect(column.expression).toBeDefined()
+    expect('read' in column).toBe(true)
 
     expect(await collect(results)).toEqual([{ size: 2 }, { size: 5 }, { size: null }])
   })
@@ -109,7 +107,6 @@ describe('native batch execution', () => {
       type: 'indices',
       indices: new Uint32Array([2, 3]),
       length: 4,
-      selectedCount: 2,
     })
     expect(await collect(results)).toEqual([{ id: 3 }, { id: 4 }])
   })
@@ -154,7 +151,6 @@ describe('native batch execution', () => {
     })
 
     expect(results.batches).toBeTypeOf('function')
-    expect(results.schema).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 9 }, { value: 12 }])
   })
 
@@ -205,7 +201,6 @@ describe('native batch execution', () => {
     })
 
     expect(results.batches).toBeTypeOf('function')
-    expect(results.schema).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 1 }, { value: 0 }])
   })
 
@@ -216,7 +211,7 @@ describe('native batch execution', () => {
       query: 'SELECT DISTINCT x FROM (SELECT id AS x, 1 AS x FROM data)',
     })
 
-    expect(batchResultsFor(results)).toBeDefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ x: 1 }])
   })
 

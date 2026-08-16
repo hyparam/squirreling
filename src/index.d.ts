@@ -1,4 +1,4 @@
-import type { AsyncBatch, AsyncDataSource, AsyncRow, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RelationSchema, RowsToBatchesOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncBatch, AsyncDataSource, AsyncRow, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RowsToBatchesOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncBatch,
   AsyncCells,
@@ -6,7 +6,6 @@ export type {
   AsyncRow,
   BatchColumn,
   ColumnDemand,
-  ColumnEvaluationRequest,
   ColumnReadRequest,
   ColumnResult,
   ColumnVector,
@@ -14,7 +13,6 @@ export type {
   ExecuteSqlOptions,
   ExprNode,
   Field,
-  FieldId,
   NumericArray,
   ParseSqlOptions,
   PlanSqlOptions,
@@ -22,11 +20,8 @@ export type {
   PrepareScan,
   QueryPlan,
   QueryResults,
-  ReadBatches,
-  ReadBatchesOptions,
   ReadBatchColumnOptions,
   RelationSchema,
-  RowRange,
   RowsToBatchesOptions,
   RowSelection,
   ScanOptions,
@@ -133,12 +128,13 @@ export function selectBatch(batch: AsyncBatch, selection: RowSelection): AsyncBa
 
 export function rowsToBatches(
   rows: AsyncIterable<AsyncRow>,
-  schema: RelationSchema,
+  columns: string[],
   options?: RowsToBatchesOptions,
 ): AsyncIterable<AsyncBatch>
 
 export function batchesToRows(
   batches: AsyncIterable<AsyncBatch>,
+  columns: string[],
   signal?: AbortSignal,
 ): AsyncIterable<AsyncRow>
 

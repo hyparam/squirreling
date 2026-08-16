@@ -18,7 +18,22 @@ const querySignals = new WeakMap()
  * @returns {QueryResults}
  */
 export function bindQuerySignal(results, signal) {
-  if (signal) querySignals.set(results, signal)
+  if (!signal || querySignals.get(results) === signal) return results
+
+  const { batches, rows } = results
+  results.rows = async function* boundRows() {
+    signal.throwIfAborted()
+    yield* rows.call(results)
+    signal.throwIfAborted()
+  }
+  if (batches) {
+    results.batches = async function* boundBatches() {
+      signal.throwIfAborted()
+      yield* batches.call(results)
+      signal.throwIfAborted()
+    }
+  }
+  querySignals.set(results, signal)
   return results
 }
 
@@ -67,7 +82,9 @@ export function compareForTerm(a, b, term) {
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
 export async function collect(results) {
-  if (results.batches) return await collectBatches(results.batches(), querySignals.get(results))
+  if (results.batches) {
+    return await collectBatches(results.batches(), results.columns, querySignals.get(results))
+  }
 
   // Collect all rows first, then materialize cells concurrently
   // This enables dataloader-style batching of cell accessors

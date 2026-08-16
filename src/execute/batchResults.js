@@ -1,15 +1,12 @@
 import { batchesToRows } from '../backend/batchAdapters.js'
+import { bindQuerySignal } from './utils.js'
 
 /**
- * @import { AsyncBatch, InternalBatchResults } from '../internalTypes.js'
- * @import { QueryResults } from '../types.js'
+ * @import { AsyncBatch, QueryResults } from '../types.js'
  */
 
-/** @type {WeakMap<QueryResults, InternalBatchResults>} */
-const internalBatches = new WeakMap()
-
 /**
- * Creates a public row result backed by private batches.
+ * Creates query results backed by batches.
  *
  * @param {object} options
  * @param {string[]} options.columns
@@ -19,23 +16,13 @@ const internalBatches = new WeakMap()
  * @param {AbortSignal} [options.signal]
  * @returns {QueryResults}
  */
-export function batchResult({ batches, signal, ...metadata }) {
+export function batchResult({ batches: readBatches, signal, ...metadata }) {
   const results = {
     ...metadata,
+    batches: readBatches,
     rows() {
-      return batchesToRows(batches(), signal)
+      return batchesToRows(readBatches(), metadata.columns, signal)
     },
   }
-  internalBatches.set(results, { columns: metadata.columns, batches, signal })
-  return results
-}
-
-/**
- * Returns the private batch execution path for a result, when available.
- *
- * @param {QueryResults} results
- * @returns {InternalBatchResults | undefined}
- */
-export function batchResultsFor(results) {
-  return internalBatches.get(results)
+  return bindQuerySignal(results, signal)
 }

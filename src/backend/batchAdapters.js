@@ -2,8 +2,7 @@ import { readBatchColumn, selectVector, selectedRowCount, valueAt } from './batc
 import { yieldToEventLoop } from '../execute/yield.js'
 
 /**
- * @import { AsyncBatch, ColumnResult, ColumnVector, RowsToBatchesOptions } from '../internalTypes.js'
- * @import { AsyncCells, AsyncRow, SqlPrimitive } from '../types.js'
+ * @import { AsyncBatch, AsyncCells, AsyncRow, ColumnResult, ColumnVector, RowsToBatchesOptions, SqlPrimitive } from '../types.js'
  */
 
 const DEFAULT_BATCH_ROWS = 1024
@@ -33,13 +32,13 @@ export async function* rowsToBatches(rows, columnNames, options) {
     }
     rowCount++
     if (rowCount === batchRows) {
-      yield loadedBatch(columnNames, values, rowCount)
+      yield loadedBatch(values, rowCount)
       values = makeValueBuffers(columnNames.length)
       rowCount = 0
     }
   }
 
-  if (rowCount > 0) yield loadedBatch(columnNames, values, rowCount)
+  if (rowCount > 0) yield loadedBatch(values, rowCount)
   options?.signal?.throwIfAborted()
 }
 
@@ -48,14 +47,14 @@ export async function* rowsToBatches(rows, columnNames, options) {
  * remain lazy and are memoized once per batch/selection by `readBatchColumn`.
  *
  * @param {AsyncIterable<AsyncBatch>} batches
+ * @param {string[]} columns
  * @param {AbortSignal} [signal]
  * @yields {AsyncRow}
  */
-export async function* batchesToRows(batches, signal) {
+export async function* batchesToRows(batches, columns, signal) {
   for await (const batch of batches) {
-    const columns = batch.columnNames
     const loadedVectors = batch.columns.map(function loadedVector(column) {
-      if (column.type === 'source' || column.type === 'computed') return undefined
+      if ('read' in column) return undefined
       return selectVector(column, batch.selection)
     })
     const rowCount = selectedRowCount(batch.selection)
@@ -90,14 +89,14 @@ export async function* batchesToRows(batches, signal) {
  * constructing compatibility `AsyncRow` values.
  *
  * @param {AsyncIterable<AsyncBatch>} batches
+ * @param {string[]} names
  * @param {AbortSignal} [signal]
  * @returns {Promise<Record<string, SqlPrimitive>[]>}
  */
-export async function collectBatches(batches, signal) {
+export async function collectBatches(batches, names, signal) {
   /** @type {Record<string, SqlPrimitive>[]} */
   const rows = []
   for await (const batch of batches) {
-    const names = batch.columnNames
     const results = batch.columns.map(function readColumn(_column, columnIndex) {
       return readBatchColumn({ batch, columnIndex, signal })
     })
@@ -146,14 +145,12 @@ function makeValueBuffers(count) {
 }
 
 /**
- * @param {string[]} columnNames
  * @param {SqlPrimitive[][]} values
  * @param {number} rowCount
  * @returns {AsyncBatch}
  */
-function loadedBatch(columnNames, values, rowCount) {
+function loadedBatch(values, rowCount) {
   return {
-    columnNames,
     selection: { type: 'all', length: rowCount },
     columns: values.map(function loadedColumn(columnValues) {
       return { type: 'values', values: columnValues, length: rowCount }
