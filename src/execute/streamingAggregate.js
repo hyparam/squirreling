@@ -1,13 +1,17 @@
+import { selectedRowCount, valueAt } from '../backend/batch.js'
 import { derivedAlias } from '../expression/alias.js'
+import { compileBatchExpression } from '../expression/batch.js'
 import { evaluateAll, evaluateExpr } from '../expression/evaluate.js'
 import { collectColumnsFromExpr } from '../plan/columns.js'
 import { isAggregateFunc } from '../validation/functions.js'
 import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
+import { batchResultsFor } from './batchResults.js'
 import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
+ * @import { AsyncBatch, BatchAggregateInputs, ColumnVector, CompiledBatchExpression, RelationSchema } from '../internalTypes.js'
  * @import { AsyncCells, AsyncRow, ExecuteContext, ExprNode, FunctionNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  * @import { Accumulator } from './accumulator.js'
@@ -420,6 +424,118 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
 }
 
 /**
+ * Compiles the expressions an aggregate reads from each input batch. A
+ * filtered non-star aggregate retains the row path because its argument must
+ * only be evaluated for passing rows.
+ *
+ * @param {ExprNode[]} groupBy
+ * @param {StreamingAggSpec[]} specs
+ * @param {RelationSchema} schema
+ * @returns {BatchAggregateInputs | undefined}
+ */
+function compileBatchAggregateInputs(groupBy, specs, schema) {
+  /** @type {CompiledBatchExpression[]} */
+  const keys = []
+  for (const expression of groupBy) {
+    const key = compileBatchExpression({ expression, schema })
+    if (!key) return undefined
+    keys.push(key)
+  }
+
+  /** @type {(CompiledBatchExpression | undefined)[]} */
+  const filters = []
+  /** @type {(CompiledBatchExpression | undefined)[]} */
+  const args = []
+  for (const spec of specs) {
+    if (spec.node.filter && !spec.star) return undefined
+    const filter = spec.node.filter
+      ? compileBatchExpression({ expression: spec.node.filter, schema })
+      : undefined
+    const argument = spec.star
+      ? undefined
+      : compileBatchExpression({ expression: spec.node.args[0], schema })
+    if (spec.node.filter && !filter || !spec.star && !argument) return undefined
+    filters.push(filter)
+    args.push(argument)
+  }
+  return {
+    keys,
+    filters,
+    args,
+  }
+}
+
+/**
+ * Resolves one set of compiled expressions against a batch.
+ *
+ * @param {(CompiledBatchExpression | undefined)[]} expressions
+ * @param {AsyncBatch} batch
+ * @param {ExecuteContext} context
+ * @param {number} rowOffset
+ * @returns {Promise<(ColumnVector | undefined)[]>}
+ */
+function evaluateBatchInputs(expressions, batch, context, rowOffset) {
+  return Promise.all(expressions.map(function evaluateInput(expression) {
+    return expression?.evaluate({ batch, selection: batch.selection, signal: context.signal, rowOffset })
+  }))
+}
+
+/**
+ * Folds a native batch directly into aggregate state without constructing
+ * rows, cells, or per-value promises.
+ *
+ * @param {object} options
+ * @param {AsyncBatch} options.batch
+ * @param {BatchAggregateInputs} options.inputs
+ * @param {StreamingAggSpec[]} options.specs
+ * @param {Map<unknown, StreamingGroup>} options.groups
+ * @param {ExecuteContext} options.context
+ * @param {number} options.rowOffset
+ * @returns {Promise<void>}
+ */
+async function accumulateBatch({ batch, inputs, specs, groups, context, rowOffset }) {
+  const [keys, filters, args] = await Promise.all([
+    evaluateBatchInputs(inputs.keys, batch, context, rowOffset),
+    evaluateBatchInputs(inputs.filters, batch, context, rowOffset),
+    evaluateBatchInputs(inputs.args, batch, context, rowOffset),
+  ])
+  const rowCount = selectedRowCount(batch.selection)
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+    if (rowIndex > 0 && rowIndex % CHUNK_SIZE === 0) {
+      await yieldToEventLoop()
+      context.signal?.throwIfAborted()
+    }
+    const keyValues = keys.map(function keyValue(vector) {
+      if (!vector) throw new Error('Missing compiled group key')
+      return valueAt(vector, rowIndex)
+    })
+    const key = keyValues.length === 0
+      ? true
+      : keyValues.length === 1 ? keyify(keyValues[0]) : keyify(...keyValues)
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        firstRow: undefined,
+        keyValues,
+        accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)),
+      }
+      groups.set(key, group)
+    }
+    for (let specIndex = 0; specIndex < specs.length; specIndex++) {
+      const filter = filters[specIndex]
+      if (filter && !valueAt(filter, rowIndex)) continue
+      const spec = specs[specIndex]
+      if (spec.star && spec.funcName === 'COUNT') {
+        group.accumulators[specIndex].count++
+      } else {
+        const argument = args[specIndex]
+        updateAccumulator(spec.funcName, group.accumulators[specIndex], argument ? valueAt(argument, rowIndex) : null)
+      }
+    }
+  }
+}
+
+/**
  * Consumes the child rows into per-group accumulators, holding at most one
  * chunk of rows at a time. Throws when aborted so partial accumulators are
  * never finalized into results.
@@ -435,6 +551,19 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
 async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   /** @type {Map<unknown, StreamingGroup>} */
   const groups = new Map()
+  const batchResults = batchResultsFor(child)
+  const batchInputs = batchResults && !needsRow
+    ? compileBatchAggregateInputs(groupBy, specs, batchResults.schema)
+    : undefined
+  if (batchInputs && batchResults) {
+    let rowOffset = 0
+    for await (const batch of batchResults.batches()) {
+      await accumulateBatch({ batch, inputs: batchInputs, specs, groups, context, rowOffset })
+      rowOffset += selectedRowCount(batch.selection)
+      context.signal?.throwIfAborted()
+    }
+    return groups
+  }
   /** @type {AsyncRow[]} */
   let chunk = []
   for await (const row of child.rows()) {

@@ -93,6 +93,12 @@ export interface CompileState {
   schema: RelationSchema
 }
 
+export interface BatchAggregateInputs {
+  keys: CompiledBatchExpression[]
+  filters: (CompiledBatchExpression | undefined)[]
+  args: (CompiledBatchExpression | undefined)[]
+}
+
 export type BatchProjection =
   | { type: 'column', columnIndex: number }
   | { type: 'constant', value: SqlPrimitive }
