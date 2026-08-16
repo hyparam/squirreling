@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readBatchColumn, selectedRowCount } from '../../src/backend/batch.js'
-import { distinctBatches, filterBatches } from '../../src/execute/batches.js'
+import { distinctBatches, filterBatches, limitBatches } from '../../src/execute/batches.js'
 import { compileBatchExpression } from '../../src/expression/batch.js'
 import { parseSql } from '../../src/parse/parse.js'
 
@@ -52,6 +52,68 @@ describe('batch operators', () => {
       length: 2,
     })
     expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds predicate work when a downstream limit needs few matches', async () => {
+    /** @type {{ length: number, rowOffset: number }[]} */
+    const evaluations = []
+    /** @type {import('../../src/internalTypes.js').CompiledBatchExpression} */
+    const expression = {
+      dependencies: [],
+      evaluate({ selection, rowOffset = 0 }) {
+        const length = selectedRowCount(selection)
+        evaluations.push({ length, rowOffset })
+        return { type: 'constant', value: true, length }
+      },
+    }
+    const batches = filterBatches(asyncValues([valueBatch(new Array(1_000).fill(true))]), expression, undefined, 1)
+    const limited = []
+
+    for await (const result of limitBatches(batches, 1)) limited.push(result)
+
+    expect(evaluations).toEqual([{ length: 256, rowOffset: 0 }])
+    expect(limited).toHaveLength(1)
+    expect(limited[0].selection).toEqual({
+      type: 'range',
+      start: 0,
+      end: 1,
+      length: 1_000,
+    })
+  })
+
+  it('grows predicate windows while preserving row offsets for late matches', async () => {
+    /** @type {{ length: number, rowOffset: number }[]} */
+    const evaluations = []
+    /** @type {import('../../src/internalTypes.js').CompiledBatchExpression} */
+    const expression = {
+      dependencies: [],
+      evaluate({ selection, rowOffset = 0 }) {
+        const length = selectedRowCount(selection)
+        evaluations.push({ length, rowOffset })
+        const values = new Array(length).fill(false)
+        if (rowOffset <= 700 && rowOffset + length > 700) values[700 - rowOffset] = true
+        return { type: 'values', values, length }
+      },
+    }
+    const batches = filterBatches(asyncValues([
+      valueBatch(new Array(100).fill(true)),
+      valueBatch(new Array(1_000).fill(true)),
+    ]), expression, undefined, 1)
+    const limited = []
+
+    for await (const result of limitBatches(batches, 1)) limited.push(result)
+
+    expect(evaluations).toEqual([
+      { length: 100, rowOffset: 0 },
+      { length: 512, rowOffset: 100 },
+      { length: 488, rowOffset: 612 },
+    ])
+    expect(limited).toHaveLength(1)
+    expect(limited[0].selection).toEqual({
+      type: 'indices',
+      indices: new Uint32Array([600]),
+      length: 1_000,
+    })
   })
 
   it('deduplicates across batches with zero-copy selections', async () => {

@@ -7,6 +7,9 @@ import { yieldToEventLoop } from './yield.js'
  * @import { SqlPrimitive } from '../types.js'
  */
 
+const INITIAL_FILTER_WINDOW_ROWS = 256
+const MAX_FILTER_WINDOW_ROWS = 16_384
+
 /**
  * Applies LIMIT/OFFSET by composing batch selections and stops consuming the
  * source as soon as the requested range is complete.
@@ -52,29 +55,69 @@ export async function* limitBatches(batches, limit = Infinity, offset = 0, signa
 }
 
 /**
- * Evaluates a predicate once per batch and composes the resulting selection
- * without reading or copying payload columns.
+ * Evaluates a predicate in adaptive windows when a downstream limit can stop
+ * early, then composes selections without reading or copying payload columns.
  *
  * @param {AsyncIterable<AsyncBatch>} batches
  * @param {CompiledBatchExpression} expression
  * @param {AbortSignal} [signal]
+ * @param {number} [targetRows] - Matches needed by a downstream limit.
  * @yields {AsyncBatch}
  */
-export async function* filterBatches(batches, expression, signal) {
+export async function* filterBatches(batches, expression, signal, targetRows) {
   let rowOffset = 0
+  let matchedRows = 0
+  let windowRows = targetRows === undefined
+    ? Infinity
+    : Math.min(MAX_FILTER_WINDOW_ROWS, Math.max(INITIAL_FILTER_WINDOW_ROWS, targetRows))
   for await (const batch of batches) {
     signal?.throwIfAborted()
     const rowCount = selectedRowCount(batch.selection)
-    const result = expression.evaluate({ batch, selection: batch.selection, signal, rowOffset })
-    const predicate = result instanceof Promise ? await result : result
-    const { selection, selectedCount } = predicateSelection(predicate, rowCount)
-    rowOffset += rowCount
-    if (selectedCount === 0) continue
-    if (selectedCount === rowCount) {
-      yield batch
-    } else {
-      yield selectBatch(batch, selection)
+    let start = 0
+    while (start < rowCount) {
+      const remainingRows = rowCount - start
+      const requestedRows = targetRows !== undefined && matchedRows < targetRows
+        ? windowRows
+        : remainingRows
+      const end = Math.min(rowCount, start + requestedRows)
+      const windowBatch = start === 0 && end === rowCount
+        ? batch
+        : selectBatch(batch, {
+          type: 'range',
+          start,
+          end,
+          length: rowCount,
+        })
+      const windowRowCount = end - start
+      const result = expression.evaluate({
+        batch: windowBatch,
+        selection: windowBatch.selection,
+        signal,
+        rowOffset: rowOffset + start,
+      })
+      const predicate = result instanceof Promise ? await result : result
+      const { selection, selectedCount } = predicateSelection(predicate, windowRowCount)
+      start = end
+      matchedRows += selectedCount
+
+      if (targetRows !== undefined && matchedRows < targetRows) {
+        if (selectedCount === 0) {
+          windowRows = Math.min(MAX_FILTER_WINDOW_ROWS, windowRows * 2)
+        } else {
+          const remainingMatches = targetRows - matchedRows
+          const estimatedRows = Math.ceil(remainingMatches * windowRowCount / selectedCount * 1.25)
+          windowRows = Math.min(MAX_FILTER_WINDOW_ROWS, Math.max(INITIAL_FILTER_WINDOW_ROWS, estimatedRows))
+        }
+      }
+
+      if (selectedCount === 0) continue
+      if (selectedCount === windowRowCount) {
+        yield windowBatch
+      } else {
+        yield selectBatch(windowBatch, selection)
+      }
     }
+    rowOffset += rowCount
   }
   signal?.throwIfAborted()
 }

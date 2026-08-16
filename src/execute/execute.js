@@ -312,7 +312,10 @@ export function executeScan(plan, context, existingColumnResult) {
       /** @type {AsyncIterable<AsyncBatch>} */
       let batches = columnBatches(columnResult.chunks(), schema, signal)
       if (residualFilter) {
-        batches = filterBatches(batches, residualFilter, signal)
+        const targetRows = plan.hints.limit === undefined
+          ? undefined
+          : plan.hints.limit + (plan.hints.offset ?? 0)
+        batches = filterBatches(batches, residualFilter, signal, targetRows)
       }
       if (!appliedLimitOffset && hasLimitOffset) {
         batches = limitBatches(batches, plan.hints.limit, plan.hints.offset, signal)

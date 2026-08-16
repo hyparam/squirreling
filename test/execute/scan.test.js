@@ -235,6 +235,42 @@ describe('scanColumn fast path', () => {
     expect(await collect(results)).toEqual([{ id: 1 }, { id: 2 }])
     expect(chunksCalled).toBe(true)
   })
+
+  it('should bound residual scanColumn filtering for a small limit and offset', async () => {
+    let valueReads = 0
+    const values = new Proxy(Array.from({ length: 1_000 }, function value(_unused, index) {
+      return index
+    }), {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) valueReads++
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    /** @type {AsyncDataSource} */
+    const source = {
+      columns: ['id'],
+      scan() {
+        throw new Error('scan should not be called')
+      },
+      scanColumn() {
+        return {
+          appliedWhere: false,
+          appliedLimitOffset: false,
+          async *chunks() {
+            yield values
+          },
+        }
+      },
+    }
+
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM data WHERE id >= 0 LIMIT 1 OFFSET 300',
+    })
+
+    expect(await collect(results)).toEqual([{ id: 300 }])
+    expect(valueReads).toBe(302)
+  })
 })
 
 
