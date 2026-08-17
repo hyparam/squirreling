@@ -1,3 +1,6 @@
+import { collectBatches } from '../backend/batchAdapters.js'
+import { batchResultsFor } from './batchResults.js'
+
 /**
  * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  */
@@ -49,6 +52,9 @@ export function compareForTerm(a, b, term) {
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
 export async function collect(results) {
+  const batchResults = batchResultsFor(results)
+  if (batchResults) return await collectBatches(batchResults.batches(), batchResults.signal)
+
   // Collect all rows first, then materialize cells concurrently
   // This enables dataloader-style batching of cell accessors
   /** @type {AsyncRow[]} */

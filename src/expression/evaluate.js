@@ -1,5 +1,5 @@
 import { executeStatement } from '../execute/execute.js'
-import { isPlainObject, keyify, sqlEquals, stringify } from '../execute/utils.js'
+import { isPlainObject, keyify, sqlEquals } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc } from '../validation/functions.js'
@@ -7,9 +7,10 @@ import { UnknownFunctionError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
 import { derivedAlias } from './alias.js'
 import { applyBinaryOp } from './binary.js'
-import { applyIntervalToDate, dateDiff, dateTrunc, extractField, toDate } from './date.js'
+import { applyIntervalToDate, dateDiff, dateTrunc, extractField } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
+import { applyCast, evaluateJsonExtract } from './scalar.js'
 import { evaluateSpatialFunc } from '../spatial/spatial.js'
 import { evaluateStringFunc } from './strings.js'
 
@@ -669,60 +670,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
 
     if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING') {
-      let jsonArg = args[0]
-      const pathArg = args[1]
-      if (jsonArg == null || pathArg == null) return null
-
-      // Parse JSON if string, otherwise use directly
-      if (typeof jsonArg === 'string') {
-        try {
-          jsonArg = JSON.parse(jsonArg)
-        } catch {
-          throw new ArgValueError({
-            ...node,
-            message: 'invalid JSON string',
-            hint: 'First argument must be valid JSON.',
-            rowIndex,
-          })
-        }
-      }
-      if (typeof jsonArg !== 'object' || jsonArg instanceof Date) {
-        throw new ArgValueError({
-          ...node,
-          message: `first argument must be JSON string or object, got ${typeof jsonArg}`,
-          rowIndex,
-        })
-      }
-
-      // Parse path ("$.foo.bar[0].baz" or "foo.bar[0]")
-      const path = String(pathArg)
-      const normalizedPath = path.startsWith('$') ? path.slice(1) : path
-
-      // Navigate the path
-      let current = jsonArg
-      const segments = normalizedPath.match(/\.?([^.[]+)|\[(\d+)\]/g) || []
-      for (const segment of segments) {
-        if (current == null) return null
-        if (segment.startsWith('[')) {
-          // Array index access
-          const index = parseInt(segment.slice(1, -1), 10)
-          if (!Array.isArray(current)) return null
-          current = current[index]
-        } else {
-          // Property access
-          const key = segment.startsWith('.') ? segment.slice(1) : segment
-          if (typeof current !== 'object' || Array.isArray(current)) return null
-          current = current[key]
-        }
-      }
-
-      if (current == null) return null
-      // JSON_EXTRACT_STRING returns text: unquoted scalars, JSON text for objects and arrays
-      if (funcName === 'JSON_EXTRACT_STRING') {
-        if (typeof current === 'object') return JSON.stringify(current)
-        return String(current)
-      }
-      return current
+      return evaluateJsonExtract({ funcName, node, args, rowIndex })
     }
 
     // Check user-defined functions (case-insensitive lookup)
@@ -739,45 +687,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   if (node.type === 'cast') {
     const val = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
-    if (val == null) return null
-    const { toType } = node
-    if (toType === 'TEXT' || toType === 'STRING' || toType === 'VARCHAR') {
-      if (typeof val === 'object') return stringify(val)
-      return String(val)
-    }
-    // Can only cast primitives (and Dates) to other primitive types
-    if (typeof val === 'object' && !(val instanceof Date)) {
-      if (node.tryCast) return null
-      throw new ExecutionError({ message: `Cannot CAST object to ${toType}`, rowIndex, ...node })
-    }
-    if (toType === 'INTEGER' || toType === 'INT') {
-      const num = Number(val)
-      if (isNaN(num)) return null
-      return Math.trunc(num)
-    }
-    if (toType === 'BIGINT') {
-      if (typeof val === 'bigint') return val
-      const num = Number(val)
-      // NaN and Infinity have no bigint representation
-      if (!isFinite(num)) return null
-      return BigInt(Math.trunc(num))
-    }
-    if (toType === 'FLOAT' || toType === 'REAL' || toType === 'DOUBLE') {
-      const num = Number(val)
-      if (isNaN(num)) return null
-      return num
-    }
-    if (toType === 'BOOLEAN' || toType === 'BOOL') {
-      return Boolean(val)
-    }
-    if (toType === 'TIMESTAMP') {
-      if (typeof val === 'number' || typeof val === 'bigint') {
-        const date = new Date(Number(val))
-        if (isNaN(date.getTime())) return null
-        return date
-      }
-      return toDate(val)
-    }
+    return applyCast(node, val, rowIndex)
   }
 
   // IN and NOT IN with value lists. IN is a chain of OR'd equalities, so it
