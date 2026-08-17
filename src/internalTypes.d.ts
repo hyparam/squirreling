@@ -1,39 +1,9 @@
-import type { AsyncRow, ExprNode, QueryResults, SqlPrimitive } from './types.js'
-
-export type FieldId = number
-
-export type SqlType =
-  | { type: 'unknown' }
-  | { type: 'string' }
-  | { type: 'number' }
-  | { type: 'bigint' }
-  | { type: 'boolean' }
-  | { type: 'date' }
-  | { type: 'array', items: SqlType }
-  | { type: 'struct', fields: readonly Field[] }
-
-export interface Field {
-  id: FieldId
-  name: string
-  dataType: SqlType
-  nullable: boolean
-}
-
-export interface RelationSchema {
-  fields: readonly Field[]
-}
-
-export interface RowRange {
-  start: number
-  end: number
-}
+import type { SqlPrimitive } from './types.js'
 
 export type RowSelection =
   | { type: 'all', length: number }
   | { type: 'range', start: number, end: number, length: number }
-  | { type: 'ranges', ranges: readonly RowRange[], length: number }
   | { type: 'indices', indices: Uint32Array, length: number }
-  | { type: 'bitmap', values: Uint8Array, length: number }
 
 export type NumericArray =
   | Int8Array
@@ -62,7 +32,7 @@ export interface ColumnReadRequest {
 export type ColumnResult = ColumnVector | Promise<ColumnVector>
 export type ReadColumn = (request: ColumnReadRequest) => ColumnResult
 
-export interface ColumnEvaluationRequest {
+export interface EvaluationContext {
   batch: AsyncBatch
   selection: RowSelection
   signal?: AbortSignal
@@ -70,16 +40,8 @@ export interface ColumnEvaluationRequest {
   rowOrdinals?: ColumnVector
 }
 
-export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
-
-export interface CompileBatchExpressionOptions {
-  expression: ExprNode
-  schema: RelationSchema
-}
-
 export interface CompiledBatchExpression {
-  dependencies: readonly number[]
-  evaluate: EvaluateColumn
+  evaluate(context: EvaluationContext): ColumnResult
 }
 
 export type ValueKernel = (
@@ -88,23 +50,10 @@ export type ValueKernel = (
   streamRowIndex: number,
 ) => SqlPrimitive
 
-export interface EvaluationContext {
-  batch: AsyncBatch
-  selection: RowSelection
-  signal?: AbortSignal
-  rowOffset: number
-  rowOrdinals?: ColumnVector
-}
-
-export interface CompiledEvaluator {
-  dependencies: readonly number[]
-  evaluate(context: EvaluationContext): ColumnResult
-}
-
 export interface CompileState {
   dependencies: number[]
   dependencyPositions: Map<number, number>
-  schema: RelationSchema
+  columns: readonly string[]
 }
 
 export interface BatchAggregateInputs {
@@ -119,18 +68,18 @@ export type BatchProjection =
   | { type: 'expression', expression: CompiledBatchExpression }
 
 export type BatchColumn =
-  | { type: 'loaded', vector: ColumnVector }
+  | ColumnVector
   | { type: 'source', read: ReadColumn }
   | {
       type: 'computed'
       input: AsyncBatch
-      dependencies: readonly number[]
+      expression: CompiledBatchExpression
+      rowOffset: number
       rowOrdinals: ColumnVector
-      evaluate: EvaluateColumn
     }
 
 export interface AsyncBatch {
-  schema: RelationSchema
+  columnNames: string[]
   selection: RowSelection
   columns: readonly BatchColumn[]
 }
@@ -148,14 +97,7 @@ export interface RowsToBatchesOptions {
 }
 
 export interface InternalBatchResults {
-  schema: RelationSchema
+  columns: string[]
   batches(): AsyncIterable<AsyncBatch>
   signal?: AbortSignal
 }
-
-export interface RegisteredBatchResults {
-  results: QueryResults
-  batchResults: InternalBatchResults
-}
-
-export type { AsyncRow, SqlPrimitive }

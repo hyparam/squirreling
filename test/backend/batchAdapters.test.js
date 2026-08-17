@@ -2,20 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { selectedRowCount } from '../../src/backend/batch.js'
 import { collect } from '../../src/execute/utils.js'
 import { batchesToRows, rowsToBatches } from '../../src/backend/batchAdapters.js'
-import { registerBatchResults } from '../../src/execute/batchResults.js'
+import { batchResult } from '../../src/execute/batchResults.js'
 
 /**
- * @import { AsyncBatch, ColumnVector, ReadColumn, RelationSchema } from '../../src/internalTypes.js'
+ * @import { AsyncBatch, ColumnVector, ReadColumn } from '../../src/internalTypes.js'
  * @import { AsyncRow } from '../../src/types.js'
  */
 
-/** @type {RelationSchema} */
-const schema = {
-  fields: [
-    { id: 0, name: 'id', dataType: { type: 'number' }, nullable: false },
-    { id: 1, name: 'name', dataType: { type: 'string' }, nullable: false },
-  ],
-}
+const schema = ['id', 'name']
 
 describe('batch adapters', () => {
   it('materializes legacy rows into bounded aligned batches', async () => {
@@ -34,9 +28,8 @@ describe('batch adapters', () => {
     expect(batches.map(function summarize(batch) {
       return {
         rowCount: selectedRowCount(batch.selection),
-        ids: batch.columns[0].type === 'loaded'
-          && batch.columns[0].vector.type === 'values'
-          ? batch.columns[0].vector.values
+        ids: batch.columns[0].type === 'values'
+          ? batch.columns[0].values
           : [],
       }
     })).toEqual([
@@ -55,7 +48,7 @@ describe('batch adapters', () => {
     const read = vi.fn(readColumn)
     /** @type {AsyncBatch} */
     const batch = {
-      schema: { fields: [schema.fields[0]] },
+      columnNames: [schema[0]],
       selection: { type: 'all', length: 2 },
       columns: [{ type: 'source', read }],
     }
@@ -76,7 +69,7 @@ describe('batch adapters', () => {
   it('adapts loaded columns through the batch selection', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: {
         type: 'indices',
         indices: new Uint32Array([2, 0]),
@@ -84,12 +77,14 @@ describe('batch adapters', () => {
       },
       columns: [
         {
-          type: 'loaded',
-          vector: { type: 'values', values: [10, 20, 30], length: 3 },
+          type: 'values',
+          values: [10, 20, 30],
+          length: 3,
         },
         {
-          type: 'loaded',
-          vector: { type: 'values', values: ['a', 'b', 'c'], length: 3 },
+          type: 'values',
+          values: ['a', 'b', 'c'],
+          length: 3,
         },
       ],
     }
@@ -111,7 +106,7 @@ describe('batch adapters', () => {
   it('collects native batches without consuming the row adapter', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: {
         type: 'indices',
         indices: new Uint32Array([2, 0]),
@@ -119,33 +114,30 @@ describe('batch adapters', () => {
       },
       columns: [
         {
-          type: 'loaded',
-          vector: { type: 'values', values: [10, 20, 30], length: 3 },
+          type: 'values',
+          values: [10, 20, 30],
+          length: 3,
         },
         {
-          type: 'loaded',
-          vector: { type: 'values', values: ['a', 'b', 'c'], length: 3 },
+          type: 'values',
+          values: ['a', 'b', 'c'],
+          length: 3,
         },
       ],
     }
-    const rows = vi.fn(function rows() {
-      throw new Error('row adapter should not be consumed')
-    })
-
-    const results = {
+    const results = batchResult({
       columns: ['id', 'name'],
-      rows,
-    }
-    registerBatchResults(results, {
-      schema,
       async *batches() { yield batch },
+    })
+    results.rows = vi.fn(function rows() {
+      throw new Error('row adapter should not be consumed')
     })
 
     await expect(collect(results)).resolves.toEqual([
       { id: 30, name: 'c' },
       { id: 10, name: 'a' },
     ])
-    expect(rows).not.toHaveBeenCalled()
+    expect(results.rows).not.toHaveBeenCalled()
   })
 
   it('rejects partial rows when a cooperative batch source stops on abort', async () => {
@@ -153,19 +145,16 @@ describe('batch adapters', () => {
     const reason = new Error('batch collection aborted')
     /** @type {AsyncBatch} */
     const batch = {
-      schema: { fields: [schema.fields[0]] },
+      columnNames: [schema[0]],
       selection: { type: 'all', length: 1 },
       columns: [{
-        type: 'loaded',
-        vector: { type: 'constant', value: 1, length: 1 },
+        type: 'constant',
+        value: 1,
+        length: 1,
       }],
     }
-    const results = {
+    const results = batchResult({
       columns: ['id'],
-      async *rows() {},
-    }
-    registerBatchResults(results, {
-      schema: batch.schema,
       signal: controller.signal,
       async *batches() {
         yield batch

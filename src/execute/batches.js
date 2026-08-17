@@ -3,7 +3,7 @@ import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, BatchColumn, BatchProjection, ColumnResult, ColumnVector, CompiledBatchExpression, RelationSchema, RowSelection } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchColumn, BatchProjection, ColumnResult, ColumnVector, CompiledBatchExpression, RowSelection } from '../internalTypes.js'
  * @import { SqlPrimitive } from '../types.js'
  */
 
@@ -177,14 +177,14 @@ export async function* distinctBatches(batches, signal) {
 /**
  * Projects batches into direct, constant, or lazily computed columns. A
  * computed column retains the input batch that owns its dependency indices,
- * so output columns remain schema-aligned without hidden dependency columns.
+ * so output columns remain aligned without hidden dependency columns.
  *
  * @param {AsyncIterable<AsyncBatch>} batches
- * @param {RelationSchema} schema
+ * @param {string[]} columnNames
  * @param {readonly BatchProjection[]} projections
  * @yields {AsyncBatch}
  */
-export async function* projectExpressionBatches(batches, schema, projections) {
+export async function* projectExpressionBatches(batches, columnNames, projections) {
   let rowOffset = 0
   for await (const batch of batches) {
     const currentRowOffset = rowOffset
@@ -192,7 +192,7 @@ export async function* projectExpressionBatches(batches, schema, projections) {
     /** @type {ColumnVector | undefined} */
     let rowOrdinals
     yield {
-      schema,
+      columnNames,
       selection: batch.selection,
       columns: projections.map(function projectColumn(projection) {
         /** @type {BatchColumn} */
@@ -201,23 +201,18 @@ export async function* projectExpressionBatches(batches, schema, projections) {
           column = batch.columns[projection.columnIndex]
         } else if (projection.type === 'constant') {
           column = {
-            type: 'loaded',
-            vector: {
-              type: 'constant',
-              value: projection.value,
-              length: batch.selection.length,
-            },
+            type: 'constant',
+            value: projection.value,
+            length: batch.selection.length,
           }
         } else {
           rowOrdinals ??= selectionOrdinals(batch.selection)
           column = {
             type: 'computed',
             input: batch,
-            dependencies: projection.expression.dependencies,
+            expression: projection.expression,
+            rowOffset: currentRowOffset,
             rowOrdinals,
-            evaluate(request) {
-              return projection.expression.evaluate({ ...request, rowOffset: currentRowOffset })
-            },
           }
         }
         return column
@@ -229,21 +224,20 @@ export async function* projectExpressionBatches(batches, schema, projections) {
 /**
  * @param {ColumnVector} predicate
  * @param {number} rowCount
- * @returns {{ selection: Extract<RowSelection, { type: 'bitmap' }>, selectedCount: number }}
+ * @returns {{ selection: Extract<RowSelection, { type: 'indices' }>, selectedCount: number }}
  */
 function predicateSelection(predicate, rowCount) {
   if (predicate.length !== rowCount) {
     throw new Error(`Predicate returned ${predicate.length} rows, expected ${rowCount}`)
   }
-  const values = new Uint8Array(rowCount)
+  const indices = new Uint32Array(rowCount)
   let selectedCount = 0
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
     if (!valueAt(predicate, rowIndex)) continue
-    values[rowIndex] = 1
-    selectedCount++
+    indices[selectedCount++] = rowIndex
   }
   return {
-    selection: { type: 'bitmap', values, length: rowCount },
+    selection: { type: 'indices', indices: indices.subarray(0, selectedCount), length: rowCount },
     selectedCount,
   }
 }

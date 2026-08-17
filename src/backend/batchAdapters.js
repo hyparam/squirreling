@@ -2,7 +2,7 @@ import { readBatchColumn, selectVector, selectedRowCount, valueAt } from './batc
 import { yieldToEventLoop } from '../execute/yield.js'
 
 /**
- * @import { AsyncBatch, ColumnResult, ColumnVector, RelationSchema, RowsToBatchesOptions } from '../internalTypes.js'
+ * @import { AsyncBatch, ColumnResult, ColumnVector, RowsToBatchesOptions } from '../internalTypes.js'
  * @import { AsyncCells, AsyncRow, SqlPrimitive } from '../types.js'
  */
 
@@ -13,34 +13,33 @@ const DEFAULT_BATCH_ROWS = 1024
  * public compatibility boundary, not an operator implementation strategy.
  *
  * @param {AsyncIterable<AsyncRow>} rows
- * @param {RelationSchema} schema
+ * @param {string[]} columnNames
  * @param {RowsToBatchesOptions} [options]
  * @yields {AsyncBatch}
  */
-export async function* rowsToBatches(rows, schema, options) {
+export async function* rowsToBatches(rows, columnNames, options) {
   const batchRows = options?.batchRows ?? DEFAULT_BATCH_ROWS
   if (!Number.isInteger(batchRows) || batchRows <= 0) {
     throw new RangeError(`batchRows must be a positive integer, got ${batchRows}`)
   }
-  const names = schema.fields.map(function fieldName(field) { return field.name })
-  let values = makeValueBuffers(names.length)
+  let values = makeValueBuffers(columnNames.length)
   let rowCount = 0
 
   for await (const row of rows) {
     options?.signal?.throwIfAborted()
-    for (let columnIndex = 0; columnIndex < names.length; columnIndex++) {
-      const name = names[columnIndex]
+    for (let columnIndex = 0; columnIndex < columnNames.length; columnIndex++) {
+      const name = columnNames[columnIndex]
       values[columnIndex].push(await readRowCell(row, name))
     }
     rowCount++
     if (rowCount === batchRows) {
-      yield loadedBatch(schema, values, rowCount)
-      values = makeValueBuffers(names.length)
+      yield loadedBatch(columnNames, values, rowCount)
+      values = makeValueBuffers(columnNames.length)
       rowCount = 0
     }
   }
 
-  if (rowCount > 0) yield loadedBatch(schema, values, rowCount)
+  if (rowCount > 0) yield loadedBatch(columnNames, values, rowCount)
   options?.signal?.throwIfAborted()
 }
 
@@ -54,11 +53,10 @@ export async function* rowsToBatches(rows, schema, options) {
  */
 export async function* batchesToRows(batches, signal) {
   for await (const batch of batches) {
-    const columns = batch.schema.fields.map(function fieldName(field) { return field.name })
+    const columns = batch.columnNames
     const loadedVectors = batch.columns.map(function loadedVector(column) {
-      return column.type === 'loaded'
-        ? selectVector(column.vector, batch.selection)
-        : undefined
+      if (column.type === 'source' || column.type === 'computed') return undefined
+      return selectVector(column, batch.selection)
     })
     const rowCount = selectedRowCount(batch.selection)
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
@@ -99,7 +97,7 @@ export async function collectBatches(batches, signal) {
   /** @type {Record<string, SqlPrimitive>[]} */
   const rows = []
   for await (const batch of batches) {
-    const names = batch.schema.fields.map(function fieldName(field) { return field.name })
+    const names = batch.columnNames
     const results = batch.columns.map(function readColumn(_column, columnIndex) {
       return readBatchColumn({ batch, columnIndex, signal })
     })
@@ -148,20 +146,17 @@ function makeValueBuffers(count) {
 }
 
 /**
- * @param {RelationSchema} schema
+ * @param {string[]} columnNames
  * @param {SqlPrimitive[][]} values
  * @param {number} rowCount
  * @returns {AsyncBatch}
  */
-function loadedBatch(schema, values, rowCount) {
+function loadedBatch(columnNames, values, rowCount) {
   return {
-    schema,
+    columnNames,
     selection: { type: 'all', length: rowCount },
     columns: values.map(function loadedColumn(columnValues) {
-      return {
-        type: 'loaded',
-        vector: { type: 'values', values: columnValues, length: rowCount },
-      }
+      return { type: 'values', values: columnValues, length: rowCount }
     }),
   }
 }

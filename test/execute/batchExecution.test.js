@@ -22,12 +22,10 @@ describe('native batch execution', () => {
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     const column = first.value.columns[0]
-    expect(column.type).toBe('loaded')
-    if (column.type !== 'loaded') throw new Error('expected a loaded column')
-    expect(column.vector.type).toBe('typed')
-    if (column.vector.type !== 'typed') throw new Error('expected a typed vector')
-    expect(column.vector.values).toBe(values)
-    expect(first.value.schema.fields[0].name).toBe('value')
+    expect(column.type).toBe('typed')
+    if (column.type !== 'typed') throw new Error('expected a typed vector')
+    expect(column.values).toBe(values)
+    expect(first.value.columnNames[0]).toBe('value')
   })
 
   it('applies limit and offset as a zero-copy selection across chunks', async () => {
@@ -68,7 +66,7 @@ describe('native batch execution', () => {
     const [column] = first.value.columns
     expect(column.type).toBe('computed')
     if (column.type !== 'computed') throw new Error('expected a computed column')
-    expect(column.dependencies).toEqual([0])
+    expect(column.expression).toBeDefined()
 
     expect(await collect(results)).toEqual([{ size: 2 }, { size: 5 }, { size: null }])
   })
@@ -114,8 +112,8 @@ describe('native batch execution', () => {
     const first = await iterator.next()
     if (first.done) throw new Error('expected a batch')
     expect(first.value.selection).toEqual({
-      type: 'bitmap',
-      values: new Uint8Array([0, 0, 1, 1]),
+      type: 'indices',
+      indices: new Uint32Array([2, 3]),
       length: 4,
     })
     expect(await collect(results)).toEqual([{ id: 3 }, { id: 4 }])

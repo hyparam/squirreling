@@ -9,35 +9,20 @@ import {
 } from '../../src/backend/batch.js'
 
 /**
- * @import { AsyncBatch, ColumnVector, ReadColumn, RelationSchema } from '../../src/internalTypes.js'
+ * @import { AsyncBatch, ColumnVector, ReadColumn } from '../../src/internalTypes.js'
  */
 
-/** @type {RelationSchema} */
-const schema = {
-  fields: [
-    { id: 0, name: 'value', dataType: { type: 'number' }, nullable: false },
-  ],
-}
+const schema = ['value']
 
 describe('row selections', () => {
-  it('counts every concrete selection representation', () => {
+  it('counts every selection representation', () => {
     expect(selectedRowCount({ type: 'all', length: 5 })).toBe(5)
     expect(selectedRowCount({ type: 'range', start: 1, end: 4, length: 5 })).toBe(3)
-    expect(selectedRowCount({
-      type: 'ranges',
-      ranges: [{ start: 0, end: 2 }, { start: 4, end: 5 }],
-      length: 5,
-    })).toBe(3)
     expect(selectedRowCount({
       type: 'indices',
       indices: new Uint32Array([1, 4]),
       length: 5,
     })).toBe(2)
-    expect(selectedRowCount({
-      type: 'bitmap',
-      values: new Uint8Array([0, 1, 0, 1, 1]),
-      length: 5,
-    })).toBe(3)
   })
 
   it('preserves ranges while composing contiguous selections', () => {
@@ -120,7 +105,7 @@ describe('async batches', () => {
     const read = vi.fn(readColumn)
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 5 },
       columns: [{ type: 'source', read }],
     }
@@ -149,9 +134,9 @@ describe('async batches', () => {
     const vector = { type: 'values', values: [1, 2, 3], length: 3 }
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 3 },
-      columns: [{ type: 'loaded', vector }],
+      columns: [vector],
     }
 
     expect(readBatchColumn({ batch, columnIndex: 0 })).toBe(vector)
@@ -160,7 +145,7 @@ describe('async batches', () => {
   it('validates deferred vector alignment', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [{
         type: 'source',
@@ -194,7 +179,7 @@ describe('async batches', () => {
     const read = vi.fn(readColumn)
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 1 },
       columns: [{ type: 'source', read }],
     }

@@ -1,5 +1,7 @@
+import { batchesToRows } from '../backend/batchAdapters.js'
+
 /**
- * @import { InternalBatchResults } from '../internalTypes.js'
+ * @import { AsyncBatch, InternalBatchResults } from '../internalTypes.js'
  * @import { QueryResults } from '../types.js'
  */
 
@@ -7,14 +9,24 @@
 const internalBatches = new WeakMap()
 
 /**
- * Associates a public row result with its private batch execution path.
+ * Creates a public row result backed by private batches.
  *
- * @param {QueryResults} results
- * @param {InternalBatchResults} batchResults
+ * @param {object} options
+ * @param {string[]} options.columns
+ * @param {number} [options.numRows]
+ * @param {number} [options.maxRows]
+ * @param {() => AsyncIterable<AsyncBatch>} options.batches
+ * @param {AbortSignal} [options.signal]
  * @returns {QueryResults}
  */
-export function registerBatchResults(results, batchResults) {
-  internalBatches.set(results, batchResults)
+export function batchResult({ batches, signal, ...metadata }) {
+  const results = {
+    ...metadata,
+    rows() {
+      return batchesToRows(batches(), signal)
+    },
+  }
+  internalBatches.set(results, { columns: metadata.columns, batches, signal })
   return results
 }
 

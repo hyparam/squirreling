@@ -6,9 +6,6 @@
 /** @type {WeakMap<AsyncBatch, Map<number, Map<RowSelection, { resolved?: ColumnVector, pending: Map<AbortSignal | undefined, Promise<ColumnVector>> }>>>} */
 const batchCache = new WeakMap()
 
-/** @type {WeakMap<RowSelection, Uint32Array | number[]>} */
-const selectionCache = new WeakMap()
-
 /**
  * Returns the number of selected rows.
  *
@@ -18,12 +15,7 @@ const selectionCache = new WeakMap()
 export function selectedRowCount(selection) {
   if (selection.type === 'all') return selection.length
   if (selection.type === 'range') return selection.end - selection.start
-  if (selection.type === 'ranges') {
-    const ends = endsForRanges(selection)
-    return ends.length === 0 ? 0 : ends[ends.length - 1]
-  }
-  if (selection.type === 'indices') return selection.indices.length
-  return indicesForBitmap(selection).length
+  return selection.indices.length
 }
 
 /**
@@ -62,16 +54,6 @@ export function composeSelections(outer, inner) {
       type: 'range',
       start: outer.start + inner.start,
       end: outer.start + inner.end,
-      length: outer.length,
-    }
-  }
-
-  if (outer.type === 'range' && inner.type === 'ranges') {
-    return {
-      type: 'ranges',
-      ranges: inner.ranges.map(function shiftRange(range) {
-        return { start: outer.start + range.start, end: outer.start + range.end }
-      }),
       length: outer.length,
     }
   }
@@ -140,11 +122,13 @@ export function selectVector(vector, selection) {
  */
 export function readBatchColumn({ batch, columnIndex, selection = batch.selection, signal }) {
   const column = batch.columns[columnIndex]
-  if (!column) throw new RangeError(`Column index ${columnIndex} is outside batch schema`)
+  if (!column) throw new RangeError(`Column index ${columnIndex} is outside batch columns`)
   if (selection.length !== batch.selection.length) {
     throw new Error(`Selection length ${selection.length} does not match batch length ${batch.selection.length}`)
   }
-  if (column.type === 'loaded') return selectVector(column.vector, selection)
+  if (column.type !== 'source' && column.type !== 'computed') {
+    return selectVector(column, selection)
+  }
 
   let batchResults = batchCache.get(batch)
   if (!batchResults) {
@@ -167,10 +151,11 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
 
   const result = column.type === 'source'
     ? column.read({ selection, signal })
-    : column.evaluate({
+    : column.expression.evaluate({
       batch: column.input,
       selection,
       signal,
+      rowOffset: column.rowOffset,
       rowOrdinals: selectVector(column.rowOrdinals, selection),
     })
   const validated = validateColumnResult(result, selectedRowCount(selection))
@@ -200,7 +185,7 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
 export function selectBatch(batch, selection) {
   const composed = composeSelections(batch.selection, selection)
   return {
-    schema: batch.schema,
+    columnNames: batch.columnNames,
     selection: composed,
     columns: batch.columns,
   }
@@ -220,65 +205,7 @@ function selectionIndexAt(selection, index) {
   }
   if (selection.type === 'all') return index
   if (selection.type === 'range') return selection.start + index
-  if (selection.type === 'indices') return selection.indices[index]
-  if (selection.type === 'ranges') {
-    const ends = endsForRanges(selection)
-    let low = 0
-    let high = ends.length
-    while (low < high) {
-      const middle = low + Math.floor((high - low) / 2)
-      if (index < ends[middle]) high = middle
-      else low = middle + 1
-    }
-    const previousEnd = low === 0 ? 0 : ends[low - 1]
-    const range = selection.ranges[low]
-    return range.start + index - previousEnd
-  } else return indicesForBitmap(selection)[index]
-}
-
-/**
- * Returns the cached cumulative selected-row endpoint for each range.
- *
- * @param {Extract<RowSelection, { type: 'ranges' }>} selection
- * @returns {number[]}
- */
-function endsForRanges(selection) {
-  const cached = selectionCache.get(selection)
-  if (Array.isArray(cached)) return cached
-  const ends = []
-  let count = 0
-  for (const range of selection.ranges) {
-    count += range.end - range.start
-    ends.push(count)
-  }
-  selectionCache.set(selection, ends)
-  return ends
-}
-
-/**
- * Builds the positional index for a bitmap once, avoiding a full bitmap scan
- * for every value read through a selected vector.
- *
- * @param {Extract<RowSelection, { type: 'bitmap' }>} selection
- * @returns {Uint32Array}
- */
-function indicesForBitmap(selection) {
-  const cached = selectionCache.get(selection)
-  if (cached instanceof Uint32Array) return cached
-  if (selection.values.length !== selection.length) {
-    throw new Error(`Bitmap length ${selection.values.length} does not match selection length ${selection.length}`)
-  }
-  let count = 0
-  for (const value of selection.values) {
-    if (value) count++
-  }
-  const indices = new Uint32Array(count)
-  let selectedIndex = 0
-  for (let index = 0; index < selection.values.length; index++) {
-    if (selection.values[index]) indices[selectedIndex++] = index
-  }
-  selectionCache.set(selection, indices)
-  return indices
+  return selection.indices[index]
 }
 
 /**

@@ -5,17 +5,11 @@ import { compileBatchExpression } from '../../src/expression/batch.js'
 import { parseSql } from '../../src/parse/parse.js'
 
 /**
- * @import { AsyncBatch, ReadColumn, RelationSchema } from '../../src/internalTypes.js'
+ * @import { AsyncBatch, ReadColumn } from '../../src/internalTypes.js'
  * @import { ExprNode } from '../../src/types.js'
  */
 
-/** @type {RelationSchema} */
-const schema = {
-  fields: [
-    { id: 0, name: 'keep', dataType: { type: 'boolean' }, nullable: false },
-    { id: 1, name: 'payload', dataType: { type: 'string' }, nullable: false },
-  ],
-}
+const schema = ['keep', 'payload']
 
 describe('batch operators', () => {
   it('filters on predicate columns without reading deferred payloads', async () => {
@@ -26,14 +20,14 @@ describe('batch operators', () => {
     const read = vi.fn(readPayload)
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 4 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [true, false, true, false], length: 4 } },
+        { type: 'values', values: [true, false, true, false], length: 4 },
         { type: 'source', read },
       ],
     }
-    const expression = compileBatchExpression({ expression: parseExpression('keep'), schema })
+    const expression = compileBatchExpression(parseExpression('keep'), schema)
     if (!expression) throw new Error('expected expression to compile')
 
     const filtered = []
@@ -42,8 +36,8 @@ describe('batch operators', () => {
     expect(read).not.toHaveBeenCalled()
     expect(filtered).toHaveLength(1)
     expect(filtered[0].selection).toEqual({
-      type: 'bitmap',
-      values: new Uint8Array([1, 0, 1, 0]),
+      type: 'indices',
+      indices: new Uint32Array([0, 2]),
       length: 4,
     })
     expect(readBatchColumn({ batch: filtered[0], columnIndex: 1 })).toEqual({
@@ -59,7 +53,6 @@ describe('batch operators', () => {
     const evaluations = []
     /** @type {import('../../src/internalTypes.js').CompiledBatchExpression} */
     const expression = {
-      dependencies: [],
       evaluate({ selection, rowOffset = 0 }) {
         const length = selectedRowCount(selection)
         evaluations.push({ length, rowOffset })
@@ -86,7 +79,6 @@ describe('batch operators', () => {
     const evaluations = []
     /** @type {import('../../src/internalTypes.js').CompiledBatchExpression} */
     const expression = {
-      dependencies: [],
       evaluate({ selection, rowOffset = 0 }) {
         const length = selectedRowCount(selection)
         evaluations.push({ length, rowOffset })
@@ -165,18 +157,13 @@ async function* asyncValues(values) {
  * @returns {AsyncBatch}
  */
 function valueBatch(values) {
-  /** @type {RelationSchema} */
-  const valueSchema = {
-    fields: [
-      { id: 0, name: 'value', dataType: { type: 'unknown' }, nullable: true },
-    ],
-  }
   return {
-    schema: valueSchema,
+    columnNames: ['value'],
     selection: { type: 'all', length: values.length },
     columns: [{
-      type: 'loaded',
-      vector: { type: 'values', values, length: values.length },
+      type: 'values',
+      values,
+      length: values.length,
     }],
   }
 }

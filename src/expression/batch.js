@@ -8,7 +8,7 @@ import { applyCast, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
 
 /**
- * @import { AsyncBatch, ColumnResult, ColumnVector, CompileBatchExpressionOptions, CompiledBatchExpression, CompiledEvaluator, CompileState, EvaluationContext, RelationSchema, RowSelection, ValueKernel } from '../internalTypes.js'
+ * @import { AsyncBatch, ColumnResult, ColumnVector, CompiledBatchExpression, CompileState, EvaluationContext, RowSelection, ValueKernel } from '../internalTypes.js'
  * @import { ExprNode, FunctionNode, SqlPrimitive } from '../types.js'
  */
 
@@ -22,19 +22,12 @@ const YIELD_INTERVAL = 4000
  * Unsupported expressions return `undefined` so an operator can retain its
  * existing row evaluator without changing semantics.
  *
- * @param {CompileBatchExpressionOptions} options
+ * @param {ExprNode} expression
+ * @param {readonly string[]} columns
  * @returns {CompiledBatchExpression | undefined}
  */
-export function compileBatchExpression({ expression, schema }) {
-  const compiled = compileEvaluator(expression, schema)
-  if (!compiled) return undefined
-
-  return {
-    dependencies: compiled.dependencies,
-    evaluate({ batch, selection, signal, rowOffset = 0, rowOrdinals }) {
-      return compiled.evaluate({ batch, selection, signal, rowOffset, rowOrdinals })
-    },
-  }
+export function compileBatchExpression(expression, columns) {
+  return compileEvaluator(expression, columns)
 }
 
 /**
@@ -43,18 +36,17 @@ export function compileBatchExpression({ expression, schema }) {
  * that only read columns for rows whose branch is reached.
  *
  * @param {ExprNode} node
- * @param {RelationSchema} schema
- * @returns {CompiledEvaluator | undefined}
+ * @param {readonly string[]} columns
+ * @returns {CompiledBatchExpression | undefined}
  */
-function compileEvaluator(node, schema) {
-  const kernel = compileKernelEvaluator(node, schema)
+function compileEvaluator(node, columns) {
+  const kernel = compileKernelEvaluator(node, columns)
   if (kernel) return kernel
 
   if (node.type === 'unary') {
-    const argument = compileEvaluator(node.argument, schema)
+    const argument = compileEvaluator(node.argument, columns)
     if (!argument) return undefined
     return {
-      dependencies: argument.dependencies,
       async evaluate(context) {
         const vector = await argument.evaluate(context)
         return evaluateValues(context, function unaryValue(rowIndex) {
@@ -70,21 +62,18 @@ function compileEvaluator(node, schema) {
 
   if (node.type === 'binary') {
     if (node.left.type === 'interval' || node.right.type === 'interval') return undefined
-    const left = compileEvaluator(node.left, schema)
-    const right = compileEvaluator(node.right, schema)
+    const left = compileEvaluator(node.left, columns)
+    const right = compileEvaluator(node.right, columns)
     if (!left || !right) return undefined
-    const dependencies = mergeDependencies(left.dependencies, right.dependencies)
     if (node.op === 'AND' || node.op === 'OR') {
       const operator = node.op
       return {
-        dependencies,
         evaluate(context) {
           return evaluateLogical(operator, left, right, context)
         },
       }
     }
     return {
-      dependencies,
       async evaluate(context) {
         const [leftVector, rightVector] = await Promise.all([
           left.evaluate(context),
@@ -98,10 +87,9 @@ function compileEvaluator(node, schema) {
   }
 
   if (node.type === 'cast') {
-    const argument = compileEvaluator(node.expr, schema)
+    const argument = compileEvaluator(node.expr, columns)
     if (!argument) return undefined
     return {
-      dependencies: argument.dependencies,
       async evaluate(context) {
         const vector = await argument.evaluate(context)
         return evaluateValues(context, function castValue(rowIndex, streamRowIndex) {
@@ -111,20 +99,20 @@ function compileEvaluator(node, schema) {
     }
   }
 
-  if (node.type === 'function') return compileFunctionEvaluator(node, schema)
-  if (node.type === 'case') return compileCaseEvaluator(node, schema)
+  if (node.type === 'function') return compileFunctionEvaluator(node, columns)
+  if (node.type === 'case') return compileCaseEvaluator(node, columns)
   return undefined
 }
 
 /**
  * @param {ExprNode} node
- * @param {RelationSchema} schema
- * @returns {CompiledEvaluator | undefined}
+ * @param {readonly string[]} columns
+ * @returns {CompiledBatchExpression | undefined}
  */
-function compileKernelEvaluator(node, schema) {
+function compileKernelEvaluator(node, columns) {
   /** @type {CompileState} */
   const state = {
-    schema,
+    columns,
     dependencies: [],
     dependencyPositions: new Map(),
   }
@@ -132,9 +120,8 @@ function compileKernelEvaluator(node, schema) {
   if (!kernel) return undefined
   const { dependencies } = state
   return {
-    dependencies,
     evaluate(context) {
-      const { batch, selection, signal, rowOffset, rowOrdinals } = context
+      const { batch, selection, signal, rowOffset = 0, rowOrdinals } = context
       signal?.throwIfAborted()
       const results = dependencies.map(function readDependency(columnIndex) {
         return readBatchColumn({ batch, columnIndex, selection, signal })
@@ -162,7 +149,7 @@ function compileValueKernel(node, state) {
   }
 
   if (node.type === 'identifier') {
-    const accesses = resolveIdentifier(node, state.schema)
+    const accesses = resolveIdentifier(node, state.columns)
     if (!accesses) return undefined
     const dependencyPositions = accesses.map(function registerAccess(access) {
       let dependencyPosition = state.dependencyPositions.get(access.columnIndex)
@@ -184,7 +171,7 @@ function compileValueKernel(node, state) {
       }
       throw new ColumnNotFoundError({
         missingColumn: `${node.prefix}.${node.name}`,
-        availableColumns: state.schema.fields.map(function fieldName(field) { return field.name }),
+        availableColumns: [...state.columns],
         rowIndex: streamRowIndex + 1,
         ...node,
       })
@@ -284,25 +271,21 @@ function compileFunctionKernel(node, state) {
 
 /**
  * @param {FunctionNode} node
- * @param {RelationSchema} schema
- * @returns {CompiledEvaluator | undefined}
+ * @param {readonly string[]} columns
+ * @returns {CompiledBatchExpression | undefined}
  */
-function compileFunctionEvaluator(node, schema) {
+function compileFunctionEvaluator(node, columns) {
   const funcName = node.funcName.toUpperCase()
   if (node.distinct || node.filter) return undefined
-  /** @type {CompiledEvaluator[]} */
+  /** @type {CompiledBatchExpression[]} */
   const arguments_ = []
   for (const argumentNode of node.args) {
-    const argument = compileEvaluator(argumentNode, schema)
+    const argument = compileEvaluator(argumentNode, columns)
     if (!argument) return undefined
     arguments_.push(argument)
   }
-  const dependencies = mergeDependencies(...arguments_.map(function argumentDependencies(argument) {
-    return argument.dependencies
-  }))
   if (funcName === 'COALESCE') {
     return {
-      dependencies,
       evaluate(context) {
         return evaluateCoalesce(arguments_, context)
       },
@@ -311,7 +294,6 @@ function compileFunctionEvaluator(node, schema) {
   if (funcName !== 'NULLIF' && funcName !== 'JSON_VALUE' && funcName !== 'JSON_QUERY' &&
     funcName !== 'JSON_EXTRACT' && funcName !== 'JSON_EXTRACT_STRING' && !isStringFunc(funcName)) return undefined
   return {
-    dependencies,
     async evaluate(context) {
       const vectors = await Promise.all(arguments_.map(function evaluateArgument(argument) {
         return argument.evaluate(context)
@@ -330,31 +312,23 @@ function compileFunctionEvaluator(node, schema) {
 
 /**
  * @param {import('../types.js').CaseNode} node
- * @param {RelationSchema} schema
- * @returns {CompiledEvaluator | undefined}
+ * @param {readonly string[]} columns
+ * @returns {CompiledBatchExpression | undefined}
  */
-function compileCaseEvaluator(node, schema) {
-  const caseExpression = node.caseExpr ? compileEvaluator(node.caseExpr, schema) : undefined
+function compileCaseEvaluator(node, columns) {
+  const caseExpression = node.caseExpr ? compileEvaluator(node.caseExpr, columns) : undefined
   if (node.caseExpr && !caseExpression) return undefined
-  /** @type {{ condition: CompiledEvaluator, result: CompiledEvaluator }[]} */
+  /** @type {{ condition: CompiledBatchExpression, result: CompiledBatchExpression }[]} */
   const clauses = []
   for (const clause of node.whenClauses) {
-    const condition = compileEvaluator(clause.condition, schema)
-    const result = compileEvaluator(clause.result, schema)
+    const condition = compileEvaluator(clause.condition, columns)
+    const result = compileEvaluator(clause.result, columns)
     if (!condition || !result) return undefined
     clauses.push({ condition, result })
   }
-  const elseResult = node.elseResult ? compileEvaluator(node.elseResult, schema) : undefined
+  const elseResult = node.elseResult ? compileEvaluator(node.elseResult, columns) : undefined
   if (node.elseResult && !elseResult) return undefined
-  const dependencies = mergeDependencies(
-    caseExpression?.dependencies ?? [],
-    ...clauses.flatMap(function clauseDependencies(clause) {
-      return [clause.condition.dependencies, clause.result.dependencies]
-    }),
-    elseResult?.dependencies ?? []
-  )
   return {
-    dependencies,
     evaluate(context) {
       return evaluateCase(caseExpression, clauses, elseResult, context)
     },
@@ -367,8 +341,8 @@ function compileCaseEvaluator(node, schema) {
  * and computed columns, preserving row evaluator short-circuit behavior.
  *
  * @param {'AND' | 'OR'} operator
- * @param {CompiledEvaluator} left
- * @param {CompiledEvaluator} right
+ * @param {CompiledBatchExpression} left
+ * @param {CompiledBatchExpression} right
  * @param {EvaluationContext} context
  * @returns {Promise<ColumnVector>}
  */
@@ -406,9 +380,9 @@ async function evaluateLogical(operator, left, right, context) {
 }
 
 /**
- * @param {CompiledEvaluator | undefined} caseExpression
- * @param {{ condition: CompiledEvaluator, result: CompiledEvaluator }[]} clauses
- * @param {CompiledEvaluator | undefined} elseResult
+ * @param {CompiledBatchExpression | undefined} caseExpression
+ * @param {{ condition: CompiledBatchExpression, result: CompiledBatchExpression }[]} clauses
+ * @param {CompiledBatchExpression | undefined} elseResult
  * @param {EvaluationContext} context
  * @returns {Promise<ColumnVector>}
  */
@@ -462,7 +436,7 @@ async function evaluateCase(caseExpression, clauses, elseResult, context) {
  * Evaluates each argument only for rows that remained null after the previous
  * argument, matching COALESCE's lazy row semantics.
  *
- * @param {CompiledEvaluator[]} arguments_
+ * @param {CompiledBatchExpression[]} arguments_
  * @param {EvaluationContext} context
  * @returns {Promise<ColumnVector>}
  */
@@ -518,23 +492,6 @@ function allIndices(length) {
 }
 
 /**
- * @param {...(readonly number[])} dependencies
- * @returns {number[]}
- */
-function mergeDependencies(...dependencies) {
-  const merged = []
-  const seen = new Set()
-  for (const group of dependencies) {
-    for (const dependency of group) {
-      if (seen.has(dependency)) continue
-      seen.add(dependency)
-      merged.push(dependency)
-    }
-  }
-  return merged
-}
-
-/**
  * @param {EvaluationContext} context
  * @param {(rowIndex: number, streamRowIndex: number) => SqlPrimitive} evaluate
  * @returns {Promise<ColumnVector>}
@@ -571,21 +528,19 @@ async function visitRows(length, signal, visit) {
  */
 function streamRowIndex(context, rowIndex) {
   const ordinal = context.rowOrdinals ? Number(valueAt(context.rowOrdinals, rowIndex)) : rowIndex
-  return context.rowOffset + ordinal
+  return (context.rowOffset ?? 0) + ordinal
 }
 
 /**
  * @param {import('../types.js').IdentifierNode} identifier
- * @param {RelationSchema} schema
+ * @param {readonly string[]} columns
  * @returns {{ columnIndex: number, field?: string }[] | undefined}
  */
-function resolveIdentifier(identifier, schema) {
+function resolveIdentifier(identifier, columns) {
   const sourceName = identifier.prefix
     ? `${identifier.prefix}.${identifier.name}`
     : identifier.name
-  const exact = schema.fields.findIndex(function exactName(field) {
-    return field.name === sourceName
-  })
+  const exact = columns.indexOf(sourceName)
   if (exact >= 0) return [{ columnIndex: exact }]
 
   if (identifier.prefix) {
@@ -593,8 +548,8 @@ function resolveIdentifier(identifier, schema) {
     const prefixedMatches = []
     const baseMatches = []
     const baseSuffix = `.${identifier.prefix}`
-    for (let index = 0; index < schema.fields.length; index++) {
-      const fieldName = schema.fields[index].name
+    for (let index = 0; index < columns.length; index++) {
+      const fieldName = columns[index]
       if (fieldName.startsWith(prefix)) prefixedMatches.push(index)
       if (fieldName === identifier.prefix || fieldName.endsWith(baseSuffix)) baseMatches.push(index)
     }
@@ -607,17 +562,15 @@ function resolveIdentifier(identifier, schema) {
     if (baseMatches.length === 1) {
       accesses.push({ columnIndex: baseMatches[0], field: identifier.name })
     }
-    const bare = schema.fields.findIndex(function bareName(field) {
-      return field.name === identifier.name
-    })
+    const bare = columns.indexOf(identifier.name)
     if (bare >= 0) accesses.push({ columnIndex: bare })
     return accesses.length > 0 ? accesses : undefined
   }
 
   const suffix = `.${identifier.name}`
   const matches = []
-  for (let i = 0; i < schema.fields.length; i++) {
-    if (schema.fields[i].name.endsWith(suffix)) matches.push(i)
+  for (let i = 0; i < columns.length; i++) {
+    if (columns[i].endsWith(suffix)) matches.push(i)
   }
   return matches.length === 1 ? [{ columnIndex: matches[0] }] : undefined
 }

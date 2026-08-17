@@ -11,7 +11,7 @@ import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, BatchAggregateInputs, ColumnVector, CompiledBatchExpression, RelationSchema } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchAggregateInputs, ColumnVector, CompiledBatchExpression } from '../internalTypes.js'
  * @import { AsyncCells, AsyncRow, ExecuteContext, ExprNode, FunctionNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive } from '../types.js'
  * @import { HashAggregateNode, ScalarAggregateNode } from '../plan/types.js'
  * @import { Accumulator } from './accumulator.js'
@@ -430,14 +430,14 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
  *
  * @param {ExprNode[]} groupBy
  * @param {StreamingAggSpec[]} specs
- * @param {RelationSchema} schema
+ * @param {readonly string[]} columns
  * @returns {BatchAggregateInputs | undefined}
  */
-function compileBatchAggregateInputs(groupBy, specs, schema) {
+function compileBatchAggregateInputs(groupBy, specs, columns) {
   /** @type {CompiledBatchExpression[]} */
   const keys = []
   for (const expression of groupBy) {
-    const key = compileBatchExpression({ expression, schema })
+    const key = compileBatchExpression(expression, columns)
     if (!key) return undefined
     keys.push(key)
   }
@@ -449,11 +449,11 @@ function compileBatchAggregateInputs(groupBy, specs, schema) {
   for (const spec of specs) {
     if (spec.node.filter && !spec.star) return undefined
     const filter = spec.node.filter
-      ? compileBatchExpression({ expression: spec.node.filter, schema })
+      ? compileBatchExpression(spec.node.filter, columns)
       : undefined
     const argument = spec.star
       ? undefined
-      : compileBatchExpression({ expression: spec.node.args[0], schema })
+      : compileBatchExpression(spec.node.args[0], columns)
     if (spec.node.filter && !filter || !spec.star && !argument) return undefined
     filters.push(filter)
     args.push(argument)
@@ -553,7 +553,7 @@ async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   const groups = new Map()
   const batchResults = batchResultsFor(child)
   const batchInputs = batchResults && !needsRow
-    ? compileBatchAggregateInputs(groupBy, specs, batchResults.schema)
+    ? compileBatchAggregateInputs(groupBy, specs, batchResults.columns)
     : undefined
   if (batchInputs && batchResults) {
     let rowOffset = 0

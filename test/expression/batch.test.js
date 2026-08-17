@@ -3,22 +3,15 @@ import { compileBatchExpression } from '../../src/expression/batch.js'
 import { parseSql } from '../../src/parse/parse.js'
 
 /**
- * @import { AsyncBatch, ReadColumn, RelationSchema, RowSelection } from '../../src/internalTypes.js'
+ * @import { AsyncBatch, ReadColumn, RowSelection } from '../../src/internalTypes.js'
  * @import { ExprNode } from '../../src/types.js'
  */
 
-/** @type {RelationSchema} */
-const schema = {
-  fields: [
-    { id: 0, name: 'n', dataType: { type: 'number' }, nullable: true },
-    { id: 1, name: 'text', dataType: { type: 'string' }, nullable: true },
-  ],
-}
+const schema = ['n', 'text']
 
 describe('batch expressions', () => {
   it('resolves each dependency once for a synchronous vector kernel', () => {
     const compiled = compile('LENGTH(text) + n')
-    expect(compiled?.dependencies).toEqual([1, 0])
     if (!compiled) throw new Error('expected expression to compile')
     const batch = loadedBatch([2, null, 4], ['abc', 'x', null])
 
@@ -60,10 +53,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 2 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [1, 2], length: 2 } },
+        { type: 'values', values: [1, 2], length: 2 },
         { type: 'source', read },
       ],
     }
@@ -91,10 +84,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [-1, 1, -2], length: 3 } },
+        { type: 'values', values: [-1, 1, -2], length: 3 },
         { type: 'source', read },
       ],
     }
@@ -122,10 +115,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [1, null, null], length: 3 } },
+        { type: 'values', values: [1, null, null], length: 3 },
         { type: 'source', read },
       ],
     }
@@ -157,10 +150,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [1, 0, -1], length: 3 } },
+        { type: 'values', values: [1, 0, -1], length: 3 },
         { type: 'source', read },
       ],
     }
@@ -188,10 +181,10 @@ describe('batch expressions', () => {
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      schema,
+      columnNames: schema,
       selection: { type: 'indices', indices: new Uint32Array([1, 3]), length: 4 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [0, -1, 0, 1], length: 4 } },
+        { type: 'values', values: [0, -1, 0, 1], length: 4 },
         { type: 'source', read },
       ],
     }
@@ -251,22 +244,16 @@ describe('batch expressions', () => {
   })
 
   it('resolves struct fields before bare columns', () => {
-    /** @type {RelationSchema} */
-    const structSchema = {
-      fields: [
-        { id: 0, name: 'obj', dataType: { type: 'unknown' }, nullable: false },
-        { id: 1, name: 'x', dataType: { type: 'number' }, nullable: false },
-      ],
-    }
-    const compiled = compileBatchExpression({ expression: expression('obj.x'), schema: structSchema })
+    const structSchema = ['obj', 'x']
+    const compiled = compileBatchExpression(expression('obj.x'), structSchema)
     if (!compiled) throw new Error('expected expression to compile')
     /** @type {AsyncBatch} */
     const batch = {
-      schema: structSchema,
+      columnNames: structSchema,
       selection: { type: 'all', length: 2 },
       columns: [
-        { type: 'loaded', vector: { type: 'values', values: [{ x: 2 }, 7], length: 2 } },
-        { type: 'loaded', vector: { type: 'constant', value: 99, length: 2 } },
+        { type: 'values', values: [{ x: 2 }, 7], length: 2 },
+        { type: 'constant', value: 99, length: 2 },
       ],
     }
 
@@ -310,8 +297,8 @@ describe('batch expressions', () => {
   })
 
   it('declines unsupported expressions and missing identifiers', () => {
-    expect(compileBatchExpression({ expression: expression('CASE WHEN n > 0 THEN ABS(n) END'), schema })).toBeUndefined()
-    expect(compileBatchExpression({ expression: expression('missing + 1'), schema })).toBeUndefined()
+    expect(compileBatchExpression(expression('CASE WHEN n > 0 THEN ABS(n) END'), schema)).toBeUndefined()
+    expect(compileBatchExpression(expression('missing + 1'), schema)).toBeUndefined()
   })
 })
 
@@ -320,7 +307,7 @@ describe('batch expressions', () => {
  * @returns {ReturnType<typeof compileBatchExpression>}
  */
 function compile(sql) {
-  return compileBatchExpression({ expression: expression(sql), schema })
+  return compileBatchExpression(expression(sql), schema)
 }
 
 /**
@@ -342,11 +329,11 @@ function expression(sql) {
  */
 function loadedBatch(numbers, texts) {
   return {
-    schema,
+    columnNames: schema,
     selection: { type: 'all', length: numbers.length },
     columns: [
-      { type: 'loaded', vector: { type: 'values', values: numbers, length: numbers.length } },
-      { type: 'loaded', vector: { type: 'values', values: texts, length: texts.length } },
+      { type: 'values', values: numbers, length: numbers.length },
+      { type: 'values', values: texts, length: texts.length },
     ],
   }
 }
