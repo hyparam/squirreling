@@ -67,6 +67,7 @@ export interface ColumnEvaluationRequest {
   selection: RowSelection
   signal?: AbortSignal
   rowOffset?: number
+  rowOrdinals?: ColumnVector
 }
 
 export type EvaluateColumn = (request: ColumnEvaluationRequest) => ColumnResult
@@ -87,6 +88,19 @@ export type ValueKernel = (
   streamRowIndex: number,
 ) => SqlPrimitive
 
+export interface EvaluationContext {
+  batch: AsyncBatch
+  selection: RowSelection
+  signal?: AbortSignal
+  rowOffset: number
+  rowOrdinals?: ColumnVector
+}
+
+export interface CompiledEvaluator {
+  dependencies: readonly number[]
+  evaluate(context: EvaluationContext): ColumnResult
+}
+
 export interface CompileState {
   dependencies: number[]
   dependencyPositions: Map<number, number>
@@ -97,19 +111,6 @@ export interface BatchAggregateInputs {
   keys: CompiledBatchExpression[]
   filters: (CompiledBatchExpression | undefined)[]
   args: (CompiledBatchExpression | undefined)[]
-}
-
-export interface EvaluationContext {
-  batch: AsyncBatch
-  selection: RowSelection
-  signal?: AbortSignal
-  rowOffset: number
-  positions?: Uint32Array
-}
-
-export interface CompiledEvaluator {
-  dependencies: readonly number[]
-  evaluate(context: EvaluationContext): ColumnResult
 }
 
 export type BatchProjection =
@@ -124,6 +125,7 @@ export type BatchColumn =
       type: 'computed'
       input: AsyncBatch
       dependencies: readonly number[]
+      rowOrdinals: ColumnVector
       evaluate: EvaluateColumn
     }
 

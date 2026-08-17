@@ -920,8 +920,13 @@ function batchProjection(planColumns, outputColumns, childColumns, childSchema) 
     }
     if (column.expr.type === 'identifier') {
       const index = identifierColumnIndex(column.expr, childColumns)
-      if (index === undefined) return undefined
-      projections.push({ type: 'column', columnIndex: index })
+      if (index !== undefined) {
+        projections.push({ type: 'column', columnIndex: index })
+        continue
+      }
+      const expression = compileBatchExpression({ expression: column.expr, schema: childSchema })
+      if (!expression) return undefined
+      projections.push({ type: 'expression', expression })
       continue
     }
     const expression = compileBatchExpression({ expression: column.expr, schema: childSchema })
@@ -929,6 +934,9 @@ function batchProjection(planColumns, outputColumns, childColumns, childSchema) 
     projections.push({ type: 'expression', expression })
   }
   if (projections.length !== outputColumns.length) return undefined
+  for (let index = 0; index < projections.length; index++) {
+    projections[index] = projections[outputColumns.lastIndexOf(outputColumns[index])]
+  }
 
   return {
     schema: {

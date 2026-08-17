@@ -1,4 +1,4 @@
-import { readBatchColumn, selectBatch, selectedRowCount, valueAt } from '../backend/batch.js'
+import { readBatchColumn, selectBatch, selectedRowCount, selectionOrdinals, valueAt } from '../backend/batch.js'
 import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
@@ -189,6 +189,8 @@ export async function* projectExpressionBatches(batches, schema, projections) {
   for await (const batch of batches) {
     const currentRowOffset = rowOffset
     rowOffset += selectedRowCount(batch.selection)
+    /** @type {ColumnVector | undefined} */
+    let rowOrdinals
     yield {
       schema,
       selection: batch.selection,
@@ -207,10 +209,12 @@ export async function* projectExpressionBatches(batches, schema, projections) {
             },
           }
         } else {
+          rowOrdinals ??= selectionOrdinals(batch.selection)
           column = {
             type: 'computed',
             input: batch,
             dependencies: projection.expression.dependencies,
+            rowOrdinals,
             evaluate(request) {
               return projection.expression.evaluate({ ...request, rowOffset: currentRowOffset })
             },

@@ -47,6 +47,15 @@ describe('private batch aggregate execution', () => {
     }))).resolves.toEqual([{ middle_total: 5, without_two: 8 }])
     expect(source.scan).not.toHaveBeenCalled()
   })
+
+  it('preserves struct-field precedence over a bare column', async () => {
+    const source = columnSource([{ x: 2 }, { x: 3 }])
+
+    await expect(collect(executeSql({
+      tables: { data: source },
+      query: 'SELECT SUM(obj.x) AS total FROM (SELECT id AS obj, 99 AS x FROM data)',
+    }))).resolves.toEqual([{ total: 5 }])
+  })
 })
 
 /**

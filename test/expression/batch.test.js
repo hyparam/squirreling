@@ -250,6 +250,33 @@ describe('batch expressions', () => {
     })
   })
 
+  it('resolves struct fields before bare columns', () => {
+    /** @type {RelationSchema} */
+    const structSchema = {
+      fields: [
+        { id: 0, name: 'obj', dataType: { type: 'unknown' }, nullable: false },
+        { id: 1, name: 'x', dataType: { type: 'number' }, nullable: false },
+      ],
+    }
+    const compiled = compileBatchExpression({ expression: expression('obj.x'), schema: structSchema })
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      schema: structSchema,
+      selection: { type: 'all', length: 2 },
+      columns: [
+        { type: 'loaded', vector: { type: 'values', values: [{ x: 2 }, 7], length: 2 } },
+        { type: 'loaded', vector: { type: 'constant', value: 99, length: 2 } },
+      ],
+    }
+
+    expect(compiled.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values',
+      values: [2, 99],
+      length: 2,
+    })
+  })
+
   it('uses a stream row offset in execution errors', () => {
     const compiled = compile('LENGTH(n)')
     if (!compiled) throw new Error('expected expression to compile')

@@ -190,6 +190,27 @@ describe('native batch execution', () => {
     expect(batchResultsFor(results)).toBeDefined()
     expect(await collect(results)).toEqual([{ value: 1 }, { value: 0 }])
   })
+
+  it('falls back to row projection for duplicate aliases', async () => {
+    const source = columnSource(function chunks() { return [[1, 2]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT DISTINCT x FROM (SELECT id AS x, 1 AS x FROM data)',
+    })
+
+    expect(batchResultsFor(results)).toBeDefined()
+    expect(await collect(results)).toEqual([{ x: 1 }])
+  })
+
+  it('preserves projected row positions through a later offset', async () => {
+    const source = columnSource(function chunks() { return [[1, 2, 3, { value: 4 }]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT value FROM (SELECT CAST(id AS INTEGER) AS value FROM data) OFFSET 3',
+    })
+
+    await expect(collect(results)).rejects.toThrow('Cannot CAST object to INTEGER (row 4)')
+  })
 })
 
 /**

@@ -27,6 +27,21 @@ export function selectedRowCount(selection) {
 }
 
 /**
+ * Creates base-aligned ordinal values for the rows in a selection.
+ *
+ * @param {RowSelection} selection
+ * @returns {ColumnVector}
+ */
+export function selectionOrdinals(selection) {
+  const values = new Uint32Array(selection.length)
+  const length = selectedRowCount(selection)
+  for (let ordinal = 0; ordinal < length; ordinal++) {
+    values[selectionIndexAt(selection, ordinal)] = ordinal
+  }
+  return { type: 'typed', values, length: selection.length }
+}
+
+/**
  * Composes a selection over an already-selected domain with the selection
  * that produced that domain.
  *
@@ -152,7 +167,12 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
 
   const result = column.type === 'source'
     ? column.read({ selection, signal })
-    : column.evaluate({ batch: column.input, selection, signal })
+    : column.evaluate({
+      batch: column.input,
+      selection,
+      signal,
+      rowOrdinals: selectVector(column.rowOrdinals, selection),
+    })
   const validated = validateColumnResult(result, selectedRowCount(selection))
   if (validated instanceof Promise) {
     const settled = validated.then(function cacheResolved(vector) {

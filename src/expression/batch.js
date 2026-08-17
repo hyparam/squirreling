@@ -1,15 +1,17 @@
-import { composeSelections, readBatchColumn, selectedRowCount, valueAt } from '../backend/batch.js'
-import { sqlEquals } from '../execute/utils.js'
+import { composeSelections, readBatchColumn, selectVector, selectedRowCount, valueAt } from '../backend/batch.js'
+import { isPlainObject, sqlEquals } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 import { isStringFunc } from '../validation/functions.js'
+import { ColumnNotFoundError } from '../validation/tables.js'
 import { applyBinaryOp } from './binary.js'
 import { applyCast, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
 
 /**
- * @import { ColumnResult, ColumnVector, CompileBatchExpressionOptions, CompiledBatchExpression, CompiledEvaluator, CompileState, EvaluationContext, RelationSchema, RowSelection, ValueKernel } from '../internalTypes.js'
+ * @import { AsyncBatch, ColumnResult, ColumnVector, CompileBatchExpressionOptions, CompiledBatchExpression, CompiledEvaluator, CompileState, EvaluationContext, RelationSchema, RowSelection, ValueKernel } from '../internalTypes.js'
  * @import { ExprNode, FunctionNode, SqlPrimitive } from '../types.js'
  */
+
 const YIELD_INTERVAL = 4000
 
 /**
@@ -29,8 +31,8 @@ export function compileBatchExpression({ expression, schema }) {
 
   return {
     dependencies: compiled.dependencies,
-    evaluate({ batch, selection, signal, rowOffset = 0 }) {
-      return compiled.evaluate({ batch, selection, signal, rowOffset })
+    evaluate({ batch, selection, signal, rowOffset = 0, rowOrdinals }) {
+      return compiled.evaluate({ batch, selection, signal, rowOffset, rowOrdinals })
     },
   }
 }
@@ -132,7 +134,7 @@ function compileKernelEvaluator(node, schema) {
   return {
     dependencies,
     evaluate(context) {
-      const { batch, selection, signal, rowOffset, positions } = context
+      const { batch, selection, signal, rowOffset, rowOrdinals } = context
       signal?.throwIfAborted()
       const results = dependencies.map(function readDependency(columnIndex) {
         return readBatchColumn({ batch, columnIndex, selection, signal })
@@ -141,10 +143,10 @@ function compileKernelEvaluator(node, schema) {
       if (vectors instanceof Promise) {
         return vectors.then(function evaluateResolved(resolved) {
           signal?.throwIfAborted()
-          return evaluateKernel(kernel, resolved, selection, signal, rowOffset, positions)
+          return evaluateKernel(kernel, resolved, selection, signal, rowOffset, rowOrdinals)
         })
       }
-      return evaluateKernel(kernel, vectors, selection, signal, rowOffset, positions)
+      return evaluateKernel(kernel, vectors, selection, signal, rowOffset, rowOrdinals)
     },
   }
 }
@@ -160,16 +162,32 @@ function compileValueKernel(node, state) {
   }
 
   if (node.type === 'identifier') {
-    const columnIndex = resolveIdentifier(node, state.schema)
-    if (columnIndex === undefined) return undefined
-    let dependencyPosition = state.dependencyPositions.get(columnIndex)
-    if (dependencyPosition === undefined) {
-      dependencyPosition = state.dependencies.length
-      state.dependencies.push(columnIndex)
-      state.dependencyPositions.set(columnIndex, dependencyPosition)
-    }
-    return function identifierValue(vectors, rowIndex) {
-      return valueAt(vectors[dependencyPosition], rowIndex)
+    const accesses = resolveIdentifier(node, state.schema)
+    if (!accesses) return undefined
+    const dependencyPositions = accesses.map(function registerAccess(access) {
+      let dependencyPosition = state.dependencyPositions.get(access.columnIndex)
+      if (dependencyPosition === undefined) {
+        dependencyPosition = state.dependencies.length
+        state.dependencies.push(access.columnIndex)
+        state.dependencyPositions.set(access.columnIndex, dependencyPosition)
+      }
+      return dependencyPosition
+    })
+    return function identifierValue(vectors, rowIndex, streamRowIndex) {
+      for (let index = 0; index < accesses.length; index++) {
+        const access = accesses[index]
+        const value = valueAt(vectors[dependencyPositions[index]], rowIndex)
+        if (!access.field) return value
+        if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, access.field)) {
+          return value[access.field]
+        }
+      }
+      throw new ColumnNotFoundError({
+        missingColumn: `${node.prefix}.${node.name}`,
+        availableColumns: state.schema.fields.map(function fieldName(field) { return field.name }),
+        rowIndex: streamRowIndex + 1,
+        ...node,
+      })
     }
   }
 
@@ -482,11 +500,11 @@ function subsetContext(context, indices) {
     indices,
     length,
   })
-  const positions = new Uint32Array(indices.length)
-  for (let index = 0; index < indices.length; index++) {
-    positions[index] = context.positions?.[indices[index]] ?? indices[index]
-  }
-  return { ...context, selection, positions }
+  /** @type {ColumnVector} */
+  const rowOrdinals = context.rowOrdinals
+    ? selectVector(context.rowOrdinals, { type: 'indices', indices, length })
+    : { type: 'typed', values: indices, length: indices.length }
+  return { ...context, selection, rowOrdinals }
 }
 
 /**
@@ -552,13 +570,14 @@ async function visitRows(length, signal, visit) {
  * @returns {number}
  */
 function streamRowIndex(context, rowIndex) {
-  return context.rowOffset + (context.positions?.[rowIndex] ?? rowIndex)
+  const ordinal = context.rowOrdinals ? Number(valueAt(context.rowOrdinals, rowIndex)) : rowIndex
+  return context.rowOffset + ordinal
 }
 
 /**
  * @param {import('../types.js').IdentifierNode} identifier
  * @param {RelationSchema} schema
- * @returns {number | undefined}
+ * @returns {{ columnIndex: number, field?: string }[] | undefined}
  */
 function resolveIdentifier(identifier, schema) {
   const sourceName = identifier.prefix
@@ -567,15 +586,32 @@ function resolveIdentifier(identifier, schema) {
   const exact = schema.fields.findIndex(function exactName(field) {
     return field.name === sourceName
   })
-  if (exact >= 0) return exact
+  if (exact >= 0) return [{ columnIndex: exact }]
 
   if (identifier.prefix) {
-    const bareMatches = []
+    const prefix = `${identifier.prefix}.`
+    const prefixedMatches = []
+    const baseMatches = []
+    const baseSuffix = `.${identifier.prefix}`
     for (let index = 0; index < schema.fields.length; index++) {
-      if (schema.fields[index].name === identifier.name) bareMatches.push(index)
+      const fieldName = schema.fields[index].name
+      if (fieldName.startsWith(prefix)) prefixedMatches.push(index)
+      if (fieldName === identifier.prefix || fieldName.endsWith(baseSuffix)) baseMatches.push(index)
     }
-    if (bareMatches.length === 1) return bareMatches[0]
-    if (bareMatches.length > 1) return undefined
+
+    /** @type {{ columnIndex: number, field?: string }[]} */
+    const accesses = []
+    if (prefixedMatches.length === 1) {
+      accesses.push({ columnIndex: prefixedMatches[0], field: identifier.name })
+    }
+    if (baseMatches.length === 1) {
+      accesses.push({ columnIndex: baseMatches[0], field: identifier.name })
+    }
+    const bare = schema.fields.findIndex(function bareName(field) {
+      return field.name === identifier.name
+    })
+    if (bare >= 0) accesses.push({ columnIndex: bare })
+    return accesses.length > 0 ? accesses : undefined
   }
 
   const suffix = `.${identifier.name}`
@@ -583,7 +619,7 @@ function resolveIdentifier(identifier, schema) {
   for (let i = 0; i < schema.fields.length; i++) {
     if (schema.fields[i].name.endsWith(suffix)) matches.push(i)
   }
-  return matches.length === 1 ? matches[0] : undefined
+  return matches.length === 1 ? [{ columnIndex: matches[0] }] : undefined
 }
 
 /**
@@ -592,19 +628,20 @@ function resolveIdentifier(identifier, schema) {
  * @param {RowSelection} selection
  * @param {AbortSignal} [signal]
  * @param {number} [rowOffset]
- * @param {Uint32Array} [positions]
+ * @param {ColumnVector} [rowOrdinals]
  * @returns {ColumnResult}
  */
-function evaluateKernel(kernel, vectors, selection, signal, rowOffset = 0, positions) {
+function evaluateKernel(kernel, vectors, selection, signal, rowOffset = 0, rowOrdinals) {
   const length = selectedRowCount(selection)
   if (signal && length > YIELD_INTERVAL) {
-    return evaluateKernelAsync(kernel, vectors, length, signal, rowOffset, positions)
+    return evaluateKernelAsync(kernel, vectors, length, signal, rowOffset, rowOrdinals)
   }
   /** @type {SqlPrimitive[]} */
   const values = new Array(length)
   for (let rowIndex = 0; rowIndex < length; rowIndex++) {
     if (rowIndex % YIELD_INTERVAL === 0) signal?.throwIfAborted()
-    values[rowIndex] = kernel(vectors, rowIndex, rowOffset + (positions?.[rowIndex] ?? rowIndex))
+    const ordinal = rowOrdinals ? Number(valueAt(rowOrdinals, rowIndex)) : rowIndex
+    values[rowIndex] = kernel(vectors, rowIndex, rowOffset + ordinal)
   }
   return { type: 'values', values, length }
 }
@@ -618,10 +655,10 @@ function evaluateKernel(kernel, vectors, selection, signal, rowOffset = 0, posit
  * @param {number} length
  * @param {AbortSignal} signal
  * @param {number} rowOffset
- * @param {Uint32Array} [positions]
+ * @param {ColumnVector} [rowOrdinals]
  * @returns {Promise<ColumnVector>}
  */
-async function evaluateKernelAsync(kernel, vectors, length, signal, rowOffset, positions) {
+async function evaluateKernelAsync(kernel, vectors, length, signal, rowOffset, rowOrdinals) {
   /** @type {SqlPrimitive[]} */
   const values = new Array(length)
   for (let start = 0; start < length; start += YIELD_INTERVAL) {
@@ -629,7 +666,8 @@ async function evaluateKernelAsync(kernel, vectors, length, signal, rowOffset, p
     signal.throwIfAborted()
     const end = Math.min(start + YIELD_INTERVAL, length)
     for (let rowIndex = start; rowIndex < end; rowIndex++) {
-      values[rowIndex] = kernel(vectors, rowIndex, rowOffset + (positions?.[rowIndex] ?? rowIndex))
+      const ordinal = rowOrdinals ? Number(valueAt(rowOrdinals, rowIndex)) : rowIndex
+      values[rowIndex] = kernel(vectors, rowIndex, rowOffset + ordinal)
     }
   }
   return { type: 'values', values, length }
