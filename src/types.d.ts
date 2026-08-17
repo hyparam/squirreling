@@ -213,15 +213,26 @@ export type Row = Record<string, SqlPrimitive>[]
  * Async data source for streaming SQL execution. A source must implement
  * either scan() or prepareScan().
  */
-export interface AsyncDataSource {
+interface AsyncDataSourceBase {
   numRows?: number
-  columns?: string[]
-  schema?: RelationSchema
-  prepareScan?: PrepareScan
-  scan?(options: ScanOptions): ScanResults
   // Optional method for fast column scans
   scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>> | ScanColumnResults
 }
+
+export type AsyncDataSource = AsyncDataSourceBase & (
+  | {
+      columns: string[]
+      scan(options: ScanOptions): ScanResults
+      schema?: RelationSchema
+      prepareScan?: PrepareScan
+    }
+  | {
+      columns?: string[]
+      scan?(options: ScanOptions): ScanResults
+      schema: RelationSchema
+      prepareScan: PrepareScan
+    }
+)
 
 /**
  * Result of a scan: streaming rows and flags indicating which hints were

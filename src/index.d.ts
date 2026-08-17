@@ -21,6 +21,7 @@ export type {
   QueryPlan,
   QueryResults,
   ReadBatchColumnOptions,
+  ReadColumn,
   RelationSchema,
   RowsToBatchesOptions,
   RowSelection,

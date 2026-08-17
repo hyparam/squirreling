@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 import { memorySource } from '../../src/backend/dataSource.js'
 
@@ -1098,6 +1098,22 @@ describe('executeSql', () => {
         query: 'SELECT COUNT(*) FROM users',
       }))
       expect(result).toEqual([{ count_all: 5 }])
+    })
+
+    it('should ignore prepareScan without a schema', async () => {
+      const legacy = memorySource({ data: [{ id: 1 }, { id: 2 }] })
+      if (!legacy.columns || !legacy.scan) throw new Error('expected legacy source')
+      const scan = vi.fn(legacy.scan)
+      const prepareScan = vi.fn(function prepareScan() {
+        throw new Error('prepareScan should not be called without a schema')
+      })
+
+      await expect(collect(executeSql({
+        tables: { data: { columns: legacy.columns, scan, prepareScan } },
+        query: 'SELECT COUNT(*) FROM data',
+      }))).resolves.toEqual([{ count_all: 2 }])
+      expect(scan).toHaveBeenCalledTimes(1)
+      expect(prepareScan).not.toHaveBeenCalled()
     })
 
     it('should not optimize COUNT(column) with numRows', async () => {

@@ -287,7 +287,7 @@ export function executeScan(plan, context, existingColumnResult) {
   const scanContext = { ...context, scope: [plan.alias ?? plan.table] }
 
   if (!existingColumnResult && table.prepareScan && table.schema) {
-    const prepared = table.prepareScan(scanRequest(plan, table.schema))
+    const prepared = table.prepareScan(scanRequest(plan, table.schema, scanContext))
     return executePreparedScan({ plan, prepared, context: scanContext, table })
   }
 
@@ -437,7 +437,7 @@ function executePreparedScan({ plan, prepared, context, table }) {
   }
   const columns = schema.fields.map(function fieldName(field) { return field.name })
   const residualFilter = residual.filter
-    ? compileBatchExpression(residual.filter, columns)
+    ? compileUnscopedBatchExpression(residual.filter, columns, context)
     : undefined
   const canUseBatches = !residual.filter || residualFilter !== undefined
 
@@ -445,21 +445,29 @@ function executePreparedScan({ plan, prepared, context, table }) {
   function makeBatches() {
     /** @type {AsyncIterable<AsyncBatch>} */
     let batches = prepared.batches({ signal })
-    if (residualFilter) batches = filterBatches(batches, residualFilter, signal)
+    if (residualFilter) {
+      const targetRows = residual.limit === undefined
+        ? undefined
+        : residual.limit + (residual.offset ?? 0)
+      batches = filterBatches(batches, residualFilter, signal, targetRows)
+    }
     if (residual.limit !== undefined || residual.offset) {
       batches = limitBatches(batches, residual.limit, residual.offset, signal)
     }
     return batches
   }
 
-  const exactRows = properties.exactRows ?? (plan.hints.where ? undefined : table.numRows)
-  const maxRows = properties.maxRows ?? properties.exactRows ?? table.numRows
+  const exactRows = properties.exactRows === undefined
+    ? computeScanRows(plan.hints.where ? undefined : table.numRows, plan.hints.limit, plan.hints.offset)
+    : computeScanRows(properties.exactRows, residual.limit, residual.offset)
+  const preparedMaxRows = properties.maxRows ?? properties.exactRows
+  const maxRows = preparedMaxRows === undefined
+    ? computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
+    : computeScanRows(preparedMaxRows, residual.limit, residual.offset)
   const metadata = {
     columns,
-    numRows: residual.filter
-      ? undefined
-      : computeScanRows(exactRows, residual.limit, residual.offset),
-    maxRows: computeScanRows(maxRows, residual.limit, residual.offset),
+    numRows: residual.filter ? undefined : exactRows,
+    maxRows,
   }
   if (canUseBatches) {
     return batchResult({ ...metadata, batches: makeBatches, signal })
@@ -484,18 +492,34 @@ function executePreparedScan({ plan, prepared, context, table }) {
  *
  * @param {ScanNode} plan
  * @param {RelationSchema} schema
+ * @param {ExecuteContext} context
  * @returns {ScanRequest}
  */
-function scanRequest(plan, schema) {
+function scanRequest(plan, schema, context) {
+  const currentScope = context.scope ?? [plan.table]
   /** @type {IdentifierNode[]} */
   const predicateIdentifiers = []
-  collectColumnsFromExpr(plan.hints.where, predicateIdentifiers)
-  const predicateNames = new Set(predicateIdentifiers.map(function identifierName(identifier) {
-    const struct = identifier.prefix && schema.fields.some(function structField(field) {
-      return field.name === identifier.prefix && field.dataType.type === 'struct'
+  collectColumnsFromExpr(plan.hints.where, predicateIdentifiers, undefined, {
+    cteColumns: context.cteColumns,
+    tables: context.tables,
+    outerAliases: new Set([...currentScope, ...context.outerAliases ?? []]),
+  })
+  const predicateNames = new Set()
+  for (const identifier of predicateIdentifiers) {
+    if (!identifier.prefix) {
+      predicateNames.add(identifier.name)
+      continue
+    }
+    if (currentScope.includes(identifier.prefix)) {
+      predicateNames.add(identifier.name)
+      continue
+    }
+    if (context.outerAliases?.has(identifier.prefix)) continue
+    const baseField = schema.fields.some(function fieldOwnsPrefix(field) {
+      return field.name === identifier.prefix
     })
-    return struct ? identifier.prefix : identifier.name
-  }))
+    if (baseField) predicateNames.add(identifier.prefix)
+  }
   const requestedNames = plan.hints.columns
     ? [...plan.hints.columns]
     : schema.fields.map(function fieldName(field) { return field.name })
@@ -544,7 +568,7 @@ function executeCount(plan, context) {
         // Use source numRows if available
         if (table.numRows !== undefined) return table.numRows
 
-        if (table.prepareScan) {
+        if (table.prepareScan && table.schema) {
           const prepared = table.prepareScan({ columns: [] })
           if (prepared.properties.exactRows !== undefined) {
             return prepared.properties.exactRows

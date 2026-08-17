@@ -91,6 +91,7 @@ export function memorySource({ data, columns }) {
  * @returns {AsyncDataSource}
  */
 export function cachedDataSource(source) {
+  if (source.prepareScan && source.schema) return source
   const { scan } = source
   if (!scan) return source
   /** @type {WeakMap<object, Map<string, Promise<SqlPrimitive>>>} */

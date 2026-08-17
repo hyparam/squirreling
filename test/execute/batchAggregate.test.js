@@ -14,6 +14,21 @@ const schema = {
   ],
 }
 
+/** @type {RelationSchema} */
+const aliasSchema = {
+  fields: [
+    { id: 1, name: 'd', dataType: { type: 'unknown' }, nullable: false },
+    { id: 2, name: 'keep', dataType: { type: 'boolean' }, nullable: false },
+    { id: 3, name: 'e', dataType: { type: 'unknown' }, nullable: false },
+  ],
+}
+
+const aliasValues = {
+  d: [{ keep: false }, { keep: false }],
+  keep: [true, true],
+  e: [{ keep: false }, { keep: false }],
+}
+
 describe('batch aggregate execution', () => {
   it('groups production token expressions without using the row adapter', async () => {
     /** @type {ReadColumn} */
@@ -88,6 +103,36 @@ describe('batch aggregate execution', () => {
     }))).resolves.toEqual([{ total: 5 }])
   })
 
+  it('preserves table-alias precedence in batch aggregate inputs', async () => {
+    const source = preparedSource(aliasSchema, aliasValues)
+
+    await expect(collect(executeSql({
+      tables: { data: source },
+      query: `SELECT d.keep AS grouped, MAX(d) AS max_d, COUNTIF(d.keep) AS matching
+        FROM data d GROUP BY d.keep`,
+    }))).resolves.toEqual([{
+      grouped: true,
+      max_d: { keep: false },
+      matching: 2,
+    }])
+  })
+
+  it('preserves table-alias precedence in compound batch aggregate inputs', async () => {
+    const source = preparedSource(aliasSchema, aliasValues)
+
+    await expect(collect(executeSql({
+      tables: { data: source },
+      query: `SELECT d.keep AS grouped, MAX(d) AS max_d, COUNTIF(d.keep) AS matching
+        FROM data d GROUP BY d.keep
+        UNION ALL
+        SELECT e.keep AS grouped, MAX(e) AS max_d, COUNTIF(e.keep) AS matching
+        FROM data e GROUP BY e.keep`,
+    }))).resolves.toEqual([
+      { grouped: true, max_d: { keep: false }, matching: 2 },
+      { grouped: true, max_d: { keep: false }, matching: 2 },
+    ])
+  })
+
   it('preserves outer references in aggregate inputs', async () => {
     await expect(collect(executeSql({
       tables: {
@@ -137,6 +182,40 @@ function columnSource(values) {
         async *chunks() { yield values },
       }
       return results
+    },
+  }
+}
+
+/**
+ * @param {RelationSchema} sourceSchema
+ * @param {Record<string, import('../../src/types.js').SqlPrimitive[]>} values
+ * @returns {AsyncDataSource}
+ */
+function preparedSource(sourceSchema, values) {
+  const length = Object.values(values)[0]?.length ?? 0
+  return {
+    schema: sourceSchema,
+    prepareScan(request) {
+      const fields = request.columns.map(function requestedField(demand) {
+        const field = sourceSchema.fields.find(function fieldById(candidate) {
+          return candidate.id === demand.field
+        })
+        if (!field) throw new Error(`unknown field: ${demand.field}`)
+        return field
+      })
+      return {
+        schema: { fields },
+        residual: {},
+        properties: { exactRows: length },
+        async *batches() {
+          yield {
+            selection: { type: 'all', length },
+            columns: fields.map(function loadedField(field) {
+              return { type: 'values', values: values[field.name], length }
+            }),
+          }
+        },
+      }
     },
   }
 }

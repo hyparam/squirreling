@@ -7,6 +7,14 @@ import { tableFunctionDefaultColumns } from '../parse/parse.js'
  */
 
 /**
+ * @typedef {{
+ *   cteColumns?: Map<string, string[]>,
+ *   tables?: Record<string, AsyncDataSource>,
+ *   outerAliases?: Set<string>,
+ * }} ColumnCollectionContext
+ */
+
+/**
  * @param {FromTable | FromSubquery | FromFunction | undefined} from
  * @returns {string | undefined}
  */
@@ -62,9 +70,12 @@ export function tableFunctionColumnNames(from) {
  * @param {SelectStatement} options.select
  * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query
  * @param {Set<string>} [options.scopeColumns] - bare column names available in the current scope
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {string[]} [options.outerScope]
  * @returns {Map<string, string[] | undefined>}
  */
-export function extractColumns({ select, parentColumns, scopeColumns }) {
+export function extractColumns({ select, parentColumns, scopeColumns, cteColumns, tables, outerScope }) {
   /** @type {Map<string, string[] | undefined>} */
   const result = new Map()
 
@@ -75,6 +86,11 @@ export function extractColumns({ select, parentColumns, scopeColumns }) {
   if (sourceAlias !== undefined) aliases.push(sourceAlias)
   for (const join of select.joins) {
     aliases.push(join.alias ?? join.table)
+  }
+  const collectionContext = {
+    cteColumns,
+    tables,
+    outerAliases: new Set([...aliases, ...outerScope ?? []]),
   }
 
   // If any unqualified SELECT * exists, all tables need all columns
@@ -135,26 +151,26 @@ export function extractColumns({ select, parentColumns, scopeColumns }) {
         if (!parentColumns.some(id => id.name === outputName)) continue
       }
       // Exclude earlier SELECT aliases so they aren't treated as source columns
-      collectColumnsFromExpr(col.expr, identifiers, selectAliases)
+      collectColumnsFromExpr(col.expr, identifiers, selectAliases, collectionContext)
       if (col.alias) {
         selectAliases.add(col.alias)
       }
     }
   }
-  collectColumnsFromExpr(select.where, identifiers)
+  collectColumnsFromExpr(select.where, identifiers, undefined, collectionContext)
 
   for (const item of select.orderBy) {
-    collectColumnsFromExpr(item.expr, identifiers, selectAliases)
+    collectColumnsFromExpr(item.expr, identifiers, selectAliases, collectionContext)
   }
   for (const expr of select.groupBy) {
-    collectColumnsFromExpr(expr, identifiers, selectAliases)
+    collectColumnsFromExpr(expr, identifiers, selectAliases, collectionContext)
   }
-  collectColumnsFromExpr(select.having, identifiers, selectAliases)
+  collectColumnsFromExpr(select.having, identifiers, selectAliases, collectionContext)
   /** @type {string[]} */
   const visibleLateralAliases = []
   if (sourceAlias !== undefined) visibleLateralAliases.push(sourceAlias)
   for (const join of select.joins) {
-    collectColumnsFromExpr(join.on, identifiers)
+    collectColumnsFromExpr(join.on, identifiers, undefined, collectionContext)
     // USING columns are equi-join keys on both sides; keep them in every
     // table's needed set so projection pushdown can't prune the join key.
     if (join.using) {
@@ -167,7 +183,7 @@ export function extractColumns({ select, parentColumns, scopeColumns }) {
       /** @type {IdentifierNode[]} */
       const lateralArgIdentifiers = []
       for (const arg of join.fromFunction.args) {
-        collectColumnsFromExpr(arg, lateralArgIdentifiers)
+        collectColumnsFromExpr(arg, lateralArgIdentifiers, undefined, collectionContext)
       }
       lateralArgGroups.push({ identifiers: lateralArgIdentifiers, visibleAliases: [...visibleLateralAliases] })
     }
@@ -236,49 +252,50 @@ export function extractColumns({ select, parentColumns, scopeColumns }) {
  * @param {ExprNode} expr
  * @param {IdentifierNode[]} columns
  * @param {Set<string>} [aliases] - aliases to exclude from columns
+ * @param {ColumnCollectionContext} [context]
  */
-export function collectColumnsFromExpr(expr, columns, aliases) {
+export function collectColumnsFromExpr(expr, columns, aliases, context) {
   if (!expr) return
   if (expr.type === 'identifier') {
     if (expr.prefix || !aliases?.has(expr.name)) {
       columns.push(expr)
     }
   } else if (expr.type === 'binary') {
-    collectColumnsFromExpr(expr.left, columns, aliases)
-    collectColumnsFromExpr(expr.right, columns, aliases)
+    collectColumnsFromExpr(expr.left, columns, aliases, context)
+    collectColumnsFromExpr(expr.right, columns, aliases, context)
   } else if (expr.type === 'unary') {
-    collectColumnsFromExpr(expr.argument, columns, aliases)
+    collectColumnsFromExpr(expr.argument, columns, aliases, context)
   } else if (expr.type === 'function') {
     for (const arg of expr.args) {
-      collectColumnsFromExpr(arg, columns, aliases)
+      collectColumnsFromExpr(arg, columns, aliases, context)
     }
-    collectColumnsFromExpr(expr.filter, columns, aliases)
+    collectColumnsFromExpr(expr.filter, columns, aliases, context)
   } else if (expr.type === 'window') {
-    for (const arg of expr.args) collectColumnsFromExpr(arg, columns, aliases)
-    for (const p of expr.partitionBy) collectColumnsFromExpr(p, columns, aliases)
-    for (const o of expr.orderBy) collectColumnsFromExpr(o.expr, columns, aliases)
+    for (const arg of expr.args) collectColumnsFromExpr(arg, columns, aliases, context)
+    for (const p of expr.partitionBy) collectColumnsFromExpr(p, columns, aliases, context)
+    for (const o of expr.orderBy) collectColumnsFromExpr(o.expr, columns, aliases, context)
   } else if (expr.type === 'cast') {
-    collectColumnsFromExpr(expr.expr, columns, aliases)
+    collectColumnsFromExpr(expr.expr, columns, aliases, context)
   } else if (expr.type === 'in valuelist') {
-    collectColumnsFromExpr(expr.expr, columns, aliases)
+    collectColumnsFromExpr(expr.expr, columns, aliases, context)
     for (const val of expr.values) {
-      collectColumnsFromExpr(val, columns, aliases)
+      collectColumnsFromExpr(val, columns, aliases, context)
     }
   } else if (expr.type === 'in') {
-    collectColumnsFromExpr(expr.expr, columns, aliases)
+    collectColumnsFromExpr(expr.expr, columns, aliases, context)
   } else if (expr.type === 'subscript') {
-    collectColumnsFromExpr(expr.expr, columns, aliases)
-    collectColumnsFromExpr(expr.index, columns, aliases)
+    collectColumnsFromExpr(expr.expr, columns, aliases, context)
+    collectColumnsFromExpr(expr.index, columns, aliases, context)
   } else if (expr.type === 'case') {
     if (expr.caseExpr) {
-      collectColumnsFromExpr(expr.caseExpr, columns, aliases)
+      collectColumnsFromExpr(expr.caseExpr, columns, aliases, context)
     }
     for (const when of expr.whenClauses) {
-      collectColumnsFromExpr(when.condition, columns, aliases)
-      collectColumnsFromExpr(when.result, columns, aliases)
+      collectColumnsFromExpr(when.condition, columns, aliases, context)
+      collectColumnsFromExpr(when.result, columns, aliases, context)
     }
     if (expr.elseResult) {
-      collectColumnsFromExpr(expr.elseResult, columns, aliases)
+      collectColumnsFromExpr(expr.elseResult, columns, aliases, context)
     }
   }
   // Subqueries: collect prefixed identifiers for correlated column detection.
@@ -287,60 +304,76 @@ export function collectColumnsFromExpr(expr, columns, aliases) {
   // from the inner query would incorrectly be attributed to the outer table.
   if (expr.type === 'subquery' || expr.type === 'in' || expr.type === 'exists' || expr.type === 'not exists') {
     if (expr.type === 'in') {
-      collectColumnsFromExpr(expr.expr, columns, aliases)
+      collectColumnsFromExpr(expr.expr, columns, aliases, context)
     }
     const sub = expr.subquery
     if (sub) {
-      /** @type {IdentifierNode[]} */
-      const inner = []
-      collectColumnsFromStatement(sub, inner)
-      for (const id of inner) {
-        if (id.prefix) columns.push(id)
-      }
+      collectCorrelatedColumnsFromStatement(sub, columns, context)
       // FROM-function args (e.g. UNNEST in the subquery's FROM) are evaluated
       // against the outer scope — the table function is itself the FROM, so
       // any identifier inside its args must be correlated. Push them even if
       // unprefixed so the outer scan reads the columns they reference.
-      collectFromFunctionArgs(sub, columns)
+      collectFromFunctionArgs(sub, columns, context)
     }
   }
   // No columns: count(*), literal, interval
 }
 
 /**
- * Collects identifiers from a subquery statement for correlated column detection.
+ * Collects qualified identifiers that escape a subquery statement's scope.
+ * Each SELECT filters its own aliases before identifiers propagate outward,
+ * preserving ownership through nested and compound subqueries.
  *
  * @param {Statement} stmt
  * @param {IdentifierNode[]} columns
+ * @param {ColumnCollectionContext} [context]
  */
-function collectColumnsFromStatement(stmt, columns) {
+function collectCorrelatedColumnsFromStatement(stmt, columns, context) {
   if (stmt.type === 'compound') {
-    collectColumnsFromStatement(stmt.left, columns)
-    collectColumnsFromStatement(stmt.right, columns)
+    collectCorrelatedColumnsFromStatement(stmt.left, columns, context)
+    collectCorrelatedColumnsFromStatement(stmt.right, columns, context)
     return
   }
   if (stmt.type === 'with') {
-    collectColumnsFromStatement(stmt.query, columns)
+    collectCorrelatedColumnsFromStatement(stmt.query, columns, context)
     return
   }
-  for (const col of stmt.columns) {
-    if (col.type === 'derived') collectColumnsFromExpr(col.expr, columns)
+  const scope = statementScope(stmt) ?? []
+  const nestedContext = context && {
+    ...context,
+    outerAliases: new Set([...context.outerAliases ?? [], ...scope]),
   }
-  collectColumnsFromExpr(stmt.where, columns)
+  /** @type {IdentifierNode[]} */
+  const identifiers = []
+  for (const col of stmt.columns) {
+    if (col.type === 'derived') collectColumnsFromExpr(col.expr, identifiers, undefined, nestedContext)
+  }
+  collectColumnsFromExpr(stmt.where, identifiers, undefined, nestedContext)
   if (stmt.from && stmt.from.type === 'subquery') {
-    collectColumnsFromStatement(stmt.from.query, columns)
+    collectCorrelatedColumnsFromStatement(stmt.from.query, identifiers, nestedContext)
   }
   for (const join of stmt.joins) {
-    collectColumnsFromExpr(join.on, columns)
+    collectColumnsFromExpr(join.on, identifiers, undefined, nestedContext)
     if (join.fromFunction) {
       for (const arg of join.fromFunction.args) {
-        collectColumnsFromExpr(arg, columns)
+        collectColumnsFromExpr(arg, identifiers, undefined, nestedContext)
       }
     }
   }
-  for (const expr of stmt.groupBy) collectColumnsFromExpr(expr, columns)
-  collectColumnsFromExpr(stmt.having, columns)
-  for (const item of stmt.orderBy) collectColumnsFromExpr(item.expr, columns)
+  for (const expr of stmt.groupBy) collectColumnsFromExpr(expr, identifiers, undefined, nestedContext)
+  collectColumnsFromExpr(stmt.having, identifiers, undefined, nestedContext)
+  for (const item of stmt.orderBy) collectColumnsFromExpr(item.expr, identifiers, undefined, nestedContext)
+
+  const localColumns = context
+    ? collectScopeColumns({ select: stmt, cteColumns: context.cteColumns, tables: context.tables })
+    : new Set()
+  for (const identifier of identifiers) {
+    if (identifier.prefix &&
+      !scope.includes(identifier.prefix) &&
+      (context?.outerAliases?.has(identifier.prefix) || !localColumns.has(identifier.prefix))) {
+      columns.push(identifier)
+    }
+  }
 }
 
 /**
@@ -350,23 +383,24 @@ function collectColumnsFromStatement(stmt, columns) {
  *
  * @param {Statement} stmt
  * @param {IdentifierNode[]} columns
+ * @param {ColumnCollectionContext} [context]
  */
-function collectFromFunctionArgs(stmt, columns) {
+function collectFromFunctionArgs(stmt, columns, context) {
   if (stmt.type === 'compound') {
-    collectFromFunctionArgs(stmt.left, columns)
-    collectFromFunctionArgs(stmt.right, columns)
+    collectFromFunctionArgs(stmt.left, columns, context)
+    collectFromFunctionArgs(stmt.right, columns, context)
     return
   }
   if (stmt.type === 'with') {
-    collectFromFunctionArgs(stmt.query, columns)
+    collectFromFunctionArgs(stmt.query, columns, context)
     return
   }
   if (stmt.from?.type === 'function') {
     for (const arg of stmt.from.args) {
-      collectColumnsFromExpr(arg, columns)
+      collectColumnsFromExpr(arg, columns, undefined, context)
     }
   } else if (stmt.from?.type === 'subquery') {
-    collectFromFunctionArgs(stmt.from.query, columns)
+    collectFromFunctionArgs(stmt.from.query, columns, context)
   }
 }
 

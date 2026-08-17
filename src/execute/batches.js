@@ -4,7 +4,7 @@ import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { BatchProjection, CompiledBatchExpression } from '../internalTypes.js'
- * @import { AsyncBatch, BatchColumn, ColumnResult, ColumnVector, RowSelection, SqlPrimitive } from '../types.js'
+ * @import { AsyncBatch, BatchColumn, ColumnResult, ColumnVector, ReadColumn, RowSelection, SqlPrimitive } from '../types.js'
  */
 
 const INITIAL_FILTER_WINDOW_ROWS = 256
@@ -196,7 +196,7 @@ export async function* projectExpressionBatches(batches, projections) {
         /** @type {BatchColumn} */
         let column
         if (projection.type === 'column') {
-          column = batch.columns[projection.columnIndex]
+          column = projectedBatchColumn(batch, projection.columnIndex)
         } else if (projection.type === 'constant') {
           column = {
             type: 'constant',
@@ -216,6 +216,23 @@ export async function* projectExpressionBatches(batches, projections) {
       }),
     }
   }
+}
+
+/**
+ * Preserves the source batch's deferred-read cache through projection.
+ *
+ * @param {AsyncBatch} batch
+ * @param {number} columnIndex
+ * @returns {BatchColumn}
+ */
+function projectedBatchColumn(batch, columnIndex) {
+  const column = batch.columns[columnIndex]
+  if (!('read' in column)) return column
+  /** @type {ReadColumn} */
+  function readProjectedColumn({ selection, signal }) {
+    return readBatchColumn({ batch, columnIndex, selection, signal })
+  }
+  return { read: readProjectedColumn }
 }
 
 /**
