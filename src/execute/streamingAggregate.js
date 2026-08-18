@@ -5,6 +5,7 @@ import { evaluateAll, evaluateExpr } from '../expression/evaluate.js'
 import { collectColumnsFromExpr } from '../plan/columns.js'
 import { isAggregateFunc } from '../validation/functions.js'
 import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
+import { referencesRowScope } from './rowScope.js'
 import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
@@ -437,7 +438,7 @@ function compileBatchAggregateInputs(groupBy, specs, columns, context) {
   /** @type {CompiledBatchExpression[]} */
   const keys = []
   for (const expression of groupBy) {
-    if (referencesRowScope(expression, context)) return undefined
+    if (referencesRowScope(expression, columns, context)) return undefined
     const key = compileBatchExpression(expression, columns)
     if (!key) return undefined
     keys.push(key)
@@ -449,8 +450,8 @@ function compileBatchAggregateInputs(groupBy, specs, columns, context) {
   const args = []
   for (const spec of specs) {
     if (spec.node.filter && !spec.star) return undefined
-    if (spec.node.filter && referencesRowScope(spec.node.filter, context)) return undefined
-    if (!spec.star && referencesRowScope(spec.node.args[0], context)) return undefined
+    if (spec.node.filter && referencesRowScope(spec.node.filter, columns, context)) return undefined
+    if (!spec.star && referencesRowScope(spec.node.args[0], columns, context)) return undefined
     const filter = spec.node.filter
       ? compileBatchExpression(spec.node.filter, columns)
       : undefined
@@ -466,25 +467,6 @@ function compileBatchAggregateInputs(groupBy, specs, columns, context) {
     filters,
     args,
   }
-}
-
-/**
- * Returns whether an expression reads a qualified identifier whose table
- * scope the batch compiler cannot distinguish from struct-field access.
- *
- * @param {ExprNode} expression
- * @param {ExecuteContext} context
- * @returns {boolean}
- */
-function referencesRowScope(expression, context) {
-  /** @type {IdentifierNode[]} */
-  const identifiers = []
-  collectColumnsFromExpr(expression, identifiers)
-  return identifiers.some(function isScopedReference(identifier) {
-    return Boolean(identifier.prefix && (
-      context.scope?.includes(identifier.prefix) || context.outerAliases?.has(identifier.prefix)
-    ))
-  })
 }
 
 /**

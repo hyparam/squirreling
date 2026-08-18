@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { runInNewContext } from 'node:vm'
 import { collect, executeSql } from '../../src/index.js'
 
 /**
@@ -92,6 +93,41 @@ describe('batch aggregate execution', () => {
         FROM data`,
     }))).resolves.toEqual([{ middle_total: 5, without_two: 8 }])
     expect(source.scan).not.toHaveBeenCalled()
+  })
+
+  it('accepts asynchronous column results from another realm', async () => {
+    const source = preparedSource({
+      fields: [{ id: 1, name: 'id', dataType: { type: 'number' }, nullable: false }],
+    }, {
+      id: [1, 2],
+    }, true)
+
+    await expect(collect(executeSql({
+      tables: { data: source },
+      query: 'SELECT SUM(id) AS total FROM data',
+    }))).resolves.toEqual([{ total: 3 }])
+  })
+
+  it('keeps unambiguous qualified aggregate inputs on the native batch path', async () => {
+    const id = 8675309
+    const source = preparedSource({
+      fields: [{ id: 1, name: 'id', dataType: { type: 'number' }, nullable: false }],
+    }, {
+      id: [id],
+    })
+    const resolve = vi.spyOn(Promise, 'resolve')
+
+    try {
+      await expect(collect(executeSql({
+        tables: { data: source },
+        query: 'SELECT SUM(d.id) AS total FROM data d',
+      }))).resolves.toEqual([{ total: id }])
+      expect(resolve.mock.calls.some(function resolvedSourceValue([value]) {
+        return value === id
+      })).toBe(false)
+    } finally {
+      resolve.mockRestore()
+    }
   })
 
   it('preserves struct-field precedence over a bare column', async () => {
@@ -189,9 +225,10 @@ function columnSource(values) {
 /**
  * @param {RelationSchema} sourceSchema
  * @param {Record<string, import('../../src/types.js').SqlPrimitive[]>} values
+ * @param {boolean} [foreignPromise]
  * @returns {AsyncDataSource}
  */
-function preparedSource(sourceSchema, values) {
+function preparedSource(sourceSchema, values, foreignPromise) {
   const length = Object.values(values)[0]?.length ?? 0
   return {
     schema: sourceSchema,
@@ -211,7 +248,14 @@ function preparedSource(sourceSchema, values) {
           yield {
             selection: { type: 'all', length },
             columns: fields.map(function loadedField(field) {
-              return { type: 'values', values: values[field.name], length }
+              /** @type {import('../../src/types.js').ColumnVector} */
+              const vector = { type: 'values', values: values[field.name], length }
+              if (!foreignPromise) return vector
+              return {
+                read() {
+                  return runInNewContext('Promise.resolve(vector)', { vector })
+                },
+              }
             }),
           }
         },

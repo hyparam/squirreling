@@ -37,6 +37,44 @@ describe('batch adapters', () => {
     ])
   })
 
+  it('resolves cells concurrently within a bounded batch', async () => {
+    /** @type {string[]} */
+    const started = []
+    /** @type {(() => void)[]} */
+    const releases = []
+    /** @type {AsyncRow[]} */
+    const rows = [
+      {
+        columns: schema,
+        cells: {
+          id: deferredCell('first id', 1, started, releases),
+          name: deferredCell('first name', 'a', started, releases),
+        },
+      },
+      {
+        columns: schema,
+        cells: {
+          id: deferredCell('second id', 2, started, releases),
+          name: deferredCell('second name', 'b', started, releases),
+        },
+      },
+    ]
+    const iterator = rowsToBatches(asyncValues(rows), schema, { batchRows: 2 })[Symbol.asyncIterator]()
+
+    const pending = iterator.next()
+    await new Promise(function waitForReads(resolve) { setTimeout(resolve, 0) })
+    const startedBeforeRelease = [...started]
+    for (const release of releases) release()
+    await pending
+
+    expect(startedBeforeRelease).toEqual([
+      'first id',
+      'first name',
+      'second id',
+      'second name',
+    ])
+  })
+
   it('keeps deferred columns lazy through the row adapter', async () => {
     /** @type {ReadColumn} */
     function readColumn() {
@@ -172,6 +210,24 @@ function resolvedRow(values) {
       return [name, function readCell() { return Promise.resolve(value) }]
     })),
     resolved: values,
+  }
+}
+
+/**
+ * @param {string} label
+ * @param {import('../../src/types.js').SqlPrimitive} value
+ * @param {string[]} started
+ * @param {(() => void)[]} releases
+ * @returns {() => Promise<import('../../src/types.js').SqlPrimitive>}
+ */
+function deferredCell(label, value, started, releases) {
+  /** @type {(value: import('../../src/types.js').SqlPrimitive) => void} */
+  let resolve
+  const promise = new Promise(function pendingCell(done) { resolve = done })
+  releases.push(function releaseCell() { resolve(value) })
+  return function readCell() {
+    started.push(label)
+    return promise
   }
 }
 

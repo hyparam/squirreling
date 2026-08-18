@@ -1,10 +1,10 @@
-import { readBatchColumn, selectBatch, selectedRowCount, selectionOrdinals, valueAt } from '../backend/batch.js'
+import { isPromiseLike, readBatchColumn, resolveColumnResults, selectBatch, selectedRowCount, selectionOrdinals, valueAt } from '../backend/batch.js'
 import { keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { BatchProjection, CompiledBatchExpression } from '../internalTypes.js'
- * @import { AsyncBatch, BatchColumn, ColumnResult, ColumnVector, ReadColumn, RowSelection, SqlPrimitive } from '../types.js'
+ * @import { AsyncBatch, BatchColumn, ColumnVector, ReadColumn, RowSelection, SqlPrimitive } from '../types.js'
  */
 
 const INITIAL_FILTER_WINDOW_ROWS = 256
@@ -95,7 +95,7 @@ export async function* filterBatches(batches, expression, signal, targetRows) {
         signal,
         rowOffset: rowOffset + start,
       })
-      const predicate = result instanceof Promise ? await result : result
+      const predicate = isPromiseLike(result) ? await result : result
       const { selection, selectedCount } = predicateSelection(predicate, windowRowCount)
       start = end
       matchedRows += selectedCount
@@ -138,8 +138,8 @@ export async function* distinctBatches(batches, signal) {
     const results = batch.columns.map(function readColumn(_column, columnIndex) {
       return readBatchColumn({ batch, columnIndex, signal })
     })
-    const resolved = resolveVectors(results)
-    const vectors = resolved instanceof Promise ? await resolved : resolved
+    const resolved = resolveColumnResults(results)
+    const vectors = isPromiseLike(resolved) ? await resolved : resolved
     const rowCount = selectedRowCount(batch.selection)
     const indices = new Uint32Array(rowCount)
     /** @type {SqlPrimitive[]} */
@@ -254,21 +254,4 @@ function predicateSelection(predicate, rowCount) {
     selection: { type: 'indices', indices: indices.subarray(0, selectedCount), length: rowCount },
     selectedCount,
   }
-}
-
-/**
- * @param {ColumnResult[]} results
- * @returns {ColumnVector[] | Promise<ColumnVector[]>}
- */
-function resolveVectors(results) {
-  if (results.some(function isPromise(result) { return result instanceof Promise })) {
-    return Promise.all(results)
-  }
-  /** @type {ColumnVector[]} */
-  const vectors = []
-  for (const result of results) {
-    if (result instanceof Promise) throw new Error('Unexpected asynchronous column result')
-    vectors.push(result)
-  }
-  return vectors
 }
