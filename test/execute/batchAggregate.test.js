@@ -56,6 +56,21 @@ describe('private batch aggregate execution', () => {
       query: 'SELECT SUM(obj.x) AS total FROM (SELECT id AS obj, 99 AS x FROM data)',
     }))).resolves.toEqual([{ total: 5 }])
   })
+
+  it('preserves outer references in aggregate inputs', async () => {
+    await expect(collect(executeSql({
+      tables: {
+        users: [{ id: 1 }, { id: 2 }],
+        orders: columnSource([10, 20]),
+      },
+      query: `SELECT u.id,
+        (SELECT SUM(u.id + id) FROM orders) AS total
+        FROM users u ORDER BY u.id`,
+    }))).resolves.toEqual([
+      { id: 1, total: 32 },
+      { id: 2, total: 34 },
+    ])
+  })
 })
 
 /**

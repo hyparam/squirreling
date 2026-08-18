@@ -75,6 +75,13 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       if (qualified in row.cells) {
         return row.cells[qualified]()
       }
+      if (context.scope?.includes(node.prefix) && node.name in row.cells) {
+        return row.cells[node.name]()
+      }
+      if (context.outerRow && context.outerAliases?.has(node.prefix)) {
+        if (qualified in context.outerRow.cells) return context.outerRow.cells[qualified]()
+        if (node.name in context.outerRow.cells) return context.outerRow.cells[node.name]()
+      }
       const prefix = node.prefix + '.'
       const prefixedColumns = row.columns.filter(col => col.startsWith(prefix))
       if (prefixedColumns.length === 1) {
@@ -93,10 +100,6 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         if (isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, node.name)) {
           return value[node.name]
         }
-      }
-      // Check outer row for correlated subquery references
-      if (context.outerRow && context.outerAliases?.has(node.prefix) && node.name in context.outerRow.cells) {
-        return context.outerRow.cells[node.name]()
       }
       // Standalone `FROM UNNEST(...) AS alias` row has a single bare column;
       // `alias.field` should struct-access that column's element.

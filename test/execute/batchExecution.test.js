@@ -12,7 +12,7 @@ describe('native batch execution', () => {
     const source = columnSource(function chunks() { return [values] })
     const results = executeSql({
       tables: { data: source },
-      query: 'SELECT id AS value FROM data',
+      query: 'SELECT data.id AS value FROM data',
     })
 
     expect(Object.keys(results)).toEqual(['columns', 'numRows', 'maxRows', 'rows'])
@@ -176,6 +176,34 @@ describe('native batch execution', () => {
     expect(await collect(results)).toEqual([{ value: 3 }])
   })
 
+  it('preserves outer scope in filters above private batch subqueries', async () => {
+    const orders = columnSource(function chunks() { return [[1]] }, true, 'user_id')
+
+    await expect(collect(executeSql({
+      tables: { users: [{ id: 1 }, { id: 2 }], orders },
+      query: `SELECT u.id FROM users u
+        WHERE EXISTS (
+          SELECT 1 FROM (SELECT user_id AS id FROM orders) q
+          WHERE q.id = u.id
+        )
+        ORDER BY u.id`,
+    }))).resolves.toEqual([{ id: 1 }])
+  })
+
+  it('preserves outer scope in private batch projections', async () => {
+    const items = columnSource(function chunks() { return [[{ id: 99 }]] }, true, 'u')
+
+    await expect(collect(executeSql({
+      tables: { users: [{ id: 1 }, { id: 2 }], items },
+      query: `SELECT u.id,
+        (SELECT CASE WHEN u IS NOT NULL THEN u.id ELSE 0 END FROM items) AS projected
+        FROM users u ORDER BY u.id`,
+    }))).resolves.toEqual([
+      { id: 1, projected: 1 },
+      { id: 2, projected: 2 },
+    ])
+  })
+
   it('executes distinct over private computed batches', async () => {
     const source = columnSource(function chunks() { return [[1, 2, 3], [4, 5]] })
     const results = executeSql({
@@ -214,11 +242,12 @@ describe('native batch execution', () => {
 /**
  * @param {() => ArrayLike<import('../../src/types.js').SqlPrimitive>[]} readChunks
  * @param {boolean} [appliedLimitOffset]
+ * @param {string} [column]
  * @returns {AsyncDataSource}
  */
-function columnSource(readChunks, appliedLimitOffset = true) {
+function columnSource(readChunks, appliedLimitOffset = true, column = 'id') {
   return {
-    columns: ['id'],
+    columns: [column],
     scan: vi.fn(function scan() {
       throw new Error('row scan should not be called')
     }),

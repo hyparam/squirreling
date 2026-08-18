@@ -513,6 +513,42 @@ describe('streaming aggregate results', () => {
     ])
   })
 
+  it('preserves table-alias precedence in aggregate inputs', async () => {
+    const rows = [
+      { d: { keep: false }, keep: true },
+      { d: { keep: false }, keep: true },
+    ]
+
+    await expect(collect(executeSql({
+      tables: { rows },
+      query: `SELECT d.keep AS grouped, MAX(d) AS max_d, COUNTIF(d.keep) AS matching
+        FROM rows d GROUP BY d.keep`,
+    }))).resolves.toEqual([{
+      grouped: true,
+      max_d: { keep: false },
+      matching: 2,
+    }])
+  })
+
+  it('preserves each set operand scope in aggregate inputs', async () => {
+    const rows = [
+      { d: { keep: false }, e: { keep: false }, keep: true },
+      { d: { keep: false }, e: { keep: false }, keep: true },
+    ]
+
+    await expect(collect(executeSql({
+      tables: { rows },
+      query: `SELECT d.keep AS grouped, MAX(d) AS max_d, COUNTIF(d.keep) AS matching
+        FROM rows d GROUP BY d.keep
+        UNION ALL
+        SELECT e.keep AS grouped, MAX(e) AS max_d, COUNTIF(e.keep) AS matching
+        FROM rows e GROUP BY e.keep`,
+    }))).resolves.toEqual([
+      { grouped: true, max_d: { keep: false }, matching: 2 },
+      { grouped: true, max_d: { keep: false }, matching: 2 },
+    ])
+  })
+
   it('evaluates bigint literals alongside streamed aggregates', async () => {
     const result = await collect(executeSql({
       tables,

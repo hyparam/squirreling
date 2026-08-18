@@ -82,6 +82,8 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     all: compound.all,
     left,
     right,
+    leftScope: statementScope(compound.left),
+    rightScope: statementScope(compound.right),
   }
 
   if (compound.orderBy.length) {
@@ -206,7 +208,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */
   const hints = {}
-  const perTableColumns = extractColumns({ select: originalSelect, parentColumns })
+  const perTableColumns = extractColumns({ select: originalSelect, parentColumns, scopeColumns })
   if (sourceAlias !== undefined) hints.columns = perTableColumns.get(sourceAlias)
   // Capture what the parent reads from a FROM subquery before the reset
   // below, so aggregate outputs it never reads can still be pruned when the
@@ -406,7 +408,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
       return ctePlan
     }
     validateScan({ ...select.from, hints, tables })
-    return { type: 'Scan', table: select.from.table, hints }
+    return { type: 'Scan', table: select.from.table, alias: select.from.alias, hints }
   } else if (select.from.type === 'function') {
     for (const arg of select.from.args) {
       validateNoIdentifiers(arg, select.from.funcName, outerScope)
@@ -545,7 +547,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
         // For CTE joins, use CTE column metadata for hints
         rightHints.columns = perTableColumns.get(rightTable) ?? cteColumns?.get(join.table.toLowerCase())
       }
-      rightScan = ctePlan ?? { type: 'Scan', table: join.table, hints: rightHints }
+      rightScan = ctePlan ?? { type: 'Scan', table: join.table, alias: join.alias, hints: rightHints }
     }
 
     if (join.joinType === 'POSITIONAL') {

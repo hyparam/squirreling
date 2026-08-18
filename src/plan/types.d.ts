@@ -23,6 +23,7 @@ export type QueryPlan =
 export interface ScanNode {
   type: 'Scan'
   table: string
+  alias?: string
   hints: ScanOptions
 }
 
@@ -130,6 +131,8 @@ export interface SetOperationNode {
   all: boolean
   left: QueryPlan
   right: QueryPlan
+  leftScope?: string[]
+  rightScope?: string[]
 }
 
 // Wraps a derived-table or CTE subplan with the lexical alias scope of its
