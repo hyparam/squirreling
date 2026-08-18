@@ -18,6 +18,35 @@ export function selectedRowCount(selection) {
 }
 
 /**
+ * Recognizes promises and thenables without relying on realm identity.
+ *
+ * @template T
+ * @param {T | PromiseLike<T>} value
+ * @returns {value is PromiseLike<T>}
+ */
+export function isPromiseLike(value) {
+  if (value === null || typeof value !== 'object' && typeof value !== 'function') return false
+  return typeof Reflect.get(value, 'then') === 'function'
+}
+
+/**
+ * Avoids a promise boundary when every column is already loaded synchronously.
+ *
+ * @param {ColumnResult[]} results
+ * @returns {ColumnVector[] | Promise<ColumnVector[]>}
+ */
+export function resolveColumnResults(results) {
+  if (results.some(isPromiseLike)) return Promise.all(results)
+  /** @type {ColumnVector[]} */
+  const vectors = []
+  for (const result of results) {
+    if (isPromiseLike(result)) throw new Error('Unexpected asynchronous column result')
+    vectors.push(result)
+  }
+  return vectors
+}
+
+/**
  * Creates base-aligned ordinal values for the rows in a selection.
  *
  * @param {RowSelection} selection
@@ -158,8 +187,8 @@ export function readBatchColumn({ batch, columnIndex, selection = batch.selectio
       : undefined,
   })
   const validated = validateColumnResult(result, selectedRowCount(selection))
-  if (validated instanceof Promise) {
-    const settled = validated.then(function cacheResolved(vector) {
+  if (isPromiseLike(validated)) {
+    const settled = Promise.resolve(validated).then(function cacheResolved(vector) {
       cache.pending.delete(signal)
       cache.resolved ??= vector
       return vector
@@ -215,8 +244,8 @@ function selectionIndexAt(selection, index) {
  * @returns {ColumnResult}
  */
 function validateColumnResult(result, expectedLength) {
-  if (result instanceof Promise) {
-    return result.then(function validateResolvedVector(vector) {
+  if (isPromiseLike(result)) {
+    return Promise.resolve(result).then(function validateResolvedVector(vector) {
       return validateVectorLength(vector, expectedLength)
     })
   }

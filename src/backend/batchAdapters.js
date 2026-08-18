@@ -1,8 +1,8 @@
-import { readBatchColumn, selectVector, selectedRowCount, valueAt } from './batch.js'
+import { readBatchColumn, resolveColumnResults, selectVector, selectedRowCount, valueAt } from './batch.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 
 /**
- * @import { AsyncBatch, AsyncCells, AsyncRow, ColumnResult, ColumnVector, RowsToBatchesOptions, SqlPrimitive } from '../types.js'
+ * @import { AsyncBatch, AsyncCells, AsyncRow, RowsToBatchesOptions, SqlPrimitive } from '../types.js'
  */
 
 const DEFAULT_BATCH_ROWS = 1024
@@ -21,24 +21,19 @@ export async function* rowsToBatches(rows, columnNames, options) {
   if (!Number.isInteger(batchRows) || batchRows <= 0) {
     throw new RangeError(`batchRows must be a positive integer, got ${batchRows}`)
   }
-  let values = makeValueBuffers(columnNames.length)
-  let rowCount = 0
+  /** @type {AsyncRow[]} */
+  let bufferedRows = []
 
   for await (const row of rows) {
     options?.signal?.throwIfAborted()
-    for (let columnIndex = 0; columnIndex < columnNames.length; columnIndex++) {
-      const name = columnNames[columnIndex]
-      values[columnIndex].push(await readRowCell(row, name))
-    }
-    rowCount++
-    if (rowCount === batchRows) {
-      yield loadedBatch(values, rowCount)
-      values = makeValueBuffers(columnNames.length)
-      rowCount = 0
+    bufferedRows.push(row)
+    if (bufferedRows.length === batchRows) {
+      yield await materializeRows(bufferedRows, columnNames)
+      bufferedRows = []
     }
   }
 
-  if (rowCount > 0) yield loadedBatch(values, rowCount)
+  if (bufferedRows.length > 0) yield await materializeRows(bufferedRows, columnNames)
   options?.signal?.throwIfAborted()
 }
 
@@ -100,7 +95,7 @@ export async function collectBatches(batches, names, signal) {
     const results = batch.columns.map(function readColumn(_column, columnIndex) {
       return readBatchColumn({ batch, columnIndex, signal })
     })
-    const vectors = await resolveColumns(results)
+    const vectors = await resolveColumnResults(results)
     const rowCount = selectedRowCount(batch.selection)
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       if (signal && rowIndex % 4000 === 0) {
@@ -134,6 +129,27 @@ async function readRowCell(row, name) {
 }
 
 /**
+ * @param {AsyncRow[]} rows
+ * @param {string[]} columnNames
+ * @returns {Promise<AsyncBatch>}
+ */
+async function materializeRows(rows, columnNames) {
+  const values = makeValueBuffers(columnNames.length)
+  /** @type {Promise<void>[]} */
+  const pendingReads = []
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    for (let columnIndex = 0; columnIndex < columnNames.length; columnIndex++) {
+      const name = columnNames[columnIndex]
+      pendingReads.push(readRowCell(rows[rowIndex], name).then(function storeValue(value) {
+        values[columnIndex][rowIndex] = value
+      }))
+    }
+  }
+  await Promise.all(pendingReads)
+  return loadedBatch(values, rows.length)
+}
+
+/**
  * @param {number} count
  * @returns {SqlPrimitive[][]}
  */
@@ -156,23 +172,4 @@ function loadedBatch(values, rowCount) {
       return { type: 'values', values: columnValues, length: rowCount }
     }),
   }
-}
-
-/**
- * Avoids a promise boundary when every column is already loaded synchronously.
- *
- * @param {ColumnResult[]} results
- * @returns {ColumnVector[] | Promise<ColumnVector[]>}
- */
-function resolveColumns(results) {
-  if (results.some(function isPromise(result) { return result instanceof Promise })) {
-    return Promise.all(results)
-  }
-  /** @type {ColumnVector[]} */
-  const vectors = []
-  for (const result of results) {
-    if (result instanceof Promise) throw new Error('Unexpected asynchronous column result')
-    vectors.push(result)
-  }
-  return vectors
 }

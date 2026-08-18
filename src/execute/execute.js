@@ -12,6 +12,7 @@ import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { batchResult } from './batchResults.js'
 import { distinctBatches, filterBatches, limitBatches, projectExpressionBatches } from './batches.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
+import { referencesRowScope } from './rowScope.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -718,26 +719,6 @@ function compileUnscopedBatchExpression(expression, columns, context) {
   return referencesRowScope(expression, columns, context)
     ? undefined
     : compileBatchExpression(expression, columns)
-}
-
-/**
- * Returns whether an expression reads a qualified identifier from row scope.
- *
- * @param {ExprNode} expression
- * @param {string[]} columns
- * @param {ExecuteContext} context
- * @returns {boolean}
- */
-function referencesRowScope(expression, columns, context) {
-  /** @type {IdentifierNode[]} */
-  const identifiers = []
-  collectColumnsFromExpr(expression, identifiers)
-  return identifiers.some(function scopedIdentifier(identifier) {
-    return Boolean(identifier.prefix && (
-      context.outerAliases?.has(identifier.prefix) ||
-      context.scope?.includes(identifier.prefix) && columns.includes(identifier.prefix)
-    ))
-  })
 }
 
 /**

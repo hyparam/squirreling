@@ -1,4 +1,4 @@
-import { composeSelections, readBatchColumn, selectVector, selectedRowCount, valueAt } from '../backend/batch.js'
+import { composeSelections, isPromiseLike, readBatchColumn, resolveColumnResults, selectVector, selectedRowCount, valueAt } from '../backend/batch.js'
 import { isPlainObject, sqlEquals } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 import { isStringFunc } from '../validation/functions.js'
@@ -126,8 +126,8 @@ function compileKernelEvaluator(node, columns) {
       const results = dependencies.map(function readDependency(columnIndex) {
         return readBatchColumn({ batch, columnIndex, selection, signal })
       })
-      const vectors = resolveVectors(results)
-      if (vectors instanceof Promise) {
+      const vectors = resolveColumnResults(results)
+      if (isPromiseLike(vectors)) {
         return vectors.then(function evaluateResolved(resolved) {
           signal?.throwIfAborted()
           return evaluateKernel(kernel, resolved, selection, signal, rowOffset, rowOrdinals)
@@ -639,21 +639,4 @@ function readsIdentifier(node) {
   if (node.type === 'cast') return readsIdentifier(node.expr)
   if (node.type === 'function') return node.args.some(readsIdentifier)
   return false
-}
-
-/**
- * @param {ColumnResult[]} results
- * @returns {ColumnVector[] | Promise<ColumnVector[]>}
- */
-function resolveVectors(results) {
-  if (results.some(function isPromise(result) { return result instanceof Promise })) {
-    return Promise.all(results)
-  }
-  /** @type {ColumnVector[]} */
-  const vectors = []
-  for (const result of results) {
-    if (result instanceof Promise) throw new Error('Unexpected asynchronous column result')
-    vectors.push(result)
-  }
-  return vectors
 }
