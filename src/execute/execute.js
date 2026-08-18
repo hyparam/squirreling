@@ -1094,9 +1094,6 @@ function batchProjection(planColumns, outputColumns, childColumns, context) {
     projections.push({ type: 'expression', expression })
   }
   if (projections.length !== outputColumns.length) return undefined
-  for (let index = 0; index < projections.length; index++) {
-    projections[index] = projections[outputColumns.lastIndexOf(outputColumns[index])]
-  }
 
   return projections
 }
@@ -1110,7 +1107,7 @@ function identifierColumnIndex(identifier, childColumns) {
   const sourceName = identifier.prefix
     ? `${identifier.prefix}.${identifier.name}`
     : identifier.name
-  const index = childColumns.indexOf(sourceName)
+  const index = childColumns.lastIndexOf(sourceName)
   if (index >= 0) return index
 
   const suffix = `.${identifier.name}`

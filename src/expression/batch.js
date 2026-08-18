@@ -540,7 +540,7 @@ function resolveIdentifier(identifier, columns) {
   const sourceName = identifier.prefix
     ? `${identifier.prefix}.${identifier.name}`
     : identifier.name
-  const exact = columns.indexOf(sourceName)
+  const exact = columns.lastIndexOf(sourceName)
   if (exact >= 0) return [{ columnIndex: exact }]
 
   if (identifier.prefix) {
@@ -562,7 +562,7 @@ function resolveIdentifier(identifier, columns) {
     if (baseMatches.length === 1) {
       accesses.push({ columnIndex: baseMatches[0], field: identifier.name })
     }
-    const bare = columns.indexOf(identifier.name)
+    const bare = columns.lastIndexOf(identifier.name)
     if (bare >= 0) accesses.push({ columnIndex: bare })
     return accesses.length > 0 ? accesses : undefined
   }

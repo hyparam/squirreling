@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, readBatchColumn, valueAt } from '../../src/index.js'
 
 /**
  * @import { AsyncDataSource, ScanColumnResults } from '../../src/types.js'
@@ -204,7 +204,26 @@ describe('native batch execution', () => {
     expect(await collect(results)).toEqual([{ value: 1 }, { value: 0 }])
   })
 
-  it('falls back to row projection for duplicate aliases', async () => {
+  it('preserves duplicate alias projections by batch position', async () => {
+    const source = columnSource(function chunks() { return [[1, 2]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id AS x, id + 1 AS x FROM data',
+    })
+
+    expect(results.batches).toBeTypeOf('function')
+    if (!results.batches) throw new Error('expected native batches')
+    const iterator = results.batches()[Symbol.asyncIterator]()
+    const first = await iterator.next()
+    if (first.done) throw new Error('expected a batch')
+    const left = await readBatchColumn({ batch: first.value, columnIndex: 0 })
+    const right = await readBatchColumn({ batch: first.value, columnIndex: 1 })
+
+    expect([valueAt(left, 0), valueAt(left, 1)]).toEqual([1, 2])
+    expect([valueAt(right, 0), valueAt(right, 1)]).toEqual([2, 3])
+  })
+
+  it('uses the last duplicate alias in downstream batch expressions', async () => {
     const source = columnSource(function chunks() { return [[1, 2]] })
     const results = executeSql({
       tables: { data: source },
@@ -213,6 +232,17 @@ describe('native batch execution', () => {
 
     expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ x: 1 }])
+  })
+
+  it('uses the last duplicate alias for qualified downstream batch expressions', async () => {
+    const source = columnSource(function chunks() { return [[1, 2, 3]] })
+    const results = executeSql({
+      tables: { data: source },
+      query: 'SELECT id FROM (SELECT id, id AS x, 1 AS x FROM data) q WHERE q.x = 1',
+    })
+
+    expect(results.batches).toBeTypeOf('function')
+    expect(await collect(results)).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
   })
 
   it('preserves projected row positions through a later offset', async () => {
