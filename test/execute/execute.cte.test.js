@@ -247,6 +247,27 @@ describe('CTE execution', () => {
     })
   })
 
+  it('should preserve table alias precedence inside a CTE', async () => {
+    const rows = [{ t: { keep: false }, keep: true }]
+
+    await expect(collect(executeSql({
+      tables: { rows },
+      query: 'WITH q AS (SELECT t FROM rows t WHERE t.keep) SELECT * FROM q',
+    }))).resolves.toEqual([{ t: { keep: false } }])
+
+    await expect(collect(executeSql({
+      tables: { rows },
+      query: `WITH q AS (
+          SELECT t FROM rows t WHERE t.keep
+          UNION ALL
+          SELECT t FROM rows t WHERE t.keep
+        ) SELECT * FROM q`,
+    }))).resolves.toEqual([
+      { t: { keep: false } },
+      { t: { keep: false } },
+    ])
+  })
+
   describe('CTE in expression subquery', () => {
     it('should resolve CTE in a scalar subquery', async () => {
       const result = await collect(executeSql({

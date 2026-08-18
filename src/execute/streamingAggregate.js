@@ -431,12 +431,14 @@ async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, contex
  * @param {ExprNode[]} groupBy
  * @param {StreamingAggSpec[]} specs
  * @param {readonly string[]} columns
+ * @param {ExecuteContext} context
  * @returns {BatchAggregateInputs | undefined}
  */
-function compileBatchAggregateInputs(groupBy, specs, columns) {
+function compileBatchAggregateInputs(groupBy, specs, columns, context) {
   /** @type {CompiledBatchExpression[]} */
   const keys = []
   for (const expression of groupBy) {
+    if (referencesOuterScope(expression, context)) return undefined
     const key = compileBatchExpression(expression, columns)
     if (!key) return undefined
     keys.push(key)
@@ -448,6 +450,8 @@ function compileBatchAggregateInputs(groupBy, specs, columns) {
   const args = []
   for (const spec of specs) {
     if (spec.node.filter && !spec.star) return undefined
+    if (spec.node.filter && referencesOuterScope(spec.node.filter, context)) return undefined
+    if (!spec.star && referencesOuterScope(spec.node.args[0], context)) return undefined
     const filter = spec.node.filter
       ? compileBatchExpression(spec.node.filter, columns)
       : undefined
@@ -463,6 +467,25 @@ function compileBatchAggregateInputs(groupBy, specs, columns) {
     filters,
     args,
   }
+}
+
+/**
+ * Returns whether an expression reads a qualified identifier from the
+ * enclosing query rather than the current aggregate input.
+ *
+ * @param {ExprNode} expression
+ * @param {ExecuteContext} context
+ * @returns {boolean}
+ */
+function referencesOuterScope(expression, context) {
+  /** @type {IdentifierNode[]} */
+  const identifiers = []
+  collectColumnsFromExpr(expression, identifiers)
+  return identifiers.some(function isOuterReference(identifier) {
+    return Boolean(identifier.prefix &&
+      context.outerAliases?.has(identifier.prefix) &&
+      !context.scope?.includes(identifier.prefix))
+  })
 }
 
 /**
@@ -553,7 +576,7 @@ async function accumulateGroups({ child, groupBy, specs, needsRow, context }) {
   const groups = new Map()
   const batchResults = batchResultsFor(child)
   const batchInputs = batchResults && !needsRow
-    ? compileBatchAggregateInputs(groupBy, specs, batchResults.columns)
+    ? compileBatchAggregateInputs(groupBy, specs, batchResults.columns, context)
     : undefined
   if (batchInputs && batchResults) {
     let rowOffset = 0

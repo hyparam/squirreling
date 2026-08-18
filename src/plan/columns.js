@@ -60,9 +60,10 @@ export function tableFunctionColumnNames(from) {
  * @param {object} options
  * @param {SelectStatement} options.select
  * @param {IdentifierNode[]} [options.parentColumns] - columns needed by the parent query
+ * @param {Set<string>} [options.scopeColumns] - bare column names available in the current scope
  * @returns {Map<string, string[] | undefined>}
  */
-export function extractColumns({ select, parentColumns }) {
+export function extractColumns({ select, parentColumns, scopeColumns }) {
   /** @type {Map<string, string[] | undefined>} */
   const result = new Map()
 
@@ -175,9 +176,18 @@ export function extractColumns({ select, parentColumns }) {
   // Partition identifiers by table prefix
   for (const { prefix, name } of identifiers) {
     if (prefix) {
-      // Qualified: add to matching table only
-      const set = perTable.get(prefix)
-      if (set) set.add(name)
+      if (perTable.has(prefix)) {
+        // Table-qualified: add to the matching table only
+        perTable.get(prefix)?.add(name)
+      } else if (scopeColumns?.has(prefix)) {
+        // Struct-field access: the prefix is the source column being read.
+        if (aliases.length === 1) {
+          perTable.get(aliases[0])?.add(prefix)
+        } else {
+          // As with an unqualified column in a join, its owner is ambiguous.
+          for (const alias of aliases) perTable.set(alias, undefined)
+        }
+      }
     } else if (aliases.length > 1) {
       // Unqualified in a JOIN: can't disambiguate, request all columns from all tables
       for (const alias of aliases) {

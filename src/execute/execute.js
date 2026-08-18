@@ -4,7 +4,7 @@ import { compileBatchExpression } from '../expression/batch.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { parseSql } from '../parse/parse.js'
 import { planSql, planStatement } from '../plan/plan.js'
-import { statementScope } from '../plan/columns.js'
+import { collectColumnsFromExpr, statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
 import { batchResult, batchResultsFor } from './batchResults.js'
@@ -17,7 +17,7 @@ import { executeWindow } from './window.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, BatchProjection, ColumnVector } from '../internalTypes.js'
+ * @import { AsyncBatch, BatchProjection, ColumnVector, CompiledBatchExpression } from '../internalTypes.js'
  * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
@@ -282,6 +282,7 @@ export function executeScan(plan, context, existingColumnResult) {
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
   const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
+  const scanContext = { ...context, scope: [plan.alias ?? plan.table] }
 
   // Fast path: single column scan. As with scan(), hints the source did not
   // apply are handled by the engine over the returned column values.
@@ -353,7 +354,7 @@ export function executeScan(plan, context, existingColumnResult) {
           }
         })()
 
-        result = filterRows(result, plan.hints.where, context, plan.hints.limit)
+        result = filterRows(result, plan.hints.where, scanContext, plan.hints.limit)
         // Filtered LIMIT/OFFSET was intentionally not passed to scanColumn.
         if (!appliedLimitOffset && hasLimitOffset) {
           result = limitRows(result, plan.hints.limit, plan.hints.offset, signal)
@@ -386,7 +387,7 @@ export function executeScan(plan, context, existingColumnResult) {
 
       // Apply WHERE if data source did not
       if (!appliedWhere && plan.hints.where) {
-        result = filterRows(result, plan.hints.where, context, plan.hints.limit)
+        result = filterRows(result, plan.hints.where, scanContext, plan.hints.limit)
       }
 
       // Apply LIMIT/OFFSET if data source did not
@@ -546,6 +547,41 @@ async function* limitRows(rows, limit = Infinity, offset = 0, signal) {
 }
 
 /**
+ * Compiles a batch expression only when qualified identifiers do not depend
+ * on current or outer row scope.
+ *
+ * @param {ExprNode} expression
+ * @param {string[]} columns
+ * @param {ExecuteContext} context
+ * @returns {CompiledBatchExpression | undefined}
+ */
+function compileUnscopedBatchExpression(expression, columns, context) {
+  return referencesRowScope(expression, columns, context)
+    ? undefined
+    : compileBatchExpression(expression, columns)
+}
+
+/**
+ * Returns whether an expression reads a qualified identifier from row scope.
+ *
+ * @param {ExprNode} expression
+ * @param {string[]} columns
+ * @param {ExecuteContext} context
+ * @returns {boolean}
+ */
+function referencesRowScope(expression, columns, context) {
+  /** @type {IdentifierNode[]} */
+  const identifiers = []
+  collectColumnsFromExpr(expression, identifiers)
+  return identifiers.some(function scopedIdentifier(identifier) {
+    return Boolean(identifier.prefix && (
+      context.outerAliases?.has(identifier.prefix) ||
+      context.scope?.includes(identifier.prefix) && columns.includes(identifier.prefix)
+    ))
+  })
+}
+
+/**
  * Executes a filter operation (WHERE clause)
  *
  * @param {FilterNode} plan
@@ -556,7 +592,7 @@ function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   const childBatches = batchResultsFor(child)
   const expression = childBatches
-    ? compileBatchExpression(plan.condition, childBatches.columns)
+    ? compileUnscopedBatchExpression(plan.condition, childBatches.columns, context)
     : undefined
   if (expression && childBatches) {
     const readChildBatches = childBatches.batches
@@ -589,13 +625,18 @@ function executeProject(plan, context) {
   const child = executePlan({ plan: plan.child, context })
   const columns = selectColumnNames(plan.columns, child.columns)
 
-  const resolveable = plan.columns.every(col =>
-    col.type === 'star' || col.type === 'derived' && col.expr.type === 'identifier'
-  )
+  const resolveable = plan.columns.every(function resolvesDirectly(column) {
+    if (column.type === 'star') return true
+    if (column.expr.type !== 'identifier') return false
+    const sourceName = column.expr.prefix
+      ? `${column.expr.prefix}.${column.expr.name}`
+      : column.expr.name
+    return child.columns.includes(sourceName)
+  })
 
   const childBatches = batchResultsFor(child)
   const projection = childBatches
-    ? batchProjection(plan.columns, columns, child.columns)
+    ? batchProjection(plan.columns, columns, child.columns, context)
     : undefined
   if (projection && childBatches) {
     const readChildBatches = childBatches.batches
@@ -861,9 +902,10 @@ function isNumericArray(values) {
  * @param {SelectColumn[]} planColumns
  * @param {string[]} outputColumns
  * @param {string[]} childColumns
+ * @param {ExecuteContext} context
  * @returns {BatchProjection[] | undefined}
  */
-function batchProjection(planColumns, outputColumns, childColumns) {
+function batchProjection(planColumns, outputColumns, childColumns, context) {
   /** @type {BatchProjection[]} */
   const projections = []
   for (const column of planColumns) {
@@ -876,6 +918,8 @@ function batchProjection(planColumns, outputColumns, childColumns) {
       }
       continue
     }
+
+    if (referencesRowScope(column.expr, childColumns, context)) return undefined
 
     if (column.expr.type === 'literal') {
       projections.push({ type: 'constant', value: column.expr.value })
@@ -932,11 +976,13 @@ function identifierColumnIndex(identifier, childColumns) {
  */
 function executeSetOperation(plan, context) {
   const { signal } = context
+  const leftContext = plan.leftScope === undefined ? context : { ...context, scope: plan.leftScope }
+  const rightContext = plan.rightScope === undefined ? context : { ...context, scope: plan.rightScope }
+  const left = executePlan({ plan: plan.left, context: leftContext })
+  const right = executePlan({ plan: plan.right, context: rightContext })
 
   if (plan.operator === 'UNION') {
     if (plan.all) {
-      const left = executePlan({ plan: plan.left, context })
-      const right = executePlan({ plan: plan.right, context })
       return {
         columns: left.columns,
         numRows: addBounds(left.numRows, right.numRows),
@@ -948,8 +994,6 @@ function executeSetOperation(plan, context) {
         },
       }
     } else {
-      const left = executePlan({ plan: plan.left, context })
-      const right = executePlan({ plan: plan.right, context })
       return {
         columns: left.columns,
         maxRows: addBounds(left.maxRows, right.maxRows),
@@ -985,8 +1029,6 @@ function executeSetOperation(plan, context) {
       }
     }
   } else if (plan.operator === 'INTERSECT') {
-    const left = executePlan({ plan: plan.left, context })
-    const right = executePlan({ plan: plan.right, context })
     return {
       columns: left.columns,
       maxRows: minBounds(left.maxRows, right.maxRows),
@@ -1040,8 +1082,6 @@ function executeSetOperation(plan, context) {
     }
   } else {
     // EXCEPT
-    const left = executePlan({ plan: plan.left, context })
-    const right = executePlan({ plan: plan.right, context })
     return {
       columns: left.columns,
       maxRows: left.maxRows,

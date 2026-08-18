@@ -143,6 +143,29 @@ describe('columns with dots in names', () => {
     })
   })
 
+  describe('struct field references', () => {
+    it('should project a struct field', async () => {
+      const rows = [{ obj: { x: 1 } }, { obj: { x: 2 } }]
+
+      await expect(collect(executeSql({
+        tables: { rows },
+        query: 'SELECT obj.x FROM rows',
+      }))).resolves.toEqual([{ x: 1 }, { x: 2 }])
+    })
+
+    it('should order by a struct field', async () => {
+      const rows = [
+        { obj: { x: 2 }, payload: 'second' },
+        { obj: { x: 1 }, payload: 'first' },
+      ]
+
+      await expect(collect(executeSql({
+        tables: { rows },
+        query: 'SELECT payload FROM rows ORDER BY obj.x',
+      }))).resolves.toEqual([{ payload: 'first' }, { payload: 'second' }])
+    })
+  })
+
   describe('table-qualified column references', () => {
     it('should resolve table.column for regular columns', async () => {
       const result = await collect(executeSql({
@@ -181,6 +204,15 @@ describe('columns with dots in names', () => {
         { x: 2, real_x: 1 },
         { x: 1, real_x: 2 },
       ])
+    })
+
+    it('should prefer a table alias over a struct column', async () => {
+      const rows = [{ d: { keep: false }, keep: true }]
+
+      await expect(collect(executeSql({
+        tables: { rows },
+        query: 'SELECT d FROM rows d WHERE d.keep',
+      }))).resolves.toEqual([{ d: { keep: false } }])
     })
   })
 
