@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.1]
+ - Fix async fallbacks in native columnar batch execution
+
 ## [0.16.0]
  - Add native async columnar batch execution
  - Add optional `batches()` to query results
