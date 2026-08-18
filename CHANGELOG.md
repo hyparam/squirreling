@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.16.0]
+ - Add native async columnar batch execution
+ - Add optional `batches()` to query results
+ - Support `prepareScan` and `schema` on data sources for columnar scans
+
 ## [0.15.3]
  - Use SQL three-valued logic for `NULL` in comparisons and boolean operators
 
