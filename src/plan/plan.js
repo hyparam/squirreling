@@ -208,7 +208,14 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   // included so they are only applied to fresh scans, not CTE/subquery plans)
   /** @type {ScanOptions} */
   const hints = {}
-  const perTableColumns = extractColumns({ select: originalSelect, parentColumns, scopeColumns })
+  const perTableColumns = extractColumns({
+    select: originalSelect,
+    parentColumns,
+    scopeColumns,
+    cteColumns,
+    tables,
+    outerScope,
+  })
   if (sourceAlias !== undefined) hints.columns = perTableColumns.get(sourceAlias)
   // Capture what the parent reads from a FROM subquery before the reset
   // below, so aggregate outputs it never reads can still be pruned when the

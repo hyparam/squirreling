@@ -1,4 +1,6 @@
-import { memorySource } from '../backend/dataSource.js'
+import { selectedRowCount } from '../backend/batch.js'
+import { batchesToRows } from '../backend/batchAdapters.js'
+import { dataSourceColumns, memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { compileBatchExpression } from '../expression/batch.js'
 import { evaluateExpr } from '../expression/evaluate.js'
@@ -7,7 +9,7 @@ import { planSql, planStatement } from '../plan/plan.js'
 import { collectColumnsFromExpr, statementScope } from '../plan/columns.js'
 import { validateScan, validateTable } from '../validation/tables.js'
 import { executeHashAggregate, executeScalarAggregate } from './aggregates.js'
-import { batchResult, batchResultsFor } from './batchResults.js'
+import { batchResult } from './batchResults.js'
 import { distinctBatches, filterBatches, limitBatches, projectExpressionBatches } from './batches.js'
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
@@ -17,8 +19,8 @@ import { executeWindow } from './window.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { AsyncBatch, BatchProjection, ColumnVector, CompiledBatchExpression } from '../internalTypes.js'
- * @import { AsyncCells, AsyncDataSource, AsyncRow, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, QueryResults, SelectColumn, SqlPrimitive, Statement } from '../types.js'
+ * @import { BatchProjection, CompiledBatchExpression } from '../internalTypes.js'
+ * @import { AsyncBatch, AsyncCells, AsyncDataSource, AsyncRow, ColumnDemand, ColumnVector, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, PreparedScan, QueryResults, RelationSchema, ScanRequest, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
 
@@ -284,6 +286,11 @@ export function executeScan(plan, context, existingColumnResult) {
   const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
   const scanContext = { ...context, scope: [plan.alias ?? plan.table] }
 
+  if (!existingColumnResult && table.prepareScan && table.schema) {
+    const prepared = table.prepareScan(scanRequest(plan, table.schema, scanContext))
+    return executePreparedScan({ plan, prepared, context: scanContext, table })
+  }
+
   // Fast path: single column scan. As with scan(), hints the source did not
   // apply are handled by the engine over the returned column values.
   const scanColumnOptions = plan.hints.columns?.length === 1
@@ -310,7 +317,7 @@ export function executeScan(plan, context, existingColumnResult) {
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
       /** @type {AsyncIterable<AsyncBatch>} */
-      let batches = columnBatches(columnResult.chunks(), columns, signal)
+      let batches = columnBatches(columnResult.chunks(), signal)
       if (residualFilter) {
         const targetRows = plan.hints.limit === undefined
           ? undefined
@@ -368,6 +375,10 @@ export function executeScan(plan, context, existingColumnResult) {
     }
   }
 
+  if (!table.scan) {
+    throw new Error(`Data source "${plan.table}" does not implement scan()`)
+  }
+
   // do the scan
   const scanResult = table.scan({ ...plan.hints, signal })
   const { appliedWhere, appliedLimitOffset } = scanResult
@@ -379,7 +390,7 @@ export function executeScan(plan, context, existingColumnResult) {
 
   const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
   return {
-    columns: plan.hints.columns ?? table.columns,
+    columns: plan.hints.columns ?? dataSourceColumns(table),
     numRows: !plan.hints.where ? scanRows : undefined,
     maxRows: scanRows,
     async *rows() {
@@ -405,6 +416,137 @@ export function executeScan(plan, context, existingColumnResult) {
 }
 
 /**
+ * Executes a prepared native-batch scan and applies only the residual work
+ * reported by the source.
+ *
+ * @param {Object} options
+ * @param {ScanNode} options.plan
+ * @param {PreparedScan} options.prepared
+ * @param {ExecuteContext} options.context
+ * @param {AsyncDataSource} options.table
+ * @returns {QueryResults}
+ */
+function executePreparedScan({ plan, prepared, context, table }) {
+  const { signal } = context
+  const { residual, properties, schema } = prepared
+  const hasRequestedRange = plan.hints.limit !== undefined || Boolean(plan.hints.offset)
+  if (residual.filter && hasRequestedRange && (
+    residual.limit !== plan.hints.limit || (residual.offset ?? 0) !== (plan.hints.offset ?? 0)
+  )) {
+    throw new Error(`Data source "${plan.table}" applied limit/offset without applying where`)
+  }
+  const columns = schema.fields.map(function fieldName(field) { return field.name })
+  const residualFilter = residual.filter
+    ? compileUnscopedBatchExpression(residual.filter, columns, context)
+    : undefined
+  const canUseBatches = !residual.filter || residualFilter !== undefined
+
+  /** @returns {AsyncIterable<AsyncBatch>} */
+  function makeBatches() {
+    /** @type {AsyncIterable<AsyncBatch>} */
+    let batches = prepared.batches({ signal })
+    if (residualFilter) {
+      const targetRows = residual.limit === undefined
+        ? undefined
+        : residual.limit + (residual.offset ?? 0)
+      batches = filterBatches(batches, residualFilter, signal, targetRows)
+    }
+    if (residual.limit !== undefined || residual.offset) {
+      batches = limitBatches(batches, residual.limit, residual.offset, signal)
+    }
+    return batches
+  }
+
+  const exactRows = properties.exactRows === undefined
+    ? computeScanRows(plan.hints.where ? undefined : table.numRows, plan.hints.limit, plan.hints.offset)
+    : computeScanRows(properties.exactRows, residual.limit, residual.offset)
+  const preparedMaxRows = properties.maxRows ?? properties.exactRows
+  const maxRows = preparedMaxRows === undefined
+    ? computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
+    : computeScanRows(preparedMaxRows, residual.limit, residual.offset)
+  const metadata = {
+    columns,
+    numRows: residual.filter ? undefined : exactRows,
+    maxRows,
+  }
+  if (canUseBatches) {
+    return batchResult({ ...metadata, batches: makeBatches, signal })
+  }
+  return {
+    ...metadata,
+    async *rows() {
+      let result = batchesToRows(prepared.batches({ signal }), columns, signal)
+      if (residual.filter) result = filterRows(result, residual.filter, context, residual.limit)
+      if (residual.limit !== undefined || residual.offset) {
+        result = limitRows(result, residual.limit, residual.offset, signal)
+      }
+      yield* result
+      signal?.throwIfAborted()
+    },
+  }
+}
+
+/**
+ * Builds a generic demand schedule from the scan's logical columns. Predicate
+ * fields are required in phase zero; remaining output fields stay deferred.
+ *
+ * @param {ScanNode} plan
+ * @param {RelationSchema} schema
+ * @param {ExecuteContext} context
+ * @returns {ScanRequest}
+ */
+function scanRequest(plan, schema, context) {
+  const currentScope = context.scope ?? [plan.table]
+  /** @type {IdentifierNode[]} */
+  const predicateIdentifiers = []
+  collectColumnsFromExpr(plan.hints.where, predicateIdentifiers, undefined, {
+    cteColumns: context.cteColumns,
+    tables: context.tables,
+    outerAliases: new Set([...currentScope, ...context.outerAliases ?? []]),
+  })
+  const predicateNames = new Set()
+  for (const identifier of predicateIdentifiers) {
+    if (!identifier.prefix) {
+      predicateNames.add(identifier.name)
+      continue
+    }
+    if (currentScope.includes(identifier.prefix)) {
+      predicateNames.add(identifier.name)
+      continue
+    }
+    if (context.outerAliases?.has(identifier.prefix)) continue
+    const baseField = schema.fields.some(function fieldOwnsPrefix(field) {
+      return field.name === identifier.prefix
+    })
+    if (baseField) predicateNames.add(identifier.prefix)
+  }
+  const requestedNames = plan.hints.columns
+    ? [...plan.hints.columns]
+    : schema.fields.map(function fieldName(field) { return field.name })
+  for (const name of predicateNames) {
+    if (!requestedNames.includes(name)) requestedNames.push(name)
+  }
+  /** @type {ColumnDemand[]} */
+  const columns = requestedNames.map(function columnDemand(name) {
+    const field = schema.fields.find(function fieldName(candidate) { return candidate.name === name })
+    if (!field) throw new Error(`Prepared source schema does not contain column "${name}"`)
+    const predicate = predicateNames.has(name)
+    return {
+      field: field.id,
+      phase: predicate ? 0 : 1,
+      purpose: predicate ? 'filter' : 'output',
+      mode: predicate ? 'required' : 'deferred',
+    }
+  })
+  return {
+    columns,
+    filter: plan.hints.where,
+    limit: plan.hints.limit,
+    offset: plan.hints.offset,
+  }
+}
+
+/**
  * Executes a Count node using numRows when available, falling back to scan
  *
  * @param {CountNode} plan
@@ -426,7 +568,24 @@ function executeCount(plan, context) {
         // Use source numRows if available
         if (table.numRows !== undefined) return table.numRows
 
+        if (table.prepareScan && table.schema) {
+          const prepared = table.prepareScan({ columns: [] })
+          if (prepared.properties.exactRows !== undefined) {
+            return prepared.properties.exactRows
+          }
+          let count = 0
+          for await (const batch of prepared.batches({ signal })) {
+            signal?.throwIfAborted()
+            count += selectedRowCount(batch.selection)
+          }
+          signal?.throwIfAborted()
+          return count
+        }
+
         // Fall back to counting rows via scan
+        if (!table.scan) {
+          throw new Error(`Data source "${plan.table}" does not implement scan()`)
+        }
         let count = 0
         const { rows } = table.scan({ signal })
         // eslint-disable-next-line no-unused-vars
@@ -590,12 +749,11 @@ function referencesRowScope(expression, columns, context) {
  */
 function executeFilter(plan, context) {
   const child = executePlan({ plan: plan.child, context })
-  const childBatches = batchResultsFor(child)
-  const expression = childBatches
-    ? compileUnscopedBatchExpression(plan.condition, childBatches.columns, context)
+  const expression = child.batches
+    ? compileUnscopedBatchExpression(plan.condition, child.columns, context)
     : undefined
-  if (expression && childBatches) {
-    const readChildBatches = childBatches.batches
+  if (expression && child.batches) {
+    const readChildBatches = child.batches
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
       return filterBatches(readChildBatches(), expression, context.signal)
@@ -634,15 +792,14 @@ function executeProject(plan, context) {
     return child.columns.includes(sourceName)
   })
 
-  const childBatches = batchResultsFor(child)
-  const projection = childBatches
+  const projection = child.batches
     ? batchProjection(plan.columns, columns, child.columns, context)
     : undefined
-  if (projection && childBatches) {
-    const readChildBatches = childBatches.batches
+  if (projection && child.batches) {
+    const readChildBatches = child.batches
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
-      return projectExpressionBatches(readChildBatches(), columns, projection)
+      return projectExpressionBatches(readChildBatches(), projection)
     }
     return batchResult({
       columns,
@@ -741,9 +898,8 @@ function executeProject(plan, context) {
  */
 function executeDistinct(plan, context) {
   const child = executePlan({ plan: plan.child, context })
-  const childBatches = batchResultsFor(child)
-  if (childBatches) {
-    const readChildBatches = childBatches.batches
+  if (child.batches) {
+    const readChildBatches = child.batches
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
       return distinctBatches(readChildBatches(), context.signal)
@@ -813,9 +969,8 @@ function executeDistinct(plan, context) {
  */
 function executeLimit(plan, context) {
   const child = executePlan({ plan: plan.child, context })
-  const childBatches = batchResultsFor(child)
-  if (childBatches) {
-    const readChildBatches = childBatches.batches
+  if (child.batches) {
+    const readChildBatches = child.batches
     /** @returns {AsyncIterable<AsyncBatch>} */
     function makeBatches() {
       return limitBatches(readChildBatches(), plan.limit, plan.offset, context.signal)
@@ -841,17 +996,15 @@ function executeLimit(plan, context) {
  * arrays. Each source chunk remains the async scheduling unit.
  *
  * @param {AsyncIterable<ArrayLike<SqlPrimitive>>} chunks
- * @param {string[]} columnNames
  * @param {AbortSignal} [signal]
  * @yields {AsyncBatch}
  */
-async function* columnBatches(chunks, columnNames, signal) {
+async function* columnBatches(chunks, signal) {
   for await (const chunk of chunks) {
     signal?.throwIfAborted()
     const vector = vectorFromChunk(chunk)
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames,
       selection: { type: 'all', length: vector.length },
       columns: [vector],
     }
@@ -880,7 +1033,7 @@ function vectorFromChunk(chunk) {
 
 /**
  * @param {ArrayLike<SqlPrimitive>} values
- * @returns {values is import('../internalTypes.js').NumericArray}
+ * @returns {values is import('../types.js').NumericArray}
  */
 function isNumericArray(values) {
   return values instanceof Int8Array
@@ -941,9 +1094,6 @@ function batchProjection(planColumns, outputColumns, childColumns, context) {
     projections.push({ type: 'expression', expression })
   }
   if (projections.length !== outputColumns.length) return undefined
-  for (let index = 0; index < projections.length; index++) {
-    projections[index] = projections[outputColumns.lastIndexOf(outputColumns[index])]
-  }
 
   return projections
 }
@@ -957,7 +1107,7 @@ function identifierColumnIndex(identifier, childColumns) {
   const sourceName = identifier.prefix
     ? `${identifier.prefix}.${identifier.name}`
     : identifier.name
-  const index = childColumns.indexOf(sourceName)
+  const index = childColumns.lastIndexOf(sourceName)
   if (index >= 0) return index
 
   const suffix = `.${identifier.name}`

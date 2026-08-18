@@ -1,19 +1,38 @@
-import type { AsyncDataSource, AsyncRow, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncBatch, AsyncDataSource, AsyncRow, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RowsToBatchesOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
 export type {
+  AsyncBatch,
   AsyncCells,
   AsyncDataSource,
   AsyncRow,
+  BatchColumn,
+  ColumnDemand,
+  ColumnReadRequest,
+  ColumnResult,
+  ColumnVector,
   ExecuteContext,
   ExecuteSqlOptions,
   ExprNode,
+  Field,
+  NumericArray,
   ParseSqlOptions,
   PlanSqlOptions,
+  PreparedScan,
+  PrepareScan,
   QueryPlan,
   QueryResults,
+  ReadBatchColumnOptions,
+  ReadColumn,
+  RelationSchema,
+  RowsToBatchesOptions,
+  RowSelection,
   ScanOptions,
+  ScanProperties,
+  ScanRequest,
+  ScanResidual,
   ScanResults,
   SelectStatement,
   SetOperationStatement,
+  SqlType,
   SqlPrimitive,
   Statement,
   Token,
@@ -95,6 +114,30 @@ export function collect(results: QueryResults): Promise<Record<string, SqlPrimit
 export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): AsyncRow
 
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource
+
+export function selectedRowCount(selection: RowSelection): number
+
+export function composeSelections(outer: RowSelection, inner: RowSelection): RowSelection
+
+export function valueAt(vector: ColumnVector, index: number): SqlPrimitive
+
+export function selectVector(vector: ColumnVector, selection: RowSelection): ColumnVector
+
+export function readBatchColumn(options: ReadBatchColumnOptions): ColumnResult
+
+export function selectBatch(batch: AsyncBatch, selection: RowSelection): AsyncBatch
+
+export function rowsToBatches(
+  rows: AsyncIterable<AsyncRow>,
+  columns: string[],
+  options?: RowsToBatchesOptions,
+): AsyncIterable<AsyncBatch>
+
+export function batchesToRows(
+  batches: AsyncIterable<AsyncBatch>,
+  columns: string[],
+  signal?: AbortSignal,
+): AsyncIterable<AsyncRow>
 
 /**
  * Generates a default alias for a derived column expression.

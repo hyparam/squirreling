@@ -5,8 +5,7 @@ import { batchesToRows, rowsToBatches } from '../../src/backend/batchAdapters.js
 import { batchResult } from '../../src/execute/batchResults.js'
 
 /**
- * @import { AsyncBatch, ColumnVector, ReadColumn } from '../../src/internalTypes.js'
- * @import { AsyncRow } from '../../src/types.js'
+ * @import { AsyncBatch, AsyncRow, ColumnVector, ReadColumn } from '../../src/types.js'
  */
 
 const schema = ['id', 'name']
@@ -28,7 +27,7 @@ describe('batch adapters', () => {
     expect(batches.map(function summarize(batch) {
       return {
         rowCount: selectedRowCount(batch.selection),
-        ids: batch.columns[0].type === 'values'
+        ids: 'type' in batch.columns[0] && batch.columns[0].type === 'values'
           ? batch.columns[0].values
           : [],
       }
@@ -48,12 +47,11 @@ describe('batch adapters', () => {
     const read = vi.fn(readColumn)
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: [schema[0]],
       selection: { type: 'all', length: 2 },
-      columns: [{ type: 'source', read }],
+      columns: [{ read }],
     }
 
-    const iterator = batchesToRows(asyncValues([batch]))[Symbol.asyncIterator]()
+    const iterator = batchesToRows(asyncValues([batch]), [schema[0]])[Symbol.asyncIterator]()
     const first = await iterator.next()
     expect(read).not.toHaveBeenCalled()
     if (first.done || !first.value) throw new Error('expected a row')
@@ -69,7 +67,6 @@ describe('batch adapters', () => {
   it('adapts loaded columns through the batch selection', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: {
         type: 'indices',
         indices: new Uint32Array([2, 0]),
@@ -90,7 +87,7 @@ describe('batch adapters', () => {
     }
 
     const rows = []
-    for await (const row of batchesToRows(asyncValues([batch]))) {
+    for await (const row of batchesToRows(asyncValues([batch]), schema)) {
       rows.push({
         id: await row.cells.id(),
         name: await row.cells.name(),
@@ -106,7 +103,6 @@ describe('batch adapters', () => {
   it('collects native batches without consuming the row adapter', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: {
         type: 'indices',
         indices: new Uint32Array([2, 0]),
@@ -145,7 +141,6 @@ describe('batch adapters', () => {
     const reason = new Error('batch collection aborted')
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: [schema[0]],
       selection: { type: 'all', length: 1 },
       columns: [{
         type: 'constant',

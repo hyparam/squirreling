@@ -19,6 +19,19 @@ export function asyncRow(obj, columns) {
 }
 
 /**
+ * Returns a source's authoritative logical column names.
+ *
+ * @param {AsyncDataSource} source
+ * @returns {string[]}
+ */
+export function dataSourceColumns(source) {
+  if (source.prepareScan && source.schema) {
+    return source.schema.fields.map(function fieldName(field) { return field.name })
+  }
+  return source.columns ?? []
+}
+
+/**
  * Creates an async memory-backed data source from an array of plain objects
  *
  * @param {Object} options
@@ -78,6 +91,9 @@ export function memorySource({ data, columns }) {
  * @returns {AsyncDataSource}
  */
 export function cachedDataSource(source) {
+  if (source.prepareScan && source.schema) return source
+  const { scan } = source
+  if (!scan) return source
   /** @type {WeakMap<object, Map<string, Promise<SqlPrimitive>>>} */
   const cache = new WeakMap()
   return {
@@ -85,7 +101,7 @@ export function cachedDataSource(source) {
     scan(options) {
       // Does re-run the scan, but cache avoids re-computing expensive async cells
       // TODO: check cache first to avoid re-scanning when possible
-      const { rows, appliedWhere, appliedLimitOffset } = source.scan(options)
+      const { rows, appliedWhere, appliedLimitOffset } = scan.call(source, options)
 
       // Applied where clause changes which rows are returned so can't be cached
       if (appliedWhere && options.where) {

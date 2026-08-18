@@ -11,9 +11,147 @@ export { QueryPlan } from './plan/types.js'
 export interface QueryResults {
   columns: string[]
   rows(): AsyncGenerator<AsyncRow>
+  batches?(): AsyncIterable<AsyncBatch>
   numRows?: number
   maxRows?: number
 }
+
+export type SqlType =
+  | { type: 'unknown' }
+  | { type: 'string' }
+  | { type: 'number' }
+  | { type: 'bigint' }
+  | { type: 'boolean' }
+  | { type: 'date' }
+  | { type: 'array', items: SqlType }
+  | { type: 'struct', fields: readonly Field[] }
+
+export interface Field {
+  id: number
+  name: string
+  dataType: SqlType
+  nullable: boolean
+}
+
+export interface RelationSchema {
+  fields: readonly Field[]
+}
+
+/**
+ * A selection over a base domain of `length` rows.
+ */
+export type RowSelection =
+  | { type: 'all', length: number }
+  | { type: 'range', start: number, end: number, length: number }
+  | { type: 'indices', indices: Uint32Array, length: number }
+
+export type NumericArray =
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array
+  | BigInt64Array
+  | BigUint64Array
+
+export type ColumnVector =
+  | {
+      type: 'values'
+      values: readonly SqlPrimitive[]
+      length: number
+    }
+  | {
+      type: 'typed'
+      values: NumericArray
+      validity?: Uint8Array
+      length: number
+    }
+  | {
+      type: 'constant'
+      value: SqlPrimitive
+      length: number
+    }
+  | {
+      type: 'selected'
+      source: ColumnVector
+      selection: RowSelection
+      length: number
+    }
+
+export interface ColumnReadRequest {
+  batch: AsyncBatch
+  selection: RowSelection
+  signal?: AbortSignal
+  rowOffset?: number
+  rowOrdinals?: ColumnVector
+}
+
+export type ColumnResult = ColumnVector | Promise<ColumnVector>
+export type ReadColumn = (request: ColumnReadRequest) => ColumnResult
+
+export type BatchColumn =
+  | ColumnVector
+  | {
+      read: ReadColumn
+      input?: AsyncBatch
+      rowOffset?: number
+      rowOrdinals?: ColumnVector
+    }
+
+export interface AsyncBatch {
+  selection: RowSelection
+  columns: readonly BatchColumn[]
+}
+
+export interface ReadBatchColumnOptions {
+  batch: AsyncBatch
+  columnIndex: number
+  selection?: RowSelection
+  signal?: AbortSignal
+}
+
+export interface RowsToBatchesOptions {
+  batchRows?: number
+  signal?: AbortSignal
+}
+
+export interface ColumnDemand {
+  field: number
+  phase: number
+  purpose: 'filter' | 'output'
+  mode: 'required' | 'deferred'
+}
+
+export interface ScanRequest {
+  columns: readonly ColumnDemand[]
+  filter?: ExprNode
+  limit?: number
+  offset?: number
+}
+
+export interface ScanProperties {
+  exactRows?: number
+  maxRows?: number
+}
+
+export interface ScanResidual {
+  filter?: ExprNode
+  limit?: number
+  offset?: number
+}
+
+export interface PreparedScan {
+  schema: RelationSchema
+  residual: ScanResidual
+  properties: ScanProperties
+  batches(options?: { signal?: AbortSignal }): AsyncIterable<AsyncBatch>
+}
+
+export type PrepareScan = (request: ScanRequest) => PreparedScan
 
 // parseSql(options)
 export interface ParseSqlOptions {
@@ -72,15 +210,29 @@ export type AsyncCell = () => Promise<SqlPrimitive>
 export type Row = Record<string, SqlPrimitive>[]
 
 /**
- * Async data source for streaming SQL execution.
+ * Async data source for streaming SQL execution. A source must implement
+ * either scan() or prepareScan().
  */
-export interface AsyncDataSource {
+interface AsyncDataSourceBase {
   numRows?: number
-  columns: string[]
-  scan(options: ScanOptions): ScanResults
   // Optional method for fast column scans
   scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>> | ScanColumnResults
 }
+
+export type AsyncDataSource = AsyncDataSourceBase & (
+  | {
+      columns: string[]
+      scan(options: ScanOptions): ScanResults
+      schema?: RelationSchema
+      prepareScan?: PrepareScan
+    }
+  | {
+      columns?: string[]
+      scan?(options: ScanOptions): ScanResults
+      schema: RelationSchema
+      prepareScan: PrepareScan
+    }
+)
 
 /**
  * Result of a scan: streaming rows and flags indicating which hints were

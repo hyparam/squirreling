@@ -5,4 +5,13 @@ export { planSql } from './plan/plan.js'
 export { tokenizeSql } from './parse/tokenize.js'
 export { collect } from './execute/utils.js'
 export { asyncRow, cachedDataSource } from './backend/dataSource.js'
+export {
+  composeSelections,
+  readBatchColumn,
+  selectBatch,
+  selectedRowCount,
+  selectVector,
+  valueAt,
+} from './backend/batch.js'
+export { batchesToRows, rowsToBatches } from './backend/batchAdapters.js'
 export { derivedAlias } from './expression/alias.js'

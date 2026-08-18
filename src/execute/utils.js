@@ -1,11 +1,41 @@
 import { collectBatches } from '../backend/batchAdapters.js'
-import { batchResultsFor } from './batchResults.js'
 
 /**
  * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  */
 
 const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
+
+/** @type {WeakMap<QueryResults, AbortSignal>} */
+const querySignals = new WeakMap()
+
+/**
+ * Associates an execution signal with results without expanding the public
+ * result shape solely for the collection adapter.
+ *
+ * @param {QueryResults} results
+ * @param {AbortSignal} [signal]
+ * @returns {QueryResults}
+ */
+export function bindQuerySignal(results, signal) {
+  if (!signal || querySignals.get(results) === signal) return results
+
+  const { batches, rows } = results
+  results.rows = async function* boundRows() {
+    signal.throwIfAborted()
+    yield* rows.call(results)
+    signal.throwIfAborted()
+  }
+  if (batches) {
+    results.batches = async function* boundBatches() {
+      signal.throwIfAborted()
+      yield* batches.call(results)
+      signal.throwIfAborted()
+    }
+  }
+  querySignals.set(results, signal)
+  return results
+}
 
 /**
  * Compares two values for a single ORDER BY term, handling nulls and direction
@@ -52,8 +82,9 @@ export function compareForTerm(a, b, term) {
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
 export async function collect(results) {
-  const batchResults = batchResultsFor(results)
-  if (batchResults) return await collectBatches(batchResults.batches(), batchResults.signal)
+  if (results.batches) {
+    return await collectBatches(results.batches(), results.columns, querySignals.get(results))
+  }
 
   // Collect all rows first, then materialize cells concurrently
   // This enables dataloader-style batching of cell accessors

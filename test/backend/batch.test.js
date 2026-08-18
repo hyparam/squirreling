@@ -9,10 +9,8 @@ import {
 } from '../../src/backend/batch.js'
 
 /**
- * @import { AsyncBatch, ColumnVector, ReadColumn } from '../../src/internalTypes.js'
+ * @import { AsyncBatch, ColumnVector, ReadColumn } from '../../src/types.js'
  */
-
-const schema = ['value']
 
 describe('row selections', () => {
   it('counts every selection representation', () => {
@@ -105,9 +103,8 @@ describe('async batches', () => {
     const read = vi.fn(readColumn)
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 5 },
-      columns: [{ type: 'source', read }],
+      columns: [{ read }],
     }
 
     expect(read).not.toHaveBeenCalled()
@@ -124,8 +121,11 @@ describe('async batches', () => {
     expect(await first).toEqual({ type: 'constant', value: 7, length: 2 })
     expect(read).toHaveBeenCalledTimes(1)
     expect(read).toHaveBeenCalledWith({
+      batch: selected,
       selection: { type: 'range', start: 1, end: 3, length: 5 },
       signal: undefined,
+      rowOffset: undefined,
+      rowOrdinals: undefined,
     })
   })
 
@@ -134,7 +134,6 @@ describe('async batches', () => {
     const vector = { type: 'values', values: [1, 2, 3], length: 3 }
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [vector],
     }
@@ -145,10 +144,8 @@ describe('async batches', () => {
   it('validates deferred vector alignment', async () => {
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 3 },
       columns: [{
-        type: 'source',
         read() {
           return Promise.resolve({ type: 'values', values: [1], length: 1 })
         },
@@ -179,9 +176,8 @@ describe('async batches', () => {
     const read = vi.fn(readColumn)
     /** @type {AsyncBatch} */
     const batch = {
-      columnNames: schema,
       selection: { type: 'all', length: 1 },
-      columns: [{ type: 'source', read }],
+      columns: [{ read }],
     }
 
     const rejected = readBatchColumn({ batch, columnIndex: 0, signal: first.signal })
