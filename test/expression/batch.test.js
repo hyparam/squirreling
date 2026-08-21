@@ -225,6 +225,38 @@ describe('batch expressions', () => {
     })
   })
 
+  it('compiles REGEXP_LIKE with literal and dynamic patterns', () => {
+    const literal = compile('REGEXP_LIKE(text, \'^[a-z]+$\')')
+    const dynamic = compile('REGEXP_LIKE(text, n)')
+    if (!literal || !dynamic) throw new Error('expected expressions to compile')
+    const batch = loadedBatch(['^a', 'z$', null], ['abc', 'xyz', 'anything'])
+
+    expect(literal.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values',
+      values: [true, true, true],
+      length: 3,
+    })
+    expect(dynamic.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values',
+      values: [true, true, null],
+      length: 3,
+    })
+  })
+
+  it('validates a literal REGEXP_LIKE pattern lazily with the selected row number', () => {
+    const compiled = compile('REGEXP_LIKE(text, \'[\')')
+    if (!compiled) throw new Error('expected expression to compile')
+    const batch = loadedBatch([1, 2], [null, 'value'])
+
+    expect(() => compiled.evaluate({
+      batch,
+      selection: batch.selection,
+      rowOffset: 10,
+    })).toThrow(
+      'REGEXP_LIKE(string, pattern): invalid regex pattern: Invalid regular expression: /[/: Unterminated character class (row 12)'
+    )
+  })
+
   it('resolves qualified identifiers against a bare scan schema', () => {
     const compiled = compile('data.n + 1')
     if (!compiled) throw new Error('expected expression to compile')

@@ -79,24 +79,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
   }
 
   if (funcName === 'REGEXP_MATCHES' || funcName === 'REGEXP_LIKE') {
-    const str = args[0]
-    const pattern = args[1]
-    if (str == null || pattern == null) return null
-    const strVal = String(str)
-    const patternStr = String(pattern)
-
-    let regex
-    try {
-      regex = new RegExp(patternStr)
-    } catch (/** @type {any} */ error) {
-      throw new ArgValueError({
-        ...node,
-        message: `invalid regex pattern: ${error.message}`,
-        rowIndex,
-      })
-    }
-
-    return regex.test(strVal)
+    return evaluateRegexpLike({ node, args, rowIndex })
   }
 
   if (funcName === 'REGEXP_REPLACE') {
@@ -167,4 +150,42 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
   }
 
   throw new Error(`Unsupported regexp function: ${funcName}`)
+}
+
+/**
+ * Evaluates REGEXP_LIKE/REGEXP_MATCHES with an optional single-pattern cache.
+ * Batch kernels use the cache for literal patterns so the RegExp is compiled
+ * once, while scalar and dynamic-pattern evaluation retain row-local behavior.
+ * Compilation stays lazy so a null string still returns null without validating
+ * an otherwise invalid pattern, matching the scalar evaluator.
+ *
+ * @param {Object} options
+ * @param {FunctionNode} options.node
+ * @param {SqlPrimitive[]} options.args
+ * @param {number} [options.rowIndex]
+ * @param {{ pattern?: string, regex?: RegExp }} [options.cache]
+ * @returns {SqlPrimitive}
+ */
+export function evaluateRegexpLike({ node, args, rowIndex, cache }) {
+  const string = args[0]
+  const pattern = args[1]
+  if (string == null || pattern == null) return null
+  const patternString = String(pattern)
+  let regex = cache?.pattern === patternString ? cache.regex : undefined
+  if (!regex) {
+    try {
+      regex = new RegExp(patternString)
+    } catch (/** @type {any} */ error) {
+      throw new ArgValueError({
+        ...node,
+        message: `invalid regex pattern: ${error.message}`,
+        rowIndex,
+      })
+    }
+    if (cache) {
+      cache.pattern = patternString
+      cache.regex = regex
+    }
+  }
+  return regex.test(String(string))
 }

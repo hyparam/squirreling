@@ -339,7 +339,7 @@ describe('prepared scans', () => {
     expect(await collect(results)).toEqual([{ payload: 'second' }])
   })
 
-  it('uses the row compatibility boundary for an unsupported residual', async () => {
+  it('keeps REGEXP_LIKE residuals in native batches', async () => {
     /** @type {AsyncBatch} */
     const batch = {
       selection: { type: 'all', length: 2 },
@@ -361,7 +361,7 @@ describe('prepared scans', () => {
       query: 'SELECT payload FROM data WHERE REGEXP_LIKE(payload, \'^second$\')',
     })
 
-    expect(results.batches).toBeUndefined()
+    expect(results.batches).toBeTypeOf('function')
     expect(await collect(results)).toEqual([{ payload: 'second' }])
   })
 

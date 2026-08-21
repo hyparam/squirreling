@@ -4,6 +4,7 @@ import { yieldToEventLoop } from '../execute/yield.js'
 import { isStringFunc } from '../validation/functions.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
 import { applyBinaryOp } from './binary.js'
+import { evaluateRegexpLike } from './regexp.js'
 import { applyCast, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
 
@@ -260,6 +261,15 @@ function compileFunctionKernel(node, state) {
       return evaluateJsonExtract({ funcName, node, args, rowIndex: streamRowIndex + 1 })
     }
   }
+  if (funcName === 'REGEXP_LIKE') {
+    const cache = node.args[1]?.type === 'literal' ? {} : undefined
+    return function regexpLikeValue(vectors, rowIndex, streamRowIndex) {
+      const args = arguments_.map(function argumentValue(argument) {
+        return argument(vectors, rowIndex, streamRowIndex)
+      })
+      return evaluateRegexpLike({ node, args, rowIndex: streamRowIndex + 1, cache })
+    }
+  }
   if (!isStringFunc(funcName)) return undefined
   return function stringFunctionValue(vectors, rowIndex, streamRowIndex) {
     const args = arguments_.map(function argumentValue(argument) {
@@ -292,7 +302,9 @@ function compileFunctionEvaluator(node, columns) {
     }
   }
   if (funcName !== 'NULLIF' && funcName !== 'JSON_VALUE' && funcName !== 'JSON_QUERY' &&
-    funcName !== 'JSON_EXTRACT' && funcName !== 'JSON_EXTRACT_STRING' && !isStringFunc(funcName)) return undefined
+    funcName !== 'JSON_EXTRACT' && funcName !== 'JSON_EXTRACT_STRING' && funcName !== 'REGEXP_LIKE' &&
+    !isStringFunc(funcName)) return undefined
+  const regexpCache = funcName === 'REGEXP_LIKE' && node.args[1]?.type === 'literal' ? {} : undefined
   return {
     async evaluate(context) {
       const vectors = await Promise.all(arguments_.map(function evaluateArgument(argument) {
@@ -303,6 +315,9 @@ function compileFunctionEvaluator(node, columns) {
         if (funcName === 'NULLIF') return sqlEquals(args[0], args[1]) ? null : args[0]
         if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING') {
           return evaluateJsonExtract({ funcName, node, args, rowIndex: streamRowIndex + 1 })
+        }
+        if (funcName === 'REGEXP_LIKE') {
+          return evaluateRegexpLike({ node, args, rowIndex: streamRowIndex + 1, cache: regexpCache })
         }
         return evaluateStringFunc({ funcName, node, args, rowIndex: streamRowIndex + 1 })
       })
