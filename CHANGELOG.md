@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.16.2]
+ - Batched `REGEXP_LIKE` evaluation
+ - `LIKE` stringifies object operands like `CAST` to `VARCHAR`
+
 ## [0.16.1]
  - Fix async fallbacks in native columnar batch execution
 
