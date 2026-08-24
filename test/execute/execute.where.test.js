@@ -211,6 +211,53 @@ describe('WHERE clause', () => {
     expect(result.map(r => r.name).sort()).toEqual(['Bob', 'Diana', 'Eve'])
   })
 
+  it('should filter with LIKE over an object column by its JSON text', async () => {
+    const calls = [
+      { id: 1, args: { command: 'cargo build' } },
+      { id: 2, args: { command: 'pnpm test' } },
+    ]
+    const result = await collect(executeSql({ tables: { calls }, query: 'SELECT id FROM calls WHERE args LIKE \'%cargo%\'' }))
+    expect(result.map(r => r.id)).toEqual([1])
+  })
+
+  it('should not match object columns against [object Object]', async () => {
+    const calls = [
+      { id: 1, args: { command: 'cargo build' } },
+      { id: 2, args: { command: 'pnpm test' } },
+    ]
+    const result = await collect(executeSql({ tables: { calls }, query: 'SELECT id FROM calls WHERE args LIKE \'%object Object%\'' }))
+    expect(result).toHaveLength(0)
+  })
+
+  it('should make LIKE on an object column agree with CAST AS VARCHAR', async () => {
+    const calls = [
+      { id: 1, args: { command: 'cargo build' } },
+      { id: 2, args: { command: 'pnpm test' } },
+    ]
+    const bare = await collect(executeSql({ tables: { calls }, query: 'SELECT id FROM calls WHERE args LIKE \'%"pnpm test"%\'' }))
+    const cast = await collect(executeSql({ tables: { calls }, query: 'SELECT id FROM calls WHERE CAST(args AS VARCHAR) LIKE \'%"pnpm test"%\'' }))
+    expect(bare.map(r => r.id)).toEqual([2])
+    expect(cast.map(r => r.id)).toEqual(bare.map(r => r.id))
+  })
+
+  it('should filter with LIKE over an array column by its JSON text', async () => {
+    const calls = [
+      { id: 1, tags: ['cargo', 'rust'] },
+      { id: 2, tags: ['pnpm'] },
+    ]
+    const result = await collect(executeSql({ tables: { calls }, query: 'SELECT id FROM calls WHERE tags LIKE \'%"rust"%\'' }))
+    expect(result.map(r => r.id)).toEqual([1])
+  })
+
+  it('should filter with LIKE over a Date column by its JSON text', async () => {
+    const events = [
+      { id: 1, at: new Date('2026-08-24T15:01:00Z') },
+      { id: 2, at: new Date('2026-07-21T15:01:00Z') },
+    ]
+    const result = await collect(executeSql({ tables: { events }, query: 'SELECT id FROM events WHERE at LIKE \'%2026-08-%\'' }))
+    expect(result.map(r => r.id)).toEqual([1])
+  })
+
   it('should filter with IN value list', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name IN (\'Alice\', \'Charlie\', \'Eve\')' }))
     expect(result).toHaveLength(3)

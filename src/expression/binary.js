@@ -1,3 +1,5 @@
+import { stringify } from '../execute/utils.js'
+
 /**
  * @import { BinaryOp, SqlPrimitive } from '../types.js'
  */
@@ -68,7 +70,11 @@ export function applyBinaryOp(op, a, b) {
   if (op === '>=') return a >= b
 
   if (op === 'LIKE') {
-    const str = String(a)
+    // Objects, arrays, and Dates stringify as JSON, the same coercion as
+    // CAST(x AS VARCHAR), so `x LIKE p` and `CAST(x AS VARCHAR) LIKE p` agree.
+    // String() would collapse every object to '[object Object]', making LIKE
+    // a silent never-match on JSON-typed columns.
+    const str = typeof a === 'object' ? stringify(a) : String(a)
     const pattern = String(b)
     const regexPattern = pattern
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
