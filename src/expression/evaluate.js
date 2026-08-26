@@ -455,7 +455,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
 
     if (isRegexpFunc(funcName)) {
-      return evaluateRegexpFunc({ funcName, node, args, rowIndex })
+      return evaluateRegexpFunc({ funcName, node, args, rowIndex, context })
     }
 
     if (isMathFunc(funcName)) {

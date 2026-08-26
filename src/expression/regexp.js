@@ -5,6 +5,152 @@ import { ArgValueError } from '../validation/executionErrors.js'
  */
 
 /**
+ * Only memoize inputs at least this long. Below the floor, re-running the
+ * regex costs about as much as the Map bookkeeping, and short-string columns
+ * tend toward distinct values, where a memo can only miss.
+ */
+const MEMO_MIN_INPUT_LENGTH = 1024
+
+/**
+ * Stop inserting memo entries once the retained results reach this budget
+ * (UTF-16 code units, two bytes each). Entries already inserted keep serving
+ * hits, so a distinct-heavy column costs at most this much extra memory
+ * instead of growing with the row count, and past the budget evaluation
+ * degrades to the previous per-row behavior. Sized to hold a realistic
+ * dictionary-encoded long-string column whole (a measured production day:
+ * 3,445 distinct values averaging ~90KB); at 32MB that same day capped out
+ * mid-scan and the recomputing tail gave back most of the win.
+ */
+const MEMO_BYTE_BUDGET = 256 * 1024 * 1024
+
+/**
+ * @typedef {Object} RegexpNodeCache
+ * @property {string} [pattern] - pattern source of the cached compiled regex
+ * @property {RegExp} [regex] - compiled regex reused while the pattern repeats
+ * @property {boolean} [memoizable] - every argument after the input is a literal
+ * @property {Map<string, SqlPrimitive>} [memo] - result per distinct input string
+ * @property {number} [memoBytes] - retained result bytes, counted against the budget
+ */
+
+/**
+ * Evaluation state scoped per execution context, then per AST node. Keyed on
+ * the context object (a WeakMap, so state dies with the execution) to keep one
+ * query's results out of every other query: a module-global memo would retain
+ * one caller's data across callers for the life of the process.
+ *
+ * @type {WeakMap<object, WeakMap<FunctionNode, RegexpNodeCache>>}
+ */
+const executionCaches = new WeakMap()
+
+/**
+ * The per-node cache for this execution, or undefined when no context is
+ * threaded through (evaluation then stays row-local, the previous behavior).
+ *
+ * @param {object | undefined} context
+ * @param {FunctionNode} node
+ * @returns {RegexpNodeCache | undefined}
+ */
+function resolveNodeCache(context, node) {
+  if (!context) return undefined
+  let byNode = executionCaches.get(context)
+  if (!byNode) {
+    byNode = new WeakMap()
+    executionCaches.set(context, byNode)
+  }
+  let cache = byNode.get(node)
+  if (!cache) {
+    cache = {}
+    byNode.set(node, cache)
+  }
+  return cache
+}
+
+/**
+ * Compile a pattern with the 'g' flag, reusing the node's cached RegExp while
+ * the pattern repeats. lastIndex is reset on reuse: a 'g' regex is stateful,
+ * and a reused instance would otherwise resume the next row's exec() scan
+ * wherever the previous row's search stopped.
+ *
+ * @param {Object} options
+ * @param {RegexpNodeCache} [options.cache]
+ * @param {string} options.patternStr
+ * @param {FunctionNode} options.node
+ * @param {number} [options.rowIndex]
+ * @returns {RegExp}
+ */
+function compileGlobalRegex({ cache, patternStr, node, rowIndex }) {
+  let regex = cache?.pattern === patternStr ? cache.regex : undefined
+  if (regex) {
+    regex.lastIndex = 0
+    return regex
+  }
+  try {
+    regex = new RegExp(patternStr, 'g')
+  } catch (/** @type {any} */ error) {
+    throw new ArgValueError({
+      ...node,
+      message: `invalid regex pattern: ${error.message}`,
+      rowIndex,
+    })
+  }
+  if (cache) {
+    cache.pattern = patternStr
+    cache.regex = regex
+  }
+  return regex
+}
+
+/**
+ * The result memo for this node and input, or undefined when memoization does
+ * not apply: no cache, an argument after the input is not a literal (the
+ * result then depends on more than the input string), or the input is below
+ * the length floor.
+ *
+ * Memoization pays off when a long-string column holds few distinct values,
+ * which is exactly how dictionary-encoded columnar data arrives: thousands of
+ * rows sharing a handful of large strings. Without the memo, a string-producing
+ * function allocates a fresh full-length result per row (gigabytes of churn on
+ * data whose storage was megabytes); with it, work and allocation scale with
+ * distinct values instead of rows.
+ *
+ * @param {RegexpNodeCache | undefined} cache
+ * @param {FunctionNode} node
+ * @param {string} strVal
+ * @returns {Map<string, SqlPrimitive> | undefined}
+ */
+function resolveMemo(cache, node, strVal) {
+  if (!cache || strVal.length < MEMO_MIN_INPUT_LENGTH) return undefined
+  cache.memoizable ??= node.args.every((arg, index) => index === 0 || arg.type === 'literal')
+  if (!cache.memoizable) return undefined
+  cache.memo ??= new Map()
+  return cache.memo
+}
+
+/**
+ * Record a computed result and return the stored value. String results are
+ * flattened first: a substring result in V8 is a view pinning its parent
+ * buffer, and a memo must not turn a 100-character result into a retained
+ * copy of a 100KB input. Insertion stops at the byte budget; entries already
+ * stored keep serving hits.
+ *
+ * @param {RegexpNodeCache} cache
+ * @param {Map<string, SqlPrimitive>} memo
+ * @param {string} key
+ * @param {SqlPrimitive} value
+ * @returns {SqlPrimitive}
+ */
+function memoInsert(cache, memo, key, value) {
+  const bytes = typeof value === 'string' ? value.length * 2 : 16
+  const memoBytes = cache.memoBytes ?? 0
+  if (memoBytes + bytes > MEMO_BYTE_BUDGET) return value
+  cache.memoBytes = memoBytes + bytes
+  // concatenation forces a flat copy; slice(1) drops the pad character
+  const flattened = typeof value === 'string' ? (' ' + value).slice(1) : value
+  memo.set(key, flattened)
+  return flattened
+}
+
+/**
  * Evaluate a regexp function
  *
  * @param {Object} options
@@ -12,9 +158,11 @@ import { ArgValueError } from '../validation/executionErrors.js'
  * @param {FunctionNode} options.node
  * @param {SqlPrimitive[]} options.args - Function arguments
  * @param {number} [options.rowIndex] - Row index for error reporting
+ * @param {object} [options.context] - execution context; enables per-node
+ *   regex reuse and result memoization scoped to this execution
  * @returns {SqlPrimitive}
  */
-export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
+export function evaluateRegexpFunc({ funcName, node, args, rowIndex, context }) {
   if (funcName === 'REGEXP_SUBSTR' || funcName === 'REGEXP_EXTRACT') {
     const str = args[0]
     const pattern = args[1]
@@ -50,17 +198,12 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
       }
     }
 
+    const cache = resolveNodeCache(context, node)
+    const memo = resolveMemo(cache, node, strVal)
+    if (memo?.has(strVal)) return memo.get(strVal) ?? null
+
     // Create regex
-    let regex
-    try {
-      regex = new RegExp(patternStr, 'g')
-    } catch (/** @type {any} */ error) {
-      throw new ArgValueError({
-        ...node,
-        message: `invalid regex pattern: ${error.message}`,
-        rowIndex,
-      })
-    }
+    const regex = compileGlobalRegex({ cache, patternStr, node, rowIndex })
 
     // Search from position (convert to 0-based)
     const searchStr = strVal.substring(position - 1)
@@ -68,18 +211,21 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
     // Find the nth occurrence
     let match
     let count = 0
+    /** @type {SqlPrimitive} */
+    let result = null
     while ((match = regex.exec(searchStr)) !== null) {
       count++
       if (count === occurrence) {
-        return match[0]
+        result = match[0]
+        break
       }
     }
 
-    return null
+    return cache && memo ? memoInsert(cache, memo, strVal, result) : result
   }
 
   if (funcName === 'REGEXP_MATCHES' || funcName === 'REGEXP_LIKE') {
-    return evaluateRegexpLike({ node, args, rowIndex })
+    return evaluateRegexpLike({ node, args, rowIndex, cache: resolveNodeCache(context, node) })
   }
 
   if (funcName === 'REGEXP_REPLACE') {
@@ -119,34 +265,32 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
       }
     }
 
+    const cache = resolveNodeCache(context, node)
+    const memo = resolveMemo(cache, node, strVal)
+    if (memo?.has(strVal)) return memo.get(strVal) ?? null
+
     // Create regex
-    let regex
-    try {
-      regex = new RegExp(patternStr, 'g')
-    } catch (/** @type {any} */ error) {
-      throw new ArgValueError({
-        ...node,
-        message: `invalid regex pattern: ${error.message}`,
-        rowIndex,
-      })
-    }
+    const regex = compileGlobalRegex({ cache, patternStr, node, rowIndex })
 
     // If position > 1, preserve the prefix
     const prefix = strVal.substring(0, position - 1)
     const searchStr = strVal.substring(position - 1)
 
+    /** @type {string} */
+    let result
     if (occurrence === 0) {
       // Replace all occurrences
-      return prefix + searchStr.replace(regex, replacementStr)
+      result = prefix + searchStr.replace(regex, replacementStr)
+    } else {
+      // Replace only the nth occurrence
+      let count = 0
+      result = prefix + searchStr.replace(regex, (match) => {
+        count++
+        return count === occurrence ? replacementStr : match
+      })
     }
 
-    // Replace only the nth occurrence
-    let count = 0
-    const result = searchStr.replace(regex, (match) => {
-      count++
-      return count === occurrence ? replacementStr : match
-    })
-    return prefix + result
+    return cache && memo ? memoInsert(cache, memo, strVal, result) : result
   }
 
   throw new Error(`Unsupported regexp function: ${funcName}`)
