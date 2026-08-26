@@ -340,6 +340,58 @@ describe('regex functions', () => {
       }))
       expect(result).toEqual([{ id: 1 }, { id: 3 }])
     })
+
+    it('should match an object column by its JSON text', async () => {
+      const calls = [
+        { id: 1, args: { command: 'cargo build' } },
+        { id: 2, args: { command: 'pnpm test' } },
+      ]
+      const result = await collect(executeSql({
+        tables: { calls },
+        query: 'SELECT id FROM calls WHERE REGEXP_LIKE(args, \'cargo\')',
+      }))
+      expect(result.map(r => r.id)).toEqual([1])
+    })
+
+    it('should not match object columns against [object Object]', async () => {
+      const calls = [
+        { id: 1, args: { command: 'cargo build' } },
+      ]
+      const result = await collect(executeSql({
+        tables: { calls },
+        query: 'SELECT id FROM calls WHERE REGEXP_LIKE(args, \'object Object\')',
+      }))
+      expect(result).toHaveLength(0)
+    })
+
+    it('should make REGEXP_LIKE on an object column agree with CAST AS VARCHAR', async () => {
+      const calls = [
+        { id: 1, args: { command: 'cargo build' } },
+        { id: 2, args: { command: 'pnpm test' } },
+      ]
+      const bare = await collect(executeSql({
+        tables: { calls },
+        query: 'SELECT id FROM calls WHERE REGEXP_LIKE(args, \'"pnpm test"\')',
+      }))
+      const cast = await collect(executeSql({
+        tables: { calls },
+        query: 'SELECT id FROM calls WHERE REGEXP_LIKE(CAST(args AS VARCHAR), \'"pnpm test"\')',
+      }))
+      expect(bare.map(r => r.id)).toEqual([2])
+      expect(cast.map(r => r.id)).toEqual(bare.map(r => r.id))
+    })
+
+    it('should match an array column by its JSON text', async () => {
+      const calls = [
+        { id: 1, tags: ['cargo', 'rust'] },
+        { id: 2, tags: ['pnpm'] },
+      ]
+      const result = await collect(executeSql({
+        tables: { calls },
+        query: 'SELECT id FROM calls WHERE REGEXP_LIKE(tags, \'"rust"\')',
+      }))
+      expect(result.map(r => r.id)).toEqual([1])
+    })
   })
 
   describe('REGEXP_REPLACE', () => {

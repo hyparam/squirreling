@@ -1,3 +1,4 @@
+import { stringify } from '../execute/utils.js'
 import { ArgValueError } from '../validation/executionErrors.js'
 
 /**
@@ -187,5 +188,9 @@ export function evaluateRegexpLike({ node, args, rowIndex, cache }) {
       cache.regex = regex
     }
   }
-  return regex.test(String(string))
+  // Objects, arrays, and Dates test against their JSON text, the same
+  // coercion LIKE and CAST(x AS VARCHAR) use, so the three agree on
+  // JSON-typed columns. String() would collapse every object to
+  // '[object Object]', making REGEXP_LIKE a silent never-match on them.
+  return regex.test(typeof string === 'object' ? stringify(string) : String(string))
 }
