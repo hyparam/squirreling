@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
-// Inputs long enough to cross the memoization floor (1024 chars)
+/**
+ * Inputs long enough to cross the memoization floor (1024 chars)
+ *
+ * @param {string} tag
+ * @returns {string}
+ */
 function bigText(tag) {
   return `${tag} lorem ipsum dolor sit `.repeat(60)
 }
