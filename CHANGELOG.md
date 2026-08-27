@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.3]
+ - `REGEXP_LIKE` stringifies object operands like `LIKE` and `CAST` to `VARCHAR`
+
 ## [0.16.2]
  - Batched `REGEXP_LIKE` evaluation
  - `LIKE` stringifies object operands like `CAST` to `VARCHAR`
