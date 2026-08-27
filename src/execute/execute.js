@@ -37,6 +37,9 @@ const YIELD_INTERVAL = 4000
 export function executeSql({ tables, query, functions, signal }) {
   const parsed = typeof query === 'string' ? parseSql({ query, functions }) : query
 
+  // Listing names does not require table contents or inferred schemas.
+  if (parsed.type === 'show tables') return executeShowTables({ tables, signal })
+
   // Normalize tables: convert arrays to AsyncDataSource
   /** @type {Record<string, AsyncDataSource>} */
   const normalizedTables = {}
@@ -97,6 +100,8 @@ export function executePlan({ plan, context }) {
     return executeScan(plan, context)
   } else if (plan.type === 'SingleRow') {
     return executeSingleRow()
+  } else if (plan.type === 'ShowTables') {
+    return executeShowTables(context)
   } else if (plan.type === 'Count') {
     return executeCount(plan, context)
   } else if (plan.type === 'Filter') {
@@ -144,6 +149,31 @@ function executeSingleRow() {
     maxRows: 1,
     async *rows() {
       yield { columns: [], cells: {} }
+    },
+  }
+}
+
+/**
+ * Executes SHOW TABLES: yields one row per available table name, sorted.
+ *
+ * @param {Pick<ExecuteSqlOptions, 'tables' | 'signal'>} context
+ * @returns {QueryResults}
+ */
+function executeShowTables(context) {
+  const columns = ['name']
+  const names = Object.keys(context.tables).sort()
+  return {
+    columns,
+    numRows: names.length,
+    maxRows: names.length,
+    async *rows() {
+      for (const name of names) {
+        context.signal?.throwIfAborted()
+        yield {
+          columns,
+          cells: { name: () => Promise.resolve(name) },
+        }
+      }
     },
   }
 }

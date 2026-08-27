@@ -47,6 +47,17 @@ export function parseSql({ query, functions }) {
  */
 export function parseStatement(state) {
   const positionStart = state.lastPos
+  const showTok = current(state)
+  if (showTok.type === 'identifier' && showTok.value.toUpperCase() === 'SHOW') {
+    consume(state)
+    const tok = current(state)
+    if (tok.type !== 'identifier' || tok.value.toUpperCase() !== 'TABLES') {
+      throw parseError(state, 'TABLES')
+    }
+    consume(state)
+    match(state, 'semicolon')
+    return { type: 'show tables', positionStart: showTok.positionStart, positionEnd: state.lastPos }
+  }
   if (match(state, 'keyword', 'WITH')) {
     const recursiveTok = current(state)
     if (recursiveTok.type === 'identifier' && recursiveTok.value.toUpperCase() === 'RECURSIVE') {

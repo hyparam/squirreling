@@ -15,6 +15,7 @@ export type QueryPlan =
   | NestedLoopJoinNode
   | PositionalJoinNode
   | SetOperationNode
+  | ShowTablesNode
   | SubqueryNode
   | TableFunctionNode
   | WindowNode
@@ -33,6 +34,11 @@ export interface ScanNode {
 // Source for FROM-less SELECT like `SELECT 1`. Yields exactly one empty row.
 export interface SingleRowNode {
   type: 'SingleRow'
+}
+
+// SHOW TABLES: yields one row per available table name
+export interface ShowTablesNode {
+  type: 'ShowTables'
 }
 
 // Count node for COUNT(*) optimization

@@ -35,6 +35,7 @@ export type {
   ScanResults,
   SelectStatement,
   SetOperationStatement,
+  ShowTablesStatement,
   SqlType,
   SqlPrimitive,
   Statement,
