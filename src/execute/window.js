@@ -1,5 +1,6 @@
 import { evaluateExpr } from '../expression/evaluate.js'
 import { executePlan } from './execute.js'
+import { foldEvaluatedRows } from './fold.js'
 import { compareForTerm, keyify } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
@@ -116,30 +117,24 @@ export function executeWindow(plan, context) {
  * @param {ExecuteContext} context
  */
 async function computeWindow(spec, rows, output, context) {
-  // Bucket row indices by partition key.
+  // Bucket row indices by partition key. Keys are evaluated in adaptive
+  // chunks so async cells overlap while evaluated key values stay byte-bounded.
   /** @type {Map<string | number | bigint | boolean, number[]>} */
   const partitions = new Map()
-  for (let chunkStart = 0; chunkStart < rows.length; chunkStart += YIELD_INTERVAL) {
-    if (chunkStart > 0) {
-      await yieldToEventLoop()
-      context.signal?.throwIfAborted()
-    }
-    const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, rows.length)
-    const chunkKeys = await Promise.all(
-      rows.slice(chunkStart, chunkEnd).map(row =>
-        Promise.all(spec.partitionBy.map(expr => evaluateExpr({ node: expr, row, context })))
-      )
-    )
-    for (let j = 0; j < chunkKeys.length; j++) {
-      const key = keyify(...chunkKeys[j])
+  await foldEvaluatedRows({
+    rows,
+    signal: context.signal,
+    evaluate: row => Promise.all(spec.partitionBy.map(expr => evaluateExpr({ node: expr, row, context }))),
+    fold(keyValues, index) {
+      const key = keyify(...keyValues)
       let bucket = partitions.get(key)
       if (!bucket) {
         bucket = []
         partitions.set(key, bucket)
       }
-      bucket.push(chunkStart + j)
-    }
-  }
+      bucket.push(index)
+    },
+  })
 
   for (const bucket of partitions.values()) {
     context.signal?.throwIfAborted()

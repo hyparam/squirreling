@@ -1,10 +1,11 @@
 import { selectedRowCount, valueAt } from '../backend/batch.js'
 import { derivedAlias } from '../expression/alias.js'
 import { compileBatchExpression } from '../expression/batch.js'
-import { evaluateAll, evaluateExpr } from '../expression/evaluate.js'
+import { evaluateExpr } from '../expression/evaluate.js'
 import { collectColumnsFromExpr } from '../plan/columns.js'
 import { isAggregateFunc } from '../validation/functions.js'
 import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
+import { foldEvaluatedRows } from './fold.js'
 import { referencesRowScope } from './rowScope.js'
 import { sortEntriesByTerms } from './sort.js'
 import { keyify } from './utils.js'
@@ -342,9 +343,11 @@ function substituteValues(node, values) {
 }
 
 /**
- * Folds one chunk of rows into the group accumulators. Group keys, FILTER
- * conditions, and aggregate arguments are each evaluated across the whole
- * chunk so async cells overlap; the chunk is released afterwards.
+ * Folds one chunk of rows into the group accumulators. Each row's group keys,
+ * FILTER conditions, and aggregate arguments are dispatched together so async
+ * cells overlap, and folded in row order as they resolve, so evaluated values
+ * (which can be large strings) are bounded by bytes instead of being held for
+ * the whole chunk.
  *
  * @param {object} options
  * @param {AsyncRow[]} options.chunk
@@ -355,72 +358,88 @@ function substituteValues(node, values) {
  * @param {ExecuteContext} options.context
  * @returns {Promise<void>}
  */
-async function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context }) {
-  /** @type {SqlPrimitive[][] | undefined} */
-  let keyColumns
-  if (groupBy.length) {
-    keyColumns = await Promise.all(groupBy.map(expr => evaluateAll(expr, chunk, context)))
+function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context }) {
+  /**
+   * @param {SqlPrimitive[]} keyValues
+   * @param {number} index
+   * @returns {StreamingGroup}
+   */
+  function newGroup(keyValues, index) {
+    return {
+      firstRow: needsRow ? chunk[index] : undefined,
+      keyValues,
+      accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)),
+    }
   }
 
-  /** @type {(SqlPrimitive[] | undefined)[]} */
-  const filters = new Array(specs.length)
-  /** @type {(SqlPrimitive[] | undefined)[]} */
-  const args = new Array(specs.length)
-  for (let s = 0; s < specs.length; s++) {
-    const { node, star } = specs[s]
-    if (node.filter) {
-      const passes = await evaluateAll(node.filter, chunk, context)
-      filters[s] = passes
-      if (!star) {
-        // The buffered path filters the group before evaluating arguments,
-        // so only evaluate the argument for rows that pass the FILTER
-        /** @type {AsyncRow[]} */
-        const passingRows = []
-        /** @type {number[]} */
-        const passingIndices = []
-        for (let j = 0; j < chunk.length; j++) {
-          if (passes[j]) {
-            passingRows.push(chunk[j])
-            passingIndices.push(j)
+  // Fast path: a single group key and only bare star aggregates (the common
+  // COUNT(*) GROUP BY x shape) skip the per-row tuple wrapper so synchronous
+  // cells stay cheap.
+  const singleExpr = groupBy.length === 1 && specs.every(spec => spec.star && !spec.node.filter)
+    ? groupBy[0] : null
+  if (singleExpr) {
+    return foldEvaluatedRows({
+      rows: chunk,
+      signal: context.signal,
+      evaluate: row => evaluateExpr({ node: singleExpr, row, context }),
+      fold(value, index) {
+        const key = keyify(value)
+        let group = groups.get(key)
+        if (!group) {
+          group = newGroup([value], index)
+          groups.set(key, group)
+        }
+        for (let s = 0; s < specs.length; s++) {
+          if (specs[s].funcName === 'COUNT') group.accumulators[s].count++
+          else updateAccumulator(specs[s].funcName, group.accumulators[s], null)
+        }
+      },
+    })
+  }
+
+  return foldEvaluatedRows({
+    rows: chunk,
+    signal: context.signal,
+    // One flat tuple per row: group key values, then per spec its FILTER
+    // result and its argument. The argument is only evaluated for rows that
+    // pass the FILTER, matching the buffered path.
+    evaluate(row) {
+      const pending = groupBy.map(expr => evaluateExpr({ node: expr, row, context }))
+      for (const { node, star } of specs) {
+        if (node.filter) {
+          const passes = evaluateExpr({ node: node.filter, row, context })
+          pending.push(passes)
+          if (!star) {
+            pending.push(passes.then(pass => pass ? evaluateExpr({ node: node.args[0], row, context }) : null))
           }
+        } else if (!star) {
+          pending.push(evaluateExpr({ node: node.args[0], row, context }))
         }
-        const values = await evaluateAll(node.args[0], passingRows, context)
-        const spread = new Array(chunk.length).fill(null)
-        for (let k = 0; k < passingIndices.length; k++) {
-          spread[passingIndices[k]] = values[k]
+      }
+      return Promise.all(pending)
+    },
+    fold(values, index) {
+      const key = groupBy.length === 0 ? true
+        : groupBy.length === 1 ? keyify(values[0]) : keyify(...values.slice(0, groupBy.length))
+      let group = groups.get(key)
+      if (!group) {
+        group = newGroup(values.slice(0, groupBy.length), index)
+        groups.set(key, group)
+      }
+      let slot = groupBy.length
+      for (let s = 0; s < specs.length; s++) {
+        const spec = specs[s]
+        const passes = spec.node.filter ? values[slot++] : true
+        const arg = spec.star ? null : values[slot++]
+        if (!passes) continue
+        if (spec.star && spec.funcName === 'COUNT') {
+          group.accumulators[s].count++
+        } else {
+          updateAccumulator(spec.funcName, group.accumulators[s], arg)
         }
-        args[s] = spread
       }
-    } else {
-      args[s] = star ? undefined : await evaluateAll(node.args[0], chunk, context)
-    }
-  }
-
-  for (let j = 0; j < chunk.length; j++) {
-    const key = keyColumns
-      ? keyColumns.length === 1 ? keyify(keyColumns[0][j]) : keyify(...keyColumns.map(c => c[j]))
-      : true
-    let group = groups.get(key)
-    if (!group) {
-      group = {
-        firstRow: needsRow ? chunk[j] : undefined,
-        keyValues: keyColumns ? keyColumns.map(c => c[j]) : [],
-        accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)),
-      }
-      groups.set(key, group)
-    }
-    for (let s = 0; s < specs.length; s++) {
-      const filter = filters[s]
-      if (filter && !filter[j]) continue
-      const spec = specs[s]
-      if (spec.star && spec.funcName === 'COUNT') {
-        group.accumulators[s].count++
-      } else {
-        const arg = args[s]
-        updateAccumulator(spec.funcName, group.accumulators[s], arg ? arg[j] : null)
-      }
-    }
-  }
+    },
+  })
 }
 
 /**
