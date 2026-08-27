@@ -3,6 +3,7 @@ import { derivedAlias } from '../expression/alias.js'
 import { evaluateExpr } from '../expression/evaluate.js'
 import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumulator.js'
 import { executePlan, executeScan, selectColumnNames } from './execute.js'
+import { foldEvaluatedRows } from './fold.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { sortEntriesByTerms } from './sort.js'
 import { planStreamingAggregates, streamingHashAggregateRows, streamingScalarAggregateRows } from './streamingAggregate.js'
@@ -109,47 +110,42 @@ export function executeHashAggregate(plan, context) {
       }
       context.signal?.throwIfAborted()
 
-      // Group rows by GROUP BY keys.
-      // Each chunk dispatches all per-row key evaluations in parallel so
-      // async cells (e.g. lazy parquet decode) overlap; the await is at the
-      // chunk boundary. Synchronous cells stay cheap because we skip the
-      // inner Promise.all wrapper when there's a single GROUP BY expression.
+      // Group rows by GROUP BY keys. Keys are evaluated in adaptive chunks
+      // so async cells (e.g. lazy parquet decode) overlap while evaluated
+      // key values stay byte-bounded. The single-key branch skips the inner
+      // Promise.all wrapper so synchronous cells stay cheap.
       /** @type {Map<any, AsyncRow[]>} */
       const groups = new Map()
       const { groupBy } = plan
-      const singleKey = groupBy.length === 1
-      const singleExpr = singleKey ? groupBy[0] : null
+      const singleExpr = groupBy.length === 1 ? groupBy[0] : null
 
-      for (let chunkStart = 0; chunkStart < allRows.length; chunkStart += YIELD_INTERVAL) {
-        if (chunkStart > 0) {
-          await yieldToEventLoop()
-          context.signal?.throwIfAborted()
+      /**
+       * @param {any} key
+       * @param {number} index
+       */
+      function addToGroup(key, index) {
+        let group = groups.get(key)
+        if (!group) {
+          group = []
+          groups.set(key, group)
         }
-        const chunkEnd = Math.min(chunkStart + YIELD_INTERVAL, allRows.length)
-        const chunkLen = chunkEnd - chunkStart
-        /** @type {Promise<any>[]} */
-        const pending = new Array(chunkLen)
-        if (singleKey) {
-          for (let j = 0; j < chunkLen; j++) {
-            pending[j] = evaluateExpr({ node: singleExpr, row: allRows[chunkStart + j], context })
-          }
-        } else {
-          for (let j = 0; j < chunkLen; j++) {
-            const row = allRows[chunkStart + j]
-            pending[j] = Promise.all(groupBy.map(expr => evaluateExpr({ node: expr, row, context })))
-          }
-        }
-        const chunkKeys = await Promise.all(pending)
-        for (let j = 0; j < chunkLen; j++) {
-          const key = singleKey ? keyify(chunkKeys[j]) : keyify(...chunkKeys[j])
-          const row = allRows[chunkStart + j]
-          let group = groups.get(key)
-          if (!group) {
-            group = []
-            groups.set(key, group)
-          }
-          group.push(row)
-        }
+        group.push(allRows[index])
+      }
+
+      if (singleExpr) {
+        await foldEvaluatedRows({
+          rows: allRows,
+          signal: context.signal,
+          evaluate: row => evaluateExpr({ node: singleExpr, row, context }),
+          fold: (value, index) => addToGroup(keyify(value), index),
+        })
+      } else {
+        await foldEvaluatedRows({
+          rows: allRows,
+          signal: context.signal,
+          evaluate: row => Promise.all(groupBy.map(expr => evaluateExpr({ node: expr, row, context }))),
+          fold: (values, index) => addToGroup(keyify(...values), index),
+        })
       }
 
       /** @type {{ row: AsyncRow, rows: AsyncRow[], outputRow: AsyncRow }[]} */
