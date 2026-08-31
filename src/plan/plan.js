@@ -5,10 +5,11 @@ import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
+import { rewriteEagerAggregate } from './eagerAggregate.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
- * @import { HashJoinNode, QueryPlan, TableFunctionNode, WindowSpec } from './types.js'
+ * @import { HashAggregateNode, HashJoinNode, QueryPlan, TableFunctionNode, WindowSpec } from './types.js'
  */
 
 /**
@@ -260,7 +261,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       const groupBy = aliases.size > 0
         ? select.groupBy.map(expr => resolveAliases(expr, aliases))
         : select.groupBy
-      /** @type {QueryPlan} */
+      /** @type {HashAggregateNode} */
       const aggregatePlan = {
         type: 'HashAggregate',
         groupBy,
@@ -269,7 +270,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
         child: plan,
       }
       if (orderBy.length) aggregatePlan.orderBy = orderBy
-      plan = aggregatePlan
+      plan = rewriteEagerAggregate(aggregatePlan)
     } else if (!select.having && !select.where && plan.type === 'Scan' && isOwnScan && isAllCountStar(select.columns)) {
       plan = { type: 'Count', table: plan.table, columns: select.columns }
     } else {
