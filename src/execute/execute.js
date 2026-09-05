@@ -588,7 +588,9 @@ function executeCount(plan, context) {
           throw new Error(`Data source "${plan.table}" does not implement scan()`)
         }
         let count = 0
-        const { rows } = table.scan({ signal })
+        // Counting needs row presence, not payload columns. Sources may still
+        // read columns required for their own visibility or delete filters.
+        const { rows } = table.scan({ columns: [], signal })
         // eslint-disable-next-line no-unused-vars
         for await (const _ of rows()) {
           signal?.throwIfAborted()

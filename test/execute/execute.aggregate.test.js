@@ -1100,6 +1100,23 @@ describe('executeSql', () => {
       expect(result).toEqual([{ count_all: 5 }])
     })
 
+    it('counts legacy rows without requesting payload columns', async () => {
+      for (const length of [0, 3]) {
+        const { signal } = new AbortController()
+        const legacy = memorySource({
+          columns: ['payload'],
+          data: Array.from({ length }, () => ({ payload: 'unused' })),
+        })
+        const scan = vi.fn(legacy.scan)
+        await expect(collect(executeSql({
+          tables: { t: { columns: ['payload'], scan } },
+          query: 'SELECT COUNT(*) AS a, COUNT(*) AS b FROM t',
+          signal,
+        }))).resolves.toEqual([{ a: length, b: length }])
+        expect(scan).toHaveBeenCalledExactlyOnceWith({ columns: [], signal })
+      }
+    })
+
     it('should ignore prepareScan without a schema', async () => {
       const legacy = memorySource({ data: [{ id: 1 }, { id: 2 }] })
       if (!legacy.columns || !legacy.scan) throw new Error('expected legacy source')
