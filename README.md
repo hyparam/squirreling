@@ -95,10 +95,10 @@ Because Squirreling uses lazy cell evaluation, the `AI_SCORE` function only exec
 
 ### Custom Data Sources
 
-Squirreling can work with any data source that implements the `AsyncDataSource` interface.
+Squirreling can work with any data source that implements the `AsyncDataSource` interface. The simplest form is a `ScannableDataSource`: column names plus a row scan.
 
 ```typescript
-interface AsyncDataSource {
+interface ScannableDataSource {
   numRows?: number
   columns: string[]
   scan(options: ScanOptions): ScanResults

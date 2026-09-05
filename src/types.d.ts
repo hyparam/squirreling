@@ -209,30 +209,33 @@ export type AsyncCell = () => Promise<SqlPrimitive>
 
 export type Row = Record<string, SqlPrimitive>[]
 
-/**
- * Async data source for streaming SQL execution. A source must implement
- * either scan() or prepareScan().
- */
 interface AsyncDataSourceBase {
   numRows?: number
   // Optional method for fast column scans
   scanColumn?(options: ScanColumnOptions): AsyncIterable<ArrayLike<SqlPrimitive>> | ScanColumnResults
 }
 
-export type AsyncDataSource = AsyncDataSourceBase & (
-  | {
-      columns: string[]
-      scan(options: ScanOptions): ScanResults
-      schema?: RelationSchema
-      prepareScan?: PrepareScan
-    }
-  | {
-      columns?: string[]
-      scan?(options: ScanOptions): ScanResults
-      schema: RelationSchema
-      prepareScan: PrepareScan
-    }
-)
+/** A data source that always provides column names and a row scan. */
+export interface ScannableDataSource extends AsyncDataSourceBase {
+  columns: string[]
+  scan(options: ScanOptions): ScanResults
+  schema?: RelationSchema
+  prepareScan?: PrepareScan
+}
+
+/** A data source that always provides a schema and a prepared batch scan. */
+export interface PreparableDataSource extends AsyncDataSourceBase {
+  columns?: string[]
+  scan?(options: ScanOptions): ScanResults
+  schema: RelationSchema
+  prepareScan: PrepareScan
+}
+
+/**
+ * Async data source for streaming SQL execution. A source must implement
+ * either scan() or prepareScan().
+ */
+export type AsyncDataSource = ScannableDataSource | PreparableDataSource
 
 /**
  * Result of a scan: streaming rows and flags indicating which hints were

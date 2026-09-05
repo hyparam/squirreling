@@ -1,8 +1,10 @@
-import type { AsyncBatch, AsyncDataSource, AsyncRow, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RowsToBatchesOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
+import type { AsyncBatch, AsyncDataSource, AsyncRow, PreparableDataSource, ScannableDataSource, ColumnResult, ColumnVector, ExecuteContext, ExecuteSqlOptions, ExprNode, ParseSqlOptions, PlanSqlOptions, QueryPlan, QueryResults, ReadBatchColumnOptions, RowsToBatchesOptions, RowSelection, SqlPrimitive, Statement, Token } from './types.js'
 export type {
   AsyncBatch,
   AsyncCells,
   AsyncDataSource,
+  PreparableDataSource,
+  ScannableDataSource,
   AsyncRow,
   BatchColumn,
   ColumnDemand,
