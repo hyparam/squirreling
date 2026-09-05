@@ -80,5 +80,25 @@ describe('parseSql', () => {
         },
       ])
     })
+
+    it('should expand GROUP BY ALL to non-aggregate select expressions', () => {
+      const select = parseSelect('SELECT city, age + 1 AS bucket, COUNT(*) AS cnt FROM users GROUP BY ALL')
+      expect(select.groupBy).toEqual([
+        { type: 'identifier', name: 'city', positionStart: 7, positionEnd: 11 },
+        {
+          type: 'binary',
+          op: '+',
+          left: { type: 'identifier', name: 'age', positionStart: 13, positionEnd: 16 },
+          right: { type: 'literal', value: 1, positionStart: 19, positionEnd: 20 },
+          positionStart: 13,
+          positionEnd: 20,
+        },
+      ])
+    })
+
+    it('should expand GROUP BY ALL to empty list when every column is an aggregate', () => {
+      const select = parseSelect('SELECT COUNT(*), MAX(age) FROM users GROUP BY ALL')
+      expect(select.groupBy).toEqual([])
+    })
   })
 })

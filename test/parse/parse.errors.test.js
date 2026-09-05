@@ -332,6 +332,11 @@ describe('parseSql error handling', () => {
       expect(() => parseSql({ query: 'SELECT name FROM users GROUP BY COUNT(name)' }))
         .toThrow('Aggregate function COUNT is not allowed in GROUP BY clause')
     })
+
+    it('should throw error for GROUP BY ALL with star column', () => {
+      expect(() => parseSql({ query: 'SELECT *, COUNT(*) FROM users GROUP BY ALL' }))
+        .toThrow('GROUP BY ALL does not support * at position 39')
+    })
   })
 
   describe('ORDER BY errors', () => {

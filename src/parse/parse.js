@@ -274,11 +274,16 @@ function parseSelect(state) {
 
   if (match(state, 'keyword', 'GROUP')) {
     expect(state, 'keyword', 'BY')
-    while (true) {
-      const expr = resolvePositionalRef(parseExpression(state), columns, 'GROUP BY')
-      expectNoAggregate(expr, 'GROUP BY')
-      groupBy.push(expr)
-      if (!match(state, 'comma')) break
+    if (current(state).type === 'keyword' && current(state).value === 'ALL') {
+      const tok = consume(state)
+      groupBy.push(...expandGroupByAll(columns, tok.positionStart, tok.positionEnd))
+    } else {
+      while (true) {
+        const expr = resolvePositionalRef(parseExpression(state), columns, 'GROUP BY')
+        expectNoAggregate(expr, 'GROUP BY')
+        groupBy.push(expr)
+        if (!match(state, 'comma')) break
+      }
     }
   }
 
@@ -369,6 +374,30 @@ function parseSelect(state) {
     positionStart,
     positionEnd: state.lastPos,
   }
+}
+
+/**
+ * Expand GROUP BY ALL into every SELECT expression that contains no aggregate.
+ *
+ * @param {SelectColumn[]} columns
+ * @param {number} positionStart
+ * @param {number} positionEnd
+ * @returns {ExprNode[]}
+ */
+function expandGroupByAll(columns, positionStart, positionEnd) {
+  /** @type {ExprNode[]} */
+  const groupBy = []
+  for (const col of columns) {
+    if (col.type === 'star') {
+      throw new ParseError({
+        message: `GROUP BY ALL does not support * at position ${positionStart}`,
+        positionStart,
+        positionEnd,
+      })
+    }
+    if (!findAggregate(col.expr)) groupBy.push(col.expr)
+  }
+  return groupBy
 }
 
 /**

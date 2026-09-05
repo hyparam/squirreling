@@ -139,4 +139,53 @@ describe('executeSql - GROUP BY', () => {
       { a: 2, b: 3, count: 2 },
     ])
   })
+
+  describe('GROUP BY ALL', () => {
+    it('should group by every non-aggregate column', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, active, COUNT(*) AS count FROM users GROUP BY ALL ORDER BY city, active',
+      }))
+      expect(result).toEqual([
+        { city: 'LA', active: true, count: 2 },
+        { city: 'NYC', active: false, count: 1 },
+        { city: 'NYC', active: true, count: 2 },
+      ])
+    })
+
+    it('should group by aliased expressions', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT LOWER(city) AS c, age >= 30 AS senior, SUM(age) AS total FROM users GROUP BY ALL ORDER BY c, senior',
+      }))
+      expect(result).toEqual([
+        { c: 'la', senior: false, total: 53 },
+        { c: 'nyc', senior: true, total: 95 },
+      ])
+    })
+
+    it('should produce a single row when every column is an aggregate', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT COUNT(*) AS count, MAX(age) AS oldest FROM users GROUP BY ALL',
+      }))
+      expect(result).toEqual([{ count: 5, oldest: 35 }])
+    })
+
+    it('should deduplicate rows when there are no aggregates', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city FROM users GROUP BY ALL ORDER BY city',
+      }))
+      expect(result).toEqual([{ city: 'LA' }, { city: 'NYC' }])
+    })
+
+    it('should work with HAVING', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT city, COUNT(*) AS count FROM users GROUP BY ALL HAVING COUNT(*) > 2',
+      }))
+      expect(result).toEqual([{ city: 'NYC', count: 3 }])
+    })
+  })
 })
