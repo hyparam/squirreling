@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.16.4]
+ - Support `GROUP BY ALL`
+ - Export `ScannableDataSource` and `PreparableDataSource` data source types
+ - Skip payload column projection for `COUNT(*)` scans
+
 ## [0.16.3]
  - `REGEXP_LIKE` stringifies object operands like `LIKE` and `CAST` to `VARCHAR`
 
