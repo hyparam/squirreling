@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.5]
+ - Batched evaluation of `IN` value lists in native columnar execution
+
 ## [0.16.4]
  - Support `GROUP BY ALL`
  - Export `ScannableDataSource` and `PreparableDataSource` data source types
