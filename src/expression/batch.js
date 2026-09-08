@@ -206,6 +206,31 @@ function compileValueKernel(node, state) {
     }
   }
 
+  if (node.type === 'in valuelist') {
+    // Later list entries are conditional reads. Keep those on the row path
+    // until they have a selection-aware evaluator, just like lazy functions.
+    if (node.values.some(readsIdentifier)) return undefined
+    const argument = compileValueKernel(node.expr, state)
+    if (!argument) return undefined
+    /** @type {ValueKernel[]} */
+    const values = []
+    for (const valueNode of node.values) {
+      const value = compileValueKernel(valueNode, state)
+      if (!value) return undefined
+      values.push(value)
+    }
+    return function inValue(vectors, rowIndex, streamRowIndex) {
+      const input = argument(vectors, rowIndex, streamRowIndex)
+      let sawNull = input == null
+      for (const value of values) {
+        const candidate = value(vectors, rowIndex, streamRowIndex)
+        if (candidate == null) sawNull = true
+        else if (input != null && sqlEquals(input, candidate)) return true
+      }
+      return sawNull ? null : false
+    }
+  }
+
   if (node.type === 'cast') {
     const argument = compileValueKernel(node.expr, state)
     if (!argument) return undefined
@@ -652,6 +677,7 @@ function readsIdentifier(node) {
   if (node.type === 'unary') return readsIdentifier(node.argument)
   if (node.type === 'binary') return readsIdentifier(node.left) || readsIdentifier(node.right)
   if (node.type === 'cast') return readsIdentifier(node.expr)
+  if (node.type === 'in valuelist') return readsIdentifier(node.expr) || node.values.some(readsIdentifier)
   if (node.type === 'function') return node.args.some(readsIdentifier)
   return false
 }

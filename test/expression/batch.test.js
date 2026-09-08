@@ -9,6 +9,80 @@ import { parseSql } from '../../src/parse/parse.js'
 const schema = ['n', 'text']
 
 describe('batch expressions', () => {
+  it.each([
+    ['n IN (1, \'2\', 2)', [true, true, false, null]],
+    ['n NOT IN (1, \'2\')', [false, false, true, null]],
+    ['n IN (1, NULL)', [true, null, null, null]],
+    ['n NOT IN (1, NULL)', [false, null, null, null]],
+    ['n IN (NULL, 2)', [null, true, null, null]],
+    ['n IN (NULL)', [null, null, null, null]],
+    ['n IN (1 + 0, 2)', [true, true, false, null]],
+  ])('preserves SQL equality and nulls for %s', (sql, expected) => {
+    const compiled = compile(sql)
+    if (!compiled) throw new Error('expected expression to compile')
+    const batch = loadedBatch([1, 2n, 3, null], [])
+    expect(compiled.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values', values: expected, length: 4,
+    })
+  })
+
+  it('uses SQL date equality and boolean coercion', () => {
+    for (const [sql, input] of [
+      ['n IN (CAST(\'2026-09-07T00:00:00Z\' AS TIMESTAMP))', new Date('2026-09-07T00:00:00Z')],
+      ['n IN (1)', true],
+    ]) {
+      const compiled = compile(String(sql))
+      if (!compiled) throw new Error('expected expression to compile')
+      const batch = loadedBatch([input], [])
+      expect(compiled.evaluate({ batch, selection: batch.selection })).toEqual({
+        type: 'values', values: [true], length: 1,
+      })
+    }
+  })
+
+  it('reads an IN input once and honors the existing selection', async () => {
+    /** @type {ReadColumn} */
+    function readColumn({ selection }) {
+      expect(selection).toEqual({ type: 'indices', indices: new Uint32Array([3, 1]), length: 4 })
+      return Promise.resolve({ type: 'values', values: [3, 1], length: 2 })
+    }
+    const read = vi.fn(readColumn)
+    const compiled = compile('n IN (1, 2, 1, NULL)')
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      selection: { type: 'indices', indices: new Uint32Array([3, 1]), length: 4 },
+      columns: [{ read }],
+    }
+    expect(await compiled.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values', values: [null, true], length: 2,
+    })
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves short circuiting around and within IN', async () => {
+    const compiled = compile('n = 1 OR text IN (\'yes\')')
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {ReadColumn} */
+    function readText({ selection }) {
+      expect(selection).toEqual({ type: 'indices', indices: new Uint32Array([1]), length: 2 })
+      return { type: 'values', values: ['yes'], length: 1 }
+    }
+    const loaded = loadedBatch([1, 2], [])
+    const batch = { ...loaded, columns: [loaded.columns[0], { read: readText }] }
+    expect(await compiled.evaluate({ batch, selection: batch.selection })).toEqual({
+      type: 'values', values: [true, true], length: 2,
+    })
+    const lazy = compile('n IN (1, CAST(\'invalid\' AS INT))')
+    if (!lazy) throw new Error('expected expression to compile')
+    const one = loadedBatch([1], [])
+    expect(lazy.evaluate({ batch: one, selection: one.selection })).toEqual({
+      type: 'values', values: [true], length: 1,
+    })
+    expect(compile('n IN (1, text)')).toBeUndefined()
+    expect(compile('n IN (SELECT n FROM data)')).toBeUndefined()
+  })
+
   it('resolves each dependency once for a synchronous vector kernel', () => {
     const compiled = compile('LENGTH(text) + n')
     if (!compiled) throw new Error('expected expression to compile')

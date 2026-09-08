@@ -15,6 +15,41 @@ const schema = {
 }
 
 describe('prepared scans', () => {
+  it('keeps IN residuals native and reads payload only for surviving positions', async () => {
+    /** @type {ReadColumn} */
+    function readPayload({ selection }) {
+      expect(selection).toEqual({ type: 'indices', indices: new Uint32Array([2]), length: 4 })
+      return { type: 'values', values: ['kept'], length: 1 }
+    }
+    const payload = vi.fn(readPayload)
+    /** @type {AsyncDataSource} */
+    const source = {
+      schema,
+      prepareScan(request) {
+        return {
+          schema,
+          residual: { filter: request.filter },
+          properties: {},
+          async *batches() {
+            yield {
+              selection: { type: 'indices', indices: new Uint32Array([0, 2, 3]), length: 4 },
+              columns: [
+                { type: 'values', values: [false, true, true, null], length: 4 },
+                { read: payload },
+              ],
+            }
+          },
+        }
+      },
+    }
+    const result = executeSql({ tables: { data: source }, query: 'SELECT payload FROM data WHERE keep IN (true, NULL)' })
+    expect(result.batches).toBeTypeOf('function')
+    result.rows = vi.fn(function rows() { throw new Error('unexpected row fallback') })
+    expect(await collect(result)).toEqual([{ payload: 'kept' }])
+    expect(payload).toHaveBeenCalledTimes(1)
+    expect(result.rows).not.toHaveBeenCalled()
+  })
+
   it('preserves alias scope in correlated residual filters', async () => {
     /** @type {RelationSchema} */
     const outerSchema = {
