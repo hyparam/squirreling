@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
-import { memorySource } from '../../src/backend/dataSource.js'
+import { collect, executeSql, parseSql } from '../../src/index.js'
+import { asyncRow, memorySource } from '../../src/backend/dataSource.js'
+
+/**
+ * @import { AsyncDataSource, ScanOptions } from '../../src/types.js'
+ */
 
 describe('JOIN queries', () => {
   const users = [
@@ -1131,5 +1135,52 @@ describe('JOIN queries', () => {
         { k: 3, y: null },
       ])
     })
+  })
+})
+
+describe('pushed INNER JOIN filters', () => {
+  it('enforces filters before joining even when the source ignores scan hints', async () => {
+    const data = [{ id: 1, flag: true }, { id: 1, flag: true }, { id: 1, flag: false }, { id: null, flag: true }]
+    /** @type {ScanOptions[]} */
+    const requests = []
+    /** @type {AsyncDataSource} */
+    const source = {
+      columns: ['id', 'flag'], numRows: data.length,
+      scan(options) {
+        requests.push(options)
+        return { appliedWhere: false, appliedLimitOffset: false, async *rows() {
+          for (const row of data) yield asyncRow(row, options.columns ?? ['id', 'flag'])
+        } }
+      },
+    }
+    const query = 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND b.flag = true'
+    const rows = await collect(executeSql({ tables: { items: source }, query }))
+    expect(rows).toEqual([{ id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }])
+    expect(requests).toHaveLength(2)
+    expect(requests.every(request => request.where !== undefined)).toBe(true)
+  })
+
+  it('preserves NULL comparisons and residual cross-table predicates on prepared scans', async () => {
+    const data = [{ id: 1, value: 2 }, { id: 1, value: 3 }, { id: 1, value: null }, { id: null, value: 4 }]
+    const tables = { items: data }
+    const rows = await collect(executeSql({ tables, query: 'SELECT a.value AS lo, b.value AS hi FROM items a JOIN items b ON a.id = b.id WHERE a.value > 0 AND a.value < b.value' }))
+    expect(rows).toEqual([{ lo: 2, hi: 3 }])
+    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.value = NULL' }))).toEqual([])
+  })
+
+  it('does not mutate a reusable parsed query', async () => {
+    const query = parseSql({ query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND b.flag = true' })
+    const original = structuredClone(query)
+    for (const flag of [true, false]) {
+      const rows = await collect(executeSql({ query, tables: { items: [{ id: 1, flag }] } }))
+      expect(rows).toEqual(flag ? [{ id: 1 }] : [])
+      expect(query).toEqual(original)
+    }
+  })
+
+  it('preserves short-circuiting of throwing predicates', async () => {
+    const tables = { items: [{ id: 1, flag: false, text: 42 }] }
+    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND LENGTH(b.text) > 0' }))).toEqual([])
+    await expect(collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE LENGTH(b.text) > 0 AND a.flag = true' }))).rejects.toThrow()
   })
 })

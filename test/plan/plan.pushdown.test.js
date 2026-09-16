@@ -375,3 +375,71 @@ describe('column pushdown', () => {
     expect(plan.child.left.hints.columns).toEqual(['id', 'arr'])
   })
 })
+
+describe('INNER JOIN predicate pushdown', () => {
+  const a = memorySource({ data: [{ id: 1, flag: true, value: 2 }] })
+  const b = memorySource({ data: [{ id: 1, flag: true, value: 3 }] })
+  const tables = { a, b }
+
+  it('moves qualified comparisons into both scans and removes the outer filter', () => {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id WHERE a.flag = true AND b.value > 2' })
+    expect(plan).toMatchObject({ type: 'Project', child: {
+      type: 'HashJoin',
+      left: { type: 'Scan', hints: { columns: ['id', 'flag'], where: { op: '=', left: { prefix: 'a', name: 'flag' } } } },
+      right: { type: 'Scan', hints: { where: { op: '>', left: { prefix: 'b', name: 'value' } } } },
+    } })
+  })
+
+  it('retains cross-table comparisons above the join', () => {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id WHERE a.flag = true AND a.value < b.value' })
+    expect(plan).toMatchObject({ child: { type: 'Filter', condition: { op: '<' }, child: {
+      type: 'HashJoin', left: { hints: { where: { op: '=' } } }, right: { hints: { columns: expect.arrayContaining(['id', 'value']) } },
+    } } })
+  })
+
+  it('combines multiple predicates and handles aliases and reversed comparisons', () => {
+    const plan = planSql({ tables, query: 'SELECT x.id FROM a x JOIN a y ON y.id = x.id WHERE 1 < x.value AND x.flag = true AND y.value > 0' })
+    expect(plan).toMatchObject({ child: { type: 'HashJoin',
+      left: { alias: 'x', hints: { where: { op: 'AND', left: { op: '<' }, right: { op: '=' } } } },
+      right: { alias: 'y', hints: { where: { op: '>' } } },
+    } })
+  })
+
+  it('does not move predicates across outer or non-equijoins', () => {
+    for (const join of ['LEFT JOIN b ON a.id = b.id', 'RIGHT JOIN b ON a.id = b.id', 'FULL JOIN b ON a.id = b.id', 'JOIN b ON a.value > b.value']) {
+      const plan = planSql({ tables, query: `SELECT a.id FROM a ${join} WHERE a.flag = true` })
+      expect(plan).toMatchObject({ child: { type: 'Filter', child: { left: { hints: { columns: expect.any(Array) } } } } })
+      if (plan.type !== 'Project' || plan.child.type !== 'Filter') throw new Error('expected residual filter')
+      const joinPlan = plan.child.child
+      if (joinPlan.type !== 'HashJoin' && joinPlan.type !== 'NestedLoopJoin') throw new Error('expected join')
+      if (joinPlan.left.type !== 'Scan') throw new Error('expected scan')
+      expect(joinPlan.left.hints.where).toBeUndefined()
+    }
+  })
+
+  it('leaves unsafe WHERE and ON evaluation order alone', () => {
+    for (const where of ['CAST(a.value AS INT) > 0 AND b.flag = true', 'a.flag = true OR b.flag = true', 'flag = true AND b.value > 0', 'a.flag = true AND b.id IN (SELECT id FROM b)']) {
+      const plan = planSql({ tables, query: `SELECT a.id FROM a JOIN b ON a.id = b.id WHERE ${where}` })
+      expect(plan).toMatchObject({ child: { type: 'Filter' } })
+    }
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND CAST(b.value AS INT) > 0 WHERE a.flag = true' })
+    expect(plan).toMatchObject({ child: { type: 'Filter', child: { type: 'HashJoin', residual: { op: '>' } } } })
+  })
+
+  it('does not push into CTEs or derived tables', () => {
+    for (const query of [
+      'WITH x AS (SELECT * FROM a) SELECT x.id FROM x JOIN b ON x.id = b.id WHERE x.flag = true',
+      'WITH x AS (SELECT * FROM b) SELECT a.id FROM a JOIN x ON a.id = x.id WHERE a.flag = true',
+      'SELECT a.id FROM (SELECT * FROM a LIMIT 1) a JOIN b ON a.id = b.id WHERE a.flag = true',
+      'SELECT a.id FROM a JOIN (SELECT * FROM b LIMIT 1) b ON a.id = b.id WHERE b.flag = true',
+    ]) {
+      expect(planSql({ tables, query })).toMatchObject({ child: { type: 'Filter' } })
+    }
+  })
+
+  it('does not interpret a struct column prefix as a table alias', () => {
+    const structured = memorySource({ data: [{ id: 1, flag: false, a: { flag: true } }] })
+    const plan = planSql({ tables: { a: structured, b }, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id WHERE a.flag = true' })
+    expect(plan).toMatchObject({ child: { type: 'Filter' } })
+  })
+})

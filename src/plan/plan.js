@@ -1,3 +1,4 @@
+import { dataSourceColumns } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
@@ -238,6 +239,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   /** @type {QueryPlan} */
   let plan = planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope })
   pruneAggregateColumns(plan, subqueryNeeds)
+  const directFrom = plan.type === 'Scan' && plan.hints === hints
 
   // Add JOINs
   if (select.joins.length) {
@@ -248,8 +250,13 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const isOwnScan = plan.type === 'Scan' && plan.hints === hints
 
   // Add WHERE filter when the scan didn't receive it
-  if (select.where && !isOwnScan) {
-    plan = { type: 'Filter', condition: select.where, child: plan }
+  let { where } = select
+  if (where && directFrom && select.joins.length === 1 && !outerScope?.length &&
+      !ctePlans?.has(select.joins[0].table?.toLowerCase())) {
+    where = pushJoinWhere(plan, where, tables)
+  }
+  if (where && !isOwnScan) {
+    plan = { type: 'Filter', condition: where, child: plan }
   }
 
   if (useGrouping) {
@@ -824,6 +831,81 @@ function collectConjuncts(node, out) {
     return
   }
   out.push(node)
+}
+
+/**
+ * Push total, table-local comparisons into fresh scans of a direct INNER
+ * equijoin. Scan execution already enforces hints a source cannot apply.
+ * Refuse the entire rewrite if WHERE or ON contains an expression whose
+ * errors, side effects or scope could change when evaluated before the join.
+ *
+ * @param {QueryPlan} plan
+ * @param {ExprNode} where
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @returns {ExprNode | undefined}
+ */
+function pushJoinWhere(plan, where, tables) {
+  if (!tables || plan.type !== 'HashJoin' || plan.joinType !== 'INNER' || plan.residual ||
+      plan.left.type !== 'Scan' || plan.right.type !== 'Scan') return where
+  const scans = [plan.left, plan.right]
+  if (scans.some(scan => scan.hints.where || scan.hints.limit !== undefined || scan.hints.offset)) return where
+  const aliases = scans.map(scan => scan.alias ?? scan.table)
+  if (aliases[0] === aliases[1]) return where
+  const columns = scans.map(scan => dataSourceColumns(tables[scan.table]))
+  // A prefix that also names a struct column is not an unambiguous alias.
+  if (columns.some(names => aliases.some(alias => names.includes(alias)))) return where
+
+  /**
+   * @param {ExprNode} expr
+   * @returns {'left' | 'right' | 'literal' | 'unsafe'}
+   */
+  function owner(expr) {
+    if (expr.type === 'literal') return 'literal'
+    if (expr.type !== 'identifier' || !expr.prefix) return 'unsafe'
+    const index = aliases.indexOf(expr.prefix)
+    if (index < 0 || !columns[index].includes(expr.name)) return 'unsafe'
+    return index === 0 ? 'left' : 'right'
+  }
+
+  // Avoid changing the evaluation of unresolved or unqualified ON keys.
+  if (plan.leftKeys.some(key => owner(key) !== 'left') || plan.rightKeys.some(key => owner(key) !== 'right')) return where
+  /** @type {ExprNode[]} */
+  const conjuncts = []
+  collectConjuncts(where, conjuncts)
+  /** @type {Array<'left' | 'right' | 'residual'>} */
+  const targets = []
+  for (const expr of conjuncts) {
+    if (expr.type !== 'binary' || !['=', '==', '!=', '<>', '<', '<=', '>', '>='].includes(expr.op)) return where
+    const left = owner(expr.left)
+    const right = owner(expr.right)
+    if (left === 'unsafe' || right === 'unsafe') return where
+    // Only column/literal terms move; cross-table comparisons remain residual.
+    targets.push(left !== 'literal' && right === 'literal' ? left : right !== 'literal' && left === 'literal' ? right : 'residual')
+  }
+
+  /** @type {ExprNode | undefined} */
+  let residual
+  for (let i = 0; i < conjuncts.length; i++) {
+    const target = targets[i]
+    if (target === 'residual') {
+      residual = andPredicate(residual, conjuncts[i])
+    } else {
+      const scan = target === 'left' ? plan.left : plan.right
+      scan.hints = { ...scan.hints, where: andPredicate(scan.hints.where, conjuncts[i]) }
+    }
+  }
+  return residual
+}
+
+/**
+ * @param {ExprNode | undefined} left
+ * @param {ExprNode} right
+ * @returns {ExprNode}
+ */
+function andPredicate(left, right) {
+  return left
+    ? { type: 'binary', op: 'AND', left, right, positionStart: left.positionStart, positionEnd: right.positionEnd }
+    : right
 }
 
 /**
