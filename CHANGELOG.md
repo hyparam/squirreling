@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.6]
+ - Push table-local filter and `ON` predicates into inner join scans
+
 ## [0.16.5]
  - Batched evaluation of `IN` value lists in native columnar execution
 
