@@ -443,3 +443,62 @@ describe('INNER JOIN predicate pushdown', () => {
     expect(plan).toMatchObject({ child: { type: 'Filter' } })
   })
 })
+
+describe('INNER JOIN ON predicate pushdown', () => {
+  const tables = {
+    a: memorySource({ data: [{ id: 1, flag: true, value: 2 }] }),
+    b: memorySource({ data: [{ id: 1, flag: true, value: 3 }] }),
+  }
+
+  it('pushes ON comparisons to both scans without a WHERE clause', () => {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON b.id = a.id AND a.flag = true AND 2 < b.value' })
+    expect(plan).toMatchObject({ child: { type: 'HashJoin',
+      left: { hints: { where: { op: '=', left: { prefix: 'a', name: 'flag' } } } },
+      right: { hints: { where: { op: '<', right: { prefix: 'b', name: 'value' } } } },
+    } })
+    if (plan.type !== 'Project' || plan.child.type !== 'HashJoin') throw new Error('expected hash join')
+    expect(plan.child.residual).toBeUndefined()
+  })
+
+  it('combines ON and WHERE scan filters while keeping cross-table ON conditions', () => {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND b.flag = true AND a.value < b.value WHERE b.value > 0 AND a.flag = true' })
+    expect(plan).toMatchObject({ child: { type: 'HashJoin', residual: { op: '<', left: { prefix: 'a' }, right: { prefix: 'b' } },
+      left: { hints: { where: { op: '=' } } },
+      right: { hints: { where: { op: 'AND', left: { op: '=' }, right: { op: '>' } } } },
+    } })
+  })
+
+  it('pushes safe ON predicates when WHERE is not eligible', () => {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND b.flag = true WHERE CAST(a.value AS STRING) LIKE \'%2%\'' })
+    expect(plan).toMatchObject({ child: { type: 'Filter', condition: { op: 'LIKE' }, child: {
+      type: 'HashJoin', right: { hints: { where: { op: '=', left: { prefix: 'b', name: 'flag' } } } },
+    } } })
+  })
+
+  it('does not push any predicates when ON has unsafe expressions', () => {
+    for (const condition of ['b.flag = true AND LENGTH(b.value) > 0', 'flag = true AND b.value > 0', '(a.flag = true OR b.flag = true)']) {
+      const plan = planSql({ tables, query: `SELECT a.id FROM a JOIN b ON a.id = b.id AND ${condition} WHERE a.flag = true` })
+      if (plan.type !== 'Project' || plan.child.type !== 'Filter' || plan.child.child.type !== 'HashJoin') throw new Error('expected filtered hash join')
+      const join = plan.child.child
+      if (join.left.type !== 'Scan' || join.right.type !== 'Scan') throw new Error('expected scans')
+      expect(join.left.hints.where).toBeUndefined()
+      expect(join.right.hints.where).toBeUndefined()
+      expect(join.residual).toBeDefined()
+    }
+  })
+
+  it('does not push ON predicates across outer joins or shared CTE scans', () => {
+    for (const query of [
+      'SELECT a.id FROM a LEFT JOIN b ON a.id = b.id AND a.flag = true',
+      'SELECT a.id FROM a RIGHT JOIN b ON a.id = b.id AND b.flag = true',
+      'SELECT a.id FROM a FULL JOIN b ON a.id = b.id AND b.flag = true',
+      'WITH c AS (SELECT * FROM b) SELECT a.id FROM a JOIN c ON a.id = c.id AND c.flag = true',
+    ]) {
+      const plan = planSql({ tables, query })
+      if (plan.type !== 'Project' || plan.child.type !== 'HashJoin') throw new Error('expected hash join')
+      expect(plan.child.residual).toBeDefined()
+      if (plan.child.left.type !== 'Scan') throw new Error('expected left scan')
+      expect(plan.child.left.hints.where).toBeUndefined()
+    }
+  })
+})

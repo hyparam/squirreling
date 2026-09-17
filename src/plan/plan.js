@@ -251,9 +251,9 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Add WHERE filter when the scan didn't receive it
   let { where } = select
-  if (where && directFrom && select.joins.length === 1 && !outerScope?.length &&
+  if (directFrom && select.joins.length === 1 && !outerScope?.length &&
       !ctePlans?.has(select.joins[0].table?.toLowerCase())) {
-    where = pushJoinWhere(plan, where, tables)
+    where = pushJoinPredicates(plan, where, tables)
   }
   if (where && !isOwnScan) {
     plan = { type: 'Filter', condition: where, child: plan }
@@ -836,16 +836,17 @@ function collectConjuncts(node, out) {
 /**
  * Push total, table-local comparisons into fresh scans of a direct INNER
  * equijoin. Scan execution already enforces hints a source cannot apply.
- * Refuse the entire rewrite if WHERE or ON contains an expression whose
- * errors, side effects or scope could change when evaluated before the join.
+ * Validate ON before moving anything; an unsafe ON also blocks WHERE
+ * pushdown. Safe ON terms can move even when WHERE must remain above the
+ * join, since ON already excludes those pairs before WHERE is evaluated.
  *
  * @param {QueryPlan} plan
- * @param {ExprNode} where
+ * @param {ExprNode | undefined} where
  * @param {Record<string, AsyncDataSource>} [tables]
  * @returns {ExprNode | undefined}
  */
-function pushJoinWhere(plan, where, tables) {
-  if (!tables || plan.type !== 'HashJoin' || plan.joinType !== 'INNER' || plan.residual ||
+function pushJoinPredicates(plan, where, tables) {
+  if (!tables || plan.type !== 'HashJoin' || plan.joinType !== 'INNER' ||
       plan.left.type !== 'Scan' || plan.right.type !== 'Scan') return where
   const scans = [plan.left, plan.right]
   if (scans.some(scan => scan.hints.where || scan.hints.limit !== undefined || scan.hints.offset)) return where
@@ -869,32 +870,59 @@ function pushJoinWhere(plan, where, tables) {
 
   // Avoid changing the evaluation of unresolved or unqualified ON keys.
   if (plan.leftKeys.some(key => owner(key) !== 'left') || plan.rightKeys.some(key => owner(key) !== 'right')) return where
-  /** @type {ExprNode[]} */
-  const conjuncts = []
-  collectConjuncts(where, conjuncts)
-  /** @type {Array<'left' | 'right' | 'residual'>} */
-  const targets = []
-  for (const expr of conjuncts) {
-    if (expr.type !== 'binary' || !['=', '==', '!=', '<>', '<', '<=', '>', '>='].includes(expr.op)) return where
-    const left = owner(expr.left)
-    const right = owner(expr.right)
-    if (left === 'unsafe' || right === 'unsafe') return where
-    // Only column/literal terms move; cross-table comparisons remain residual.
-    targets.push(left !== 'literal' && right === 'literal' ? left : right !== 'literal' && left === 'literal' ? right : 'residual')
+  /**
+   * @param {ExprNode[]} conjuncts
+   * @returns {Array<'left' | 'right' | 'residual'> | undefined}
+   */
+  function classify(conjuncts) {
+    /** @type {Array<'left' | 'right' | 'residual'>} */
+    const targets = []
+    for (const expr of conjuncts) {
+      if (expr.type !== 'binary' || !['=', '==', '!=', '<>', '<', '<=', '>', '>='].includes(expr.op)) return undefined
+      const left = owner(expr.left)
+      const right = owner(expr.right)
+      if (left === 'unsafe' || right === 'unsafe') return undefined
+      // Only column/literal terms move; cross-table comparisons remain residual.
+      targets.push(left !== 'literal' && right === 'literal' ? left : right !== 'literal' && left === 'literal' ? right : 'residual')
+    }
+    return targets
   }
 
-  /** @type {ExprNode | undefined} */
-  let residual
-  for (let i = 0; i < conjuncts.length; i++) {
-    const target = targets[i]
-    if (target === 'residual') {
-      residual = andPredicate(residual, conjuncts[i])
-    } else {
-      const scan = target === 'left' ? plan.left : plan.right
-      scan.hints = { ...scan.hints, where: andPredicate(scan.hints.where, conjuncts[i]) }
+  /**
+   * @param {ExprNode[]} conjuncts
+   * @param {Array<'left' | 'right' | 'residual'>} targets
+   * @returns {ExprNode | undefined}
+   */
+  function push(conjuncts, targets) {
+    /** @type {ExprNode | undefined} */
+    let residual
+    for (let i = 0; i < conjuncts.length; i++) {
+      const target = targets[i]
+      if (target === 'residual') {
+        residual = andPredicate(residual, conjuncts[i])
+      } else {
+        const scan = target === 'left' ? scans[0] : scans[1]
+        scan.hints = { ...scan.hints, where: andPredicate(scan.hints.where, conjuncts[i]) }
+      }
     }
+    return residual
   }
-  return residual
+
+  /** @type {ExprNode[]} */
+  const onConjuncts = []
+  if (plan.residual) collectConjuncts(plan.residual, onConjuncts)
+  const onTargets = classify(onConjuncts)
+  if (!onTargets) return where
+  const onResidual = push(onConjuncts, onTargets)
+  if (onResidual) plan.residual = onResidual
+  else delete plan.residual
+
+  if (!where) return undefined
+  /** @type {ExprNode[]} */
+  const whereConjuncts = []
+  collectConjuncts(where, whereConjuncts)
+  const whereTargets = classify(whereConjuncts)
+  return whereTargets ? push(whereConjuncts, whereTargets) : where
 }
 
 /**

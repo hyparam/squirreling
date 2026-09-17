@@ -1153,7 +1153,7 @@ describe('pushed INNER JOIN filters', () => {
         } }
       },
     }
-    const query = 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND b.flag = true'
+    const query = 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND a.flag = true WHERE b.flag = true'
     const rows = await collect(executeSql({ tables: { items: source }, query }))
     expect(rows).toEqual([{ id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }])
     expect(requests).toHaveLength(2)
@@ -1169,7 +1169,7 @@ describe('pushed INNER JOIN filters', () => {
   })
 
   it('does not mutate a reusable parsed query', async () => {
-    const query = parseSql({ query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND b.flag = true' })
+    const query = parseSql({ query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND a.flag = true WHERE b.flag = true' })
     const original = structuredClone(query)
     for (const flag of [true, false]) {
       const rows = await collect(executeSql({ query, tables: { items: [{ id: 1, flag }] } }))
@@ -1182,5 +1182,26 @@ describe('pushed INNER JOIN filters', () => {
     const tables = { items: [{ id: 1, flag: false, text: 42 }] }
     expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND LENGTH(b.text) > 0' }))).toEqual([])
     await expect(collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE LENGTH(b.text) > 0 AND a.flag = true' }))).rejects.toThrow()
+  })
+})
+
+describe('pushed INNER JOIN ON filters', () => {
+  it('preserves duplicates, NULL keys, NULL comparisons and cross-table residuals', async () => {
+    const items = [{ id: 1, value: 2 }, { id: 1, value: 2 }, { id: 1, value: 3 }, { id: 1, value: null }, { id: null, value: 3 }]
+    const tables = { items }
+    expect(await collect(executeSql({ tables, query: 'SELECT a.value AS lo, b.value AS hi FROM items a JOIN items b ON a.id = b.id AND b.value > 0 AND a.value < b.value WHERE a.value = 2' }))).toEqual([{ lo: 2, hi: 3 }, { lo: 2, hi: 3 }])
+    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND b.value = NULL' }))).toEqual([])
+  })
+
+  it('preserves ON short circuiting and evaluates WHERE only for surviving pairs', async () => {
+    const tables = { items: [{ id: 1, flag: false, text: 42 }] }
+    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND a.flag = true AND LENGTH(b.text) > 0' }))).toEqual([])
+    await expect(collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND LENGTH(b.text) > 0 AND a.flag = true' }))).rejects.toThrow()
+    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND a.flag = true WHERE LENGTH(b.text) > 0' }))).toEqual([])
+  })
+
+  it('keeps rows excluded by ON as unmatched rows of a LEFT JOIN', async () => {
+    const tables = { items: [{ id: 1, flag: false }] }
+    expect(await collect(executeSql({ tables, query: 'SELECT a.id AS a_id, b.id AS b_id FROM items a LEFT JOIN items b ON a.id = b.id AND a.flag = true' }))).toEqual([{ a_id: 1, b_id: null }])
   })
 })
