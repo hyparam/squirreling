@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.7]
+ - Pass Top-K (`ORDER BY` + `LIMIT`) hints to prepared data source scans
+
 ## [0.16.6]
  - Push table-local filter and `ON` predicates into inner join scans
 
