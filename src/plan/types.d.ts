@@ -25,6 +25,9 @@ export interface ScanNode {
   table: string
   alias?: string
   hints: ScanOptions
+  // Execution-local hint from an immediately enclosing bounded Sort. Kept
+  // separate from scan LIMIT/OFFSET, which select an unordered input slice.
+  topK?: { orderBy: OrderByItem[], limit: number }
 }
 
 // Source for FROM-less SELECT like `SELECT 1`. Yields exactly one empty row.

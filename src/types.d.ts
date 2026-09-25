@@ -126,8 +126,25 @@ export interface ColumnDemand {
   mode: 'required' | 'deferred'
 }
 
+/**
+ * Optional candidate-pruning hint for an ordered slice. A source may ignore
+ * it, or omit rows proven unable to enter the first `limit` rows after the
+ * scan's filter. Preserve all boundary ties and the relative input order of
+ * retained rows. Return an unordered superset of the winners, not an arbitrary
+ * `limit` rows. The engine retains the final sort and slice.
+ */
+export interface ScanTopK {
+  orderBy: readonly {
+    field: number
+    direction: 'ASC' | 'DESC'
+    nulls: 'FIRST' | 'LAST'
+  }[]
+  limit: number // Includes the outer OFFSET.
+}
+
 export interface ScanRequest {
   columns: readonly ColumnDemand[]
+  topK?: ScanTopK
   filter?: ExprNode
   limit?: number
   offset?: number

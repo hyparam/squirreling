@@ -21,7 +21,7 @@ import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { BatchProjection, CompiledBatchExpression } from '../internalTypes.js'
- * @import { AsyncBatch, AsyncCells, AsyncDataSource, AsyncRow, ColumnDemand, ColumnVector, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, PreparedScan, QueryResults, RelationSchema, ScanRequest, SelectColumn, SqlPrimitive, Statement } from '../types.js'
+ * @import { AsyncBatch, AsyncCells, AsyncDataSource, AsyncRow, ColumnDemand, ColumnVector, DerivedColumn, ExecuteContext, ExecuteSqlOptions, ExprNode, IdentifierNode, NumericArray, PreparedScan, QueryResults, RelationSchema, ScanColumnResults, ScanRequest, ScanTopK, SelectColumn, SqlPrimitive, Statement } from '../types.js'
  * @import { CountNode, DistinctNode, FilterNode, LimitNode, ProjectNode, QueryPlan, ScanNode, SetOperationNode, TableFunctionNode } from '../plan/types.js'
  */
 
@@ -277,7 +277,7 @@ export function selectColumnNames(selectColumns, childColumns) {
 /**
  * @param {ScanNode} plan
  * @param {ExecuteContext} context
- * @param {import('../types.js').ScanColumnResults} [existingColumnResult]
+ * @param {ScanColumnResults} [existingColumnResult]
  * @returns {QueryResults}
  */
 export function executeScan(plan, context, existingColumnResult) {
@@ -539,12 +539,27 @@ function scanRequest(plan, schema, context) {
       mode: predicate ? 'required' : 'deferred',
     }
   })
-  return {
+  /** @type {ScanRequest} */
+  const request = {
     columns,
     filter: plan.hints.where,
     limit: plan.hints.limit,
     offset: plan.hints.offset,
   }
+  if (plan.topK) {
+    /** @type {ScanTopK['orderBy'][number][]} */
+    const orderBy = []
+    for (const term of plan.topK.orderBy) {
+      const { expr } = term
+      if (expr.type !== 'identifier' ||
+          expr.prefix && expr.prefix !== (plan.alias ?? plan.table)) return request
+      const field = schema.fields.find(field => field.name === expr.name)
+      if (!field) return request
+      orderBy.push({ field: field.id, direction: term.direction, nulls: term.nulls ?? 'FIRST' })
+    }
+    if (orderBy.length) request.topK = { orderBy, limit: plan.topK.limit }
+  }
+  return request
 }
 
 /**
@@ -1016,7 +1031,7 @@ function vectorFromChunk(chunk) {
 
 /**
  * @param {ArrayLike<SqlPrimitive>} values
- * @returns {values is import('../types.js').NumericArray}
+ * @returns {values is NumericArray}
  */
 function isNumericArray(values) {
   return values instanceof Int8Array

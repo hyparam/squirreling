@@ -128,8 +128,16 @@ export async function sortEntriesByTerms({ entries, orderBy, context, cacheValue
  * @returns {QueryResults}
  */
 export function executeSort(plan, context) {
-  const child = executePlan({ plan: plan.child, context })
   const { topK } = plan
+  let childPlan = plan.child
+  // Only a directly adjacent scan can prune candidates for this sort. Never
+  // cross filters, joins, aggregates or windows, or change an existing scan
+  // slice. Copy the node: CTE plans can be shared by other consumers.
+  if (Number.isSafeInteger(topK) && topK > 0 && childPlan.type === 'Scan' &&
+      childPlan.hints.limit === undefined && !childPlan.hints.offset) {
+    childPlan = { ...childPlan, topK: { orderBy: plan.orderBy, limit: topK } }
+  }
+  const child = executePlan({ plan: childPlan, context })
   // With a LIMIT bound pushed into the sort, keep at most this many buffered
   // rows: periodically sort and discard everything past topK, so memory is
   // bounded by the limit instead of the input size.
