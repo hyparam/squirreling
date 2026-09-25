@@ -30,6 +30,7 @@ export type {
   ScanOptions,
   ScanProperties,
   ScanRequest,
+  ScanTopK,
   ScanResidual,
   ScanResults,
   SelectStatement,
