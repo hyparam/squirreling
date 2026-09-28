@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.8]
+ - Faster `COUNT` over constant batches without visiting each row
+
 ## [0.16.7]
  - Pass Top-K (`ORDER BY` + `LIMIT`) hints to prepared data source scans
 
