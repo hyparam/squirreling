@@ -238,11 +238,15 @@ function projectedBatchColumn(batch, columnIndex) {
 /**
  * @param {ColumnVector} predicate
  * @param {number} rowCount
- * @returns {{ selection: Extract<RowSelection, { type: 'indices' }>, selectedCount: number }}
+ * @returns {{ selection: RowSelection, selectedCount: number }}
  */
 function predicateSelection(predicate, rowCount) {
   if (predicate.length !== rowCount) {
     throw new Error(`Predicate returned ${predicate.length} rows, expected ${rowCount}`)
+  }
+  if (predicate.type === 'constant') {
+    const selectedCount = predicate.value ? rowCount : 0
+    return { selection: { type: 'range', start: 0, end: selectedCount, length: rowCount }, selectedCount }
   }
   const indices = new Uint32Array(rowCount)
   let selectedCount = 0

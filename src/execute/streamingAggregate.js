@@ -523,6 +523,25 @@ async function accumulateBatch({ batch, inputs, specs, groups, context, rowOffse
     evaluateBatchInputs(inputs.args, batch, context, rowOffset),
   ])
   const rowCount = selectedRowCount(batch.selection)
+  context.signal?.throwIfAborted()
+  if (rowCount > 0 && keys.every(vector => vector?.type === 'constant') &&
+      specs.every(spec => spec.star && spec.funcName === 'COUNT' && !spec.node.distinct && !spec.node.filter)) {
+    const keyValues = keys.map(vector => valueAt(/** @type {ColumnVector} */ vector, 0))
+    const key = keyValues.length === 0
+      ? true
+      : keyValues.length === 1 ? keyify(keyValues[0]) : keyify(...keyValues)
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        firstRow: undefined,
+        keyValues,
+        accumulators: specs.map(spec => newAccumulator(spec.funcName, spec.node.distinct)),
+      }
+      groups.set(key, group)
+    }
+    for (const accumulator of group.accumulators) accumulator.count += rowCount
+    return
+  }
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
     if (rowIndex > 0 && rowIndex % CHUNK_SIZE === 0) {
       await yieldToEventLoop()

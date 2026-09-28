@@ -626,6 +626,13 @@ function resolveIdentifier(identifier, columns) {
  */
 function evaluateKernel(kernel, vectors, selection, signal, rowOffset = 0, rowOrdinals) {
   const length = selectedRowCount(selection)
+  // Supported kernels are deterministic; streamRowIndex only labels errors.
+  // Empty selections must not evaluate expressions (including invalid casts).
+  if (length > 0 && vectors.every(vector => vector.type === 'constant')) {
+    signal?.throwIfAborted()
+    const ordinal = rowOrdinals ? Number(valueAt(rowOrdinals, 0)) : 0
+    return { type: 'constant', value: kernel(vectors, 0, rowOffset + ordinal), length }
+  }
   if (signal && length > YIELD_INTERVAL) {
     return evaluateKernelAsync(kernel, vectors, length, signal, rowOffset, rowOrdinals)
   }

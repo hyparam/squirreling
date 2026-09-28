@@ -31,6 +31,43 @@ const aliasValues = {
 }
 
 describe('batch aggregate execution', () => {
+  it('counts and groups constant batches through prepared scans', async () => {
+    /** @type {AsyncDataSource} */
+    const source = {
+      schema: { fields: [{ id: 1, name: 'day', dataType: { type: 'string' }, nullable: true }] },
+      scanColumn() { throw new Error('COUNT must use prepared batches') },
+      prepareScan(request) {
+        return {
+          schema: this.schema,
+          properties: {},
+          residual: { filter: request.filter },
+          async *batches() {
+            for (const [value, length] of [['a', 3], ['b', 5], ['a', 2], [null, 4]]) {
+              yield {
+                selection: { type: 'range', start: 1, end: Number(length), length: Number(length) },
+                columns: [{ type: 'constant', value, length: Number(length) }],
+              }
+            }
+          },
+        }
+      },
+    }
+    for (const [query, expected] of [
+      ['SELECT COUNT(*) AS n FROM t WHERE day = \'a\'', [{ n: 3 }]],
+      ['SELECT COUNT(*) AS n FROM t WHERE day = \'missing\'', [{ n: 0 }]],
+      ['SELECT COUNT(*) AS n FROM t WHERE day IS NULL', [{ n: 3 }]],
+      ['SELECT day, COUNT(*) AS n FROM t GROUP BY day ORDER BY day', [{ day: null, n: 3 }, { day: 'a', n: 3 }, { day: 'b', n: 4 }]],
+      ['SELECT day, COUNT(*) AS n FROM t GROUP BY day HAVING COUNT(*) > 3', [{ day: 'b', n: 4 }]],
+      ['SELECT day, COUNT(*), COUNT(day) FROM t GROUP BY day ORDER BY day', null],
+    ]) {
+      const rows = [{ day: 'a' }, { day: 'a' }, { day: 'b' }, { day: 'b' }, { day: 'b' }, { day: 'b' }, { day: 'a' }, { day: null }, { day: null }, { day: null }]
+      const sql = String(query)
+      expect(await collect(executeSql({ tables: { t: source }, query: sql }))).toEqual(
+        expected ?? await collect(executeSql({ tables: { t: rows }, query: sql }))
+      )
+    }
+  })
+
   it('groups production token expressions without using the row adapter', async () => {
     /** @type {ReadColumn} */
     function readAttributes({ selection }) {

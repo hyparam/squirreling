@@ -9,6 +9,25 @@ import { parseSql } from '../../src/parse/parse.js'
 const schema = ['n', 'text']
 
 describe('batch expressions', () => {
+  it('preserves constants across selected rows and leaves empty inputs unevaluated', async () => {
+    const compiled = compile('n > 2')
+    if (!compiled) throw new Error('expected expression to compile')
+    /** @type {AsyncBatch} */
+    const batch = {
+      selection: { type: 'all', length: 100 },
+      columns: [{ type: 'constant', value: 3, length: 100 }],
+    }
+    expect(await compiled.evaluate({
+      batch, selection: { type: 'indices', indices: new Uint32Array([7, 2]), length: 100 },
+    })).toEqual({ type: 'constant', value: true, length: 2 })
+    const invalid = compile('CAST(n AS INTEGER)')
+    if (!invalid) throw new Error('expected expression to compile')
+    batch.columns = [{ type: 'constant', value: 'invalid', length: 100 }]
+    expect(await invalid.evaluate({
+      batch, selection: { type: 'range', start: 0, end: 0, length: 100 },
+    })).toEqual({ type: 'values', values: [], length: 0 })
+  })
+
   it.each([
     ['n IN (1, \'2\', 2)', [true, true, false, null]],
     ['n NOT IN (1, \'2\')', [false, false, true, null]],

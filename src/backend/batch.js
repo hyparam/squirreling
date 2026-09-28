@@ -125,6 +125,7 @@ export function selectVector(vector, selection) {
     throw new Error(`Cannot select ${selection.length} rows from vector length ${vector.length}`)
   }
   if (selection.type === 'all') return vector
+  if (vector.type === 'constant') return { ...vector, length: selectedRowCount(selection) }
   if (vector.type === 'selected') {
     const composed = composeSelections(vector.selection, selection)
     return {

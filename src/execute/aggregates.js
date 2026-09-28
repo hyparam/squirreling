@@ -309,6 +309,9 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
     specs.push(spec)
   }
 
+  // Prepared batches can count selected rows without decoding a physical column.
+  if (table.prepareScan && specs.every(spec => spec.funcName === 'COUNT' && spec.star)) return
+
   const physicalColumns = new Set(specs.map(spec => spec.column))
   const hasPushdown = where || limit !== undefined || offset !== undefined
   if (hasPushdown) {
