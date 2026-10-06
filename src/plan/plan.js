@@ -6,6 +6,7 @@ import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
+import { filterFixesSortKey } from './constantSort.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
@@ -155,7 +156,6 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const useGrouping = hasAggregate || select.groupBy.length > 0
   // Windows with PARTITION BY or ORDER BY buffer; `OVER ()` streams.
   const bufferingWindows = windows.some(w => w.partitionBy.length > 0 || w.orderBy.length > 0)
-  const needsBuffering = useGrouping || select.orderBy.length > 0 || bufferingWindows
 
   // Source alias for FROM clause (undefined for FROM-less SELECT)
   const sourceAlias = fromAlias(select.from)
@@ -190,7 +190,13 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
     return col
   })
-  const orderBy = resolveOrderByAliases(select.orderBy, aliases)
+  let orderBy = resolveOrderByAliases(select.orderBy, aliases)
+  if (!useGrouping && !windows.length && !select.joins.length && !outerScope?.length && select.from?.type === 'table' &&
+      !ctePlans?.has(select.from.table.toLowerCase())) {
+    const fields = tables?.[select.from.table]?.schema?.fields
+    if (fields) orderBy = orderBy.filter(term => !filterFixesSortKey(select.where, term.expr, fields, sourceAlias))
+  }
+  const needsBuffering = useGrouping || orderBy.length > 0 || bufferingWindows
 
   // Validate qualified references in other clauses
   validateTableRefs(select.where, scopeTables, scopeColumns)
