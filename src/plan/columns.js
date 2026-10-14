@@ -40,7 +40,7 @@ export function fromAlias(from) {
  */
 export function statementScope(stmt) {
   if (stmt.type === 'with') return statementScope(stmt.query)
-  if (stmt.type === 'compound') return undefined
+  if (stmt.type === 'compound' || stmt.type === 'show tables') return undefined
   const alias = fromAlias(stmt.from)
   const joins = stmt.joins.map(j => j.alias ?? j.table)
   return alias === undefined ? joins : [alias, ...joins]
@@ -329,6 +329,7 @@ export function collectColumnsFromExpr(expr, columns, aliases, context) {
  * @param {ColumnCollectionContext} [context]
  */
 function collectCorrelatedColumnsFromStatement(stmt, columns, context) {
+  if (stmt.type === 'show tables') return
   if (stmt.type === 'compound') {
     collectCorrelatedColumnsFromStatement(stmt.left, columns, context)
     collectCorrelatedColumnsFromStatement(stmt.right, columns, context)
@@ -386,6 +387,7 @@ function collectCorrelatedColumnsFromStatement(stmt, columns, context) {
  * @param {ColumnCollectionContext} [context]
  */
 function collectFromFunctionArgs(stmt, columns, context) {
+  if (stmt.type === 'show tables') return
   if (stmt.type === 'compound') {
     collectFromFunctionArgs(stmt.left, columns, context)
     collectFromFunctionArgs(stmt.right, columns, context)
@@ -414,6 +416,9 @@ function collectFromFunctionArgs(stmt, columns, context) {
  * @returns {string[]}
  */
 export function inferStatementColumns({ stmt, cteColumns, tables }) {
+  if (stmt.type === 'show tables') {
+    return ['name']
+  }
   if (stmt.type === 'with') {
     return inferStatementColumns({ stmt: stmt.query, cteColumns, tables })
   }

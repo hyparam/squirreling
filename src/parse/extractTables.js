@@ -46,6 +46,10 @@ function walkStatement(stmt, cteScope, refs) {
     for (const o of stmt.orderBy) walkExpr(o.expr, cteScope, refs)
     return
   }
+  if (stmt.type === 'show tables') {
+    // SHOW TABLES references no source tables
+    return
+  }
   // select
   if (!stmt.from) {
     // FROM-less SELECT (e.g. `SELECT 1`), no source tables

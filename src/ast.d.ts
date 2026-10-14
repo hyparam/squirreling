@@ -41,7 +41,12 @@ export interface WithStatement extends AstBase {
   query: Statement
 }
 
-export type Statement = SelectStatement | SetOperationStatement | WithStatement
+// SHOW TABLES statement: lists the names of the available tables
+export interface ShowTablesStatement extends AstBase {
+  type: 'show tables'
+}
+
+export type Statement = SelectStatement | SetOperationStatement | WithStatement | ShowTablesStatement
 
 export interface CTEDefinition extends AstBase {
   name: string

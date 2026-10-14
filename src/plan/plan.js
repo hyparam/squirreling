@@ -38,6 +38,9 @@ export function planSql({ query, functions, tables, ctePlans, cteColumns }) {
  * @returns {QueryPlan}
  */
 export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
+  if (stmt.type === 'show tables') {
+    return { type: 'ShowTables' }
+  }
   if (stmt.type === 'with') {
     // Build CTE plans in order (each CTE can reference preceding CTEs)
     ctePlans ??= new Map()
