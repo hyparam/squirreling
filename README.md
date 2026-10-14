@@ -12,7 +12,7 @@
 
 Squirreling is a streaming async SQL engine in pure JavaScript. Built for the browser from the ground up: streaming input and output, pluggable data sources, and lazy async cell evaluation. This makes Squirreling ideal for querying data from network sources, APIs, or LLMs where latency and cost matter.
 
-> Part of **[HypStack](https://hypstack.ai/)**, an open-source stack for AI observability.
+> Powers **[HypAware](https://hypaware.ai/?utm_source=github-readme)**, the improvement loop for all your agents.
 
 - **Standard SQL**: Full SQL support for querying data (read-only)
 - **Async UDFs**: User-defined functions can call APIs or models
