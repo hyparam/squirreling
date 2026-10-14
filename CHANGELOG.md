@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.9]
+ - Support `SHOW TABLES` statement
+
 ## [0.16.8]
  - Faster `COUNT` over constant batches without visiting each row
 
