@@ -131,7 +131,7 @@ export const FUNCTION_SIGNATURES = {
   SPLIT_PART: { min: 3, max: 3, signature: 'string, delimiter, index' },
   STRING_SPLIT: { min: 2, max: 2, signature: 'string, delimiter' },
   REGEXP_SUBSTR: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
-  REGEXP_EXTRACT: { min: 2, max: 4, signature: 'string, pattern[, position[, occurrence]]' },
+  REGEXP_EXTRACT: { min: 2, max: 3, signature: 'string, pattern[, group]' },
   REGEXP_REPLACE: { min: 3, max: 5, signature: 'string, pattern, replacement[, position[, occurrence]]' },
   REGEXP_MATCHES: { min: 2, max: 2, signature: 'string, pattern' },
   REGEXP_LIKE: { min: 2, max: 2, signature: 'string, pattern' },
