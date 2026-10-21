@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.16.11]
+ - Fix correlated `EXISTS` and outer join query performance by decorrelating `EXISTS` and pushing filters through outer joins
+ - Fix `regexp_extract` capture groups
+ - Extend outer join null rejection to more predicates
+
 ## [0.16.10]
  - Push join filters to each side independently and plan `IN` subqueries as semi-joins
 
