@@ -418,7 +418,7 @@ describe('INNER JOIN predicate pushdown', () => {
   })
 
   it('leaves unsafe WHERE and ON evaluation order alone', () => {
-    for (const where of ['CAST(a.value AS INT) > 0 AND b.flag = true', 'a.flag = true OR b.flag = true', 'flag = true AND b.value > 0', 'a.flag = true AND b.id IN (SELECT id FROM b)']) {
+    for (const where of ['CAST(a.value AS INT) > 0 AND b.flag = true', 'a.flag = true OR b.flag = true', 'flag = true AND b.value > 0']) {
       const plan = planSql({ tables, query: `SELECT a.id FROM a JOIN b ON a.id = b.id WHERE ${where}` })
       expect(plan).toMatchObject({ child: { type: 'Filter' } })
     }

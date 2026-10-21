@@ -9,7 +9,7 @@ import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias,
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
- * @import { HashJoinNode, QueryPlan, TableFunctionNode, WindowSpec } from './types.js'
+ * @import { HashJoinNode, QueryPlan, SemiJoinNode, TableFunctionNode, WindowSpec } from './types.js'
  */
 
 /**
@@ -230,9 +230,46 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   if (hints.columns?.length === 0 && select.from?.type === 'subquery') {
     hints.columns = undefined
   }
+  // A WHERE membership test is a semi-join, not a row-by-row expression
+  // subquery. Keep the original SELECT for column demand analysis above.
+  /** @type {Omit<SemiJoinNode, 'left'>[]} */
+  const semiJoins = []
+  if (select.where && !outerScope?.length) {
+    /** @type {ExprNode[]} */
+    const conjuncts = []
+    collectConjuncts(select.where, conjuncts)
+    /** @type {ExprNode | undefined} */
+    let residual
+    for (const conjunct of conjuncts) {
+      const not = conjunct.type === 'unary' && conjunct.op === 'NOT'
+      const expr = not ? conjunct.argument : conjunct
+      if (expr.type !== 'in') {
+        residual = andPredicate(residual, conjunct)
+        continue
+      }
+      /** @type {IdentifierNode[]} */
+      const correlated = []
+      collectColumnsFromExpr({ type: 'subquery', subquery: expr.subquery, positionStart: expr.positionStart, positionEnd: expr.positionEnd }, correlated, undefined, {
+        tables, cteColumns, outerAliases: new Set(scopeAliases),
+      })
+      if (correlated.length) {
+        residual = andPredicate(residual, conjunct)
+        continue
+      }
+      const right = planStatement({ stmt: expr.subquery, tables, ctePlans, cteColumns })
+      const scope = statementScope(expr.subquery)
+      semiJoins.push({
+        type: 'SemiJoin',
+        expr: expr.expr,
+        not,
+        right: scope ? { type: 'Subquery', child: right, scope } : right,
+      })
+    }
+    select = { ...select, where: residual }
+  }
   if (!select.joins.length) {
     hints.where = select.where
-    if (!needsBuffering && !select.distinct) {
+    if (!needsBuffering && !select.distinct && !semiJoins.length) {
       hints.limit = select.limit
       hints.offset = select.offset
     }
@@ -261,6 +298,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   if (where && !isOwnScan) {
     plan = { type: 'Filter', condition: where, child: plan }
   }
+
+  for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
 
   if (useGrouping) {
     // Aggregation path: GROUP BY or scalar aggregate
@@ -346,7 +385,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isOwnScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset)) {
+    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length) && (select.limit !== undefined || select.offset)) {
       if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }

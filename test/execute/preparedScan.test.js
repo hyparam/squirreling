@@ -784,7 +784,8 @@ describe('prepared scans', () => {
     }))).resolves.toEqual([{ payload: 'yes' }])
     expect(prepare.mock.calls[0][0].columns).toEqual([
       { field: 2, phase: 1, purpose: 'output', mode: 'deferred' },
-      { field: 1, phase: 0, purpose: 'filter', mode: 'required' },
+      // Membership is now evaluated by the semi-join above the scan.
+      { field: 1, phase: 1, purpose: 'output', mode: 'deferred' },
     ])
   })
 

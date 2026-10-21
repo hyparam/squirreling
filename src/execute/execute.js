@@ -15,6 +15,7 @@ import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from '.
 import { referencesRowScope } from './rowScope.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
 import { executeSort } from './sort.js'
+import { executeSemiJoin } from './semiJoin.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
 import { executeWindow } from './window.js'
 import { yieldToEventLoop } from './yield.js'
@@ -108,6 +109,8 @@ export function executePlan({ plan, context }) {
     return executeFilter(plan, context)
   } else if (plan.type === 'Project') {
     return executeProject(plan, context)
+  } else if (plan.type === 'SemiJoin') {
+    return executeSemiJoin(plan, context)
   } else if (plan.type === 'HashJoin') {
     return executeHashJoin(plan, context)
   } else if (plan.type === 'NestedLoopJoin') {
