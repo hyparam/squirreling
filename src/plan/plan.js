@@ -1020,8 +1020,12 @@ function pushJoinPredicates(plan, where, select, tables, cteColumns) {
   if (plan.type === 'HashJoin') {
     if (onResidual) plan.residual = onResidual
     else delete plan.residual
-  } else {
-    plan.condition = onResidual
+  } else if (condition) {
+    // Nested-loop joins still need a condition when every conjunct was pushed.
+    plan.condition = onResidual ?? {
+      type: 'literal', value: true,
+      positionStart: condition.positionStart, positionEnd: condition.positionEnd,
+    }
   }
   const residual = push(whereConjuncts, false)
   if (leftSelect.joins.length) {

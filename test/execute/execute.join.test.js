@@ -7,6 +7,31 @@ import { asyncRow, memorySource } from '../../src/backend/dataSource.js'
  */
 
 describe('JOIN queries', () => {
+  it.each(['INNER', 'LEFT', 'RIGHT'])('should execute %s JOIN when all ON predicates are pushed down', async joinType => {
+    const condition = joinType === 'RIGHT' ? 'a.flag = true AND a.id > 0' : 'b.flag = true AND b.id > 0'
+    const result = await collect(executeSql({
+      tables: {
+        a: [{ id: 1, flag: true }, { id: 2, flag: false }],
+        b: [{ id: 3, flag: true }, { id: 4, flag: false }],
+      },
+      query: `SELECT a.id AS aid, b.id AS bid FROM a ${joinType} JOIN b ON ${condition} ORDER BY aid, bid`,
+    }))
+    expect(result).toEqual(joinType === 'RIGHT'
+      ? [{ aid: 1, bid: 3 }, { aid: 1, bid: 4 }]
+      : [{ aid: 1, bid: 3 }, { aid: 2, bid: 3 }])
+  })
+
+  it.each(['INNER', 'LEFT', 'RIGHT'])('should execute %s JOIN when pushed ON predicates remove every input row', async joinType => {
+    const condition = joinType === 'RIGHT' ? 'a.flag = true' : 'b.flag = true'
+    const result = await collect(executeSql({
+      tables: { a: [{ id: 1, flag: false }], b: [{ id: 2, flag: false }] },
+      query: `SELECT a.id AS aid, b.id AS bid FROM a ${joinType} JOIN b ON ${condition}`,
+    }))
+    expect(result).toEqual(joinType === 'INNER' ? [] : joinType === 'LEFT'
+      ? [{ aid: 1, bid: null }]
+      : [{ aid: null, bid: 2 }])
+  })
+
   const users = [
     { id: 1, name: 'Alice', age: 30, city: 'NYC', active: true },
     { id: 2, name: 'Bob', age: 25, city: 'LA', active: true },
