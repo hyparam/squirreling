@@ -5,6 +5,14 @@ import { collect, executeSql } from '../../src/index.js'
 const NULL = null
 
 describe('regex functions', () => {
+  it('does not compile an invalid pattern for NULL input', async () => {
+    const result = await collect(executeSql({
+      tables: {},
+      query: 'SELECT REGEXP_EXTRACT(NULL, \'[\') AS value',
+    }))
+    expect(result).toEqual([{ value: null }])
+  })
+
   describe('REGEXP_SUBSTR', () => {
     it('should extract first match of regex pattern', async () => {
       const data = [
@@ -149,8 +157,28 @@ describe('regex functions', () => {
     })
   })
 
+  it('advances past empty substring matches', async () => {
+    const result = await collect(executeSql({
+      tables: {},
+      query: 'SELECT REGEXP_SUBSTR(\'abc\', \'x*\', 1, 5) AS value',
+    }))
+    expect(result).toEqual([{ value: null }])
+  })
+
+  it('evaluates global expressions independently across rows', async () => {
+    const result = await collect(executeSql({
+      tables: { data: [{ text: 'a1 b2' }, { text: 'a1 b2' }] },
+      query: `SELECT REGEXP_SUBSTR(text, '[0-9]', 1, 2) AS value,
+        REGEXP_REPLACE(text, '[0-9]', 'X', 1, 2) AS replaced FROM data`,
+    }))
+    expect(result).toEqual([
+      { value: '2', replaced: 'a1 bX' },
+      { value: '2', replaced: 'a1 bX' },
+    ])
+  })
+
   describe('REGEXP_EXTRACT', () => {
-    it('should work as alias for REGEXP_SUBSTR', async () => {
+    it('should default to the whole match', async () => {
       const data = [
         { id: 1, text: 'Hello World 123' },
         { id: 2, text: 'abc 456 def 789' },
@@ -165,13 +193,53 @@ describe('regex functions', () => {
       ])
     })
 
-    it('should support position and occurrence parameters', async () => {
-      const data = [{ id: 1, text: 'abc 123 def 456 ghi 789' }]
+    it.each([
+      ['\'abc123\', \'([a-z]+)([0-9]+)\'', 'abc123'],
+      ['\'abc123\', \'([a-z]+)([0-9]+)\', 0', 'abc123'],
+      ['\'abc123\', \'([a-z]+)([0-9]+)\', 1', 'abc'],
+      ['\'abc123\', \'([a-z]+)([0-9]+)\', 2', '123'],
+      ['\'abc123\', \'([a-z]+)([0-9]+)\', 3', null],
+      ['\'abc\', \'(abc)(123)?\', 2', null],
+      ['\'abc\', \'(z)\', 1', null],
+      ['\'abc\', \'()\', 1', ''],
+      ['NULL, \'(abc)\', 1', null],
+      ['\'abc\', NULL, 1', null],
+      ['\'abc\', \'(abc)\', NULL', null],
+    ])('extracts %s', async (args, expected) => {
       const result = await collect(executeSql({
-        tables: { data },
-        query: 'SELECT REGEXP_EXTRACT(text, \'[0-9]+\', 1, 2) AS num FROM data',
+        tables: {},
+        query: `SELECT REGEXP_EXTRACT(${args}) AS value`,
       }))
-      expect(result[0].num).toBe('456')
+      expect(result).toEqual([{ value: expected }])
+    })
+
+    it('rejects the former four-argument signature', () => {
+      expect(() => executeSql({
+        tables: {},
+        query: 'SELECT REGEXP_EXTRACT(\'abc123\', \'[0-9]+\', 1, 2)',
+      })).toThrow('REGEXP_EXTRACT(string, pattern[, group]) function requires 2-3 arguments, got 4')
+    })
+
+    it.each([-1, 1.5])('rejects invalid group %s', async group => {
+      await expect(collect(executeSql({
+        tables: {},
+        query: `SELECT REGEXP_EXTRACT('abc', '(abc)', ${group})`,
+      }))).rejects.toThrow(`REGEXP_EXTRACT(string, pattern[, group]): group must be a non-negative integer, got ${group} (row 1)`)
+    })
+
+    it('reports invalid patterns clearly', async () => {
+      await expect(collect(executeSql({
+        tables: {},
+        query: 'SELECT REGEXP_EXTRACT(\'abc\', \'[\')',
+      }))).rejects.toThrow('REGEXP_EXTRACT(string, pattern[, group]): invalid regex pattern: Invalid regular expression: /[/: Unterminated character class (row 1)')
+    })
+
+    it('evaluates dynamic patterns independently', async () => {
+      const result = await collect(executeSql({
+        tables: { data: [{ pattern: '(a)' }, { pattern: '(b)' }, { pattern: '(c)' }] },
+        query: 'SELECT REGEXP_EXTRACT(\'abc\', pattern, 1) AS value FROM data',
+      }))
+      expect(result).toEqual([{ value: 'a' }, { value: 'b' }, { value: 'c' }])
     })
 
     it('should return null for null input', async () => {
@@ -395,6 +463,15 @@ describe('regex functions', () => {
   })
 
   describe('REGEXP_REPLACE', () => {
+    it('expands replacement tokens only when replacing all occurrences', async () => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: `SELECT REGEXP_REPLACE('a1 b2', '([0-9])', '<$1>') AS all_matches,
+          REGEXP_REPLACE('a1 b2', '([0-9])', '<$1>', 1, 2) AS second_match`,
+      }))
+      expect(result).toEqual([{ all_matches: 'a<1> b<2>', second_match: 'a1 b<$1>' }])
+    })
+
     it('should replace all matches by default', async () => {
       const data = [{ id: 1, text: 'abc 123 def 456' }]
       const result = await collect(executeSql({

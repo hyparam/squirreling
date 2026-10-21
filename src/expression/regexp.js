@@ -16,7 +16,22 @@ import { ArgValueError } from '../validation/executionErrors.js'
  * @returns {SqlPrimitive}
  */
 export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
-  if (funcName === 'REGEXP_SUBSTR' || funcName === 'REGEXP_EXTRACT') {
+  if (funcName === 'REGEXP_EXTRACT') {
+    const [str, pattern] = args
+    if (str == null || pattern == null || args.length >= 3 && args[2] == null) return null
+    const group = args.length >= 3 ? Number(args[2]) : 0
+    if (!Number.isInteger(group) || group < 0) {
+      throw new ArgValueError({
+        ...node,
+        message: `group must be a non-negative integer, got ${args[2]}`,
+        rowIndex,
+      })
+    }
+    const regex = compileRegexp(node, String(pattern), '', rowIndex)
+    return regex.exec(String(str))?.[group] ?? null
+  }
+
+  if (funcName === 'REGEXP_SUBSTR') {
     const str = args[0]
     const pattern = args[1]
     if (str == null || pattern == null) return null
@@ -51,17 +66,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
       }
     }
 
-    // Create regex
-    let regex
-    try {
-      regex = new RegExp(patternStr, 'g')
-    } catch (/** @type {any} */ error) {
-      throw new ArgValueError({
-        ...node,
-        message: `invalid regex pattern: ${error.message}`,
-        rowIndex,
-      })
-    }
+    const regex = compileRegexp(node, patternStr, 'g', rowIndex)
 
     // Search from position (convert to 0-based)
     const searchStr = strVal.substring(position - 1)
@@ -74,6 +79,8 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
       if (count === occurrence) {
         return match[0]
       }
+      // RegExp.exec does not advance after an empty match.
+      if (match[0] === '') regex.lastIndex++
     }
 
     return null
@@ -120,17 +127,7 @@ export function evaluateRegexpFunc({ funcName, node, args, rowIndex }) {
       }
     }
 
-    // Create regex
-    let regex
-    try {
-      regex = new RegExp(patternStr, 'g')
-    } catch (/** @type {any} */ error) {
-      throw new ArgValueError({
-        ...node,
-        message: `invalid regex pattern: ${error.message}`,
-        rowIndex,
-      })
-    }
+    const regex = compileRegexp(node, patternStr, 'g', rowIndex)
 
     // If position > 1, preserve the prefix
     const prefix = strVal.substring(0, position - 1)
@@ -174,15 +171,7 @@ export function evaluateRegexpLike({ node, args, rowIndex, cache }) {
   const patternString = String(pattern)
   let regex = cache?.pattern === patternString ? cache.regex : undefined
   if (!regex) {
-    try {
-      regex = new RegExp(patternString)
-    } catch (/** @type {any} */ error) {
-      throw new ArgValueError({
-        ...node,
-        message: `invalid regex pattern: ${error.message}`,
-        rowIndex,
-      })
-    }
+    regex = compileRegexp(node, patternString, '', rowIndex)
     if (cache) {
       cache.pattern = patternString
       cache.regex = regex
@@ -193,4 +182,25 @@ export function evaluateRegexpLike({ node, args, rowIndex, cache }) {
   // JSON-typed columns. String() would collapse every object to
   // '[object Object]', making REGEXP_LIKE a silent never-match on them.
   return regex.test(typeof string === 'object' ? stringify(string) : String(string))
+}
+
+/**
+ * Compile a regex and report invalid patterns as SQL argument errors.
+ *
+ * @param {FunctionNode} node
+ * @param {string} pattern
+ * @param {string} flags
+ * @param {number} [rowIndex]
+ * @returns {RegExp}
+ */
+function compileRegexp(node, pattern, flags, rowIndex) {
+  try {
+    return new RegExp(pattern, flags)
+  } catch (/** @type {any} */ error) {
+    throw new ArgValueError({
+      ...node,
+      message: `invalid regex pattern: ${error.message}`,
+      rowIndex,
+    })
+  }
 }
