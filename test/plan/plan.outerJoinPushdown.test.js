@@ -18,7 +18,7 @@ const tables = {
  * @returns {HashJoinNode}
  */
 function joinOf(plan) {
-  if (plan.type === 'Project' || plan.type === 'Filter') return joinOf(plan.child)
+  if (plan.type === 'Project' || plan.type === 'Filter' || plan.type === 'Sort') return joinOf(plan.child)
   if (plan.type !== 'HashJoin') throw new Error('expected hash join')
   return plan
 }
@@ -50,7 +50,7 @@ describe('outer join predicate pushdown', () => {
     expect(input.hints.where).toBeUndefined()
   })
 
-  it.each(['b.flag IS NULL', 'COALESCE(b.flag, true) = true', 'b.flag = true OR b.flag IS NULL', 'NOT (b.flag IS NOT NULL)'])('retains non-null-rejecting WHERE: %s', where => {
+  it.each(['b.flag IS NULL', 'COALESCE(b.flag, true) = true', 'b.flag = true OR b.flag IS NULL', 'NOT (b.flag IS NOT NULL)', 'CASE WHEN b.flag IS NULL THEN true ELSE b.flag END = true', 'ABS(b.id) = 1', 'a.flag = true OR b.flag = true'])('retains non-null-rejecting WHERE: %s', where => {
     const plan = planSql({ tables, query: `SELECT a.id FROM a LEFT JOIN b ON a.id = b.id WHERE ${where}` })
     if (plan.type !== 'Project') throw new Error('expected project')
     expect(plan.child.type).toBe('Filter')
@@ -60,7 +60,7 @@ describe('outer join predicate pushdown', () => {
     expect(join.right.hints.where).toBeUndefined()
   })
 
-  it.each(['b.flag = true', 'b.flag IS NOT NULL', 'b.flag LIKE \'true\'', 'b.flag = true OR b.id > 1'])('reduces LEFT to INNER for null rejection: %s', where => {
+  it.each(['b.flag = true', 'b.flag IS NOT NULL', 'b.flag LIKE \'true\'', 'b.flag = true OR b.id > 1', 'b.id IN (1, 2)', 'b.id NOT IN (2, 4)', 'b.id BETWEEN 1 AND 2', 'b.flag NOT LIKE \'false\''])('reduces LEFT to INNER for null rejection: %s', where => {
     const join = joinOf(planSql({ tables, query: `SELECT a.id FROM a LEFT JOIN b ON a.id = b.id WHERE ${where}` }))
     expect(join.joinType).toBe('INNER')
     if (join.right.type !== 'Scan') throw new Error('expected scan')
@@ -69,6 +69,10 @@ describe('outer join predicate pushdown', () => {
 
   it.each([
     ['RIGHT', 'a.flag = true', 'INNER'],
+    ['RIGHT', 'a.id IN (1, 2)', 'INNER'],
+    ['FULL', 'a.id IN (1, 2)', 'LEFT'],
+    ['FULL', 'b.id IN (1, 2)', 'RIGHT'],
+    ['FULL', 'a.id IN (1, 2) AND b.id IN (1, 2)', 'INNER'],
     ['RIGHT', 'a.flag IS NULL', 'RIGHT'],
     ['FULL', 'a.flag IS NULL', 'FULL'],
     ['FULL', 'a.flag = true', 'LEFT'],
@@ -82,6 +86,58 @@ describe('outer join predicate pushdown', () => {
       expect(join.left.hints.where).toBeUndefined()
       expect(join.right.hints.where).toBeUndefined()
     }
+  })
+
+  it.each(['LEFT', 'RIGHT', 'FULL'])('converts %s for a comparison between sides', kind => {
+    const join = joinOf(planSql({ tables, query: `SELECT a.id FROM a ${kind} JOIN b ON a.id = b.id WHERE a.flag = b.flag` }))
+    expect(join.joinType).toBe('INNER')
+  })
+
+  it('cascades conversion through a newly inner join', () => {
+    const query = 'SELECT a.id FROM a LEFT JOIN b ON a.id = b.id LEFT JOIN c ON b.id = c.id WHERE c.flag = true'
+    const top = joinOf(planSql({ tables, query }))
+    expect(top.joinType).toBe('INNER')
+    expect(joinOf(top.left).joinType).toBe('INNER')
+  })
+
+  it.each(['=', '>'])('matches reference rows for conversion predicates (%s)', async op => {
+    for (const kind of ['LEFT', 'RIGHT', 'FULL']) {
+      for (const where of [
+        'b.id = 1', 'b.id <> 1', 'b.id < 2', 'b.id > 1', 'b.id <= 2', 'b.id >= 1',
+        'b.flag LIKE \'true\'', 'b.flag NOT LIKE \'false\'', 'b.flag IS NOT NULL',
+        'b.id IN (1, 2)', 'b.id NOT IN (2, NULL)', 'b.id BETWEEN 1 AND 2',
+        'b.id NOT BETWEEN 1 AND 2', 'b.flag = true OR b.id > 1',
+        'b.flag IS NULL', 'COALESCE(b.flag, true) = true',
+        'CASE WHEN b.flag IS NULL THEN true ELSE b.flag END = true',
+        'b.flag = true OR b.flag IS NULL', 'NOT (b.flag IS NOT NULL)',
+        'a.flag = b.flag', 'a.id IN (1, 2)', 'a.id IN (1, 2) AND b.id IN (1, 2)',
+        'a.flag = true OR b.flag = true', 'b.id = a.id OR b.flag = true',
+      ]) {
+        const query = `SELECT a.id AS aid, b.id AS bid FROM a ${kind} JOIN b ON a.id ${op} b.id WHERE ${where} ORDER BY a.id, b.id`
+        expect(await collect(executeSql({ tables, query }))).toEqual(await collect(executePlan({ plan: planSql({ query }), context: { tables } })))
+      }
+    }
+  })
+
+  it.each([
+    ['c.flag = true', 'INNER', 'INNER'],
+    ['c.flag = true OR c.id = b.id', 'INNER', 'INNER'],
+    ['b.flag = c.flag', 'INNER', 'INNER'],
+    ['b.flag IS NULL', 'LEFT', 'LEFT'],
+    ['c.flag IS NULL', 'LEFT', 'LEFT'],
+    ['COALESCE(c.flag, true) = true', 'LEFT', 'LEFT'],
+  ])('preserves chained join results for %s', async (where, upperKind, lowerKind) => {
+    const query = `SELECT a.id AS aid, b.id AS bid, c.id AS cid FROM a LEFT JOIN b ON a.id = b.id LEFT JOIN c ON b.id = c.id WHERE ${where} ORDER BY a.id, b.id, c.id`
+    const upper = joinOf(planSql({ tables, query }))
+    expect(upper.joinType).toBe(upperKind)
+    expect(joinOf(upper.left).joinType).toBe(lowerKind)
+    expect(await collect(executeSql({ tables, query }))).toEqual(await collect(executePlan({ plan: planSql({ query }), context: { tables } })))
+  })
+
+  it.each(['LEFT', 'RIGHT', 'FULL'])('keeps ON-only rejection from converting %s', async kind => {
+    const query = `SELECT a.id AS aid, b.id AS bid FROM a ${kind} JOIN b ON a.id = b.id AND a.flag IS NOT NULL AND b.flag IS NOT NULL ORDER BY a.id, b.id`
+    expect(joinOf(planSql({ tables, query })).joinType).toBe(kind)
+    expect(await collect(executeSql({ tables, query }))).toEqual(await collect(executePlan({ plan: planSql({ query }), context: { tables } })))
   })
 
   it('filters derived inputs outside their LIMIT while still pushing into the other scan', () => {
