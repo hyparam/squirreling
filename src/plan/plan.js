@@ -269,10 +269,12 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       if (correlated.length) {
         // Positive correlated IN is EXISTS with an extra equality. NOT IN
         // needs three-valued membership semantics and stays on the fallback.
+        // Unqualified operands must stay in the outer scope: moving them
+        // into the subquery could bind them to an inner column instead.
         const sub = expr.subquery
         const column = sub.type === 'select' && sub.columns.length === 1 ? sub.columns[0] : undefined
         if (!not && sub.type === 'select' && column?.type === 'derived' &&
-            column.expr.type === 'identifier' && expr.expr.type === 'identifier') {
+            column.expr.type === 'identifier' && expr.expr.type === 'identifier' && expr.expr.prefix) {
           /** @type {ExprNode} */
           const equality = { type: 'binary', op: '=', left: column.expr, right: expr.expr, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
           const keys = decorrelateExists({ ...sub, where: andPredicate(sub.where, equality) }, scopeAliases, tables, cteColumns)

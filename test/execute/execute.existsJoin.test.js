@@ -80,6 +80,15 @@ describe('correlated EXISTS joins', () => {
     expect(await collect(executeSql({ tables, query: 'SELECT c.id FROM c WHERE c.id NOT IN (SELECT r.id FROM r)' }))).toEqual([])
   })
 
+  it.each(['x', 'c.x'])('resolves correlated IN operand %s in the outer scope', async operand => {
+    const tables = {
+      c: [{ id: 1, x: 5 }, { id: 2, x: 8 }],
+      r: [{ id: 1, v: 5, x: 8 }, { id: 2, v: 5, x: 5 }],
+    }
+    const query = `SELECT c.id FROM c WHERE ${operand} IN (SELECT r.v FROM r WHERE r.id = c.id)`
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ id: 1 }])
+  })
+
   it('preserves residual outer references and alias shadowing', async () => {
     const tables = { c: [{ id: 1 }, { id: 2 }], r: [{ id: 2 }] }
     expect(await collect(executeSql({ tables, query: 'SELECT c.id FROM c WHERE EXISTS (SELECT 1 FROM r WHERE r.id = c.id AND c.id > 2)' }))).toEqual([])
