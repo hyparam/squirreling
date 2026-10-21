@@ -1,5 +1,9 @@
 import type { ColumnReadRequest, ColumnResult, ColumnVector, SqlPrimitive } from './types.js'
 
+export interface KeyTrie {
+  groups: Map<string, Map<SqlPrimitive, KeyTrie>>
+}
+
 export interface CompiledBatchExpression {
   evaluate(context: ColumnReadRequest): ColumnResult
 }

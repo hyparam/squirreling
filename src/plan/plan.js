@@ -243,6 +243,20 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     for (const conjunct of conjuncts) {
       const not = conjunct.type === 'unary' && conjunct.op === 'NOT'
       const expr = not ? conjunct.argument : conjunct
+      if (expr.type === 'exists' || expr.type === 'not exists') {
+        const keys = decorrelateExists(expr.subquery, scopeAliases, tables, cteColumns)
+        if (keys) {
+          const right = planStatement({ stmt: keys.query, tables, ctePlans, cteColumns })
+          semiJoins.push({
+            type: 'SemiJoin',
+            expr: keys.left[0],
+            keys: keys.left,
+            not: not !== (expr.type === 'not exists'),
+            right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
+          })
+          continue
+        }
+      }
       if (expr.type !== 'in') {
         residual = andPredicate(residual, conjunct)
         continue
@@ -253,6 +267,21 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
         tables, cteColumns, outerAliases: new Set(scopeAliases),
       })
       if (correlated.length) {
+        // Positive correlated IN is EXISTS with an extra equality. NOT IN
+        // needs three-valued membership semantics and stays on the fallback.
+        const sub = expr.subquery
+        const column = sub.type === 'select' && sub.columns.length === 1 ? sub.columns[0] : undefined
+        if (!not && sub.type === 'select' && column?.type === 'derived' &&
+            column.expr.type === 'identifier' && expr.expr.type === 'identifier') {
+          /** @type {ExprNode} */
+          const equality = { type: 'binary', op: '=', left: column.expr, right: expr.expr, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+          const keys = decorrelateExists({ ...sub, where: andPredicate(sub.where, equality) }, scopeAliases, tables, cteColumns)
+          if (keys) {
+            const right = planStatement({ stmt: keys.query, tables, ctePlans, cteColumns })
+            semiJoins.push({ type: 'SemiJoin', expr: keys.left[0], keys: keys.left, not: false, right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] } })
+            continue
+          }
+        }
         residual = andPredicate(residual, conjunct)
         continue
       }
@@ -1294,4 +1323,55 @@ function isAllCountStar(columns) {
     !col.expr.distinct &&
     !col.expr.filter
   )
+}
+
+/**
+ * Pulls plain equality correlations out of a row-preserving EXISTS query.
+ * Limits and aggregation must stay on the per-outer-row execution path.
+ *
+ * @param {Statement} query
+ * @param {string[]} outerScope
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @param {Map<string, string[]>} [cteColumns]
+ * @returns {{ query: SelectStatement, left: IdentifierNode[] } | undefined}
+ */
+function decorrelateExists(query, outerScope, tables, cteColumns) {
+  if (query.type !== 'select' || query.limit !== undefined || query.offset ||
+      query.groupBy.length || query.having ||
+      query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || col.expr.type === 'window'))) return
+  const scope = statementScope(query) ?? []
+  /** @type {IdentifierNode[]} */
+  const left = []
+  /** @type {DerivedColumn[]} */
+  const columns = []
+  /** @type {ExprNode[]} */
+  const conjuncts = []
+  if (query.where) collectConjuncts(query.where, conjuncts)
+  /** @type {ExprNode | undefined} */
+  let where
+  for (const term of conjuncts) {
+    const previousKeys = columns.length
+    if (term.type === 'binary' && term.op === '=' && term.left.type === 'identifier' && term.right.type === 'identifier') {
+      for (const [inner, outer] of [[term.left, term.right], [term.right, term.left]]) {
+        if (inner.prefix && scope.includes(inner.prefix) && outer.prefix &&
+            outerScope.includes(outer.prefix) && !scope.includes(outer.prefix)) {
+          left.push(outer)
+          columns.push({ type: 'derived', expr: inner, alias: `__exists_key_${columns.length}`, positionStart: inner.positionStart, positionEnd: inner.positionEnd })
+          break
+        }
+      }
+      if (columns.length > previousKeys) continue
+    }
+    where = andPredicate(where, term)
+  }
+  if (!left.length) return
+  // Check every remaining clause, including nested subqueries and projections,
+  // before discarding the projection and ordering that EXISTS does not read.
+  /** @type {IdentifierNode[]} */
+  const remaining = []
+  collectColumnsFromExpr({ type: 'subquery', subquery: { ...query, where }, positionStart: query.positionStart, positionEnd: query.positionEnd }, remaining, undefined, {
+    tables, cteColumns, outerAliases: new Set(outerScope),
+  })
+  if (remaining.length) return
+  return { query: { ...query, columns, where, distinct: false, orderBy: [] }, left }
 }

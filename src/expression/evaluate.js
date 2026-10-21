@@ -713,7 +713,11 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   // IN with subqueries, same three-valued logic as the value-list form
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
-    const subResult = executeStatement({ query: node.subquery, context })
+    const outerScope = context.scope
+    const subContext = outerScope
+      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+      : context
+    const subResult = executeStatement({ query: node.subquery, context: subContext, outerScope })
     let sawNull = false
     let innerCount = 0
     for await (const resRow of subResult.rows()) {

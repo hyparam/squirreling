@@ -107,6 +107,8 @@ export interface SemiJoinNode {
   left: QueryPlan
   right: QueryPlan
   expr: ExprNode
+  // EXISTS equality keys; NOT uses anti-join rather than NOT IN null semantics.
+  keys?: ExprNode[]
   not: boolean
 }
 
