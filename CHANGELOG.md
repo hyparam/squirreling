@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.10]
+ - Push join filters to each side independently and plan `IN` subqueries as semi-joins
+
 ## [0.16.9]
  - Support `SHOW TABLES` statement
 
