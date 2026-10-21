@@ -405,9 +405,9 @@ describe('INNER JOIN predicate pushdown', () => {
     } })
   })
 
-  it('does not move predicates across outer or non-equijoins', () => {
-    for (const join of ['LEFT JOIN b ON a.id = b.id', 'RIGHT JOIN b ON a.id = b.id', 'FULL JOIN b ON a.id = b.id', 'JOIN b ON a.value > b.value']) {
-      const plan = planSql({ tables, query: `SELECT a.id FROM a ${join} WHERE a.flag = true` })
+  it('retains non-null-rejecting filters above FULL joins', () => {
+    for (const join of ['FULL JOIN b ON a.id = b.id']) {
+      const plan = planSql({ tables, query: `SELECT a.id FROM a ${join} WHERE a.flag IS NULL` })
       expect(plan).toMatchObject({ child: { type: 'Filter', child: { left: { hints: { columns: expect.any(Array) } } } } })
       if (plan.type !== 'Project' || plan.child.type !== 'Filter') throw new Error('expected residual filter')
       const joinPlan = plan.child.child
@@ -424,14 +424,16 @@ describe('INNER JOIN predicate pushdown', () => {
     }
   })
 
-  it('does not push into CTEs or derived tables', () => {
+  it('filters CTE and derived inputs below the join', () => {
     for (const query of [
       'WITH x AS (SELECT * FROM a) SELECT x.id FROM x JOIN b ON x.id = b.id WHERE x.flag = true',
       'WITH x AS (SELECT * FROM b) SELECT a.id FROM a JOIN x ON a.id = x.id WHERE a.flag = true',
       'SELECT a.id FROM (SELECT * FROM a LIMIT 1) a JOIN b ON a.id = b.id WHERE a.flag = true',
       'SELECT a.id FROM a JOIN (SELECT * FROM b LIMIT 1) b ON a.id = b.id WHERE b.flag = true',
     ]) {
-      expect(planSql({ tables, query })).toMatchObject({ child: { type: 'Filter' } })
+      const plan = planSql({ tables, query })
+      if (plan.type !== 'Project') throw new Error('expected project')
+      expect(plan.child.type).toBe('HashJoin')
     }
   })
 
@@ -483,12 +485,11 @@ describe('INNER JOIN ON predicate pushdown', () => {
     expect(join.residual).toBeUndefined()
   })
 
-  it('does not push ON predicates across outer joins or shared CTE scans', () => {
+  it('retains ON predicates on preserved sides of outer joins', () => {
     for (const query of [
       'SELECT a.id FROM a LEFT JOIN b ON a.id = b.id AND a.flag = true',
       'SELECT a.id FROM a RIGHT JOIN b ON a.id = b.id AND b.flag = true',
       'SELECT a.id FROM a FULL JOIN b ON a.id = b.id AND b.flag = true',
-      'WITH c AS (SELECT * FROM b) SELECT a.id FROM a JOIN c ON a.id = c.id AND c.flag = true',
     ]) {
       const plan = planSql({ tables, query })
       if (plan.type !== 'Project' || plan.child.type !== 'HashJoin') throw new Error('expected hash join')

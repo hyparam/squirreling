@@ -60,7 +60,7 @@ export function executeNestedLoopJoin(plan, context) {
         innerRows.push(row)
       }
 
-      const innerCols = innerRows.length ? innerRows[0].columns : []
+      const innerCols = innerRows.length ? innerRows[0].columns : inner.columns
 
       /** @type {string[] | undefined} */
       let outerCols = undefined
@@ -107,7 +107,7 @@ export function executeNestedLoopJoin(plan, context) {
       if (matchedInnerRows) {
         for (const innerRow of innerRows) {
           if (!matchedInnerRows.has(innerRow)) {
-            yield merge(createNullRow(outerCols ?? []), innerRow)
+            yield merge(createNullRow(outerCols ?? outer.columns), innerRow)
           }
         }
       }
@@ -329,7 +329,7 @@ export function executeHashJoin(plan, context) {
         }
 
         if (!matched && probeOuter) {
-          yield merge(probeRow, createNullRow(buildCols))
+          yield merge(probeRow, createNullRow(buildCols.length ? buildCols : build.columns))
         }
       }
 
@@ -339,7 +339,7 @@ export function executeHashJoin(plan, context) {
       if (buildRows && matchedBuildRows) {
         for (const buildRow of buildRows) {
           if (!matchedBuildRows.has(buildRow)) {
-            yield merge(createNullRow(probeCols ?? []), buildRow)
+            yield merge(createNullRow(probeCols ?? probe.columns), buildRow)
           }
         }
       }

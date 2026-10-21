@@ -8,7 +8,7 @@ import { validateNoIdentifiers, validateScan, validateTableRefs } from '../valid
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 
 /**
- * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
+ * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
  * @import { HashJoinNode, QueryPlan, SemiJoinNode, TableFunctionNode, WindowSpec } from './types.js'
  */
 
@@ -243,6 +243,20 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     for (const conjunct of conjuncts) {
       const not = conjunct.type === 'unary' && conjunct.op === 'NOT'
       const expr = not ? conjunct.argument : conjunct
+      if (expr.type === 'exists' || expr.type === 'not exists') {
+        const keys = decorrelateExists(expr.subquery, scopeAliases, tables, cteColumns)
+        if (keys) {
+          const right = planStatement({ stmt: keys.query, tables, ctePlans, cteColumns })
+          semiJoins.push({
+            type: 'SemiJoin',
+            expr: keys.left[0],
+            keys: keys.left,
+            not: not !== (expr.type === 'not exists'),
+            right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
+          })
+          continue
+        }
+      }
       if (expr.type !== 'in') {
         residual = andPredicate(residual, conjunct)
         continue
@@ -253,6 +267,23 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
         tables, cteColumns, outerAliases: new Set(scopeAliases),
       })
       if (correlated.length) {
+        // Positive correlated IN is EXISTS with an extra equality. NOT IN
+        // needs three-valued membership semantics and stays on the fallback.
+        // Unqualified operands must stay in the outer scope: moving them
+        // into the subquery could bind them to an inner column instead.
+        const sub = expr.subquery
+        const column = sub.type === 'select' && sub.columns.length === 1 ? sub.columns[0] : undefined
+        if (!not && sub.type === 'select' && column?.type === 'derived' &&
+            column.expr.type === 'identifier' && expr.expr.type === 'identifier' && expr.expr.prefix) {
+          /** @type {ExprNode} */
+          const equality = { type: 'binary', op: '=', left: column.expr, right: expr.expr, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+          const keys = decorrelateExists({ ...sub, where: andPredicate(sub.where, equality) }, scopeAliases, tables, cteColumns)
+          if (keys) {
+            const right = planStatement({ stmt: keys.query, tables, ctePlans, cteColumns })
+            semiJoins.push({ type: 'SemiJoin', expr: keys.left[0], keys: keys.left, not: false, right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] } })
+            continue
+          }
+        }
         residual = andPredicate(residual, conjunct)
         continue
       }
@@ -279,7 +310,6 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   /** @type {QueryPlan} */
   let plan = planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope })
   pruneAggregateColumns(plan, subqueryNeeds)
-  const directFrom = plan.type === 'Scan' && plan.hints === hints
 
   // Add JOINs
   if (select.joins.length) {
@@ -291,9 +321,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Add WHERE filter when the scan didn't receive it
   let { where } = select
-  if (directFrom && select.joins.length === 1 && !outerScope?.length &&
-      !ctePlans?.has(select.joins[0].table?.toLowerCase())) {
-    where = pushJoinPredicates(plan, where, tables)
+  if (select.joins.length && !outerScope?.length) {
+    where = pushJoinPredicates(plan, where, select, tables, cteColumns)
   }
   if (where && !isOwnScan) {
     plan = { type: 'Filter', condition: where, child: plan }
@@ -876,26 +905,33 @@ function collectConjuncts(node, out) {
 }
 
 /**
- * Push each table-local conjunct into fresh scans of a direct INNER
- * equijoin. Scan execution enforces hints a source cannot apply. Unresolved
- * and cross-table conjuncts remain residual predicates. Predicate evaluation
- * order and error short-circuiting are not guaranteed.
+ * Push local ON and WHERE conjuncts according to which side is preserved.
+ * Only recurse through this SELECT's join chain, never through shared CTEs
+ * or derived-table boundaries. Scan hints are copied rather than mutated.
  *
  * @param {QueryPlan} plan
  * @param {ExprNode | undefined} where
+ * @param {SelectStatement} select
  * @param {Record<string, AsyncDataSource>} [tables]
+ * @param {Map<string, string[]>} [cteColumns]
  * @returns {ExprNode | undefined}
  */
-function pushJoinPredicates(plan, where, tables) {
-  if (!tables || plan.type !== 'HashJoin' || plan.joinType !== 'INNER' ||
-      plan.left.type !== 'Scan' || plan.right.type !== 'Scan') return where
-  const scans = [plan.left, plan.right]
-  if (scans.some(scan => scan.hints.where || scan.hints.limit !== undefined || scan.hints.offset)) return where
-  const aliases = scans.map(scan => scan.alias ?? scan.table)
-  if (aliases[0] === aliases[1]) return where
-  const columns = scans.map(scan => dataSourceColumns(tables[scan.table]))
-  // A prefix that also names a struct column is not an unambiguous alias.
-  if (columns.some(names => aliases.some(alias => names.includes(alias)))) return where
+function pushJoinPredicates(plan, where, select, tables, cteColumns) {
+  if (!tables || plan.type !== 'HashJoin' && plan.type !== 'NestedLoopJoin' ||
+      select.from?.type === 'function' || select.joins.some(join => join.fromFunction)) return where
+  const last = select.joins[select.joins.length - 1]
+  const leftSelect = { ...select, joins: select.joins.slice(0, -1) }
+  const leftSources = [select.from, ...leftSelect.joins.map(joinSource)]
+  const rightSource = joinSource(last)
+  const sources = [...leftSources, rightSource]
+  const aliases = sources.map(source => fromAlias(source))
+  const columns = sources.map(source => source?.type === 'subquery'
+    ? inferStatementColumns({ stmt: source.query, tables, cteColumns })
+    : source?.type === 'table'
+      ? cteColumns?.get(source.table?.toLowerCase()) ?? dataSourceColumns(tables[source.table])
+      : [])
+  if (new Set(aliases).size !== aliases.length ||
+      columns.some(names => aliases.some(alias => names.includes(alias)))) return where
 
   /**
    * @param {ExprNode} expr
@@ -907,15 +943,14 @@ function pushJoinPredicates(plan, where, tables) {
     const matches = columns.map((names, i) => names.includes(expr.name) ? i : -1).filter(i => i >= 0)
     const index = expr.prefix ? aliases.indexOf(expr.prefix) : matches.length === 1 ? matches[0] : -1
     if (index < 0 || !columns[index].includes(expr.name)) return 'unsafe'
-    return index === 0 ? 'left' : 'right'
+    return index < leftSources.length ? 'left' : 'right'
   }
 
-  // Avoid changing the evaluation of unresolved or unqualified ON keys.
-  if (plan.leftKeys.some(key => owner(key) !== 'left') || plan.rightKeys.some(key => owner(key) !== 'right')) return where
+  // Do not change the interpretation of ambiguous or misoriented hash keys.
+  if (plan.type === 'HashJoin' && (plan.leftKeys.some(key => owner(key) !== 'left') ||
+      plan.rightKeys.some(key => owner(key) !== 'right'))) return where
+
   /**
-   * Resolve every reference in a conjunct independently. Subqueries and
-   * windows have their own scope and must remain above the join.
-   *
    * @param {ExprNode} expr
    * @returns {'left' | 'right' | 'literal' | 'unsafe'}
    */
@@ -942,51 +977,122 @@ function pushJoinPredicates(plan, where, tables) {
     return target
   }
 
-  /**
-   * @param {ExprNode[]} conjuncts
-   * @returns {Array<'left' | 'right' | 'residual'>}
-   */
-  function classify(conjuncts) {
-    return conjuncts.map(function target(expr) {
-      const side = expressionOwner(expr)
-      return side === 'left' || side === 'right' ? side : 'residual'
-    })
+  /** @type {ExprNode[]} */
+  const whereConjuncts = []
+  if (where) collectConjuncts(where, whereConjuncts)
+  const rejectsLeft = whereConjuncts.some(expr => expressionOwner(expr) === 'left' && rejectsNulls(expr))
+  const rejectsRight = whereConjuncts.some(expr => expressionOwner(expr) === 'right' && rejectsNulls(expr))
+  if (plan.joinType === 'FULL') {
+    if (rejectsLeft && rejectsRight) plan.joinType = 'INNER'
+    else if (rejectsLeft) plan.joinType = 'LEFT'
+    else if (rejectsRight) plan.joinType = 'RIGHT'
+  } else if (plan.joinType === 'LEFT' && rejectsRight || plan.joinType === 'RIGHT' && rejectsLeft) {
+    plan.joinType = 'INNER'
   }
 
+  const { joinType } = plan
+  /** @type {ExprNode | undefined} */
+  let leftWhere
+  /** @type {ExprNode | undefined} */
+  let rightWhere
   /**
    * @param {ExprNode[]} conjuncts
-   * @param {Array<'left' | 'right' | 'residual'>} targets
+   * @param {boolean} on
    * @returns {ExprNode | undefined}
    */
-  function push(conjuncts, targets) {
+  function push(conjuncts, on) {
     /** @type {ExprNode | undefined} */
     let residual
-    for (let i = 0; i < conjuncts.length; i++) {
-      const target = targets[i]
-      if (target === 'residual') {
-        residual = andPredicate(residual, conjuncts[i])
-      } else {
-        const scan = target === 'left' ? scans[0] : scans[1]
-        scan.hints = { ...scan.hints, where: andPredicate(scan.hints.where, conjuncts[i]) }
-      }
+    for (const expr of conjuncts) {
+      const side = expressionOwner(expr)
+      const canLeft = joinType === 'INNER' || joinType === (on ? 'RIGHT' : 'LEFT')
+      const canRight = joinType === 'INNER' || joinType === (on ? 'LEFT' : 'RIGHT')
+      if (side === 'left' && canLeft) leftWhere = andPredicate(leftWhere, expr)
+      else if (side === 'right' && canRight) rightWhere = andPredicate(rightWhere, expr)
+      else residual = andPredicate(residual, expr)
     }
     return residual
   }
 
   /** @type {ExprNode[]} */
   const onConjuncts = []
-  if (plan.residual) collectConjuncts(plan.residual, onConjuncts)
-  const onTargets = classify(onConjuncts)
-  const onResidual = push(onConjuncts, onTargets)
-  if (onResidual) plan.residual = onResidual
-  else delete plan.residual
+  const condition = plan.type === 'HashJoin' ? plan.residual : plan.condition
+  if (condition) collectConjuncts(condition, onConjuncts)
+  const onResidual = push(onConjuncts, true)
+  if (plan.type === 'HashJoin') {
+    if (onResidual) plan.residual = onResidual
+    else delete plan.residual
+  } else if (condition) {
+    // Nested-loop joins still need a condition when every conjunct was pushed.
+    plan.condition = onResidual ?? {
+      type: 'literal', value: true,
+      positionStart: condition.positionStart, positionEnd: condition.positionEnd,
+    }
+  }
+  const residual = push(whereConjuncts, false)
+  if (leftSelect.joins.length) {
+    leftWhere = pushJoinPredicates(plan.left, leftWhere, leftSelect, tables, cteColumns)
+  }
+  plan.left = filterJoinInput(plan.left, leftWhere)
+  plan.right = filterJoinInput(plan.right, rightWhere)
+  return residual
+}
 
-  if (!where) return undefined
-  /** @type {ExprNode[]} */
-  const whereConjuncts = []
-  collectConjuncts(where, whereConjuncts)
-  const whereTargets = classify(whereConjuncts)
-  return push(whereConjuncts, whereTargets)
+/**
+ * @param {JoinClause} join
+ * @returns {FromSubquery | FromTable}
+ */
+function joinSource(join) {
+  return join.subquery
+    ? { ...join.subquery, alias: join.alias }
+    : { ...join, type: 'table' }
+}
+
+/**
+ * Keep LIMIT, projection and shared CTE plans intact. A filter outside these
+ * boundaries still reduces the rows entering the join.
+ *
+ * @param {QueryPlan} plan
+ * @param {ExprNode | undefined} where
+ * @returns {QueryPlan}
+ */
+function filterJoinInput(plan, where) {
+  if (!where) return plan
+  if (plan.type === 'Scan' && plan.hints.limit === undefined && !plan.hints.offset) {
+    return { ...plan, hints: { ...plan.hints, where: andPredicate(plan.hints.where, where) } }
+  }
+  return { type: 'Filter', condition: where, child: plan }
+}
+
+/**
+ * Conservative proof for an expression whose references all belong to the
+ * side being NULL-extended. Unknown functions (including COALESCE) and CASE
+ * are deliberately not assumed to propagate NULL.
+ *
+ * @param {ExprNode} expr
+ * @returns {boolean}
+ */
+function nullWhenMissing(expr) {
+  if (expr.type === 'identifier') return true
+  if (expr.type === 'literal') return expr.value == null
+  if (expr.type === 'cast') return nullWhenMissing(expr.expr)
+  if (expr.type === 'unary') return ['NOT', '+', '-'].includes(expr.op) && nullWhenMissing(expr.argument)
+  if (expr.type === 'binary' && expr.op !== 'AND' && expr.op !== 'OR') {
+    return nullWhenMissing(expr.left) || nullWhenMissing(expr.right)
+  }
+  return false
+}
+
+/**
+ * @param {ExprNode} expr
+ * @returns {boolean}
+ */
+function rejectsNulls(expr) {
+  if (nullWhenMissing(expr)) return true
+  if (expr.type === 'unary' && expr.op === 'IS NOT NULL') return nullWhenMissing(expr.argument)
+  if (expr.type === 'binary' && expr.op === 'AND') return rejectsNulls(expr.left) || rejectsNulls(expr.right)
+  if (expr.type === 'binary' && expr.op === 'OR') return rejectsNulls(expr.left) && rejectsNulls(expr.right)
+  return false
 }
 
 /**
@@ -1223,4 +1329,55 @@ function isAllCountStar(columns) {
     !col.expr.distinct &&
     !col.expr.filter
   )
+}
+
+/**
+ * Pulls plain equality correlations out of a row-preserving EXISTS query.
+ * Limits and aggregation must stay on the per-outer-row execution path.
+ *
+ * @param {Statement} query
+ * @param {string[]} outerScope
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @param {Map<string, string[]>} [cteColumns]
+ * @returns {{ query: SelectStatement, left: IdentifierNode[] } | undefined}
+ */
+function decorrelateExists(query, outerScope, tables, cteColumns) {
+  if (query.type !== 'select' || query.limit !== undefined || query.offset ||
+      query.groupBy.length || query.having ||
+      query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || col.expr.type === 'window'))) return
+  const scope = statementScope(query) ?? []
+  /** @type {IdentifierNode[]} */
+  const left = []
+  /** @type {DerivedColumn[]} */
+  const columns = []
+  /** @type {ExprNode[]} */
+  const conjuncts = []
+  if (query.where) collectConjuncts(query.where, conjuncts)
+  /** @type {ExprNode | undefined} */
+  let where
+  for (const term of conjuncts) {
+    const previousKeys = columns.length
+    if (term.type === 'binary' && term.op === '=' && term.left.type === 'identifier' && term.right.type === 'identifier') {
+      for (const [inner, outer] of [[term.left, term.right], [term.right, term.left]]) {
+        if (inner.prefix && scope.includes(inner.prefix) && outer.prefix &&
+            outerScope.includes(outer.prefix) && !scope.includes(outer.prefix)) {
+          left.push(outer)
+          columns.push({ type: 'derived', expr: inner, alias: `__exists_key_${columns.length}`, positionStart: inner.positionStart, positionEnd: inner.positionEnd })
+          break
+        }
+      }
+      if (columns.length > previousKeys) continue
+    }
+    where = andPredicate(where, term)
+  }
+  if (!left.length) return
+  // Check every remaining clause, including nested subqueries and projections,
+  // before discarding the projection and ordering that EXISTS does not read.
+  /** @type {IdentifierNode[]} */
+  const remaining = []
+  collectColumnsFromExpr({ type: 'subquery', subquery: { ...query, where }, positionStart: query.positionStart, positionEnd: query.positionEnd }, remaining, undefined, {
+    tables, cteColumns, outerAliases: new Set(outerScope),
+  })
+  if (remaining.length) return
+  return { query: { ...query, columns, where, distinct: false, orderBy: [] }, left }
 }

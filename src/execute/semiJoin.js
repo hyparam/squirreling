@@ -4,6 +4,7 @@ import { sqlEquals } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
+ * @import { KeyTrie } from '../internalTypes.js'
  * @import { ExecuteContext, QueryResults, SqlPrimitive } from '../types.js'
  * @import { SemiJoinNode } from '../plan/types.js'
  */
@@ -17,6 +18,7 @@ import { yieldToEventLoop } from './yield.js'
  * @returns {QueryResults}
  */
 export function executeSemiJoin(plan, context) {
+  if (plan.keys) return executeExistsJoin(plan, context)
   const left = executePlan({ plan: plan.left, context })
   return {
     columns: left.columns,
@@ -71,6 +73,76 @@ function contains(values, value) {
     if (valueType === type && type !== 'object') continue
     for (const candidate of group) {
       if (sqlEquals(value, candidate)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Builds a tuple membership trie once. Type partitions preserve the evaluator's
+ * coercive equality without making same-type primitive lookups linear.
+ *
+ * @param {SemiJoinNode} plan
+ * @param {ExecuteContext} context
+ * @returns {QueryResults}
+ */
+function executeExistsJoin(plan, context) {
+  const left = executePlan({ plan: plan.left, context })
+  return {
+    columns: left.columns,
+    maxRows: left.maxRows,
+    async *rows() {
+      /** @type {KeyTrie} */
+      const root = { groups: new Map() }
+      let built = false
+      let count = 0
+      for await (const row of left.rows()) {
+        context.signal?.throwIfAborted()
+        if (++count % 4000 === 0) await yieldToEventLoop()
+        if (!built) {
+          for await (const inner of executePlan({ plan: plan.right, context }).rows()) {
+            context.signal?.throwIfAborted()
+            if (++count % 4000 === 0) await yieldToEventLoop()
+            const values = await Promise.all(inner.columns.map(col => inner.cells[col]()))
+            if (values.some(value => value == null)) continue
+            let node = root
+            for (const value of values) {
+              const type = typeof value
+              let group = node.groups.get(type)
+              if (!group) node.groups.set(type, group = new Map())
+              let child = group.get(value)
+              if (!child) group.set(value, child = { groups: new Map() })
+              node = child
+            }
+          }
+          built = true
+        }
+        const values = await Promise.all((plan.keys ?? []).map(node => evaluateExpr({ node, row, context })))
+        const matched = !values.some(value => value == null) && matchesKeys(root, values, 0)
+        if (matched !== plan.not) yield row
+      }
+    },
+  }
+}
+
+/**
+ * @param {KeyTrie} node
+ * @param {SqlPrimitive[]} values
+ * @param {number} index
+ * @returns {boolean}
+ */
+function matchesKeys(node, values, index) {
+  if (index === values.length) return true
+  const value = values[index]
+  const type = typeof value
+  if (type !== 'object' && !Number.isNaN(value)) {
+    const child = node.groups.get(type)?.get(value)
+    if (child && matchesKeys(child, values, index + 1)) return true
+  }
+  for (const [valueType, group] of node.groups) {
+    if (valueType === type && type !== 'object') continue
+    for (const [candidate, child] of group) {
+      if (sqlEquals(value, candidate) && matchesKeys(child, values, index + 1)) return true
     }
   }
   return false
