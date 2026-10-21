@@ -837,11 +837,9 @@ function collectConjuncts(node, out) {
 }
 
 /**
- * Push total, table-local comparisons into fresh scans of a direct INNER
- * equijoin. Scan execution already enforces hints a source cannot apply.
- * Validate ON before moving anything; an unsafe ON also blocks WHERE
- * pushdown. Safe ON terms can move even when WHERE must remain above the
- * join, since ON already excludes those pairs before WHERE is evaluated.
+ * Push each table-local conjunct into fresh scans of a direct INNER
+ * equijoin. Scan execution enforces hints a source cannot apply. Unresolved
+ * and cross-table conjuncts remain residual predicates.
  *
  * @param {QueryPlan} plan
  * @param {ExprNode | undefined} where
@@ -865,8 +863,9 @@ function pushJoinPredicates(plan, where, tables) {
    */
   function owner(expr) {
     if (expr.type === 'literal') return 'literal'
-    if (expr.type !== 'identifier' || !expr.prefix) return 'unsafe'
-    const index = aliases.indexOf(expr.prefix)
+    if (expr.type !== 'identifier') return 'unsafe'
+    const matches = columns.map((names, i) => names.includes(expr.name) ? i : -1).filter(i => i >= 0)
+    const index = expr.prefix ? aliases.indexOf(expr.prefix) : matches.length === 1 ? matches[0] : -1
     if (index < 0 || !columns[index].includes(expr.name)) return 'unsafe'
     return index === 0 ? 'left' : 'right'
   }
@@ -874,21 +873,70 @@ function pushJoinPredicates(plan, where, tables) {
   // Avoid changing the evaluation of unresolved or unqualified ON keys.
   if (plan.leftKeys.some(key => owner(key) !== 'left') || plan.rightKeys.some(key => owner(key) !== 'right')) return where
   /**
+   * Resolve every reference in a conjunct independently. Subqueries and
+   * windows have their own scope and must remain above the join.
+   *
+   * @param {ExprNode} expr
+   * @returns {'left' | 'right' | 'literal' | 'unsafe'}
+   */
+  function expressionOwner(expr) {
+    if (!expr) return 'literal'
+    if (expr.type === 'identifier' || expr.type === 'literal') return owner(expr)
+    /** @type {ExprNode[]} */
+    let children
+    if (expr.type === 'binary') children = [expr.left, expr.right]
+    else if (expr.type === 'unary') children = [expr.argument]
+    else if (expr.type === 'function' && !expr.filter) children = expr.args
+    else if (expr.type === 'cast') children = [expr.expr]
+    else if (expr.type === 'in valuelist') children = [expr.expr, ...expr.values]
+    else if (expr.type === 'subscript') children = [expr.expr, expr.index]
+    else if (expr.type === 'case') children = [expr.caseExpr, ...expr.whenClauses.flatMap(w => [w.condition, w.result]), expr.elseResult]
+    else return 'unsafe'
+    /** @type {'left' | 'right' | 'literal'} */
+    let target = 'literal'
+    for (const child of children) {
+      const side = expressionOwner(child)
+      if (side === 'unsafe' || side !== 'literal' && target !== 'literal' && side !== target) return 'unsafe'
+      if (side !== 'literal') target = side
+    }
+    return target
+  }
+
+  /**
+   * Moving a throwing predicate can expose errors on rows the join discards.
+   * Preserve evaluation order for casts, strict functions and UDFs. These
+   * total functions can move when their arguments can move.
+   *
+   * @param {ExprNode} expr
+   * @returns {boolean}
+   */
+  function mayThrow(expr) {
+    if (!expr) return false
+    if (expr.type === 'cast') return true
+    if (expr.type === 'function') {
+      return !['COALESCE', 'NULLIF'].includes(expr.funcName.toUpperCase()) || expr.args.some(mayThrow)
+    }
+    if (expr.type === 'binary') return mayThrow(expr.left) || mayThrow(expr.right)
+    if (expr.type === 'unary') return mayThrow(expr.argument)
+    if (expr.type === 'in valuelist') return mayThrow(expr.expr) || expr.values.some(mayThrow)
+    if (expr.type === 'case') return mayThrow(expr.caseExpr) || expr.whenClauses.some(w => mayThrow(w.condition) || mayThrow(w.result)) || mayThrow(expr.elseResult)
+    if (expr.type === 'subscript') return mayThrow(expr.expr) || mayThrow(expr.index)
+    return false
+  }
+
+  /**
    * @param {ExprNode[]} conjuncts
-   * @returns {Array<'left' | 'right' | 'residual'> | undefined}
+   * @returns {Array<'left' | 'right' | 'residual'>}
    */
   function classify(conjuncts) {
-    /** @type {Array<'left' | 'right' | 'residual'>} */
-    const targets = []
-    for (const expr of conjuncts) {
-      if (expr.type !== 'binary' || !['=', '==', '!=', '<>', '<', '<=', '>', '>='].includes(expr.op)) return undefined
-      const left = owner(expr.left)
-      const right = owner(expr.right)
-      if (left === 'unsafe' || right === 'unsafe') return undefined
-      // Only column/literal terms move; cross-table comparisons remain residual.
-      targets.push(left !== 'literal' && right === 'literal' ? left : right !== 'literal' && left === 'literal' ? right : 'residual')
-    }
-    return targets
+    let blocked = false
+    return conjuncts.map(function target(expr) {
+      // Later filters must not suppress an error in an earlier conjunct.
+      blocked ||= mayThrow(expr)
+      if (blocked) return 'residual'
+      const side = expressionOwner(expr)
+      return side === 'left' || side === 'right' ? side : 'residual'
+    })
   }
 
   /**
@@ -915,17 +963,18 @@ function pushJoinPredicates(plan, where, tables) {
   const onConjuncts = []
   if (plan.residual) collectConjuncts(plan.residual, onConjuncts)
   const onTargets = classify(onConjuncts)
-  if (!onTargets) return where
   const onResidual = push(onConjuncts, onTargets)
   if (onResidual) plan.residual = onResidual
   else delete plan.residual
+  // WHERE must not suppress errors in the ON condition.
+  if (onConjuncts.some(mayThrow)) return where
 
   if (!where) return undefined
   /** @type {ExprNode[]} */
   const whereConjuncts = []
   collectConjuncts(where, whereConjuncts)
   const whereTargets = classify(whereConjuncts)
-  return whereTargets ? push(whereConjuncts, whereTargets) : where
+  return push(whereConjuncts, whereTargets)
 }
 
 /**

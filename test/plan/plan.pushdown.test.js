@@ -475,16 +475,14 @@ describe('INNER JOIN ON predicate pushdown', () => {
     } } })
   })
 
-  it('does not push any predicates when ON has unsafe expressions', () => {
-    for (const condition of ['b.flag = true AND LENGTH(b.value) > 0', 'flag = true AND b.value > 0', '(a.flag = true OR b.flag = true)']) {
-      const plan = planSql({ tables, query: `SELECT a.id FROM a JOIN b ON a.id = b.id AND ${condition} WHERE a.flag = true` })
-      if (plan.type !== 'Project' || plan.child.type !== 'Filter' || plan.child.child.type !== 'HashJoin') throw new Error('expected filtered hash join')
-      const join = plan.child.child
-      if (join.left.type !== 'Scan' || join.right.type !== 'Scan') throw new Error('expected scans')
-      expect(join.left.hints.where).toBeUndefined()
-      expect(join.right.hints.where).toBeUndefined()
-      expect(join.residual).toBeDefined()
-    }
+  it('keeps throwing ON predicates and WHERE above the join', () => {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND b.flag = true AND LENGTH(b.value) > 0 WHERE a.flag = true' })
+    if (plan.type !== 'Project' || plan.child.type !== 'Filter' || plan.child.child.type !== 'HashJoin') throw new Error('expected filtered hash join')
+    const join = plan.child.child
+    if (join.left.type !== 'Scan' || join.right.type !== 'Scan') throw new Error('expected scans')
+    expect(join.left.hints.where).toBeUndefined()
+    expect(join.right.hints.where?.type).toBe('binary')
+    expect(join.residual).toBeDefined()
   })
 
   it('does not push ON predicates across outer joins or shared CTE scans', () => {
