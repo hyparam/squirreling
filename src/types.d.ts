@@ -145,6 +145,7 @@ export interface ScanTopK {
 export interface ScanRequest {
   columns: readonly ColumnDemand[]
   topK?: ScanTopK
+  /** Source-local predicate: identifiers use bare physical column names. */
   filter?: ExprNode
   limit?: number
   offset?: number
@@ -271,7 +272,8 @@ export interface ScanResults {
  */
 export interface ScanOptions {
   columns?: string[] // columns needed (undefined means all columns)
-  where?: ExprNode // where clause
+  /** Source-local predicate: identifiers use bare physical column names. */
+  where?: ExprNode
   // important: only apply limit/offset if where is fully applied by the data source
   // otherwise, the data source must return at least enough rows to ensure the engine
   // can apply limit/offset correctly after filtering
@@ -285,6 +287,7 @@ export interface ScanOptions {
  */
 export interface ScanColumnOptions {
   column: string
+  /** Source-local predicate: identifiers use bare physical column names. */
   where?: ExprNode
   limit?: number
   offset?: number

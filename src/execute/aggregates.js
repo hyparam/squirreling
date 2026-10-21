@@ -5,6 +5,7 @@ import { finalizeAccumulator, newAccumulator, updateAccumulator } from './accumu
 import { executePlan, executeScan, selectColumnNames } from './execute.js'
 import { foldEvaluatedRows } from './fold.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
+import { scanFilter } from './scanFilter.js'
 import { sortEntriesByTerms } from './sort.js'
 import { planStreamingAggregates, streamingHashAggregateRows, streamingScalarAggregateRows } from './streamingAggregate.js'
 import { keyify } from './utils.js'
@@ -289,10 +290,12 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
   // Child must be a direct table scan
   if (plan.child.type !== 'Scan') return
   const scanNode = plan.child
-  const { limit, offset, where } = scanNode.hints
+  const { limit, offset } = scanNode.hints
 
   const table = tables[scanNode.table]
   if (!table?.scanColumn) return
+  const { where, residual } = scanFilter(scanNode, dataSourceColumns(table))
+  if (residual) return
 
   // COUNT(*) needs a physical column whose filtered chunk lengths can be
   // counted. Prefer a predicate/projection column, then any table column.

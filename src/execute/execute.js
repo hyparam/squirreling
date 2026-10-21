@@ -14,6 +14,7 @@ import { distinctBatches, filterBatches, limitBatches, projectExpressionBatches 
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { referencesRowScope } from './rowScope.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
+import { scanFilter } from './scanFilter.js'
 import { executeSort } from './sort.js'
 import { executeSemiJoin } from './semiJoin.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -317,35 +318,51 @@ export function executeScan(plan, context, existingColumnResult) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
-  const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
+  const { where, residual } = scanFilter(plan, dataSourceColumns(table))
+  const hints = { ...plan.hints, where }
+  if (residual) {
+    // Keep range and Top-K outside the scan until the engine residual runs.
+    delete hints.limit
+    delete hints.offset
+  }
+  const hasLimitOffset = hints.limit !== undefined || hints.offset // 0 offset is noop
   const scanContext = { ...context, scope: [plan.alias ?? plan.table] }
 
   if (!existingColumnResult && table.prepareScan && table.schema) {
-    const prepared = table.prepareScan(scanRequest(plan, table.schema, scanContext))
-    return executePreparedScan({ plan, prepared, context: scanContext, table })
+    // Derive column demands from the original predicate, including fields
+    // needed by engine residuals, but send only the source-local predicate.
+    const request = scanRequest(plan, table.schema, scanContext)
+    request.filter = where
+    if (residual) {
+      delete request.limit
+      delete request.offset
+      delete request.topK
+    }
+    const prepared = table.prepareScan(request)
+    return finish(executePreparedScan({ plan: { ...plan, hints }, prepared, context: scanContext, table }))
   }
 
   // Fast path: single column scan. As with scan(), hints the source did not
   // apply are handled by the engine over the returned column values.
-  const scanColumnOptions = plan.hints.columns?.length === 1
-    ? plan.hints.where
+  const scanColumnOptions = hints.columns?.length === 1
+    ? hints.where
       // Do not push a filtered range until WHERE is known to be applied: an
       // older source may ignore WHERE but eagerly apply LIMIT/OFFSET.
-      ? { column: plan.hints.columns[0], where: plan.hints.where, signal }
-      : { column: plan.hints.columns[0], ...plan.hints, signal }
+      ? { column: hints.columns[0], where: hints.where, signal }
+      : { column: hints.columns[0], ...hints, signal }
     : undefined
   const columnResult = existingColumnResult ?? (table.scanColumn && scanColumnOptions
     ? normalizeScanColumnResult(table.scanColumn(scanColumnOptions), scanColumnOptions)
     : undefined)
   if (columnResult && scanColumnOptions) {
-    const column = plan.hints.columns[0]
-    const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
+    const column = hints.columns[0]
+    const scanRows = computeScanRows(table.numRows, hints.limit, hints.offset)
     const columns = [column]
-    const appliedLimitOffset = plan.hints.where
+    const appliedLimitOffset = hints.where
       ? false
       : columnResult.appliedLimitOffset
-    const residualFilter = plan.hints.where && !columnResult.appliedWhere
-      ? compileBatchExpression(plan.hints.where, columns)
+    const residualFilter = hints.where && !columnResult.appliedWhere
+      ? compileBatchExpression(hints.where, columns)
       : undefined
 
     /** @returns {AsyncIterable<AsyncBatch>} */
@@ -353,28 +370,28 @@ export function executeScan(plan, context, existingColumnResult) {
       /** @type {AsyncIterable<AsyncBatch>} */
       let batches = columnBatches(columnResult.chunks(), signal)
       if (residualFilter) {
-        const targetRows = plan.hints.limit === undefined
+        const targetRows = hints.limit === undefined
           ? undefined
-          : plan.hints.limit + (plan.hints.offset ?? 0)
+          : hints.limit + (hints.offset ?? 0)
         batches = filterBatches(batches, residualFilter, signal, targetRows)
       }
       if (!appliedLimitOffset && hasLimitOffset) {
-        batches = limitBatches(batches, plan.hints.limit, plan.hints.offset, signal)
+        batches = limitBatches(batches, hints.limit, hints.offset, signal)
       }
       return batches
     }
 
-    const canUseBatches = !plan.hints.where || columnResult.appliedWhere || residualFilter !== undefined
+    const canUseBatches = !hints.where || columnResult.appliedWhere || residualFilter !== undefined
     if (canUseBatches) {
-      return batchResult({
+      return finish(batchResult({
         columns,
-        numRows: plan.hints.where ? undefined : scanRows,
+        numRows: hints.where ? undefined : scanRows,
         maxRows: scanRows,
         batches: makeBatches,
         signal,
-      })
+      }))
     }
-    return {
+    return finish({
       columns,
       numRows: undefined,
       maxRows: scanRows,
@@ -395,10 +412,10 @@ export function executeScan(plan, context, existingColumnResult) {
           }
         })()
 
-        result = filterRows(result, plan.hints.where, scanContext, plan.hints.limit)
+        result = filterRows(result, hints.where, scanContext, hints.limit)
         // Filtered LIMIT/OFFSET was intentionally not passed to scanColumn.
         if (!appliedLimitOffset && hasLimitOffset) {
-          result = limitRows(result, plan.hints.limit, plan.hints.offset, signal)
+          result = limitRows(result, hints.limit, hints.offset, signal)
         }
 
         yield* result
@@ -406,7 +423,7 @@ export function executeScan(plan, context, existingColumnResult) {
         // the abort so a truncated scan is not mistaken for a complete one
         signal?.throwIfAborted()
       },
-    }
+    })
   }
 
   if (!table.scan) {
@@ -414,30 +431,30 @@ export function executeScan(plan, context, existingColumnResult) {
   }
 
   // do the scan
-  const scanResult = table.scan({ ...plan.hints, signal })
+  const scanResult = table.scan({ ...hints, signal })
   const { appliedWhere, appliedLimitOffset } = scanResult
 
   // Applied limit/offset without applied where is invalid
-  if (!appliedWhere && appliedLimitOffset && plan.hints.where && hasLimitOffset) {
+  if (!appliedWhere && appliedLimitOffset && hints.where && hasLimitOffset) {
     throw new Error(`Data source "${plan.table}" applied limit/offset without applying where`)
   }
 
-  const scanRows = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
-  return {
-    columns: plan.hints.columns ?? dataSourceColumns(table),
-    numRows: !plan.hints.where ? scanRows : undefined,
+  const scanRows = computeScanRows(table.numRows, hints.limit, hints.offset)
+  return finish({
+    columns: hints.columns ?? dataSourceColumns(table),
+    numRows: !hints.where ? scanRows : undefined,
     maxRows: scanRows,
     async *rows() {
       let result = scanResult.rows()
 
       // Apply WHERE if data source did not
-      if (!appliedWhere && plan.hints.where) {
-        result = filterRows(result, plan.hints.where, scanContext, plan.hints.limit)
+      if (!appliedWhere && hints.where) {
+        result = filterRows(result, hints.where, scanContext, hints.limit)
       }
 
       // Apply LIMIT/OFFSET if data source did not
       if (!appliedLimitOffset && hasLimitOffset) {
-        result = limitRows(result, plan.hints.limit, plan.hints.offset, signal)
+        result = limitRows(result, hints.limit, hints.offset, signal)
       }
 
       yield* result
@@ -446,6 +463,24 @@ export function executeScan(plan, context, existingColumnResult) {
       // the abort so a truncated scan is not mistaken for a complete one
       signal?.throwIfAborted()
     },
+  })
+
+  /**
+   * Apply engine-only predicates and ranges after any source execution path.
+   * @param {QueryResults} source
+   * @returns {QueryResults}
+   */
+  function finish(source) {
+    if (!residual) return source
+    const { limit, offset } = plan.hints
+    return {
+      columns: source.columns,
+      maxRows: computeScanRows(source.maxRows, limit, offset),
+      async *rows() {
+        const filtered = filterRows(source.rows(), residual, scanContext, limit)
+        yield* limitRows(filtered, limit, offset, signal)
+      },
+    }
   }
 }
 
