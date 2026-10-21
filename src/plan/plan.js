@@ -914,9 +914,10 @@ function collectConjuncts(node, out) {
  * @param {SelectStatement} select
  * @param {Record<string, AsyncDataSource>} [tables]
  * @param {Map<string, string[]>} [cteColumns]
+ * @param {((aliases: string[]) => boolean)[]} [inherited] - proofs required by ancestor filters or inner joins
  * @returns {ExprNode | undefined}
  */
-function pushJoinPredicates(plan, where, select, tables, cteColumns) {
+function pushJoinPredicates(plan, where, select, tables, cteColumns, inherited = []) {
   if (!tables || plan.type !== 'HashJoin' && plan.type !== 'NestedLoopJoin' ||
       select.from?.type === 'function' || select.joins.some(join => join.fromFunction)) return where
   const last = select.joins[select.joins.length - 1]
@@ -980,8 +981,23 @@ function pushJoinPredicates(plan, where, select, tables, cteColumns) {
   /** @type {ExprNode[]} */
   const whereConjuncts = []
   if (where) collectConjuncts(where, whereConjuncts)
-  const rejectsLeft = whereConjuncts.some(expr => expressionOwner(expr) === 'left' && rejectsNulls(expr))
-  const rejectsRight = whereConjuncts.some(expr => expressionOwner(expr) === 'right' && rejectsNulls(expr))
+  /**
+   * Capture this scope so unqualified references remain unambiguous when
+   * proofs are passed down a join chain with fewer visible sources.
+   * @param {ExprNode} expr
+   * @returns {(missing: string[]) => boolean}
+   */
+  function rejectionProof(expr) {
+    return missing => rejectsNulls(expr, column => {
+      if (column.type !== 'identifier') return false
+      const matches = columns.map((names, i) => names.includes(column.name) ? i : -1).filter(i => i >= 0)
+      const index = column.prefix ? aliases.indexOf(column.prefix) : matches.length === 1 ? matches[0] : -1
+      return index >= 0 && columns[index].includes(column.name) && missing.includes(aliases[index])
+    })
+  }
+  const proofs = [...inherited, ...whereConjuncts.map(rejectionProof)]
+  const rejectsLeft = proofs.some(proof => proof(aliases.slice(0, -1)))
+  const rejectsRight = proofs.some(proof => proof(aliases.slice(-1)))
   if (plan.joinType === 'FULL') {
     if (rejectsLeft && rejectsRight) plan.joinType = 'INNER'
     else if (rejectsLeft) plan.joinType = 'LEFT'
@@ -1031,7 +1047,14 @@ function pushJoinPredicates(plan, where, select, tables, cteColumns) {
   }
   const residual = push(whereConjuncts, false)
   if (leftSelect.joins.length) {
-    leftWhere = pushJoinPredicates(plan.left, leftWhere, leftSelect, tables, cteColumns)
+    // An inner join requires its ON condition to succeed, so it can reject
+    // NULL rows from an earlier outer join. An outer join's own ON cannot.
+    const leftProofs = joinType === 'INNER' || joinType === 'LEFT' ? [...proofs] : []
+    if (joinType === 'INNER') {
+      if (condition) leftProofs.push(rejectionProof(condition))
+      if (plan.type === 'HashJoin') leftProofs.push(...plan.leftKeys.map(rejectionProof))
+    }
+    leftWhere = pushJoinPredicates(plan.left, leftWhere, leftSelect, tables, cteColumns, leftProofs)
   }
   plan.left = filterJoinInput(plan.left, leftWhere)
   plan.right = filterJoinInput(plan.right, rightWhere)
@@ -1065,33 +1088,36 @@ function filterJoinInput(plan, where) {
 }
 
 /**
- * Conservative proof for an expression whose references all belong to the
- * side being NULL-extended. Unknown functions (including COALESCE) and CASE
+ * Conservative proof for an expression with references to the side being
+ * NULL-extended. Unknown functions (including COALESCE) and CASE
  * are deliberately not assumed to propagate NULL.
  *
  * @param {ExprNode} expr
+ * @param {(expr: ExprNode) => boolean} isMissing
  * @returns {boolean}
  */
-function nullWhenMissing(expr) {
-  if (expr.type === 'identifier') return true
+function nullWhenMissing(expr, isMissing) {
+  if (expr.type === 'identifier') return isMissing(expr)
   if (expr.type === 'literal') return expr.value == null
-  if (expr.type === 'cast') return nullWhenMissing(expr.expr)
-  if (expr.type === 'unary') return ['NOT', '+', '-'].includes(expr.op) && nullWhenMissing(expr.argument)
-  if (expr.type === 'binary' && expr.op !== 'AND' && expr.op !== 'OR') {
-    return nullWhenMissing(expr.left) || nullWhenMissing(expr.right)
+  if (expr.type === 'cast') return nullWhenMissing(expr.expr, isMissing)
+  if (expr.type === 'unary') return ['NOT', '+', '-'].includes(expr.op) && nullWhenMissing(expr.argument, isMissing)
+  if (expr.type === 'in valuelist') return nullWhenMissing(expr.expr, isMissing)
+  if (expr.type === 'binary' && ['=', '==', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', '+', '-', '*', '/', '%', '||'].includes(expr.op)) {
+    return nullWhenMissing(expr.left, isMissing) || nullWhenMissing(expr.right, isMissing)
   }
   return false
 }
 
 /**
  * @param {ExprNode} expr
+ * @param {(expr: ExprNode) => boolean} isMissing
  * @returns {boolean}
  */
-function rejectsNulls(expr) {
-  if (nullWhenMissing(expr)) return true
-  if (expr.type === 'unary' && expr.op === 'IS NOT NULL') return nullWhenMissing(expr.argument)
-  if (expr.type === 'binary' && expr.op === 'AND') return rejectsNulls(expr.left) || rejectsNulls(expr.right)
-  if (expr.type === 'binary' && expr.op === 'OR') return rejectsNulls(expr.left) && rejectsNulls(expr.right)
+function rejectsNulls(expr, isMissing) {
+  if (nullWhenMissing(expr, isMissing)) return true
+  if (expr.type === 'unary' && expr.op === 'IS NOT NULL') return nullWhenMissing(expr.argument, isMissing)
+  if (expr.type === 'binary' && expr.op === 'AND') return rejectsNulls(expr.left, isMissing) || rejectsNulls(expr.right, isMissing)
+  if (expr.type === 'binary' && expr.op === 'OR') return rejectsNulls(expr.left, isMissing) && rejectsNulls(expr.right, isMissing)
   return false
 }
 
