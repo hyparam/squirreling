@@ -14,6 +14,7 @@ import { distinctBatches, filterBatches, limitBatches, projectExpressionBatches 
 import { executeHashJoin, executeNestedLoopJoin, executePositionalJoin } from './join.js'
 import { referencesRowScope } from './rowScope.js'
 import { normalizeScanColumnResult } from './scanColumn.js'
+import { scanFilter } from './scanFilter.js'
 import { executeSort } from './sort.js'
 import { executeSemiJoin } from './semiJoin.js'
 import { addBounds, minBounds, stableRowKey } from './utils.js'
@@ -311,17 +312,37 @@ export function selectColumnNames(selectColumns, childColumns) {
  * @param {ScanNode} plan
  * @param {ExecuteContext} context
  * @param {ScanColumnResults} [existingColumnResult]
+ * @param {ExprNode} [filterDemand] - original predicate fields needed by engine residuals
  * @returns {QueryResults}
  */
-export function executeScan(plan, context, existingColumnResult) {
+export function executeScan(plan, context, existingColumnResult, filterDemand = plan.hints.where) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
+  const { where, residual } = scanFilter(plan, dataSourceColumns(table))
+  if (residual) {
+    // A source can only apply the local part. Keep range and Top-K outside
+    // the scan so they cannot discard rows before the residual is evaluated.
+    const { limit, offset } = plan.hints
+    /** @type {ScanNode} */
+    const localPlan = { ...plan, topK: undefined, hints: { ...plan.hints, where, limit: undefined, offset: undefined } }
+    const source = executeScan(localPlan, context, undefined, filterDemand)
+    return {
+      columns: source.columns,
+      maxRows: computeScanRows(source.maxRows, limit, offset),
+      async *rows() {
+        const scope = [plan.alias ?? plan.table]
+        const filtered = filterRows(source.rows(), residual, { ...context, scope }, limit)
+        yield* limitRows(filtered, limit, offset, signal)
+      },
+    }
+  }
+  plan = { ...plan, hints: { ...plan.hints, where } }
   const hasLimitOffset = plan.hints.limit !== undefined || plan.hints.offset // 0 offset is noop
   const scanContext = { ...context, scope: [plan.alias ?? plan.table] }
 
   if (!existingColumnResult && table.prepareScan && table.schema) {
-    const prepared = table.prepareScan(scanRequest(plan, table.schema, scanContext))
+    const prepared = table.prepareScan(scanRequest(plan, table.schema, scanContext, filterDemand))
     return executePreparedScan({ plan, prepared, context: scanContext, table })
   }
 
@@ -527,13 +548,14 @@ function executePreparedScan({ plan, prepared, context, table }) {
  * @param {ScanNode} plan
  * @param {RelationSchema} schema
  * @param {ExecuteContext} context
+ * @param {ExprNode} filterDemand
  * @returns {ScanRequest}
  */
-function scanRequest(plan, schema, context) {
+function scanRequest(plan, schema, context, filterDemand) {
   const currentScope = context.scope ?? [plan.table]
   /** @type {IdentifierNode[]} */
   const predicateIdentifiers = []
-  collectColumnsFromExpr(plan.hints.where, predicateIdentifiers, undefined, {
+  collectColumnsFromExpr(filterDemand, predicateIdentifiers, undefined, {
     cteColumns: context.cteColumns,
     tables: context.tables,
     outerAliases: new Set([...currentScope, ...context.outerAliases ?? []]),
