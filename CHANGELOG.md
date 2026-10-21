@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.12]
+ - Fix alias-qualified filters pushed down to data source scans; scan `where` now uses bare column names
+
 ## [0.16.11]
  - Fix correlated `EXISTS` and outer join query performance by decorrelating `EXISTS` and pushing filters through outer joins
  - Fix `regexp_extract` capture groups
