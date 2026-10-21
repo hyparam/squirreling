@@ -11,6 +11,7 @@ export type QueryPlan =
   | LimitNode
   | HashAggregateNode
   | ScalarAggregateNode
+  | SemiJoinNode
   | HashJoinNode
   | NestedLoopJoinNode
   | PositionalJoinNode
@@ -100,6 +101,15 @@ export interface ScalarAggregateNode {
 }
 
 // Join nodes
+// WHERE IN / NOT IN: retain left rows using membership in the right output.
+export interface SemiJoinNode {
+  type: 'SemiJoin'
+  left: QueryPlan
+  right: QueryPlan
+  expr: ExprNode
+  not: boolean
+}
+
 export interface HashJoinNode {
   type: 'HashJoin'
   joinType: JoinType

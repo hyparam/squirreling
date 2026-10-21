@@ -9,7 +9,7 @@ import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias,
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
- * @import { HashJoinNode, QueryPlan, TableFunctionNode, WindowSpec } from './types.js'
+ * @import { HashJoinNode, QueryPlan, SemiJoinNode, TableFunctionNode, WindowSpec } from './types.js'
  */
 
 /**
@@ -230,9 +230,46 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   if (hints.columns?.length === 0 && select.from?.type === 'subquery') {
     hints.columns = undefined
   }
+  // A WHERE membership test is a semi-join, not a row-by-row expression
+  // subquery. Keep the original SELECT for column demand analysis above.
+  /** @type {Omit<SemiJoinNode, 'left'>[]} */
+  const semiJoins = []
+  if (select.where && !outerScope?.length) {
+    /** @type {ExprNode[]} */
+    const conjuncts = []
+    collectConjuncts(select.where, conjuncts)
+    /** @type {ExprNode | undefined} */
+    let residual
+    for (const conjunct of conjuncts) {
+      const not = conjunct.type === 'unary' && conjunct.op === 'NOT'
+      const expr = not ? conjunct.argument : conjunct
+      if (expr.type !== 'in') {
+        residual = andPredicate(residual, conjunct)
+        continue
+      }
+      /** @type {IdentifierNode[]} */
+      const correlated = []
+      collectColumnsFromExpr({ type: 'subquery', subquery: expr.subquery, positionStart: expr.positionStart, positionEnd: expr.positionEnd }, correlated, undefined, {
+        tables, cteColumns, outerAliases: new Set(scopeAliases),
+      })
+      if (correlated.length) {
+        residual = andPredicate(residual, conjunct)
+        continue
+      }
+      const right = planStatement({ stmt: expr.subquery, tables, ctePlans, cteColumns })
+      const scope = statementScope(expr.subquery)
+      semiJoins.push({
+        type: 'SemiJoin',
+        expr: expr.expr,
+        not,
+        right: scope ? { type: 'Subquery', child: right, scope } : right,
+      })
+    }
+    select = { ...select, where: residual }
+  }
   if (!select.joins.length) {
     hints.where = select.where
-    if (!needsBuffering && !select.distinct) {
+    if (!needsBuffering && !select.distinct && !semiJoins.length) {
       hints.limit = select.limit
       hints.offset = select.offset
     }
@@ -261,6 +298,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   if (where && !isOwnScan) {
     plan = { type: 'Filter', condition: where, child: plan }
   }
+
+  for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
 
   if (useGrouping) {
     // Aggregation path: GROUP BY or scalar aggregate
@@ -346,7 +385,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isOwnScan && !needsBuffering && !select.distinct) && (select.limit !== undefined || select.offset)) {
+    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length) && (select.limit !== undefined || select.offset)) {
       if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
@@ -837,11 +876,10 @@ function collectConjuncts(node, out) {
 }
 
 /**
- * Push total, table-local comparisons into fresh scans of a direct INNER
- * equijoin. Scan execution already enforces hints a source cannot apply.
- * Validate ON before moving anything; an unsafe ON also blocks WHERE
- * pushdown. Safe ON terms can move even when WHERE must remain above the
- * join, since ON already excludes those pairs before WHERE is evaluated.
+ * Push each table-local conjunct into fresh scans of a direct INNER
+ * equijoin. Scan execution enforces hints a source cannot apply. Unresolved
+ * and cross-table conjuncts remain residual predicates. Predicate evaluation
+ * order and error short-circuiting are not guaranteed.
  *
  * @param {QueryPlan} plan
  * @param {ExprNode | undefined} where
@@ -865,8 +903,9 @@ function pushJoinPredicates(plan, where, tables) {
    */
   function owner(expr) {
     if (expr.type === 'literal') return 'literal'
-    if (expr.type !== 'identifier' || !expr.prefix) return 'unsafe'
-    const index = aliases.indexOf(expr.prefix)
+    if (expr.type !== 'identifier') return 'unsafe'
+    const matches = columns.map((names, i) => names.includes(expr.name) ? i : -1).filter(i => i >= 0)
+    const index = expr.prefix ? aliases.indexOf(expr.prefix) : matches.length === 1 ? matches[0] : -1
     if (index < 0 || !columns[index].includes(expr.name)) return 'unsafe'
     return index === 0 ? 'left' : 'right'
   }
@@ -874,21 +913,44 @@ function pushJoinPredicates(plan, where, tables) {
   // Avoid changing the evaluation of unresolved or unqualified ON keys.
   if (plan.leftKeys.some(key => owner(key) !== 'left') || plan.rightKeys.some(key => owner(key) !== 'right')) return where
   /**
+   * Resolve every reference in a conjunct independently. Subqueries and
+   * windows have their own scope and must remain above the join.
+   *
+   * @param {ExprNode} expr
+   * @returns {'left' | 'right' | 'literal' | 'unsafe'}
+   */
+  function expressionOwner(expr) {
+    if (!expr) return 'literal'
+    if (expr.type === 'identifier' || expr.type === 'literal') return owner(expr)
+    /** @type {ExprNode[]} */
+    let children
+    if (expr.type === 'binary') children = [expr.left, expr.right]
+    else if (expr.type === 'unary') children = [expr.argument]
+    else if (expr.type === 'function' && !expr.filter) children = expr.args
+    else if (expr.type === 'cast') children = [expr.expr]
+    else if (expr.type === 'in valuelist') children = [expr.expr, ...expr.values]
+    else if (expr.type === 'subscript') children = [expr.expr, expr.index]
+    else if (expr.type === 'case') children = [expr.caseExpr, ...expr.whenClauses.flatMap(w => [w.condition, w.result]), expr.elseResult]
+    else return 'unsafe'
+    /** @type {'left' | 'right' | 'literal'} */
+    let target = 'literal'
+    for (const child of children) {
+      const side = expressionOwner(child)
+      if (side === 'unsafe' || side !== 'literal' && target !== 'literal' && side !== target) return 'unsafe'
+      if (side !== 'literal') target = side
+    }
+    return target
+  }
+
+  /**
    * @param {ExprNode[]} conjuncts
-   * @returns {Array<'left' | 'right' | 'residual'> | undefined}
+   * @returns {Array<'left' | 'right' | 'residual'>}
    */
   function classify(conjuncts) {
-    /** @type {Array<'left' | 'right' | 'residual'>} */
-    const targets = []
-    for (const expr of conjuncts) {
-      if (expr.type !== 'binary' || !['=', '==', '!=', '<>', '<', '<=', '>', '>='].includes(expr.op)) return undefined
-      const left = owner(expr.left)
-      const right = owner(expr.right)
-      if (left === 'unsafe' || right === 'unsafe') return undefined
-      // Only column/literal terms move; cross-table comparisons remain residual.
-      targets.push(left !== 'literal' && right === 'literal' ? left : right !== 'literal' && left === 'literal' ? right : 'residual')
-    }
-    return targets
+    return conjuncts.map(function target(expr) {
+      const side = expressionOwner(expr)
+      return side === 'left' || side === 'right' ? side : 'residual'
+    })
   }
 
   /**
@@ -915,7 +977,6 @@ function pushJoinPredicates(plan, where, tables) {
   const onConjuncts = []
   if (plan.residual) collectConjuncts(plan.residual, onConjuncts)
   const onTargets = classify(onConjuncts)
-  if (!onTargets) return where
   const onResidual = push(onConjuncts, onTargets)
   if (onResidual) plan.residual = onResidual
   else delete plan.residual
@@ -925,7 +986,7 @@ function pushJoinPredicates(plan, where, tables) {
   const whereConjuncts = []
   collectConjuncts(where, whereConjuncts)
   const whereTargets = classify(whereConjuncts)
-  return whereTargets ? push(whereConjuncts, whereTargets) : where
+  return push(whereConjuncts, whereTargets)
 }
 
 /**
