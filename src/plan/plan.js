@@ -878,7 +878,8 @@ function collectConjuncts(node, out) {
 /**
  * Push each table-local conjunct into fresh scans of a direct INNER
  * equijoin. Scan execution enforces hints a source cannot apply. Unresolved
- * and cross-table conjuncts remain residual predicates.
+ * and cross-table conjuncts remain residual predicates. Predicate evaluation
+ * order and error short-circuiting are not guaranteed.
  *
  * @param {QueryPlan} plan
  * @param {ExprNode | undefined} where
@@ -942,37 +943,11 @@ function pushJoinPredicates(plan, where, tables) {
   }
 
   /**
-   * Moving a throwing predicate can expose errors on rows the join discards.
-   * Preserve evaluation order for casts, strict functions and UDFs. These
-   * total functions can move when their arguments can move.
-   *
-   * @param {ExprNode} expr
-   * @returns {boolean}
-   */
-  function mayThrow(expr) {
-    if (!expr) return false
-    if (expr.type === 'cast') return true
-    if (expr.type === 'function') {
-      return !['COALESCE', 'NULLIF'].includes(expr.funcName.toUpperCase()) || expr.args.some(mayThrow)
-    }
-    if (expr.type === 'binary') return mayThrow(expr.left) || mayThrow(expr.right)
-    if (expr.type === 'unary') return mayThrow(expr.argument)
-    if (expr.type === 'in valuelist') return mayThrow(expr.expr) || expr.values.some(mayThrow)
-    if (expr.type === 'case') return mayThrow(expr.caseExpr) || expr.whenClauses.some(w => mayThrow(w.condition) || mayThrow(w.result)) || mayThrow(expr.elseResult)
-    if (expr.type === 'subscript') return mayThrow(expr.expr) || mayThrow(expr.index)
-    return false
-  }
-
-  /**
    * @param {ExprNode[]} conjuncts
    * @returns {Array<'left' | 'right' | 'residual'>}
    */
   function classify(conjuncts) {
-    let blocked = false
     return conjuncts.map(function target(expr) {
-      // Later filters must not suppress an error in an earlier conjunct.
-      blocked ||= mayThrow(expr)
-      if (blocked) return 'residual'
       const side = expressionOwner(expr)
       return side === 'left' || side === 'right' ? side : 'residual'
     })
@@ -1005,8 +980,6 @@ function pushJoinPredicates(plan, where, tables) {
   const onResidual = push(onConjuncts, onTargets)
   if (onResidual) plan.residual = onResidual
   else delete plan.residual
-  // WHERE must not suppress errors in the ON condition.
-  if (onConjuncts.some(mayThrow)) return where
 
   if (!where) return undefined
   /** @type {ExprNode[]} */

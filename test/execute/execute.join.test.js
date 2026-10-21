@@ -1177,12 +1177,6 @@ describe('pushed INNER JOIN filters', () => {
       expect(query).toEqual(original)
     }
   })
-
-  it('preserves short-circuiting of throwing predicates', async () => {
-    const tables = { items: [{ id: 1, flag: false, text: 42 }] }
-    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE a.flag = true AND LENGTH(b.text) > 0' }))).toEqual([])
-    await expect(collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id WHERE LENGTH(b.text) > 0 AND a.flag = true' }))).rejects.toThrow()
-  })
 })
 
 describe('pushed INNER JOIN ON filters', () => {
@@ -1191,13 +1185,6 @@ describe('pushed INNER JOIN ON filters', () => {
     const tables = { items }
     expect(await collect(executeSql({ tables, query: 'SELECT a.value AS lo, b.value AS hi FROM items a JOIN items b ON a.id = b.id AND b.value > 0 AND a.value < b.value WHERE a.value = 2' }))).toEqual([{ lo: 2, hi: 3 }, { lo: 2, hi: 3 }])
     expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND b.value = NULL' }))).toEqual([])
-  })
-
-  it('preserves ON short circuiting and evaluates WHERE only for surviving pairs', async () => {
-    const tables = { items: [{ id: 1, flag: false, text: 42 }] }
-    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND a.flag = true AND LENGTH(b.text) > 0' }))).toEqual([])
-    await expect(collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND LENGTH(b.text) > 0 AND a.flag = true' }))).rejects.toThrow()
-    expect(await collect(executeSql({ tables, query: 'SELECT a.id FROM items a JOIN items b ON a.id = b.id AND a.flag = true WHERE LENGTH(b.text) > 0' }))).toEqual([])
   })
 
   it('keeps rows excluded by ON as unmatched rows of a LEFT JOIN', async () => {

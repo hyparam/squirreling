@@ -417,13 +417,11 @@ describe('INNER JOIN predicate pushdown', () => {
     }
   })
 
-  it('leaves unsafe WHERE and ON evaluation order alone', () => {
-    for (const where of ['CAST(a.value AS INT) > 0 AND b.flag = true', 'a.flag = true OR b.flag = true', 'flag = true AND b.value > 0']) {
+  it('retains cross-table and ambiguous predicates', () => {
+    for (const where of ['a.flag = true OR b.flag = true', 'flag = true AND b.value > 0']) {
       const plan = planSql({ tables, query: `SELECT a.id FROM a JOIN b ON a.id = b.id WHERE ${where}` })
       expect(plan).toMatchObject({ child: { type: 'Filter' } })
     }
-    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND CAST(b.value AS INT) > 0 WHERE a.flag = true' })
-    expect(plan).toMatchObject({ child: { type: 'Filter', child: { type: 'HashJoin', residual: { op: '>' } } } })
   })
 
   it('does not push into CTEs or derived tables', () => {
@@ -469,20 +467,20 @@ describe('INNER JOIN ON predicate pushdown', () => {
   })
 
   it('pushes safe ON predicates when WHERE is not eligible', () => {
-    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND b.flag = true WHERE CAST(a.value AS STRING) LIKE \'%2%\'' })
-    expect(plan).toMatchObject({ child: { type: 'Filter', condition: { op: 'LIKE' }, child: {
+    const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND b.flag = true WHERE a.value < b.value' })
+    expect(plan).toMatchObject({ child: { type: 'Filter', condition: { op: '<' }, child: {
       type: 'HashJoin', right: { hints: { where: { op: '=', left: { prefix: 'b', name: 'flag' } } } },
     } } })
   })
 
-  it('keeps throwing ON predicates and WHERE above the join', () => {
+  it('pushes potentially throwing ON predicates and independent WHERE predicates', () => {
     const plan = planSql({ tables, query: 'SELECT a.id FROM a JOIN b ON a.id = b.id AND b.flag = true AND LENGTH(b.value) > 0 WHERE a.flag = true' })
-    if (plan.type !== 'Project' || plan.child.type !== 'Filter' || plan.child.child.type !== 'HashJoin') throw new Error('expected filtered hash join')
-    const join = plan.child.child
+    if (plan.type !== 'Project' || plan.child.type !== 'HashJoin') throw new Error('expected hash join')
+    const join = plan.child
     if (join.left.type !== 'Scan' || join.right.type !== 'Scan') throw new Error('expected scans')
-    expect(join.left.hints.where).toBeUndefined()
-    expect(join.right.hints.where?.type).toBe('binary')
-    expect(join.residual).toBeDefined()
+    expect(join.left.hints.where?.type).toBe('binary')
+    expect(join.right.hints.where?.type === 'binary' && join.right.hints.where.op).toBe('AND')
+    expect(join.residual).toBeUndefined()
   })
 
   it('does not push ON predicates across outer joins or shared CTE scans', () => {

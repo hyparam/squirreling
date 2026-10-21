@@ -15,6 +15,8 @@ describe('independent join conjunct pushdown', () => {
   it.each([
     'r.text LIKE \'%command not found%\'',
     'COALESCE(r.text, \'\') = \'command not found\'',
+    'LENGTH(r.text) > 1',
+    'CAST(r.id AS STRING) = \'1\'',
     'r.text IS NULL',
     'r.text IN (\'command not found\', \'ok\')',
     '(r.text = \'ok\' OR r.text IS NULL)',
@@ -61,8 +63,12 @@ describe('independent join conjunct pushdown', () => {
     expect(plan.child.condition).toEqual(parsed.where.left)
   })
 
-  it('pushes WHERE independently of a cross-side ON residual', () => {
-    const query = 'SELECT r.id FROM items r JOIN items c ON r.id = c.id AND (r.flag = true OR c.flag = true) WHERE r.text LIKE \'%command%\''
+  it.each([
+    '(r.flag = true OR c.flag = true)',
+    'LENGTH(r.text) > c.id',
+    '(SELECT LENGTH(42)) > 0',
+  ])('pushes WHERE independently of ON residual %s', residual => {
+    const query = `SELECT r.id FROM items r JOIN items c ON r.id = c.id AND ${residual} WHERE r.text LIKE '%command%'`
     const plan = planSql({ query, tables })
     if (plan.type !== 'Project' || plan.child.type !== 'HashJoin' || plan.child.left.type !== 'Scan') throw new Error('expected join')
     expect(plan.child.residual?.type).toBe('binary')
