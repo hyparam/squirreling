@@ -59,6 +59,16 @@ describe('correlated scalar aggregate joins', () => {
     expect(await collect(executeSql({ tables, query: 'select * from c where (select count(*) from r where r.k = c.k) > 1' }))).toEqual([{ k: 1, j: 1 }])
   })
 
+  it('keeps synthetic columns out of scalar aggregate stars', async () => {
+    const query = 'select *, count(*) n from c where (select count(*) from r where r.k = c.k) > 0'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ k: 1, j: 1, n: 2 }])
+  })
+
+  it('keeps synthetic columns out of grouped aggregate stars', async () => {
+    const query = 'select *, count(*) n from c where (select count(*) from r where r.k = c.k) > 0 group by c.k, c.j'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ k: 1, j: 1, n: 1 }, { k: 2, j: 1, n: 1 }])
+  })
+
   it.each(['r.k < c.k', 'r.k + 0 = c.k', 'r.k = c.k or r.j = c.j'])('retains fallback for %s', async condition => {
     const query = `select (select count(*) from r where ${condition}) n from c`
     expect(JSON.stringify(planSql({ query, tables }))).not.toContain('HashJoin')

@@ -345,6 +345,14 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   for (const joinScalar of scalarJoins) plan = joinScalar(plan)
   if (scalarWhere) plan = { type: 'Filter', condition: scalarWhere, child: plan }
 
+  // Bare stars must only include the original query's relations.
+  columns = scalarJoins.length ? columns.flatMap(col =>
+    col.type === 'star' && !col.table
+      ? [sourceAlias, ...select.joins.map(join => join.alias ?? join.table)]
+        .filter(alias => alias !== undefined).map(table => ({ ...col, table }))
+      : [col]
+  ) : columns
+
   if (useGrouping) {
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
@@ -406,13 +414,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     // Fast path for SELECT * without joins
     const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !scalarJoins.length
     if (!isPassthrough) {
-      // Bare stars must only include the original query's relations.
-      let projectColumns = scalarJoins.length ? columns.flatMap(col =>
-        col.type === 'star' && !col.table
-          ? [sourceAlias, ...select.joins.map(join => join.alias ?? join.table)]
-            .filter(alias => alias !== undefined).map(table => ({ ...col, table }))
-          : [col]
-      ) : columns
+      let projectColumns = columns
       // When parent only needs specific columns, drop unneeded projections
       if (parentColumns) {
         projectColumns = projectColumns.filter(col =>
