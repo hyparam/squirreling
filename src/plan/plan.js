@@ -313,7 +313,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Add JOINs
   if (select.joins.length) {
-    plan = planJoin({ left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables, outerScope })
+    plan = planJoin({ from: select.from, left: plan, joins: select.joins, leftTable: sourceAlias, ctePlans, cteColumns, perTableColumns, tables, outerScope })
   }
 
   // Whether FROM resolved to our own direct table scan
@@ -545,6 +545,7 @@ function planTableFunction(from) {
 
 /**
  * @param {object} options
+ * @param {FromTable | FromSubquery | FromFunction | undefined} options.from
  * @param {QueryPlan} options.left - the left side of the join (FROM or previous joins)
  * @param {JoinClause[]} options.joins - array of join clauses
  * @param {string} options.leftTable - name/alias of the left table
@@ -555,9 +556,10 @@ function planTableFunction(from) {
  * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables, outerScope }) {
+function planJoin({ from, left, joins, leftTable, ctePlans, cteColumns, perTableColumns, tables, outerScope }) {
   let plan = left
   let currentLeftTable = leftTable
+  const sources = [from]
 
   // Running scope for lateral UNNEST arg validation — excludes the current
   // join's own alias (self-reference) and later joins (forward reference).
@@ -569,6 +571,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
 
   for (const join of joins) {
     const rightTable = join.alias ?? join.table
+    sources.push(join.fromFunction ?? joinSource(join))
 
     // LATERAL table function: right side references left-side columns.
     if (join.fromFunction) {
@@ -641,7 +644,7 @@ function planJoin({ left, joins, leftTable, ctePlans, cteColumns, perTableColumn
       // `USING (cols)` desugars to an equi-condition `left.col = right.col` per
       // column, which routes through the hash-join path like any other ON.
       const condition = join.on ?? (join.using && buildUsingCondition(join.using, join))
-      const keys = condition && extractEquiKeys({ condition, leftTable: currentLeftTable, rightTable })
+      const keys = condition && extractEquiKeys({ condition, owner: joinColumnOwner(sources, tables, cteColumns), using: !!join.using })
       if (keys) {
         /** @type {HashJoinNode} */
         const hashJoin = {
@@ -853,11 +856,11 @@ function buildUsingCondition(using, pos) {
  *
  * @param {object} options
  * @param {ExprNode} options.condition
- * @param {string} options.leftTable
- * @param {string} options.rightTable
+ * @param {(expr: ExprNode) => string} options.owner
+ * @param {boolean} options.using
  * @returns {{ leftKeys: ExprNode[], rightKeys: ExprNode[], residual?: ExprNode } | undefined}
  */
-function extractEquiKeys({ condition, leftTable, rightTable }) {
+function extractEquiKeys({ condition, owner, using }) {
   /** @type {ExprNode[]} */
   const conjuncts = []
   collectConjuncts(condition, conjuncts)
@@ -868,7 +871,7 @@ function extractEquiKeys({ condition, leftTable, rightTable }) {
   /** @type {ExprNode[]} */
   const residuals = []
   for (const conjunct of conjuncts) {
-    const eq = classifyEquiConjunct(conjunct, leftTable, rightTable)
+    const eq = classifyEquiConjunct(conjunct, owner, using)
     if (eq) {
       leftKeys.push(eq.leftKey)
       rightKeys.push(eq.rightKey)
@@ -926,26 +929,10 @@ function pushJoinPredicates(plan, where, select, tables, cteColumns, inherited =
   const rightSource = joinSource(last)
   const sources = [...leftSources, rightSource]
   const aliases = sources.map(source => fromAlias(source))
-  const columns = sources.map(source => source?.type === 'subquery'
-    ? inferStatementColumns({ stmt: source.query, tables, cteColumns })
-    : source?.type === 'table'
-      ? cteColumns?.get(source.table?.toLowerCase()) ?? dataSourceColumns(tables[source.table])
-      : [])
+  const owner = joinColumnOwner(sources, tables, cteColumns)
+  const columns = sources.map(source => sourceColumns(source, tables, cteColumns))
   if (new Set(aliases).size !== aliases.length ||
       columns.some(names => aliases.some(alias => names.includes(alias)))) return where
-
-  /**
-   * @param {ExprNode} expr
-   * @returns {'left' | 'right' | 'literal' | 'unsafe'}
-   */
-  function owner(expr) {
-    if (expr.type === 'literal') return 'literal'
-    if (expr.type !== 'identifier') return 'unsafe'
-    const matches = columns.map((names, i) => names.includes(expr.name) ? i : -1).filter(i => i >= 0)
-    const index = expr.prefix ? aliases.indexOf(expr.prefix) : matches.length === 1 ? matches[0] : -1
-    if (index < 0 || !columns[index].includes(expr.name)) return 'unsafe'
-    return index < leftSources.length ? 'left' : 'right'
-  }
 
   // Do not change the interpretation of ambiguous or misoriented hash keys.
   if (plan.type === 'HashJoin' && (plan.leftKeys.some(key => owner(key) !== 'left') ||
@@ -1133,28 +1120,59 @@ function andPredicate(left, right) {
 }
 
 /**
- * Returns the (leftKey, rightKey) pair for an equi conjunct, oriented so
- * leftKey references the left input and rightKey references the right input.
- * Returns undefined when the conjunct is not a `<identifier> = <identifier>`
- * predicate. When the prefixes don't unambiguously identify a side, falls
- * through to the original orientation — matches the prior single-equi
- * behavior so unprefixed columns still produce a hash join.
+ * @param {FromTable | FromSubquery | FromFunction | undefined} source
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @param {Map<string, string[]>} [cteColumns]
+ * @returns {string[]}
+ */
+function sourceColumns(source, tables, cteColumns) {
+  if (source?.type === 'subquery') return inferStatementColumns({ stmt: source.query, tables, cteColumns })
+  if (source?.type === 'function') return tableFunctionColumnNames(source)
+  if (source?.type === 'table') return cteColumns?.get(source.table.toLowerCase()) ?? (tables?.[source.table] ? dataSourceColumns(tables[source.table]) : [])
+  return []
+}
+
+/**
+ * Resolve references against every visible source, not the synthetic alias
+ * used to merge rows from earlier joins. Unknown or ambiguous references
+ * remain residual predicates rather than becoming incorrectly oriented keys.
+ *
+ * @param {(FromTable | FromSubquery | FromFunction | undefined)[]} sources
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @param {Map<string, string[]>} [cteColumns]
+ * @returns {(expr: ExprNode) => 'left' | 'right' | 'literal' | 'unsafe'}
+ */
+function joinColumnOwner(sources, tables, cteColumns) {
+  const aliases = sources.map(source => fromAlias(source))
+  const columns = sources.map(source => sourceColumns(source, tables, cteColumns))
+  const unsafe = new Set(aliases).size !== aliases.length ||
+    columns.some(names => aliases.some(alias => alias !== undefined && names.includes(alias)))
+  return function owner(expr) {
+    if (expr.type === 'literal') return 'literal'
+    if (unsafe || expr.type !== 'identifier') return 'unsafe'
+    const matches = columns.map((names, i) => names.includes(expr.name) ? i : -1).filter(i => i >= 0)
+    const index = expr.prefix ? aliases.indexOf(expr.prefix) : matches.length === 1 ? matches[0] : -1
+    if (index < 0) return 'unsafe'
+    if (columns[index].length && !columns[index].includes(expr.name)) return 'unsafe'
+    return index === sources.length - 1 ? 'right' : 'left'
+  }
+}
+
+/**
+ * Orient only equalities whose identifiers belong to opposite inputs.
+ * USING explicitly binds its unqualified identifiers to their respective sides.
  *
  * @param {ExprNode} conjunct
- * @param {string} leftTable
- * @param {string} rightTable
+ * @param {(expr: ExprNode) => string} owner
+ * @param {boolean} using
  * @returns {{ leftKey: ExprNode, rightKey: ExprNode } | undefined}
  */
-function classifyEquiConjunct(conjunct, leftTable, rightTable) {
+function classifyEquiConjunct(conjunct, owner, using) {
   if (conjunct.type !== 'binary' || conjunct.op !== '=') return undefined
   const { left, right } = conjunct
   if (left.type !== 'identifier' || right.type !== 'identifier') return undefined
-  const leftRefsRight = left.prefix === rightTable
-  const rightRefsLeft = right.prefix === leftTable
-  if (leftRefsRight && rightRefsLeft) {
-    return { leftKey: right, rightKey: left }
-  }
-  return { leftKey: left, rightKey: right }
+  if (using || owner(left) === 'left' && owner(right) === 'right') return { leftKey: left, rightKey: right }
+  if (owner(left) === 'right' && owner(right) === 'left') return { leftKey: right, rightKey: left }
 }
 
 /**
