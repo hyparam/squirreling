@@ -193,6 +193,18 @@ export function executeHashAggregate(plan, context) {
  * @returns {QueryResults}
  */
 export function executeScalarAggregate(plan, context) {
+  if (context.deferScans && plan.child.type === 'Scan') {
+    const child = executeScan(plan.child, context)
+    return {
+      columns: selectColumnNames(plan.columns, child.columns),
+      numRows: plan.having ? undefined : 1,
+      maxRows: 1,
+      async *rows() {
+        context.signal?.throwIfAborted()
+        yield* executeScalarAggregate(plan, { ...context, deferScans: false }).rows()
+      },
+    }
+  }
   // Fast path: use scanColumn when available
   const columnScan = tryColumnScanAggregate(plan, context)
   if (columnScan?.rows) {

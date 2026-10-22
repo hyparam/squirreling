@@ -199,6 +199,8 @@ export interface PlanSqlOptions {
 
 // executePlan(plan, context)
 export interface ExecuteContext {
+  // Delay opening join input scans until their rows are consumed.
+  deferScans?: boolean
   tables: Record<string, AsyncDataSource>
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal

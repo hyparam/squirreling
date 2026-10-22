@@ -34,7 +34,7 @@ for (const mode of ['scan', 'prepareScan', 'scanColumn']) {
         expect(await collect(executeSql({ tables: { data: source }, query: `
           SELECT r.id FROM data r JOIN data c ON r.id = c.id
           WHERE r.id > 1 AND c.id < 3` }))).toEqual([{ id: 2 }])
-        expect(filters.map(clean)).toEqual([clean(predicate('id > 1')), clean(predicate('id < 3'))])
+        expect(filters.map(clean)).toEqual([clean(predicate('id < 3')), clean(predicate('id > 1 AND id IN (1, 2)'))])
       })
 
       it('keeps correlated conjuncts and ranges in the engine', async () => {
@@ -51,7 +51,7 @@ for (const mode of ['scan', 'prepareScan', 'scanColumn']) {
         expect(await collect(executeSql({ tables: { data: source }, query: `
           SELECT t.id FROM data t JOIN data T ON t.id = T.id
           WHERE t.id > 1 AND T.id < 3` }))).toEqual([{ id: 2 }])
-        expect(filters.map(clean)).toEqual([clean(predicate('id > 1')), clean(predicate('id < 3'))])
+        expect(filters.map(clean)).toEqual([clean(predicate('id < 3')), clean(predicate('id > 1 AND id IN (1, 2)'))])
       })
 
       it('keeps correlated ordering and offset above the residual', async () => {
