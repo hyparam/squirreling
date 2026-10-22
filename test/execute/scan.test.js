@@ -101,7 +101,9 @@ describe('join scan hints', () => {
       scan(options) {
         ordersHints = options
         return {
-          async *rows() {},
+          async *rows() {
+            yield { columns: ['user_id', 'total'], cells: { user_id: () => Promise.resolve(1), total: () => Promise.resolve(10) } }
+          },
           appliedWhere: false,
           appliedLimitOffset: false,
         }

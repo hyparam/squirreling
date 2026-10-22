@@ -1,6 +1,7 @@
 import { evaluateExpr } from '../expression/evaluate.js'
 import { keyify, maxBounds } from './utils.js'
 import { executePlan } from './execute.js'
+import { dynamicFilter, filterScore } from './dynamicFilter.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
@@ -222,14 +223,18 @@ export function executePositionalJoin(plan, context) {
  * @returns {QueryResults}
  */
 export function executeHashJoin(plan, context) {
-  const left = executePlan({ plan: plan.left, context })
-  const right = executePlan({ plan: plan.right, context })
-  // Build the hash table on the smaller side when both sizes are known,
-  // so joining a small table against a large one buffers the small one.
+  const left = executePlan({ plan: plan.left, context: { ...context, deferScans: true } })
+  const right = executePlan({ plan: plan.right, context: { ...context, deferScans: true } })
+  // Prefer exact sizes, then predicate selectivity, then upper bounds.
+  // A filtered scan's table size is only an upper bound, not its cardinality.
   // Swapping reorders output rows, which SQL leaves unspecified.
   const leftSize = left.numRows ?? left.maxRows
   const rightSize = right.numRows ?? right.maxRows
-  const swap = leftSize !== undefined && rightSize !== undefined && leftSize < rightSize
+  const swap = left.numRows !== undefined && right.numRows !== undefined
+    ? leftSize < rightSize
+    : filterScore(plan.left) !== filterScore(plan.right)
+      ? filterScore(plan.left) > filterScore(plan.right)
+      : leftSize !== undefined && rightSize !== undefined && leftSize < rightSize
   return {
     columns: mergeColumnNames(left.columns, right.columns, plan.leftAlias, plan.rightAlias),
     async *rows() {
@@ -237,7 +242,7 @@ export function executeHashJoin(plan, context) {
       const rightTable = plan.rightAlias
       const { residual } = plan
       const build = swap ? left : right
-      const probe = swap ? right : left
+      let probe = swap ? right : left
       const buildKeys = swap ? plan.leftKeys : plan.rightKeys
       const probeKeys = swap ? plan.rightKeys : plan.leftKeys
       // Which sides must also emit their unmatched rows
@@ -260,6 +265,7 @@ export function executeHashJoin(plan, context) {
       // otherwise rows with NULL join keys are released immediately.
       /** @type {Map<string | number | bigint | boolean, AsyncRow[]>} */
       const hashMap = new Map()
+      const filters = dynamicFilter(buildKeys.length, true)
       /** @type {AsyncRow[] | undefined} */
       const buildRows = buildOuter ? [] : undefined
       /** @type {string[]} */
@@ -281,6 +287,7 @@ export function executeHashJoin(plan, context) {
         // SQL semantics: NULL never equals anything, so a row with any NULL
         // join key is excluded from the hash table.
         if (keyValues.some(v => v == null)) continue
+        if (!probeOuter) filters.add(keyValues)
         const key = keyify(...keyValues)
         let bucket = hashMap.get(key)
         if (!bucket) {
@@ -295,8 +302,14 @@ export function executeHashJoin(plan, context) {
       /** @type {Set<AsyncRow> | undefined} */
       const matchedBuildRows = buildOuter ? new Set() : undefined
 
+      if (!probeOuter && !hashMap.size && !buildOuter) return
+      if (!probeOuter && hashMap.size) {
+        const filtered = filters.apply(swap ? plan.right : plan.left, probeKeys)
+        probe = executePlan({ plan: filtered, context: { ...context, deferScans: true } })
+      }
+
       // Probe phase: stream the other side
-      for await (const probeRow of probe.rows()) {
+      for await (const probeRow of !probeOuter && !hashMap.size ? [] : probe.rows()) {
         context.signal?.throwIfAborted()
 
         if (!probeCols) {

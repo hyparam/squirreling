@@ -1,5 +1,5 @@
 import { selectedRowCount } from '../backend/batch.js'
-import { batchesToRows } from '../backend/batchAdapters.js'
+import { batchesToRows, rowsToBatches } from '../backend/batchAdapters.js'
 import { dataSourceColumns, memorySource } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { compileBatchExpression } from '../expression/batch.js'
@@ -318,6 +318,37 @@ export function executeScan(plan, context, existingColumnResult) {
   const { tables, signal } = context
   const table = validateTable({ ...plan, tables })
   validateScan({ ...plan, tables })
+  if (context.deferScans && !existingColumnResult) {
+    const size = computeScanRows(table.numRows, plan.hints.limit, plan.hints.offset)
+    const columns = plan.hints.columns ?? dataSourceColumns(table)
+    /** @type {QueryResults} */
+    const deferred = {
+      columns,
+      numRows: plan.hints.where ? undefined : size,
+      maxRows: size,
+      async *rows() {
+        context.signal?.throwIfAborted()
+        yield* executeScan(plan, { ...context, deferScans: false }).rows()
+      },
+    }
+    // Preserve native batch execution above a deferred input. Legacy fallback
+    // remains at the source boundary if a source declines its column path.
+    if (table.prepareScan && table.schema || table.scanColumn && plan.hints.columns?.length === 1) {
+      deferred.batches = async function* deferredBatches() {
+        context.signal?.throwIfAborted()
+        const result = executeScan(plan, { ...context, deferScans: false })
+        if (result.batches) {
+          // Prepared sources may return extra fields or a different order.
+          // Align vectors with the metadata exposed before opening the scan.
+          const indexes = columns.map(column => result.columns.indexOf(column))
+          for await (const batch of result.batches()) {
+            yield { ...batch, columns: indexes.map(index => batch.columns[index]) }
+          }
+        } else yield* rowsToBatches(result.rows(), columns, { signal })
+      }
+    }
+    return deferred
+  }
   const { where, residual } = scanFilter(plan, dataSourceColumns(table))
   const hints = { ...plan.hints, where }
   if (residual) {
