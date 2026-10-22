@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.14]
+ - Add dynamic filter pushdown for hash joins, passing build-side join keys to probe-side scans
+
 ## [0.16.13]
  - Decorrelate scalar aggregate subqueries into joins for faster execution
  - Fix join key orientation in chained joins

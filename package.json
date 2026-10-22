@@ -1,6 +1,6 @@
 {
   "name": "squirreling",
-  "version": "0.16.13",
+  "version": "0.16.14",
   "description": "Squirreling Async SQL Engine",
   "author": "Hyperparam",
   "homepage": "https://hyperparam.app",
@@ -43,7 +43,7 @@
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "5.0.5",
     "eslint": "10.13.0",
-    "eslint-plugin-jsdoc": "65.4.0",
+    "eslint-plugin-jsdoc": "65.4.1",
     "globals": "17.13.0",
     "typescript": "7.0.2",
     "vitest": "5.0.5"
