@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.16.13]
+ - Decorrelate scalar aggregate subqueries into joins for faster execution
+ - Fix join key orientation in chained joins
+
 ## [0.16.12]
  - Fix alias-qualified filters pushed down to data source scans; scan `where` now uses bare column names
 
