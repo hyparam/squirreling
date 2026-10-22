@@ -2,13 +2,16 @@ import { dataSourceColumns } from '../backend/dataSource.js'
 import { derivedAlias } from '../expression/alias.js'
 import { parseSql } from '../parse/parse.js'
 import { findAggregate } from '../validation/aggregates.js'
+import { findWindow } from '../validation/windows.js'
 import { ParseError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js'
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
+import { andPredicate, collectConjuncts } from './predicates.js'
+import { decorrelateExists, decorrelateScalars } from './subqueries.js'
 
 /**
- * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement, WindowFunctionNode } from '../types.js'
+ * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
  * @import { HashJoinNode, QueryPlan, SemiJoinNode, TableFunctionNode, WindowSpec } from './types.js'
  */
 
@@ -177,7 +180,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const scopeColumns = collectScopeColumns({ select, cteColumns, tables })
   /** @type {Map<string, ExprNode>} */
   const aliases = new Map()
-  const columns = select.columns.map(col => {
+  let columns = select.columns.map(col => {
     if (col.type === 'derived') {
       validateTableRefs(col.expr, scopeTables, scopeColumns)
       const expr = resolveAliases(col.expr, aliases)
@@ -193,7 +196,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
     return col
   })
-  const orderBy = resolveOrderByAliases(select.orderBy, aliases)
+  let orderBy = resolveOrderByAliases(select.orderBy, aliases)
 
   // Validate qualified references in other clauses
   validateTableRefs(select.where, scopeTables, scopeColumns)
@@ -298,9 +301,18 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
     select = { ...select, where: residual }
   }
+  const scalar = decorrelateScalars({
+    select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns,
+    rewriteProjection: !useGrouping && !windows.length,
+    planQuery: query => planStatement({ stmt: query, tables, ctePlans, cteColumns }),
+  })
+  columns = scalar.columns
+  select = scalar.select
+  orderBy = scalar.orderBy
+  const { scalarJoins, scalarWhere } = scalar
   if (!select.joins.length) {
     hints.where = select.where
-    if (!needsBuffering && !select.distinct && !semiJoins.length) {
+    if (!needsBuffering && !select.distinct && !semiJoins.length && !scalarWhere) {
       hints.limit = select.limit
       hints.offset = select.offset
     }
@@ -329,6 +341,17 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   }
 
   for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
+
+  for (const joinScalar of scalarJoins) plan = joinScalar(plan)
+  if (scalarWhere) plan = { type: 'Filter', condition: scalarWhere, child: plan }
+
+  // Bare stars must only include the original query's relations.
+  columns = scalarJoins.length ? columns.flatMap(col =>
+    col.type === 'star' && !col.table
+      ? [sourceAlias, ...select.joins.map(join => join.alias ?? join.table)]
+        .filter(alias => alias !== undefined).map(table => ({ ...col, table }))
+      : [col]
+  ) : columns
 
   if (useGrouping) {
     // Aggregation path: GROUP BY or scalar aggregate
@@ -389,7 +412,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     // So the order is: Sort -> Project -> Distinct -> Limit
 
     // Fast path for SELECT * without joins
-    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length
+    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !scalarJoins.length
     if (!isPassthrough) {
       let projectColumns = columns
       // When parent only needs specific columns, drop unneeded projections
@@ -401,7 +424,9 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       // Normalize identifiers to match the child's cell-key layout, so the
       // Project executor can look up cells by exact name instead of relying
       // on the evaluator's suffix-search fallback.
-      const sourceColumns = inferSelectSourceColumns({ select, cteColumns, tables })
+      const sourceColumns = inferSelectSourceColumns({ select, cteColumns, tables }).map(name =>
+        scalarJoins.length && !name.includes('.') ? `${sourceAlias}.${name}` : name
+      )
       projectColumns = projectColumns.map(col =>
         col.type === 'derived'
           ? { ...col, expr: normalizeIdentifiers(col.expr, sourceColumns) }
@@ -414,7 +439,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length) && (select.limit !== undefined || select.offset)) {
+    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length && !scalarWhere) && (select.limit !== undefined || select.offset)) {
       if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
@@ -891,23 +916,6 @@ function extractEquiKeys({ condition, owner, using }) {
 }
 
 /**
- * Walks an ON expression, flattening top-level AND conjuncts. Non-AND nodes
- * are pushed verbatim. Used to expose individual predicates so equi-keys can
- * be lifted out of an AND chain.
- *
- * @param {ExprNode} node
- * @param {ExprNode[]} out
- */
-function collectConjuncts(node, out) {
-  if (node.type === 'binary' && node.op === 'AND') {
-    collectConjuncts(node.left, out)
-    collectConjuncts(node.right, out)
-    return
-  }
-  out.push(node)
-}
-
-/**
  * Push local ON and WHERE conjuncts according to which side is preserved.
  * Only recurse through this SELECT's join chain, never through shared CTEs
  * or derived-table boundaries. Scan hints are copied rather than mutated.
@@ -1109,17 +1117,6 @@ function rejectsNulls(expr, isMissing) {
 }
 
 /**
- * @param {ExprNode | undefined} left
- * @param {ExprNode} right
- * @returns {ExprNode}
- */
-function andPredicate(left, right) {
-  return left
-    ? { type: 'binary', op: 'AND', left, right, positionStart: left.positionStart, positionEnd: right.positionEnd }
-    : right
-}
-
-/**
  * @param {FromTable | FromSubquery | FromFunction | undefined} source
  * @param {Record<string, AsyncDataSource>} [tables]
  * @param {Map<string, string[]>} [cteColumns]
@@ -1316,47 +1313,6 @@ function expectNoWindowFunction(expr, clause) {
 }
 
 /**
- * @param {ExprNode | undefined} expr
- * @returns {WindowFunctionNode | undefined}
- */
-function findWindow(expr) {
-  if (!expr) return undefined
-  if (expr.type === 'window') return expr
-  if (expr.type === 'binary') return findWindow(expr.left) || findWindow(expr.right)
-  if (expr.type === 'unary') return findWindow(expr.argument)
-  if (expr.type === 'function') {
-    for (const arg of expr.args) {
-      const found = findWindow(arg)
-      if (found) return found
-    }
-    return undefined
-  }
-  if (expr.type === 'cast') return findWindow(expr.expr)
-  if (expr.type === 'subscript') return findWindow(expr.expr) || findWindow(expr.index)
-  if (expr.type === 'in valuelist') {
-    const found = findWindow(expr.expr)
-    if (found) return found
-    for (const val of expr.values) {
-      const f = findWindow(val)
-      if (f) return f
-    }
-    return undefined
-  }
-  if (expr.type === 'case') {
-    if (expr.caseExpr) {
-      const f = findWindow(expr.caseExpr)
-      if (f) return f
-    }
-    for (const w of expr.whenClauses) {
-      const f = findWindow(w.condition) || findWindow(w.result)
-      if (f) return f
-    }
-    if (expr.elseResult) return findWindow(expr.elseResult)
-  }
-  return undefined
-}
-
-/**
  * Checks if every SELECT column is a plain COUNT(*).
  *
  * @param {SelectColumn[]} columns
@@ -1373,55 +1329,4 @@ function isAllCountStar(columns) {
     !col.expr.distinct &&
     !col.expr.filter
   )
-}
-
-/**
- * Pulls plain equality correlations out of a row-preserving EXISTS query.
- * Limits and aggregation must stay on the per-outer-row execution path.
- *
- * @param {Statement} query
- * @param {string[]} outerScope
- * @param {Record<string, AsyncDataSource>} [tables]
- * @param {Map<string, string[]>} [cteColumns]
- * @returns {{ query: SelectStatement, left: IdentifierNode[] } | undefined}
- */
-function decorrelateExists(query, outerScope, tables, cteColumns) {
-  if (query.type !== 'select' || query.limit !== undefined || query.offset ||
-      query.groupBy.length || query.having ||
-      query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || col.expr.type === 'window'))) return
-  const scope = statementScope(query) ?? []
-  /** @type {IdentifierNode[]} */
-  const left = []
-  /** @type {DerivedColumn[]} */
-  const columns = []
-  /** @type {ExprNode[]} */
-  const conjuncts = []
-  if (query.where) collectConjuncts(query.where, conjuncts)
-  /** @type {ExprNode | undefined} */
-  let where
-  for (const term of conjuncts) {
-    const previousKeys = columns.length
-    if (term.type === 'binary' && term.op === '=' && term.left.type === 'identifier' && term.right.type === 'identifier') {
-      for (const [inner, outer] of [[term.left, term.right], [term.right, term.left]]) {
-        if (inner.prefix && scope.includes(inner.prefix) && outer.prefix &&
-            outerScope.includes(outer.prefix) && !scope.includes(outer.prefix)) {
-          left.push(outer)
-          columns.push({ type: 'derived', expr: inner, alias: `__exists_key_${columns.length}`, positionStart: inner.positionStart, positionEnd: inner.positionEnd })
-          break
-        }
-      }
-      if (columns.length > previousKeys) continue
-    }
-    where = andPredicate(where, term)
-  }
-  if (!left.length) return
-  // Check every remaining clause, including nested subqueries and projections,
-  // before discarding the projection and ordering that EXISTS does not read.
-  /** @type {IdentifierNode[]} */
-  const remaining = []
-  collectColumnsFromExpr({ type: 'subquery', subquery: { ...query, where }, positionStart: query.positionStart, positionEnd: query.positionEnd }, remaining, undefined, {
-    tables, cteColumns, outerAliases: new Set(outerScope),
-  })
-  if (remaining.length) return
-  return { query: { ...query, columns, where, distinct: false, orderBy: [] }, left }
 }

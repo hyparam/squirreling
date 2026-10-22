@@ -158,10 +158,14 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
       : context
     const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
-    const { value } = await gen.next()
-    gen.return(undefined)
-    if (!value) return null
-    return value.cells[value.columns[0]]()
+    try {
+      const { value } = await gen.next()
+      if (!value) return null
+      if (!(await gen.next()).done) throw new Error('Scalar subquery returned more than one row')
+      return await value.cells[value.columns[0]]()
+    } finally {
+      await gen.return(undefined)
+    }
   }
 
   // Unary operators
