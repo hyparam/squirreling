@@ -23,6 +23,7 @@ export interface CompileState {
 export interface BatchAggregateInputs {
   keys: CompiledBatchExpression[]
   filters: (CompiledBatchExpression | undefined)[]
+  // One value slot per aggregate, followed by its key for MIN_BY/MAX_BY.
   args: (CompiledBatchExpression | undefined)[]
 }
 

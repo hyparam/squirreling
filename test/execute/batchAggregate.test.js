@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, planSql } from '../../src/index.js'
+import { planStreamingAggregates } from '../../src/execute/streamingAggregate.js'
 
 /**
- * @import { AsyncBatch, AsyncDataSource, PrepareScan, ReadColumn, RelationSchema, ScanColumnResults } from '../../src/types.js'
+ * @import { AsyncBatch, AsyncDataSource, PrepareScan, ReadColumn, RelationSchema, ScanColumnResults, SqlPrimitive } from '../../src/types.js'
  */
 
 /** @type {RelationSchema} */
@@ -130,6 +131,55 @@ describe('batch aggregate execution', () => {
         FROM data`,
     }))).resolves.toEqual([{ middle_total: 5, without_two: 8 }])
     expect(source.scan).not.toHaveBeenCalled()
+  })
+
+  it('keeps the sessions title query streaming across 50000 native rows', async () => {
+    const length = 50000
+    /** @type {Record<string, SqlPrimitive>[]} */
+    const rows = Array.from({ length }, (_, index) => ({
+      session_id: 'session-' + index % 100,
+      message_id: 'message-' + index,
+      part_type: index >= length - 300 ? 'session_metadata' : 'text',
+      attributes: index >= length - 300 ? JSON.stringify({ session: {
+        title: index < length - 200 ? 'Zulu' : index < length - 100 ? 'Alpha' : 'Zulu',
+        title_updated_at: '2026-10-' + (index < length - 200 ? '21' : index < length - 100 ? '22' : '23'),
+      } }) : null,
+    }))
+    /** @type {RelationSchema} */
+    const titleSchema = { fields: Object.keys(rows[0]).map(function field(name, index) {
+      return { id: index + 1, name, dataType: { type: 'string' }, nullable: true }
+    }) }
+    const source = preparedSource(titleSchema, Object.fromEntries(titleSchema.fields.map(function column(field) {
+      return [field.name, rows.map(function value(row) { return row[field.name] })]
+    })))
+    const query = `SELECT session_id,
+      COUNT(CASE WHEN part_type != 'session_metadata' THEN 1 END) AS parts,
+      COUNT(DISTINCT CASE WHEN part_type != 'session_metadata' THEN message_id END) AS messages,
+      MAX_BY(CASE WHEN part_type = 'session_metadata' THEN JSON_EXTRACT(attributes, '$.session.title') END,
+        CASE WHEN part_type = 'session_metadata' THEN JSON_EXTRACT(attributes, '$.session.title_updated_at') END) AS title,
+      MAX(CASE WHEN part_type = 'session_metadata' THEN JSON_EXTRACT(attributes, '$.session.title_updated_at') END) AS updated
+      FROM messages GROUP BY session_id`
+    const tables = { messages: source }
+    const plan = planSql({ query, tables })
+    if (plan.type !== 'HashAggregate') throw new Error('expected hash aggregate')
+    expect(planStreamingAggregates(plan)?.needsRow).toBe(false)
+    const result = await collect(executeSql({ query, tables }))
+    expect(result).toHaveLength(100)
+    for (const row of result) {
+      expect(row).toEqual({ session_id: row.session_id, parts: 497, messages: 497, title: 'Zulu', updated: '2026-10-23' })
+    }
+  })
+
+  it('preserves paired aggregates, nulls and first ties alongside single-argument aggregates', async () => {
+    const source = preparedSource({ fields: [
+      { id: 1, name: 'value', dataType: { type: 'string' }, nullable: true },
+      { id: 2, name: 'rank', dataType: { type: 'number' }, nullable: true },
+    ] }, { value: ['Zulu', 'first', 'tie', null, 'ignored'], rank: [3, 1, 1, 0, null] })
+    await expect(collect(executeSql({ tables: { data: source }, query: `SELECT
+      COUNT(*) AS n, MIN_BY(value, rank) AS lo, SUM(rank) AS total,
+      MAX_BY(value, rank) AS hi, COUNT(rank) AS ranked,
+      ARG_MIN(value, rank) AS alias_lo, ARG_MAX(value, rank) AS alias_hi FROM data`,
+    }))).resolves.toEqual([{ n: 5, lo: 'first', total: 5, hi: 'Zulu', ranked: 4, alias_lo: 'first', alias_hi: 'Zulu' }])
   })
 
   it('accepts asynchronous column results from another realm', async () => {
