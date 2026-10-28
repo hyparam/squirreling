@@ -150,24 +150,6 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - Expressions: `CASE`, `CAST`, `TRY_CAST`, `BETWEEN`, `IN`, `LIKE`, `IS [NOT] NULL`, `IS [NOT] TRUE`, `IS [NOT] FALSE`, string concatenation `||`
 - Subscript access: zero-based array indexing `col[0]`, struct field access `col['field']`, and chains like `col[0].field`
 
-### Compatibility functions
-
-- `NOW()` returns the same UTC ISO timestamp as `CURRENT_TIMESTAMP`. These functions,
-  `CURRENT_DATE`, and `CURRENT_TIME` share one instant captured when execution starts,
-  including across lazy rows and nested subqueries.
-- `GROUP_CONCAT(value[, separator])` uses the `STRING_AGG` implementation with a
-  default comma separator. It supports `DISTINCT` and `FILTER`, skips null values,
-  returns null for empty/all-null groups, and treats a null separator as empty text.
-- `JSON_EXTRACT_SCALAR(json, path)` returns decoded strings or textual numbers/booleans.
-  Objects, arrays, missing paths, and JSON null return SQL null. Invalid JSON raises
-  an error, as with `JSON_EXTRACT`. Paths use the existing dot/index extraction syntax.
-- `CHR(code_point)` returns a Unicode scalar value as text, including supplementary
-  characters. It accepts integer numbers/bigints from 0 through 0x10ffff except
-  surrogates; null returns null and invalid inputs raise an error.
-
-`IS TRUE` and `IS FALSE` test for the respective boolean value. Their `IS NOT`
-forms include nulls: `NULL IS NOT TRUE` and `NULL IS NOT FALSE` both return true.
-
 ### Quoting
 
 - Single quotes for string literals: `'hello world'`
@@ -176,13 +158,13 @@ forms include nulls: `NULL IS NOT TRUE` and `NULL IS NOT FALSE` both return true
 
 ### Functions
 
-- Aggregate: `COUNT`, `COUNTIF`, `SUM`, `AVG`, `MIN`, `MAX`, `MIN_BY`, `MAX_BY`, `ANY_VALUE`, `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE`, `STDDEV_POP`, `STDDEV_SAMP`, `ARRAY_AGG`, `JSON_ARRAYAGG`, `STRING_AGG`
+- Aggregate: `COUNT`, `COUNTIF`, `SUM`, `AVG`, `MIN`, `MAX`, `MIN_BY`, `MAX_BY`, `ANY_VALUE`, `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE`, `STDDEV_POP`, `STDDEV_SAMP`, `ARRAY_AGG`, `JSON_ARRAYAGG`, `STRING_AGG`, `GROUP_CONCAT`
 - Window: `ROW_NUMBER`, `LAG`, `LEAD`
-- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `OCTET_LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`, `POSITION`, `STRPOS`, `SPLIT_PART`, `STRING_SPLIT`
+- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `OCTET_LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`, `POSITION`, `STRPOS`, `SPLIT_PART`, `STRING_SPLIT`, `CHR`
 - Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
-- Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `DATE_DIFF`, `DATEDIFF`, `DATE_PART`, `DATE_TRUNC`, `EPOCH`, `EXTRACT`, `INTERVAL`
-- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_EXTRACT_STRING`, `JSON_OBJECT`, `JSON_ARRAY_LENGTH`, `JSON_VALID`, `JSON_TYPE`, `JSON_KEYS`
+- Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `NOW`, `DATE_DIFF`, `DATEDIFF`, `DATE_PART`, `DATE_TRUNC`, `EPOCH`, `EXTRACT`, `INTERVAL`
+- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_EXTRACT_STRING`, `JSON_EXTRACT_SCALAR`, `JSON_OBJECT`, `JSON_ARRAY_LENGTH`, `JSON_VALID`, `JSON_TYPE`, `JSON_KEYS`
 - Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_CONTAINS`, `ARRAY_SORT`, `ARRAY_APPEND`, `ARRAY_CONCAT`, `LEN`, `CARDINALITY`, `SIZE`
 - Table functions: `UNNEST`, `EXPLODE`, `JSON_EACH`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_EXTRACT`, `REGEXP_REPLACE`, `REGEXP_MATCHES`, `REGEXP_LIKE`

@@ -199,10 +199,6 @@ export interface PlanSqlOptions {
 
 // executePlan(plan, context)
 export interface ExecuteContext {
-  // UTC timestamp shared by current-time functions throughout one execution.
-  currentTimestamp?: string
-  // Delay opening join input scans until their rows are consumed.
-  deferScans?: boolean
   tables: Record<string, AsyncDataSource>
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
@@ -216,6 +212,10 @@ export interface ExecuteContext {
   // CTE references in subqueries re-planned during execution
   ctePlans?: Map<string, QueryPlan>
   cteColumns?: Map<string, string[]>
+  // UTC timestamp shared by current-time functions throughout one execution.
+  currentTimestamp?: string
+  // Delay opening join input scans until their rows are consumed.
+  deferScans?: boolean
 }
 
 // AsyncRow represents a row with async cell values
