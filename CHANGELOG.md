@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.16.15]
+ - Add `IS [NOT] TRUE` and `IS [NOT] FALSE` predicates
+ - Add `CHR`, `NOW`, `JSON_EXTRACT_SCALAR`, and `GROUP_CONCAT` functions
+ - Keep `MIN_BY` and `MAX_BY` on streaming aggregate paths
+
 ## [0.16.14]
  - Add dynamic filter pushdown for hash joins, passing build-side join keys to probe-side scans
 
