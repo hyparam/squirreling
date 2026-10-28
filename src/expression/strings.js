@@ -35,6 +35,17 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
   const [val] = args
   if (val == null) return null
 
+  if (funcName === 'CHR') {
+    const codePoint = typeof val === 'number' || typeof val === 'bigint' ? Number(val) : NaN
+    if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff ||
+        codePoint >= 0xd800 && codePoint <= 0xdfff) {
+      throw new ArgValueError({
+        ...node, message: 'expected a Unicode scalar value (0..0x10ffff, excluding surrogates)', rowIndex,
+      })
+    }
+    return String.fromCodePoint(codePoint)
+  }
+
   if (funcName === 'LENGTH') {
     if (typeof val === 'string' || Array.isArray(val)) return val.length
     throw new ArgValueError({

@@ -199,6 +199,8 @@ export interface PlanSqlOptions {
 
 // executePlan(plan, context)
 export interface ExecuteContext {
+  // UTC timestamp shared by current-time functions throughout one execution.
+  currentTimestamp?: string
   // Delay opening join input scans until their rows are consumed.
   deferScans?: boolean
   tables: Record<string, AsyncDataSource>
@@ -314,7 +316,7 @@ export interface UserDefinedFunction {
   arguments: FunctionSignature
 }
 
-export type AggregateFunc = 'COUNT' | 'COUNTIF' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'MIN_BY' | 'ARG_MIN' | 'MAX_BY' | 'ARG_MAX' | 'ANY_VALUE' | 'ARRAY_AGG' | 'LIST' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP' | 'MEDIAN' | 'PERCENTILE_CONT' | 'APPROX_QUANTILE' | 'STRING_AGG'
+export type AggregateFunc = 'COUNT' | 'COUNTIF' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'MIN_BY' | 'ARG_MIN' | 'MAX_BY' | 'ARG_MAX' | 'ANY_VALUE' | 'ARRAY_AGG' | 'LIST' | 'JSON_ARRAYAGG' | 'STDDEV_SAMP' | 'STDDEV_POP' | 'MEDIAN' | 'PERCENTILE_CONT' | 'APPROX_QUANTILE' | 'STRING_AGG' | 'GROUP_CONCAT'
 
 export type RegExpFunction = 'REGEXP_SUBSTR' | 'REGEXP_EXTRACT' | 'REGEXP_REPLACE' | 'REGEXP_MATCHES' | 'REGEXP_LIKE'
 
@@ -347,6 +349,7 @@ export type MathFunc =
   | 'RANDOM'
 
 export type StringFunc =
+  | 'CHR'
   | 'UPPER'
   | 'LOWER'
   | 'CONCAT'

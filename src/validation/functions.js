@@ -11,7 +11,7 @@ export const niladicFuncs = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP'
  * @returns {name is AggregateFunc}
  */
 export function isAggregateFunc(name) {
-  return ['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX', 'MIN_BY', 'ARG_MIN', 'MAX_BY', 'ARG_MAX', 'ANY_VALUE', 'ARRAY_AGG', 'LIST', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG'].includes(name)
+  return ['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX', 'MIN_BY', 'ARG_MIN', 'MAX_BY', 'ARG_MAX', 'ANY_VALUE', 'ARRAY_AGG', 'LIST', 'JSON_ARRAYAGG', 'STDDEV_SAMP', 'STDDEV_POP', 'MEDIAN', 'PERCENTILE_CONT', 'APPROX_QUANTILE', 'STRING_AGG', 'GROUP_CONCAT'].includes(name)
 }
 
 /**
@@ -96,7 +96,7 @@ export function isCastType(name) {
 export function isStringFunc(name) {
   return [
     'UPPER', 'LOWER', 'CONCAT', 'LENGTH', 'OCTET_LENGTH', 'SUBSTRING', 'SUBSTR', 'TRIM',
-    'REPLACE', 'LEFT', 'RIGHT', 'INSTR', 'POSITION', 'STRPOS', 'SPLIT_PART', 'STRING_SPLIT',
+    'REPLACE', 'LEFT', 'RIGHT', 'INSTR', 'POSITION', 'STRPOS', 'SPLIT_PART', 'STRING_SPLIT', 'CHR',
   ].includes(name)
 }
 
@@ -114,6 +114,7 @@ export function isBinaryOp(op) {
  */
 export const FUNCTION_SIGNATURES = {
   // String functions
+  CHR: { min: 1, max: 1, signature: 'code_point' },
   UPPER: { min: 1, max: 1, signature: 'string' },
   LOWER: { min: 1, max: 1, signature: 'string' },
   LENGTH: { min: 1, max: 1, signature: 'string' },
@@ -137,6 +138,7 @@ export const FUNCTION_SIGNATURES = {
   REGEXP_LIKE: { min: 2, max: 2, signature: 'string, pattern' },
 
   // Date/time functions
+  NOW: { min: 0, max: 0, signature: '' },
   RANDOM: { min: 0, max: 0, signature: '' },
   RAND: { min: 0, max: 0, signature: '' },
   CURRENT_DATE: { min: 0, max: 0, signature: '' },
@@ -176,6 +178,7 @@ export const FUNCTION_SIGNATURES = {
   PI: { min: 0, max: 0, signature: '' },
 
   // JSON functions
+  JSON_EXTRACT_SCALAR: { min: 2, max: 2, signature: 'expression, path' },
   JSON_VALUE: { min: 2, max: 2, signature: 'expression, path' },
   JSON_QUERY: { min: 2, max: 2, signature: 'expression, path' },
   JSON_EXTRACT: { min: 2, max: 2, signature: 'expression, path' },
@@ -217,6 +220,7 @@ export const FUNCTION_SIGNATURES = {
   LEAST: { min: 1, signature: 'value1[, value2, ...]' },
 
   // Aggregate functions
+  GROUP_CONCAT: { min: 1, max: 2, signature: 'expression[, separator]' },
   COUNT: { min: 1, max: 1, signature: 'expression' },
   COUNTIF: { min: 1, max: 1, signature: 'condition' },
   SUM: { min: 1, max: 1, signature: 'expression' },

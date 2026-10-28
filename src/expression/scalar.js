@@ -3,7 +3,7 @@ import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
 import { toDate } from './date.js'
 
 /**
- * @import { CastNode, FunctionNode, SqlPrimitive } from '../types.js'
+ * @import { CastNode, FunctionNode, SqlPrimitive, UnaryNode } from '../types.js'
  */
 
 /**
@@ -72,7 +72,7 @@ export function evaluateJsonExtract({ funcName, node, args, rowIndex }) {
       })
     }
   }
-  if (typeof json !== 'object' || json instanceof Date) {
+  if (funcName !== 'JSON_EXTRACT_SCALAR' && typeof json !== 'object' || json instanceof Date) {
     throw new ArgValueError({
       ...node,
       message: `first argument must be JSON string or object, got ${typeof json}`,
@@ -98,8 +98,28 @@ export function evaluateJsonExtract({ funcName, node, args, rowIndex }) {
   }
 
   if (current == null) return null
+  if (funcName === 'JSON_EXTRACT_SCALAR') {
+    return typeof current === 'object' ? null : String(current)
+  }
   if (funcName === 'JSON_EXTRACT_STRING') {
     return typeof current === 'object' ? JSON.stringify(current) : String(current)
   }
   return current
+}
+
+/**
+ * Applies unary predicates identically in row and batch execution.
+ * @param {UnaryNode['op']} op
+ * @param {SqlPrimitive} value
+ * @returns {SqlPrimitive}
+ */
+export function applyUnaryOp(op, value) {
+  if (op === '-') return value == null ? null : -value
+  if (op === 'NOT') return value == null ? null : !value
+  if (op === 'IS NULL') return value == null
+  if (op === 'IS NOT NULL') return value != null
+  if (op === 'IS TRUE') return value === true
+  if (op === 'IS NOT TRUE') return value !== true
+  if (op === 'IS FALSE') return value === false
+  return value !== false
 }

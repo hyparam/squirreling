@@ -10,7 +10,7 @@ import { applyBinaryOp } from './binary.js'
 import { applyIntervalToDate, dateDiff, dateTrunc, extractField } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
-import { applyCast, evaluateJsonExtract } from './scalar.js'
+import { applyCast, applyUnaryOp, evaluateJsonExtract } from './scalar.js'
 import { evaluateSpatialFunc } from '../spatial/spatial.js'
 import { evaluateStringFunc } from './strings.js'
 
@@ -171,15 +171,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   // Unary operators
   if (node.type === 'unary') {
     const val = await evaluateExpr({ node: node.argument, row, rowIndex, rows, context })
-    if (node.op === '-') {
-      if (val == null) return null
-      return -val
-    }
-    // NOT UNKNOWN is UNKNOWN: JS ! would flip null to true and return rows
-    // SQL excludes, e.g. WHERE NOT (nullable < 300)
-    if (node.op === 'NOT') return val == null ? null : !val
-    if (node.op === 'IS NULL') return val == null
-    if (node.op === 'IS NOT NULL') return val != null
+    return applyUnaryOp(node.op, val)
   }
 
   // Binary operators
@@ -411,9 +403,12 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
         }
       }
 
-      if (funcName === 'STRING_AGG') {
+      if (funcName === 'STRING_AGG' || funcName === 'GROUP_CONCAT') {
         const separatorNode = node.args[1]
-        const separator = String(await evaluateExpr({ node: separatorNode, row: filteredRows[0] ?? { columns: [], cells: {} }, context }))
+        const separatorValue = separatorNode
+          ? await evaluateExpr({ node: separatorNode, row: filteredRows[0] ?? { columns: [], cells: {} }, context })
+          : ','
+        const separator = funcName === 'GROUP_CONCAT' && separatorValue == null ? '' : String(separatorValue)
         /** @type {string[]} */
         const values = []
         const allValues = await evaluateAll(argNode, filteredRows, context)
@@ -506,15 +501,15 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     }
 
     if (funcName === 'CURRENT_DATE') {
-      return new Date().toISOString().split('T')[0]
+      return (context.currentTimestamp ?? new Date().toISOString()).split('T')[0]
     }
 
     if (funcName === 'CURRENT_TIME') {
-      return new Date().toISOString().split('T')[1].replace('Z', '')
+      return (context.currentTimestamp ?? new Date().toISOString()).split('T')[1].replace('Z', '')
     }
 
-    if (funcName === 'CURRENT_TIMESTAMP') {
-      return new Date().toISOString()
+    if (funcName === 'CURRENT_TIMESTAMP' || funcName === 'NOW') {
+      return context.currentTimestamp ?? new Date().toISOString()
     }
 
     if (funcName === 'JSON_OBJECT') {
@@ -676,7 +671,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
       })
     }
 
-    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING') {
+    if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING' || funcName === 'JSON_EXTRACT_SCALAR') {
       return evaluateJsonExtract({ funcName, node, args, rowIndex })
     }
 
