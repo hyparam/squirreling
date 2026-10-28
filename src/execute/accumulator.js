@@ -7,13 +7,15 @@ import { keyify } from './utils.js'
 /**
  * Incremental state for one streamable aggregate. Shared by the streaming
  * aggregate executor and the scanColumn fast path so COUNT/COUNTIF/SUM/AVG/
- * MIN/MAX fold semantics live in one place.
+ * MIN/MAX/MIN_BY/MAX_BY fold semantics live in one place.
  *
  * @typedef {{
  *   count: number,
  *   sum: number,
  *   min: SqlPrimitive,
  *   max: SqlPrimitive,
+ *   best?: SqlPrimitive,
+ *   bestKey?: SqlPrimitive,
  *   seen: Set<unknown> | null,
  * }} Accumulator
  */
@@ -41,8 +43,9 @@ export function newAccumulator(funcName, distinct) {
  * @param {string} funcName
  * @param {Accumulator} acc
  * @param {SqlPrimitive} value
+ * @param {SqlPrimitive} [key] - comparison key for MIN_BY/MAX_BY
  */
-export function updateAccumulator(funcName, acc, value) {
+export function updateAccumulator(funcName, acc, value, key) {
   switch (funcName) {
   case 'COUNT':
     if (value == null) break
@@ -58,6 +61,19 @@ export function updateAccumulator(funcName, acc, value) {
   case 'MAX':
     if (value != null && (acc.max === null || value > acc.max)) acc.max = value
     break
+  case 'MIN_BY':
+  case 'ARG_MIN':
+  case 'MAX_BY':
+  case 'ARG_MAX': {
+    if (value == null || key == null) break
+    const isMin = funcName === 'MIN_BY' || funcName === 'ARG_MIN'
+    // Match buffered aggregation: ignore null pairs and keep the first tie.
+    if (acc.bestKey == null || (isMin ? key < acc.bestKey : key > acc.bestKey)) {
+      acc.best = value
+      acc.bestKey = key
+    }
+    break
+  }
   default: { // SUM, AVG
     if (value == null) break
     const num = Number(value)
@@ -84,6 +100,10 @@ export function finalizeAccumulator(funcName, acc) {
   case 'AVG': return acc.count === 0 ? null : acc.sum / acc.count
   case 'MIN': return acc.min
   case 'MAX': return acc.max
+  case 'MIN_BY':
+  case 'ARG_MIN':
+  case 'MAX_BY':
+  case 'ARG_MAX': return acc.best ?? null
   default: return null
   }
 }

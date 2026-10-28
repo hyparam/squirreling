@@ -48,6 +48,23 @@ describe('streaming aggregates', () => {
     expect(result).toEqual([{ n: 10000, a: 49.5, d: 100 }])
   })
 
+  it('preserves the first paired aggregate winner across row chunks', async () => {
+    const rows = Array.from({ length: N }, (_, index) => ({ g: index % 2, value: 'v' + index, rank: index % 100 }))
+    await expect(collect(executeSql({ tables: { data: rows },
+      query: `SELECT g, MIN_BY(value, rank) AS lo, MAX_BY(value, rank) AS hi,
+        COUNT(*) AS n FROM data GROUP BY g ORDER BY g`,
+    }))).resolves.toEqual([
+      { g: 0, lo: 'v0', hi: 'v98', n: 5000 },
+      { g: 1, lo: 'v1', hi: 'v99', n: 5000 },
+    ])
+  })
+
+  it('skips both paired aggregate arguments when FILTER rejects a row', async () => {
+    await expect(collect(executeSql({ tables: { data: [{ value: 1, rank: 2 }] }, functions: boomFunctions,
+      query: 'SELECT MAX_BY(BOOM(value), BOOM(rank)) FILTER (WHERE FALSE) AS winner, COUNT(*) AS n FROM data',
+    }))).resolves.toEqual([{ winner: null, n: 1 }])
+  })
+
   it('applies FILTER clauses across chunk boundaries', async () => {
     const result = await collect(executeSql({
       tables: { big },
@@ -268,6 +285,20 @@ describe('streaming aggregate row retention', () => {
     const streaming = streamingPlan('SELECT upper(region) AS r, count(*) FROM sales GROUP BY upper(region)')
     expect(streaming?.needsRow).toBe(false)
     expect(streaming?.keyRefs.size).toBe(1)
+  })
+
+  it.each(['MIN_BY', 'MAX_BY', 'ARG_MIN', 'ARG_MAX'])('streams %s without retaining input rows', funcName => {
+    const streaming = streamingPlan(`SELECT region, ${funcName}(product, amount), COUNT(*) FROM sales GROUP BY region`)
+    expect(streaming?.needsRow).toBe(false)
+    expect(streaming?.specs.length).toBe(2)
+  })
+
+  it('preserves the buffered error for a paired aggregate with a star value', async () => {
+    const query = 'SELECT MAX_BY(*, amount) FROM sales'
+    expect(streamingPlan(query)).toBeUndefined()
+    await expect(collect(executeSql({ tables, query }))).rejects.toThrow(
+      'Unknown expression node type: star. This is an internal error - the query may contain unsupported syntax.'
+    )
   })
 
   it('retains a representative row for columns outside the group keys', () => {

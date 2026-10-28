@@ -24,7 +24,7 @@ const CHUNK_SIZE = 4000
 // Aggregate functions whose state can be accumulated one row at a time with
 // bounded memory. Aggregates outside this set (MEDIAN, ARRAY_AGG, STDDEV, ...)
 // need the full value set, so their queries buffer rows instead.
-const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX'])
+const STREAMABLE_FUNCS = new Set(['COUNT', 'COUNTIF', 'SUM', 'AVG', 'MIN', 'MAX', 'MIN_BY', 'MAX_BY', 'ARG_MIN', 'ARG_MAX'])
 
 /**
  * Specs are keyed by aggregate node identity, so two aggregates that differ
@@ -178,6 +178,7 @@ export function planStreamingAggregates({ columns, having, orderBy, groupBy }, c
       }
       if (!STREAMABLE_FUNCS.has(funcName)) return false
       const star = node.args[0]?.type === 'star'
+      if (star && node.args.length > 1) return false
       if (lazy && !(star && !node.filter)) return false
       if (!star && !node.args.every(arg => isScalarExpr(arg))) return false
       if (node.filter && !isScalarExpr(node.filter)) return false
@@ -401,7 +402,7 @@ function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context }) {
     rows: chunk,
     signal: context.signal,
     // One flat tuple per row: group key values, then per spec its FILTER
-    // result and its argument. The argument is only evaluated for rows that
+    // result and its arguments. Arguments are only evaluated for rows that
     // pass the FILTER, matching the buffered path.
     evaluate(row) {
       const pending = groupBy.map(expr => evaluateExpr({ node: expr, row, context }))
@@ -410,10 +411,14 @@ function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context }) {
           const passes = evaluateExpr({ node: node.filter, row, context })
           pending.push(passes)
           if (!star) {
-            pending.push(passes.then(pass => pass ? evaluateExpr({ node: node.args[0], row, context }) : null))
+            for (const argument of node.args) {
+              pending.push(passes.then(pass => pass ? evaluateExpr({ node: argument, row, context }) : null))
+            }
           }
         } else if (!star) {
-          pending.push(evaluateExpr({ node: node.args[0], row, context }))
+          for (const argument of node.args) {
+            pending.push(evaluateExpr({ node: argument, row, context }))
+          }
         }
       }
       return Promise.all(pending)
@@ -431,11 +436,12 @@ function accumulateChunk({ chunk, groupBy, specs, groups, needsRow, context }) {
         const spec = specs[s]
         const passes = spec.node.filter ? values[slot++] : true
         const arg = spec.star ? null : values[slot++]
+        const comparison = spec.node.args.length > 1 ? values[slot++] : undefined
         if (!passes) continue
         if (spec.star && spec.funcName === 'COUNT') {
           group.accumulators[s].count++
         } else {
-          updateAccumulator(spec.funcName, group.accumulators[s], arg)
+          updateAccumulator(spec.funcName, group.accumulators[s], arg, comparison)
         }
       }
     },
@@ -470,16 +476,18 @@ function compileBatchAggregateInputs(groupBy, specs, columns, context) {
   for (const spec of specs) {
     if (spec.node.filter && !spec.star) return undefined
     if (spec.node.filter && referencesRowScope(spec.node.filter, columns, context)) return undefined
-    if (!spec.star && referencesRowScope(spec.node.args[0], columns, context)) return undefined
+    if (!spec.star && spec.node.args.some(argument => referencesRowScope(argument, columns, context))) return undefined
     const filter = spec.node.filter
       ? compileBatchExpression(spec.node.filter, columns)
       : undefined
     const argument = spec.star
       ? undefined
       : compileBatchExpression(spec.node.args[0], columns)
-    if (spec.node.filter && !filter || !spec.star && !argument) return undefined
+    const comparison = spec.node.args[1] && compileBatchExpression(spec.node.args[1], columns)
+    if (spec.node.filter && !filter || !spec.star && !argument || spec.node.args[1] && !comparison) return undefined
     filters.push(filter)
     args.push(argument)
+    if (spec.node.args[1]) args.push(comparison)
   }
   return {
     keys,
@@ -563,15 +571,18 @@ async function accumulateBatch({ batch, inputs, specs, groups, context, rowOffse
       }
       groups.set(key, group)
     }
+    let argumentIndex = 0
     for (let specIndex = 0; specIndex < specs.length; specIndex++) {
+      const spec = specs[specIndex]
+      const argument = args[argumentIndex++]
+      const comparison = spec.node.args[1] ? args[argumentIndex++] : undefined
       const filter = filters[specIndex]
       if (filter && !valueAt(filter, rowIndex)) continue
-      const spec = specs[specIndex]
       if (spec.star && spec.funcName === 'COUNT') {
         group.accumulators[specIndex].count++
       } else {
-        const argument = args[specIndex]
-        updateAccumulator(spec.funcName, group.accumulators[specIndex], argument ? valueAt(argument, rowIndex) : null)
+        updateAccumulator(spec.funcName, group.accumulators[specIndex],
+          argument ? valueAt(argument, rowIndex) : null, comparison ? valueAt(comparison, rowIndex) : undefined)
       }
     }
   }
