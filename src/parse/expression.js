@@ -5,7 +5,7 @@ import { parseStatement } from './parse.js'
 import { consume, current, expect, match } from './state.js'
 
 /**
- * @import { ExprNode, ParserState } from '../types.js'
+ * @import { ExprNode, ParserState, UnaryNode } from '../types.js'
  */
 
 // Precedence (lowest to highest):
@@ -91,10 +91,18 @@ function parseComparison(state) {
   const left = parseConcat(state)
   const { positionStart } = left
 
-  // IS [NOT] NULL
+  // IS [NOT] NULL/TRUE/FALSE
   if (match(state, 'keyword', 'IS')) {
-    const op = match(state, 'keyword', 'NOT') ? 'IS NOT NULL' : 'IS NULL'
-    expect(state, 'keyword', 'NULL')
+    const not = match(state, 'keyword', 'NOT')
+    const target = current(state)
+    if (target.type !== 'keyword' || !['NULL', 'TRUE', 'FALSE'].includes(target.value)) {
+      throw new SyntaxError({ expected: 'NULL, TRUE, or FALSE', after: not ? 'NOT' : 'IS', ...target })
+    }
+    consume(state)
+    /** @type {UnaryNode['op']} */
+    const op = target.value === 'TRUE' ? not ? 'IS NOT TRUE' : 'IS TRUE'
+      : target.value === 'FALSE' ? not ? 'IS NOT FALSE' : 'IS FALSE'
+        : not ? 'IS NOT NULL' : 'IS NULL'
     return {
       type: 'unary',
       op,

@@ -227,12 +227,12 @@ describe('parseSql error handling', () => {
 
     it('should suggest similar functions with shared prefix', () => {
       expect(() => parseSql({ query: 'SELECT JSON_EXTRACT_TEXT(name) FROM users' }))
-        .toThrow('Unknown function "JSON_EXTRACT_TEXT" at position 7. Did you mean JSON_EXTRACT, JSON_EXTRACT_STRING, JSON_ARRAY_LENGTH, JSON_EACH?')
+        .toThrow('Unknown function "JSON_EXTRACT_TEXT" at position 7. Did you mean JSON_EXTRACT, JSON_EXTRACT_STRING, JSON_EXTRACT_SCALAR, JSON_ARRAY_LENGTH?')
     })
 
     it('should suggest similar functions by edit distance', () => {
       expect(() => parseSql({ query: 'SELECT UPER(name) FROM users' }))
-        .toThrow('Unknown function "UPER" at position 7. Did you mean UPPER, LOWER, POWER, POW?')
+        .toThrow('Unknown function "UPER" at position 7. Did you mean UPPER, CHR, LOWER, POWER?')
     })
   })
 

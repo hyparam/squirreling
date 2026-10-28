@@ -147,7 +147,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - `GROUP BY` and `HAVING` clauses, including `GROUP BY ALL`
 - Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
 - `SHOW TABLES` to list the available tables
-- Expressions: `CASE`, `CAST`, `TRY_CAST`, `BETWEEN`, `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`, string concatenation `||`
+- Expressions: `CASE`, `CAST`, `TRY_CAST`, `BETWEEN`, `IN`, `LIKE`, `IS [NOT] NULL`, `IS [NOT] TRUE`, `IS [NOT] FALSE`, string concatenation `||`
 - Subscript access: zero-based array indexing `col[0]`, struct field access `col['field']`, and chains like `col[0].field`
 
 ### Quoting
@@ -158,13 +158,13 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 
 ### Functions
 
-- Aggregate: `COUNT`, `COUNTIF`, `SUM`, `AVG`, `MIN`, `MAX`, `MIN_BY`, `MAX_BY`, `ANY_VALUE`, `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE`, `STDDEV_POP`, `STDDEV_SAMP`, `ARRAY_AGG`, `JSON_ARRAYAGG`, `STRING_AGG`
+- Aggregate: `COUNT`, `COUNTIF`, `SUM`, `AVG`, `MIN`, `MAX`, `MIN_BY`, `MAX_BY`, `ANY_VALUE`, `MEDIAN`, `PERCENTILE_CONT`, `APPROX_QUANTILE`, `STDDEV_POP`, `STDDEV_SAMP`, `ARRAY_AGG`, `JSON_ARRAYAGG`, `STRING_AGG`, `GROUP_CONCAT`
 - Window: `ROW_NUMBER`, `LAG`, `LEAD`
-- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `OCTET_LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`, `POSITION`, `STRPOS`, `SPLIT_PART`, `STRING_SPLIT`
+- String: `CONCAT`, `SUBSTRING`, `REPLACE`, `LENGTH`, `OCTET_LENGTH`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `INSTR`, `POSITION`, `STRPOS`, `SPLIT_PART`, `STRING_SPLIT`, `CHR`
 - Math: `ABS`, `SIGN`, `CEIL`, `FLOOR`, `ROUND`, `MOD`, `RAND`, `RANDOM`, `LN`, `LOG10`, `EXP`, `POWER`, `SQRT`
 - Trig: `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`, `DEGREES`, `RADIANS`, `PI`
-- Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `DATE_DIFF`, `DATEDIFF`, `DATE_PART`, `DATE_TRUNC`, `EPOCH`, `EXTRACT`, `INTERVAL`
-- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_EXTRACT_STRING`, `JSON_OBJECT`, `JSON_ARRAY_LENGTH`, `JSON_VALID`, `JSON_TYPE`, `JSON_KEYS`
+- Date: `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `NOW`, `DATE_DIFF`, `DATEDIFF`, `DATE_PART`, `DATE_TRUNC`, `EPOCH`, `EXTRACT`, `INTERVAL`
+- Json: `JSON_VALUE`, `JSON_QUERY`, `JSON_EXTRACT`, `JSON_EXTRACT_STRING`, `JSON_EXTRACT_SCALAR`, `JSON_OBJECT`, `JSON_ARRAY_LENGTH`, `JSON_VALID`, `JSON_TYPE`, `JSON_KEYS`
 - Array: `ARRAY_LENGTH`, `ARRAY_POSITION`, `ARRAY_CONTAINS`, `ARRAY_SORT`, `ARRAY_APPEND`, `ARRAY_CONCAT`, `LEN`, `CARDINALITY`, `SIZE`
 - Table functions: `UNNEST`, `EXPLODE`, `JSON_EACH`
 - Regex: `REGEXP_SUBSTR`, `REGEXP_EXTRACT`, `REGEXP_REPLACE`, `REGEXP_MATCHES`, `REGEXP_LIKE`

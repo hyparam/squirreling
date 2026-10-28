@@ -98,6 +98,9 @@ export function executeStatement({ query, context, outerScope }) {
  * @returns {QueryResults}
  */
 export function executePlan({ plan, context }) {
+  if (context.currentTimestamp === undefined) {
+    context = { ...context, currentTimestamp: new Date().toISOString() }
+  }
   if (plan.type === 'Scan') {
     return executeScan(plan, context)
   } else if (plan.type === 'SingleRow') {

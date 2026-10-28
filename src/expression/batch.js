@@ -5,7 +5,7 @@ import { isStringFunc } from '../validation/functions.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
 import { applyBinaryOp } from './binary.js'
 import { evaluateRegexpLike } from './regexp.js'
-import { applyCast, evaluateJsonExtract } from './scalar.js'
+import { applyCast, applyUnaryOp, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
 
 /**
@@ -52,10 +52,7 @@ function compileEvaluator(node, columns) {
         const vector = await argument.evaluate(context)
         return evaluateValues(context, function unaryValue(rowIndex) {
           const value = valueAt(vector, rowIndex)
-          if (node.op === '-') return value == null ? null : -value
-          if (node.op === 'NOT') return value == null ? null : !value
-          if (node.op === 'IS NULL') return value == null
-          return value != null
+          return applyUnaryOp(node.op, value)
         })
       },
     }
@@ -184,10 +181,7 @@ function compileValueKernel(node, state) {
     if (!argument) return undefined
     return function unaryValue(vectors, rowIndex, streamRowIndex) {
       const value = argument(vectors, rowIndex, streamRowIndex)
-      if (node.op === '-') return value == null ? null : -value
-      if (node.op === 'NOT') return value == null ? null : !value
-      if (node.op === 'IS NULL') return value == null
-      return value != null
+      return applyUnaryOp(node.op, value)
     }
   }
 
@@ -278,7 +272,7 @@ function compileFunctionKernel(node, state) {
       return sqlEquals(first, second) ? null : first
     }
   }
-  if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING') {
+  if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING' || funcName === 'JSON_EXTRACT_SCALAR') {
     return function jsonValue(vectors, rowIndex, streamRowIndex) {
       const args = arguments_.map(function argumentValue(argument) {
         return argument(vectors, rowIndex, streamRowIndex)
@@ -327,7 +321,7 @@ function compileFunctionEvaluator(node, columns) {
     }
   }
   if (funcName !== 'NULLIF' && funcName !== 'JSON_VALUE' && funcName !== 'JSON_QUERY' &&
-    funcName !== 'JSON_EXTRACT' && funcName !== 'JSON_EXTRACT_STRING' && funcName !== 'REGEXP_LIKE' &&
+    funcName !== 'JSON_EXTRACT' && funcName !== 'JSON_EXTRACT_STRING' && funcName !== 'JSON_EXTRACT_SCALAR' && funcName !== 'REGEXP_LIKE' &&
     !isStringFunc(funcName)) return undefined
   const regexpCache = funcName === 'REGEXP_LIKE' && node.args[1]?.type === 'literal' ? {} : undefined
   return {
@@ -338,7 +332,7 @@ function compileFunctionEvaluator(node, columns) {
       return evaluateValues(context, function functionValue(rowIndex, streamRowIndex) {
         const args = vectors.map(function argumentValue(vector) { return valueAt(vector, rowIndex) })
         if (funcName === 'NULLIF') return sqlEquals(args[0], args[1]) ? null : args[0]
-        if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING') {
+        if (funcName === 'JSON_VALUE' || funcName === 'JSON_QUERY' || funcName === 'JSON_EXTRACT' || funcName === 'JSON_EXTRACT_STRING' || funcName === 'JSON_EXTRACT_SCALAR') {
           return evaluateJsonExtract({ funcName, node, args, rowIndex: streamRowIndex + 1 })
         }
         if (funcName === 'REGEXP_LIKE') {

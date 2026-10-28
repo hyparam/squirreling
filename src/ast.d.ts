@@ -92,7 +92,7 @@ export interface IdentifierNode extends AstBase {
 
 export interface UnaryNode extends AstBase {
   type: 'unary'
-  op: 'NOT' | 'IS NULL' | 'IS NOT NULL' | '-'
+  op: 'NOT' | 'IS NULL' | 'IS NOT NULL' | 'IS TRUE' | 'IS NOT TRUE' | 'IS FALSE' | 'IS NOT FALSE' | '-'
   argument: ExprNode
 }
 
