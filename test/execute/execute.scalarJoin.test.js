@@ -160,3 +160,51 @@ describe('correlated scalar aggregate joins', () => {
   })
 
 })
+
+describe('uncorrelated scalar aggregate joins', () => {
+  /**
+   * @param {AsyncDataSource} source
+   * @returns {{ source: AsyncDataSource, scans: ScanOptions[] }}
+   */
+  function counted(source) {
+    /** @type {ScanOptions[]} */
+    const scans = []
+    return { scans, source: { ...source, scan(options) { scans.push(options); return source.scan(options) } } }
+  }
+
+  it('scans the subquery table once per subquery', async () => {
+    const { source: r, scans } = counted(tables.r)
+    const query = 'select c.k from c where c.k between (select min(x) from r) - 3 and (select max(x) from r) - 8'
+    expect(await collect(executeSql({ tables: { ...tables, r }, query }))).toEqual([{ k: 1 }])
+    expect(scans).toHaveLength(2)
+  })
+
+  it('evaluates in projections and ORDER BY', async () => {
+    const query = 'select c.k, (select max(x) from r) m from c where c.k is not null order by (select count(*) from r) * c.k desc limit 2'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ k: 3, m: 9 }, { k: 2, m: 9 }])
+  })
+
+  it('returns the empty aggregate value when the subquery matches nothing', async () => {
+    const query = 'select c.k, (select count(*) from r where r.x > 100) n, (select max(x) from r where r.x > 100) m from c where c.k = 1'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ k: 1, n: 0, m: null }])
+  })
+
+  it('filters below an outer aggregate', async () => {
+    const query = 'select count(*) n from c where c.k < (select max(k) from r) + 1'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ n: 2 }])
+  })
+
+  it('works inside a correlated subquery', async () => {
+    const query = 'select c.k, (select count(*) from r where r.k = c.k and r.x >= (select max(x) from r) - 3) n from c'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ k: 1, n: 1 }, { k: 2, n: 0 }, { k: 3, n: 0 }, { k: null, n: 0 }])
+  })
+
+  it.each([
+    ['select c.k from c where c.k = (select max(x) from r group by j having max(x) = 9) - 8', [{ k: 1 }]],
+    ['select c.k from c where c.k < (select max(x) from r limit 1) - 6', [{ k: 1 }, { k: 2 }]],
+  ])('keeps grouped and limited subqueries on the per-row path: %s', async (query, expected) => {
+    const { source: r, scans } = counted(tables.r)
+    expect(await collect(executeSql({ tables: { ...tables, r }, query }))).toEqual(expected)
+    expect(scans.length).toBeGreaterThan(1)
+  })
+})

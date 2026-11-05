@@ -492,6 +492,22 @@ describe('subqueries', () => {
 
   // scalar subqueries
   describe('scalar subqueries', () => {
+    it('should preserve outer references in joined derived tables', async () => {
+      const result = await collect(executeSql({
+        tables: {
+          c: [{ k: 1 }, { k: 2 }, { k: 3 }],
+          r: [{ x: 1 }, { x: 2 }, { x: 2 }],
+        },
+        query: `
+          SELECT c.k, (
+            SELECT COUNT(*) FROM r
+            JOIN (SELECT x FROM r WHERE x = c.k) s ON r.x = s.x
+          ) n FROM c
+        `,
+      }))
+      expect(result).toEqual([{ k: 1, n: 1 }, { k: 2, n: 4 }, { k: 3, n: 0 }])
+    })
+
     it('should handle simple scalar subquery in SELECT', async () => {
       const result = await collect(executeSql({
         tables: { users },

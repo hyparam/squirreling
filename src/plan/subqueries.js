@@ -42,6 +42,20 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
     if (query.type !== 'select' || query.columns.length !== 1) return expr
     const column = query.columns[0]
     if (column.type !== 'derived' || !findAggregate(column.expr) || findWindow(column.expr)) return expr
+    // An uncorrelated bare aggregate is exactly one row: cross join it once.
+    if (isSingleRowAggregate(query, expr, scopeAliases, tables, cteColumns)) {
+      let name = `__scalar_${scalarJoins.length}`
+      while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
+      const position = { positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+      const valueName = name + '_value'
+      const right = planQuery({ ...query, columns: [{ ...column, alias: valueName }], orderBy: [] })
+      scalarJoins.push(left => ({
+        type: 'NestedLoopJoin', joinType: 'INNER', leftAlias: sourceAlias ?? '', rightAlias: name,
+        right: { type: 'Subquery', child: right, scope: statementScope(query) ?? [] },
+        condition: { ...position, type: 'literal', value: true }, left,
+      }))
+      return { ...position, type: 'identifier', prefix: name, name: valueName }
+    }
     // Reuse EXISTS' residual-reference check without discarding the aggregate.
     const keys = decorrelateExists(query, scopeAliases, tables, cteColumns, true)
     if (!keys) return expr
@@ -139,6 +153,25 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
     select = { ...select, where: scanWhere }
   }
   return { select, columns, orderBy, scalarJoins, scalarWhere }
+}
+
+/**
+ * True when a scalar subquery produces exactly one row and reads nothing from
+ * an enclosing query.
+ *
+ * @param {SelectStatement} query
+ * @param {ExprNode} expr
+ * @param {string[]} outerScope
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @param {Map<string, string[]>} [cteColumns]
+ * @returns {boolean}
+ */
+function isSingleRowAggregate(query, expr, outerScope, tables, cteColumns) {
+  if (query.groupBy.length || query.having || query.limit !== undefined || query.offset) return false
+  /** @type {IdentifierNode[]} */
+  const correlated = []
+  collectColumnsFromExpr(expr, correlated, undefined, { tables, cteColumns, outerAliases: new Set(outerScope) })
+  return !correlated.length
 }
 
 /**
