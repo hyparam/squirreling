@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.16.16]
+ - Run uncorrelated scalar aggregate subqueries once instead of per row
+
 ## [0.16.15]
  - Add `IS [NOT] TRUE` and `IS [NOT] FALSE` predicates
  - Add `CHR`, `NOW`, `JSON_EXTRACT_SCALAR`, and `GROUP_CONCAT` functions
