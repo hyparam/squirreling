@@ -355,6 +355,9 @@ function collectCorrelatedColumnsFromStatement(stmt, columns, context) {
   }
   for (const join of stmt.joins) {
     collectColumnsFromExpr(join.on, identifiers, undefined, nestedContext)
+    if (join.subquery) {
+      collectCorrelatedColumnsFromStatement(join.subquery.query, identifiers, nestedContext)
+    }
     if (join.fromFunction) {
       for (const arg of join.fromFunction.args) {
         collectColumnsFromExpr(arg, identifiers, undefined, nestedContext)
