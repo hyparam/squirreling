@@ -147,7 +147,7 @@ Squirreling mostly follows the SQL standard. The following features are supporte
 - `GROUP BY` and `HAVING` clauses, including `GROUP BY ALL`
 - Set operations: `UNION`, `UNION ALL`, `INTERSECT`, `INTERSECT ALL`, `EXCEPT`, `EXCEPT ALL`
 - `SHOW TABLES` to list the available tables
-- Expressions: `CASE`, `CAST`, `TRY_CAST`, `BETWEEN`, `IN`, `LIKE`, `IS [NOT] NULL`, `IS [NOT] TRUE`, `IS [NOT] FALSE`, string concatenation `||`
+- Expressions: `CASE`, `CAST`, `TRY_CAST`, `BETWEEN`, `IN`, `LIKE` (case-sensitive), `ILIKE`, `IS [NOT] NULL`, `IS [NOT] TRUE`, `IS [NOT] FALSE`, string concatenation `||`
 - Subscript access: zero-based array indexing `col[0]`, struct field access `col['field']`, and chains like `col[0].field`
 
 ### Quoting

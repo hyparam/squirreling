@@ -251,12 +251,12 @@ describe('parseSql error handling', () => {
 
     it('should throw error on dangling NOT in WHERE clause', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users WHERE age NOT ORDER BY id' }))
-        .toThrow('Expected LIKE, BETWEEN, or IN after "NOT" but found "ORDER" at position 34')
+        .toThrow('Expected LIKE, ILIKE, BETWEEN, or IN after "NOT" but found "ORDER" at position 34')
     })
 
     it('should throw error on dangling NOT in WHERE comparison', () => {
       expect(() => parseSql({ query: 'SELECT * FROM t WHERE x NOT y' }))
-        .toThrow('Expected LIKE, BETWEEN, or IN after "NOT" but found "y" at position 28')
+        .toThrow('Expected LIKE, ILIKE, BETWEEN, or IN after "NOT" but found "y" at position 28')
     })
 
     it('should throw error on missing closing paren in WHERE', () => {

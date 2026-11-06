@@ -1097,7 +1097,7 @@ function nullWhenMissing(expr, isMissing) {
   if (expr.type === 'cast') return nullWhenMissing(expr.expr, isMissing)
   if (expr.type === 'unary') return ['NOT', '+', '-'].includes(expr.op) && nullWhenMissing(expr.argument, isMissing)
   if (expr.type === 'in valuelist') return nullWhenMissing(expr.expr, isMissing)
-  if (expr.type === 'binary' && ['=', '==', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', '+', '-', '*', '/', '%', '||'].includes(expr.op)) {
+  if (expr.type === 'binary' && ['=', '==', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'ILIKE', '+', '-', '*', '/', '%', '||'].includes(expr.op)) {
     return nullWhenMissing(expr.left, isMissing) || nullWhenMissing(expr.right, isMissing)
   }
   return false

@@ -105,7 +105,7 @@ export function isStringFunc(name) {
  * @returns {op is BinaryOp}
  */
 export function isBinaryOp(op) {
-  return ['AND', 'OR', 'LIKE', '=', '==', '!=', '<>', '<', '>', '<=', '>='].includes(op)
+  return ['AND', 'OR', 'LIKE', 'ILIKE', '=', '==', '!=', '<>', '<', '>', '<=', '>='].includes(op)
 }
 
 /**

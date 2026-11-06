@@ -358,6 +358,28 @@ describe('parseSql - WHERE clause', () => {
     })
   })
 
+  it('should parse WHERE with ILIKE', () => {
+    const select = parseSelect('SELECT * FROM users WHERE name ILIKE \'john%\'')
+    expect(select.where).toEqual({
+      type: 'binary',
+      op: 'ILIKE',
+      left: {
+        type: 'identifier',
+        name: 'name',
+        positionStart: 26,
+        positionEnd: 30,
+      },
+      right: {
+        type: 'literal',
+        value: 'john%',
+        positionStart: 37,
+        positionEnd: 44,
+      },
+      positionStart: 26,
+      positionEnd: 44,
+    })
+  })
+
   it('should parse WHERE with LIKE', () => {
     const select = parseSelect('SELECT * FROM users WHERE name LIKE \'John%\'')
     expect(select.where).toEqual({
