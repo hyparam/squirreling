@@ -69,7 +69,7 @@ export function applyBinaryOp(op, a, b) {
   if (op === '>') return a > b
   if (op === '>=') return a >= b
 
-  if (op === 'LIKE') {
+  if (op === 'LIKE' || op === 'ILIKE') {
     // Objects, arrays, and Dates stringify as JSON, the same coercion as
     // CAST(x AS VARCHAR), so `x LIKE p` and `CAST(x AS VARCHAR) LIKE p` agree.
     // String() would collapse every object to '[object Object]', making LIKE
@@ -80,7 +80,7 @@ export function applyBinaryOp(op, a, b) {
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       .replace(/%/g, '.*')
       .replace(/_/g, '.')
-    const regex = new RegExp(`^${regexPattern}$`, 'is')
+    const regex = new RegExp(`^${regexPattern}$`, op === 'ILIKE' ? 'is' : 's')
     return regex.test(str)
   }
 

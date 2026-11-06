@@ -75,7 +75,7 @@ export interface FromFunction extends AstBase {
 
 export type ArithmeticOp = '+' | '-' | '*' | '/' | '%'
 
-export type BinaryOp = 'AND' | 'OR' | 'LIKE' | '||' | ComparisonOp | ArithmeticOp
+export type BinaryOp = 'AND' | 'OR' | 'LIKE' | 'ILIKE' | '||' | ComparisonOp | ArithmeticOp
 
 export type ComparisonOp = '=' | '==' | '!=' | '<>' | '<' | '>' | '<=' | '>='
 

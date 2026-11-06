@@ -205,6 +205,22 @@ describe('WHERE clause', () => {
     expect(result.map(r => r.id)).toEqual([1])
   })
 
+  it('should match LIKE case-sensitively', async () => {
+    const data = [{ id: 1, s: 'Alice' }, { id: 2, s: 'alice' }, { id: 3, s: 'ALICE' }, { id: 4, s: null }]
+    const like = await collect(executeSql({ tables: { data }, query: 'SELECT id FROM data WHERE s LIKE \'ali%\'' }))
+    expect(like.map(r => r.id)).toEqual([2])
+    const notLike = await collect(executeSql({ tables: { data }, query: 'SELECT id FROM data WHERE s NOT LIKE \'ali%\'' }))
+    expect(notLike.map(r => r.id)).toEqual([1, 3])
+  })
+
+  it('should match ILIKE case-insensitively', async () => {
+    const data = [{ id: 1, s: 'Alice' }, { id: 2, s: 'alice' }, { id: 3, s: 'Bob' }, { id: 4, s: null }]
+    const ilike = await collect(executeSql({ tables: { data }, query: 'SELECT id FROM data WHERE s ILIKE \'ALI_E\'' }))
+    expect(ilike.map(r => r.id)).toEqual([1, 2])
+    const notIlike = await collect(executeSql({ tables: { data }, query: 'SELECT id FROM data WHERE s not ilike \'%LI%\'' }))
+    expect(notIlike.map(r => r.id)).toEqual([3])
+  })
+
   it('should filter with NOT LIKE', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name NOT LIKE \'%li%\'' }))
     expect(result).toHaveLength(3)

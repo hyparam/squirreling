@@ -1,7 +1,7 @@
 export const KEYWORDS = new Set([
   'WITH', 'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IS', 'GROUP', 'BY',
   'HAVING', 'ORDER', 'ASC', 'DESC', 'NULLS', 'LIMIT', 'OFFSET', 'AS', 'ALL',
-  'DISTINCT', 'TRUE', 'FALSE', 'NULL', 'LIKE', 'IN', 'EXISTS', 'BETWEEN',
+  'DISTINCT', 'TRUE', 'FALSE', 'NULL', 'LIKE', 'ILIKE', 'IN', 'EXISTS', 'BETWEEN',
   'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'JOIN', 'INNER', 'LEFT', 'RIGHT',
   'FULL', 'OUTER', 'CROSS', 'POSITIONAL', 'LATERAL', 'VIEW', 'ON', 'USING', 'INTERVAL', 'DAY', 'MONTH', 'YEAR',
   'HOUR', 'MINUTE', 'SECOND', 'FILTER', 'WITHIN',
@@ -12,7 +12,7 @@ export const KEYWORDS = new Set([
 // Non-reserved keywords (e.g. DAY, MONTH, FILTER, ASC) can be used as column alias references.
 export const RESERVED_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'WITH',
-  'AND', 'OR', 'NOT', 'IS', 'LIKE', 'IN', 'BETWEEN',
+  'AND', 'OR', 'NOT', 'IS', 'LIKE', 'ILIKE', 'IN', 'BETWEEN',
   'TRUE', 'FALSE', 'NULL',
   'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'INTERVAL',
   'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',

@@ -114,15 +114,16 @@ function parseComparison(state) {
 
   // Binary operators
   if (match(state, 'keyword', 'NOT')) {
-    // NOT LIKE
-    if (match(state, 'keyword', 'LIKE')) {
+    // NOT LIKE / NOT ILIKE
+    const notLike = matchLike(state)
+    if (notLike) {
       const right = parseConcat(state)
       return {
         type: 'unary',
         op: 'NOT',
         argument: {
           type: 'binary',
-          op: 'LIKE',
+          op: notLike,
           left,
           right,
           positionStart,
@@ -163,18 +164,19 @@ function parseComparison(state) {
 
     const found = current(state)
     throw new SyntaxError({
-      expected: 'LIKE, BETWEEN, or IN',
+      expected: 'LIKE, ILIKE, BETWEEN, or IN',
       after: 'NOT',
       ...found,
     })
   }
 
-  // LIKE
-  if (match(state, 'keyword', 'LIKE')) {
+  // LIKE / ILIKE
+  const like = matchLike(state)
+  if (like) {
     const right = parseConcat(state)
     return {
       type: 'binary',
-      op: 'LIKE',
+      op: like,
       left,
       right,
       positionStart,
@@ -338,4 +340,15 @@ function parseIn(state, left) {
     positionStart: left.positionStart,
     positionEnd: state.lastPos,
   }
+}
+
+/**
+ * Consumes a LIKE or ILIKE keyword.
+ *
+ * @param {ParserState} state
+ * @returns {'LIKE' | 'ILIKE' | undefined}
+ */
+function matchLike(state) {
+  if (match(state, 'keyword', 'LIKE')) return 'LIKE'
+  if (match(state, 'keyword', 'ILIKE')) return 'ILIKE'
 }
