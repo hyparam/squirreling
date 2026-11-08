@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.17.0]
+ - Breaking: `LIKE` is now case-sensitive; add `ILIKE` for case-insensitive matching
+ - Faster `LIKE` matching and range pushdown for prefix patterns
+
 ## [0.16.16]
  - Run uncorrelated scalar aggregate subqueries once instead of per row
 
