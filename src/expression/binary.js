@@ -42,10 +42,21 @@ export function isComparisonOp(op) {
 export function typeLiteral(literal, other) {
   const { value } = literal
   if (!(other instanceof Date) || typeof value !== 'string') return value
-  const date = toDate(value)
+  return parseTimestampLiteral(literal)
+}
+
+/**
+ * Parses a string literal compared with a TIMESTAMP, or throws: a literal that
+ * does not parse is an error rather than a comparison that matches nothing.
+ *
+ * @param {LiteralNode} literal
+ * @returns {Date}
+ */
+export function parseTimestampLiteral(literal) {
+  const date = toDate(literal.value)
   if (date) return date
   throw new ExecutionError({
-    message: `Cannot compare TIMESTAMP to string '${value}', expected YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS`,
+    message: `Cannot compare TIMESTAMP to string '${literal.value}', expected YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS`,
     positionStart: literal.positionStart,
     positionEnd: literal.positionEnd,
   })

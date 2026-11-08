@@ -1,5 +1,4 @@
-import { isComparisonOp, stringLiteral } from '../expression/binary.js'
-import { toDate } from '../expression/date.js'
+import { isComparisonOp, parseTimestampLiteral, stringLiteral } from '../expression/binary.js'
 
 /**
  * @import { ExprNode, LiteralNode, RelationSchema } from '../types.js'
@@ -146,8 +145,8 @@ function withTimestampLiterals(node, schema) {
         return { ...expr, left: rewrite(expr.left), right: rewrite(expr.right) }
       }
       if (isComparisonOp(expr.op)) {
-        const leftLiteral = timestampLiteral(expr.left)
-        const rightLiteral = timestampLiteral(expr.right)
+        const leftLiteral = stringLiteral(expr.left)
+        const rightLiteral = stringLiteral(expr.right)
         if (rightLiteral && isDateColumn(expr.left)) return { ...expr, right: castTimestamp(rightLiteral) }
         if (leftLiteral && isDateColumn(expr.right)) return { ...expr, left: castTimestamp(leftLiteral) }
       }
@@ -158,7 +157,7 @@ function withTimestampLiterals(node, schema) {
       return {
         ...expr,
         values: expr.values.map(value => {
-          const literal = timestampLiteral(value)
+          const literal = stringLiteral(value)
           return literal ? castTimestamp(literal) : value
         }),
       }
@@ -169,22 +168,14 @@ function withTimestampLiterals(node, schema) {
 }
 
 /**
- * A string literal that parses as a timestamp. One that does not stays a
- * string, so the engine reports it instead of a cast quietly yielding null.
+ * Casts a string literal to TIMESTAMP, refusing one that does not parse here
+ * rather than pushing a string bound a source could apply as "matches nothing".
  *
- * @param {ExprNode} node
- * @returns {LiteralNode | undefined}
- */
-function timestampLiteral(node) {
-  const literal = stringLiteral(node)
-  return literal && toDate(literal.value) ? literal : undefined
-}
-
-/**
  * @param {LiteralNode} literal
  * @returns {ExprNode}
  */
 function castTimestamp(literal) {
+  parseTimestampLiteral(literal)
   return {
     type: 'cast',
     expr: literal,
