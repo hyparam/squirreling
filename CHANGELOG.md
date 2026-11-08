@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.3]
+ - Throw an error for an unparseable timestamp string literal before scan pushdown, instead of matching nothing
+
 ## [0.17.2]
  - Faster ORDER BY: sort by key columns first and fetch other columns only for output rows
 
