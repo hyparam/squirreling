@@ -76,13 +76,43 @@ export function applyBinaryOp(op, a, b) {
     // a silent never-match on JSON-typed columns.
     const str = typeof a === 'object' ? stringify(a) : String(a)
     const pattern = String(b)
-    const regexPattern = pattern
-      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      .replace(/%/g, '.*')
-      .replace(/_/g, '.')
-    const regex = new RegExp(`^${regexPattern}$`, op === 'ILIKE' ? 'is' : 's')
-    return regex.test(str)
+    return matchLike(str, pattern, op === 'ILIKE')
   }
 
   return null
+}
+
+/**
+ * Match a LIKE pattern. Leading and trailing `%` drop the anchor on that side
+ * instead of becoming `.*`: an anchored `^.*x.*$` backtracks from every start
+ * position, which is quadratic on long strings, while an unanchored search
+ * uses the engine's substring scan. Case-sensitive patterns with no inner
+ * wildcard skip regex entirely. V8 caches compiled regexes by source and
+ * flags, so building one per call is cheap.
+ *
+ * @param {string} str
+ * @param {string} pattern
+ * @param {boolean} ignoreCase
+ * @returns {boolean}
+ */
+function matchLike(str, pattern, ignoreCase) {
+  let start = 0
+  let end = pattern.length
+  while (start < end && pattern[start] === '%') start++
+  while (end > start && pattern[end - 1] === '%') end--
+  const anchorStart = start === 0
+  const anchorEnd = end === pattern.length
+  const body = pattern.slice(start, end)
+  if (!anchorStart && !anchorEnd && !body) return true
+  if (!ignoreCase && !/[%_]/.test(body)) {
+    if (anchorStart && anchorEnd) return str === body
+    if (anchorStart) return str.startsWith(body)
+    if (anchorEnd) return str.endsWith(body)
+    return str.includes(body)
+  }
+  const source = body
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/%+/g, '.*')
+    .replace(/_/g, '.')
+  return new RegExp(`${anchorStart ? '^' : ''}${source}${anchorEnd ? '$' : ''}`, ignoreCase ? 'is' : 's').test(str)
 }

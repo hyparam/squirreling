@@ -352,7 +352,7 @@ export function executeScan(plan, context, existingColumnResult) {
     }
     return deferred
   }
-  const { where, residual } = scanFilter(plan, dataSourceColumns(table))
+  const { where, residual } = scanFilter(plan, dataSourceColumns(table), table.schema)
   const hints = { ...plan.hints, where }
   if (residual) {
     // Keep range and Top-K outside the scan until the engine residual runs.

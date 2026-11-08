@@ -91,6 +91,51 @@ it('keeps struct and physical qualified-name collisions in the engine', () => {
   }
 })
 
+describe('LIKE prefix range', () => {
+  /**
+   * @param {string} sql
+   * @param {'string' | 'number' | 'unknown'} [type]
+   * @returns {unknown}
+   */
+  function pushed(sql, type = 'string') {
+    /** @type {RelationSchema} */
+    const schema = { fields: [{ id: 0, name: 's', dataType: { type }, nullable: true }] }
+    return clean(scanFilter({ type: 'Scan', table: 'data', hints: { where: predicate(sql) } }, ['s'], schema).where)
+  }
+
+  it('adds the implied range to a string prefix', () => {
+    expect(pushed('s LIKE \'abc%\'')).toEqual(clean(predicate('s >= \'abc\' AND s < \'abd\' AND s LIKE \'abc%\'')))
+    expect(pushed('s LIKE \'ab_d%\'')).toEqual(clean(predicate('s >= \'ab\' AND s < \'ac\' AND s LIKE \'ab_d%\'')))
+  })
+
+  it('adds a range to each LIKE conjunct', () => {
+    expect(pushed('s LIKE \'a%\' AND s LIKE \'%b\'')).toEqual(clean(predicate('s >= \'a\' AND s < \'b\' AND s LIKE \'a%\' AND s LIKE \'%b\'')))
+  })
+
+  /** @type {[string, string, 'string' | 'number' | 'unknown'][]} */
+  const unchanged = [
+    ['no literal prefix', 's LIKE \'%abc\'', 'string'],
+    ['no wildcard', 's LIKE \'abc\'', 'string'],
+    ['non-ASCII prefix', 's LIKE \'\u00e9t\u00e9%\'', 'string'],
+    ['ILIKE', 's ILIKE \'abc%\'', 'string'],
+    ['NOT LIKE', 's NOT LIKE \'abc%\'', 'string'],
+    ['a number column', 's LIKE \'1%\'', 'number'],
+    ['an untyped column', 's LIKE \'abc%\'', 'unknown'],
+  ]
+  it.each(unchanged)('leaves %s unchanged', (_, sql, type) => {
+    expect(pushed(sql, type)).toEqual(clean(predicate(sql)))
+  })
+
+  it('keeps LIKE results exact when the source ignores the range', async () => {
+    const rows = [{ s: 'abc' }, { s: 'abd' }, { s: 'ab' }, { s: 'abcz' }, { s: null }]
+    /** @type {RelationSchema} */
+    const schema = { fields: [{ id: 0, name: 's', dataType: { type: 'string' }, nullable: true }] }
+    const source = { ...memorySource({ data: rows }), schema }
+    const result = await collect(executeSql({ tables: { data: source }, query: 'SELECT s FROM data WHERE s LIKE \'abc%\'' }))
+    expect(result).toEqual([{ s: 'abc' }, { s: 'abcz' }])
+  })
+})
+
 /**
  * @param {string} sql
  * @returns {ExprNode}

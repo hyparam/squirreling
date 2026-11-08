@@ -221,6 +221,36 @@ describe('WHERE clause', () => {
     expect(notIlike.map(r => r.id)).toEqual([3])
   })
 
+  it('should anchor LIKE only on sides without %', async () => {
+    const data = [
+      { id: 1, s: 'abc' },
+      { id: 2, s: 'xabc' },
+      { id: 3, s: 'abcx' },
+      { id: 4, s: 'xabcx' },
+      { id: 5, s: 'a.c' },
+      { id: 6, s: '' },
+    ]
+    /**
+     * @param {string} pattern
+     * @returns {Promise<unknown[]>}
+     */
+    async function ids(pattern) {
+      const rows = await collect(executeSql({ tables: { data }, query: `SELECT id FROM data WHERE s LIKE '${pattern}'` }))
+      return rows.map(r => r.id)
+    }
+    expect(await ids('abc')).toEqual([1])
+    expect(await ids('abc%')).toEqual([1, 3])
+    expect(await ids('%abc')).toEqual([1, 2])
+    expect(await ids('%abc%')).toEqual([1, 2, 3, 4])
+    expect(await ids('%%abc%%')).toEqual([1, 2, 3, 4])
+    expect(await ids('%b%')).toEqual([1, 2, 3, 4])
+    expect(await ids('a%c')).toEqual([1, 5])
+    expect(await ids('%a_c%')).toEqual([1, 2, 3, 4, 5])
+    expect(await ids('a.c')).toEqual([5])
+    expect(await ids('%')).toEqual([1, 2, 3, 4, 5, 6])
+    expect(await ids('')).toEqual([6])
+  })
+
   it('should filter with NOT LIKE', async () => {
     const result = await collect(executeSql({ tables: { users }, query: 'SELECT * FROM users WHERE name NOT LIKE \'%li%\'' }))
     expect(result).toHaveLength(3)

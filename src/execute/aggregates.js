@@ -306,7 +306,7 @@ function tryColumnScanAggregate(plan, { tables, signal }) {
 
   const table = tables[scanNode.table]
   if (!table?.scanColumn) return
-  const { where, residual } = scanFilter(scanNode, dataSourceColumns(table))
+  const { where, residual } = scanFilter(scanNode, dataSourceColumns(table), table.schema)
   if (residual) return
 
   // COUNT(*) needs a physical column whose filtered chunk lengths can be
