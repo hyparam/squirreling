@@ -1,9 +1,14 @@
 import { derivedAlias } from '../expression/alias.js'
+import { compileBatchExpression } from '../expression/batch.js'
 import { evaluateExpr } from '../expression/evaluate.js'
+import { batchResult } from './batchResults.js'
 import { executePlan } from './execute.js'
+import { referencesRowScope } from './rowScope.js'
+import { sortBatches } from './sortBatches.js'
 import { compareForTerm } from './utils.js'
 
 /**
+ * @import { CompiledBatchExpression } from '../internalTypes.js'
  * @import { AsyncRow, ExecuteContext, ExprNode, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
  * @import { SortNode } from '../plan/types.js'
  */
@@ -138,6 +143,30 @@ export function executeSort(plan, context) {
     childPlan = { ...childPlan, topK: { orderBy: plan.orderBy, limit: topK } }
   }
   const child = executePlan({ plan: childPlan, context })
+  const keys = child.batches ? compileSortKeys(plan.orderBy, child.columns, context) : undefined
+  if (keys && child.batches) {
+    const readChildBatches = child.batches
+    return batchResult({
+      columns: child.columns,
+      numRows: topK === undefined || child.numRows === undefined
+        ? child.numRows
+        : Math.min(child.numRows, topK),
+      maxRows: topK === undefined
+        ? child.maxRows
+        : Math.min(child.maxRows ?? Infinity, topK),
+      batches() {
+        return sortBatches({
+          batches: readChildBatches(),
+          keys,
+          orderBy: plan.orderBy,
+          columnCount: child.columns.length,
+          topK,
+          signal: context.signal,
+        })
+      },
+      signal: context.signal,
+    })
+  }
   // With a LIMIT bound pushed into the sort, keep at most this many buffered
   // rows: periodically sort and discard everything past topK, so memory is
   // bounded by the limit instead of the input size.
@@ -185,4 +214,25 @@ export function executeSort(plan, context) {
       }
     },
   }
+}
+
+/**
+ * Compiles every ORDER BY term for batch evaluation, or returns undefined so
+ * the sort keeps its row path.
+ *
+ * @param {OrderByItem[]} orderBy
+ * @param {string[]} columns
+ * @param {ExecuteContext} context
+ * @returns {CompiledBatchExpression[] | undefined}
+ */
+function compileSortKeys(orderBy, columns, context) {
+  /** @type {CompiledBatchExpression[]} */
+  const keys = []
+  for (const term of orderBy) {
+    if (referencesRowScope(term.expr, columns, context)) return undefined
+    const key = compileBatchExpression(term.expr, columns)
+    if (!key) return undefined
+    keys.push(key)
+  }
+  return keys
 }

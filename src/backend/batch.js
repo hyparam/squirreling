@@ -226,7 +226,7 @@ export function selectBatch(batch, selection) {
  * @param {number} index
  * @returns {number}
  */
-function selectionIndexAt(selection, index) {
+export function selectionIndexAt(selection, index) {
   const count = selectedRowCount(selection)
   if (!Number.isInteger(index) || index < 0 || index >= count) {
     throw new RangeError(`Selection index ${index} is outside selected length ${count}`)
