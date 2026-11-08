@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.2]
+ - Faster ORDER BY: sort by key columns first and fetch other columns only for output rows
+
 ## [0.17.1]
  - Compare string literals with timestamps as timestamps, in filters and scan pushdown
 
