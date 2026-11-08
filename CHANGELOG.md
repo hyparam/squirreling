@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.1]
+ - Compare string literals with timestamps as timestamps, in filters and scan pushdown
+
 ## [0.17.0]
  - Breaking: `LIKE` is now case-sensitive; add `ILIKE` for case-insensitive matching
  - Faster `LIKE` matching and range pushdown for prefix patterns
