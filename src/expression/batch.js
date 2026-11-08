@@ -3,7 +3,7 @@ import { isPlainObject, sqlEquals } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 import { isStringFunc } from '../validation/functions.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
-import { applyBinaryOp } from './binary.js'
+import { applyBinaryNode, applyBinaryOp, isComparisonOp, stringLiteral, typeLiteral } from './binary.js'
 import { evaluateRegexpLike } from './regexp.js'
 import { applyCast, applyUnaryOp, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
@@ -77,8 +77,9 @@ function compileEvaluator(node, columns) {
           left.evaluate(context),
           right.evaluate(context),
         ])
+        const apply = binaryApplier(node)
         return evaluateValues(context, function binaryValue(rowIndex) {
-          return applyBinaryOp(node.op, valueAt(leftVector, rowIndex), valueAt(rightVector, rowIndex))
+          return apply(node, valueAt(leftVector, rowIndex), valueAt(rightVector, rowIndex))
         })
       },
     }
@@ -191,12 +192,13 @@ function compileValueKernel(node, state) {
     const left = compileValueKernel(node.left, state)
     const right = compileValueKernel(node.right, state)
     if (!left || !right) return undefined
+    const apply = binaryApplier(node)
     return function binaryValue(vectors, rowIndex, streamRowIndex) {
       const leftValue = left(vectors, rowIndex, streamRowIndex)
       if (node.op === 'AND' && leftValue != null && !leftValue) return false
       if (node.op === 'OR' && leftValue != null && Boolean(leftValue)) return true
       const rightValue = right(vectors, rowIndex, streamRowIndex)
-      return applyBinaryOp(node.op, leftValue, rightValue)
+      return apply(node, leftValue, rightValue)
     }
   }
 
@@ -213,11 +215,15 @@ function compileValueKernel(node, state) {
       if (!value) return undefined
       values.push(value)
     }
+    const literals = node.values.map(stringLiteral)
     return function inValue(vectors, rowIndex, streamRowIndex) {
       const input = argument(vectors, rowIndex, streamRowIndex)
       let sawNull = input == null
-      for (const value of values) {
-        const candidate = value(vectors, rowIndex, streamRowIndex)
+      for (let i = 0; i < values.length; i++) {
+        const literal = literals[i]
+        const candidate = literal
+          ? typeLiteral(literal, input)
+          : values[i](vectors, rowIndex, streamRowIndex)
         if (candidate == null) sawNull = true
         else if (input != null && sqlEquals(input, candidate)) return true
       }
@@ -681,4 +687,20 @@ function readsIdentifier(node) {
   if (node.type === 'in valuelist') return readsIdentifier(node.expr) || node.values.some(readsIdentifier)
   if (node.type === 'function') return node.args.some(readsIdentifier)
   return false
+}
+
+/**
+ * Picks the binary applier once per node: only a comparison with a string
+ * literal operand needs literal typing.
+ *
+ * @param {ExprNode & { type: 'binary' }} node
+ * @returns {(node: ExprNode & { type: 'binary' }, left: SqlPrimitive, right: SqlPrimitive) => SqlPrimitive}
+ */
+function binaryApplier(node) {
+  if (isComparisonOp(node.op) && (stringLiteral(node.left) || stringLiteral(node.right))) {
+    return applyBinaryNode
+  }
+  return function applyOperator(binary, left, right) {
+    return applyBinaryOp(binary.op, left, right)
+  }
 }

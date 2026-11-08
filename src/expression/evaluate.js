@@ -6,7 +6,7 @@ import { isAggregateFunc, isMathFunc, isRegexpFunc, isSpatialFunc, isStringFunc 
 import { UnknownFunctionError } from '../validation/parseErrors.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
 import { derivedAlias } from './alias.js'
-import { applyBinaryOp } from './binary.js'
+import { applyBinaryNode, stringLiteral, typeLiteral } from './binary.js'
 import { applyIntervalToDate, dateDiff, dateTrunc, extractField } from './date.js'
 import { evaluateMathFunc } from './math.js'
 import { evaluateRegexpFunc } from './regexp.js'
@@ -195,7 +195,7 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     if (node.op === 'OR' && left != null && Boolean(left)) return true
 
     const right = await evaluateExpr({ node: node.right, row, rowIndex, rows, context })
-    return applyBinaryOp(node.op, left, right)
+    return applyBinaryNode(node, left, right)
   }
 
   // Function calls
@@ -700,7 +700,10 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
     let sawNull = exprVal == null
     for (const valueNode of node.values) {
-      const val = await evaluateExpr({ node: valueNode, row, rowIndex, rows, context })
+      const literal = stringLiteral(valueNode)
+      const val = literal
+        ? typeLiteral(literal, exprVal)
+        : await evaluateExpr({ node: valueNode, row, rowIndex, rows, context })
       if (val == null) {
         sawNull = true
       } else if (exprVal != null && sqlEquals(exprVal, val)) {
