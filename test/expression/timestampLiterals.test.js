@@ -138,10 +138,13 @@ describe('string literals compared with timestamps', () => {
       })
     })
 
-    it('keeps an unparseable literal so the engine reports it', async () => {
-      const { source } = preparedSource()
-      await expect(collect(executeSql({ tables: { t: source }, query: 'SELECT id FROM t WHERE ts >= \'soon\'' })))
-        .rejects.toThrow('Cannot compare TIMESTAMP to string \'soon\', expected YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS')
+    it('refuses an unparseable literal before offering the source a string bound', async () => {
+      for (const where of ['ts >= \'soon\'', '\'soon\' < ts', 'ts IN (\'2026-10-24\', \'soon\')']) {
+        const { source, filters } = preparedSource()
+        await expect(async () => await collect(executeSql({ tables: { t: source }, query: `SELECT id FROM t WHERE ${where}` })))
+          .rejects.toThrow('Cannot compare TIMESTAMP to string \'soon\', expected YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS')
+        expect(filters).toEqual([])
+      }
     })
   })
 })
