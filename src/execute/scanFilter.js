@@ -1,5 +1,8 @@
+import { isComparisonOp, stringLiteral } from '../expression/binary.js'
+import { toDate } from '../expression/date.js'
+
 /**
- * @import { ExprNode, RelationSchema } from '../types.js'
+ * @import { ExprNode, LiteralNode, RelationSchema } from '../types.js'
  * @import { ScanNode } from '../plan/types.js'
  */
 
@@ -11,6 +14,10 @@
  * A `LIKE 'prefix%'` on a column the schema types as string also gains an
  * implied range (`>= prefix AND < next`) so sources can prune on min/max
  * statistics. The LIKE stays in the predicate, so the range only narrows.
+ *
+ * A string literal compared with a column the schema types as date becomes
+ * `CAST(literal AS TIMESTAMP)`, the typing the engine applies at evaluation,
+ * so sources compare and prune with a timestamp rather than a string.
  *
  * @param {ScanNode} plan
  * @param {string[]} columns
@@ -69,7 +76,7 @@ export function scanFilter(plan, columns, schema) {
       return expr
     }
     const where = rewrite(node)
-    return safe ? { where: withPrefixRange(where, schema) } : { residual: node }
+    return safe ? { where: withPrefixRange(withTimestampLiterals(where, schema), schema) } : { residual: node }
   }
   return split(plan.hints.where)
 }
@@ -110,4 +117,79 @@ function withPrefixRange(node, schema) {
   /** @type {ExprNode} */
   const below = { ...node, op: '<', right: { ...right, value: upper } }
   return combine(combine(lower, below), node)
+}
+
+/**
+ * Casts string literals compared with date-typed columns to TIMESTAMP.
+ *
+ * @param {ExprNode} node
+ * @param {RelationSchema} [schema]
+ * @returns {ExprNode}
+ */
+function withTimestampLiterals(node, schema) {
+  if (!schema) return node
+  /**
+   * @param {ExprNode} expr
+   * @returns {boolean}
+   */
+  function isDateColumn(expr) {
+    if (expr.type !== 'identifier') return false
+    return schema?.fields.find(f => f.name === expr.name)?.dataType.type === 'date'
+  }
+  /**
+   * @param {ExprNode} expr
+   * @returns {ExprNode}
+   */
+  function rewrite(expr) {
+    if (expr.type === 'binary') {
+      if (expr.op === 'AND' || expr.op === 'OR') {
+        return { ...expr, left: rewrite(expr.left), right: rewrite(expr.right) }
+      }
+      if (isComparisonOp(expr.op)) {
+        const leftLiteral = timestampLiteral(expr.left)
+        const rightLiteral = timestampLiteral(expr.right)
+        if (rightLiteral && isDateColumn(expr.left)) return { ...expr, right: castTimestamp(rightLiteral) }
+        if (leftLiteral && isDateColumn(expr.right)) return { ...expr, left: castTimestamp(leftLiteral) }
+      }
+      return expr
+    }
+    if (expr.type === 'unary' && expr.op === 'NOT') return { ...expr, argument: rewrite(expr.argument) }
+    if (expr.type === 'in valuelist' && isDateColumn(expr.expr)) {
+      return {
+        ...expr,
+        values: expr.values.map(value => {
+          const literal = timestampLiteral(value)
+          return literal ? castTimestamp(literal) : value
+        }),
+      }
+    }
+    return expr
+  }
+  return rewrite(node)
+}
+
+/**
+ * A string literal that parses as a timestamp. One that does not stays a
+ * string, so the engine reports it instead of a cast quietly yielding null.
+ *
+ * @param {ExprNode} node
+ * @returns {LiteralNode | undefined}
+ */
+function timestampLiteral(node) {
+  const literal = stringLiteral(node)
+  return literal && toDate(literal.value) ? literal : undefined
+}
+
+/**
+ * @param {LiteralNode} literal
+ * @returns {ExprNode}
+ */
+function castTimestamp(literal) {
+  return {
+    type: 'cast',
+    expr: literal,
+    toType: 'TIMESTAMP',
+    positionStart: literal.positionStart,
+    positionEnd: literal.positionEnd,
+  }
 }

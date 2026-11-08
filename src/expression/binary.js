@@ -1,8 +1,74 @@
 import { stringify } from '../execute/utils.js'
+import { ExecutionError } from '../validation/executionErrors.js'
+import { toDate } from './date.js'
 
 /**
- * @import { BinaryOp, SqlPrimitive } from '../types.js'
+ * @import { BinaryOp, ExprNode, LiteralNode, SqlPrimitive } from '../types.js'
  */
+
+const COMPARISON_OPS = new Set(['=', '==', '!=', '<>', '<', '<=', '>', '>='])
+
+/**
+ * Returns the operand node when it is a string literal that a comparison
+ * should type by its other side, as Postgres and DuckDB do.
+ *
+ * @param {ExprNode} node
+ * @returns {LiteralNode | undefined}
+ */
+export function stringLiteral(node) {
+  return node.type === 'literal' && typeof node.value === 'string' ? node : undefined
+}
+
+/**
+ * Returns true for operators that compare their operands.
+ *
+ * @param {BinaryOp} op
+ * @returns {boolean}
+ */
+export function isComparisonOp(op) {
+  return COMPARISON_OPS.has(op)
+}
+
+/**
+ * Types a string literal by the value it is compared with: opposite a
+ * TIMESTAMP it becomes a timestamp, like `TIMESTAMP '...'`. A literal that
+ * does not parse is an error rather than a comparison that silently matches
+ * nothing. Other values pass through unchanged.
+ *
+ * @param {LiteralNode} literal
+ * @param {SqlPrimitive} other
+ * @returns {SqlPrimitive}
+ */
+export function typeLiteral(literal, other) {
+  const { value } = literal
+  if (!(other instanceof Date) || typeof value !== 'string') return value
+  const date = toDate(value)
+  if (date) return date
+  throw new ExecutionError({
+    message: `Cannot compare TIMESTAMP to string '${value}', expected YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS`,
+    positionStart: literal.positionStart,
+    positionEnd: literal.positionEnd,
+  })
+}
+
+/**
+ * Applies a binary operator to two operand nodes' values, typing a string
+ * literal by a TIMESTAMP on the other side of a comparison.
+ *
+ * @param {ExprNode & { type: 'binary' }} node
+ * @param {SqlPrimitive} left
+ * @param {SqlPrimitive} right
+ * @returns {SqlPrimitive}
+ */
+export function applyBinaryNode(node, left, right) {
+  if (isComparisonOp(node.op)) {
+    const leftLiteral = stringLiteral(node.left)
+    const rightLiteral = stringLiteral(node.right)
+    if (leftLiteral && right instanceof Date) left = typeLiteral(leftLiteral, right)
+    else if (rightLiteral && left instanceof Date) right = typeLiteral(rightLiteral, left)
+  }
+  return applyBinaryOp(node.op, left, right)
+}
 
 /**
  * Applies a binary operator to two values, handling nulls according to SQL semantics
