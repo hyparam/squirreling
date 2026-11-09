@@ -10,7 +10,7 @@ import { yieldToEventLoop } from './yield.js'
  */
 
 /**
- * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number, first?: SqlPrimitive }} Membership
+ * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number, firstRow?: AsyncRow }} Membership
  * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership }} MembershipTrie
  */
 
@@ -113,13 +113,13 @@ async function buildTrie(plan, context, filters) {
       if (!plan.keys) break
       continue
     }
-    const value = await inner.cells[inner.columns[0]]()
     if (plan.test === 'scalar') {
-      if (!node.membership.count++) node.membership.first = value
+      if (!node.membership.count++) node.membership.firstRow = inner
       // Two rows already make an uncorrelated scalar an error.
       if (!plan.keys && node.membership.count > 1) break
       continue
     }
+    const value = await inner.cells[inner.columns[0]]()
     addValue(node.membership, value)
     if (value != null) filters?.add([value, ...keys])
   }
@@ -158,14 +158,14 @@ async function evaluateMembership(plan, root, row, rowIndex, context) {
   if (plan.test === 'exists') return leaves.length > 0 !== plan.not
   if (plan.test === 'scalar') {
     let count = 0
-    /** @type {SqlPrimitive} */
-    let value = null
+    /** @type {AsyncRow | undefined} */
+    let firstRow
     for (const leaf of leaves) {
       count += leaf.membership?.count ?? 0
-      value = leaf.membership?.first ?? value
+      firstRow = leaf.membership?.firstRow ?? firstRow
     }
     if (count > 1) throw new Error('Scalar subquery returned more than one row')
-    return value
+    return firstRow ? firstRow.cells[firstRow.columns[0]]() : null
   }
   const value = await evaluateExpr({ node: plan.expr, row, rowIndex, context })
   /** @type {boolean | null} */

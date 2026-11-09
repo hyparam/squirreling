@@ -252,6 +252,13 @@ describe('scalar single join', () => {
     await expect(collect(executeSql({ tables: { ...tables, items: [{ id: 2 }] }, query: 'SELECT (SELECT n.name FROM names n WHERE n.id = items.id) AS name FROM items' }))).rejects.toThrow('Scalar subquery returned more than one row')
   })
 
+  it('evaluates correlated scalar values only for requested keys', async () => {
+    const tables = { items: [{ id: 1 }], wanted: [{ id: 1 }, { id: 2 }] }
+    const query = 'SELECT (SELECT CASE WHEN w.id=2 THEN (SELECT id FROM wanted) ELSE 5 END FROM wanted w WHERE w.id=items.id) AS v FROM items'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ v: 5 }])
+    await expect(collect(executeSql({ tables: { ...tables, items: [{ id: 2 }] }, query }))).rejects.toThrow('Scalar subquery returned more than one row')
+  })
+
   it('keeps a correlated DISTINCT scalar on the per-row path', async () => {
     const tables = { items: memorySource({ data: [{ id: 2 }] }), names: memorySource({ data: [{ id: 2, name: 'b' }, { id: 2, name: 'b' }] }) }
     const query = 'SELECT (SELECT DISTINCT n.name FROM names n WHERE n.id = items.id) AS name FROM items'
@@ -297,6 +304,18 @@ describe('mark joins in other clauses', () => {
     ])
     expect(await collect(executeSql({ tables, query: 'SELECT * FROM items WHERE id = 1 OR EXISTS (SELECT id FROM wanted WHERE id = 5)' }))).toEqual([{ id: 1, v: 'x' }])
     expect(wanted.getScanCount()).toBe(2)
+  })
+
+  it.each([
+    { projection: '*', expected: { id: 1, wid: 1, v: 'x' } },
+    { projection: 'a.*', expected: { id: 1 } },
+    { projection: 'b.*', expected: { wid: 1, v: 'x' } },
+  ])('preserves derived-table join columns for $projection with a mark', async ({ projection, expected }) => {
+    const tables = { items: [{ id: 1 }], wanted: [{ wid: 1, v: 'x' }] }
+    const query = `SELECT ${projection} FROM (SELECT id FROM items) a JOIN wanted b ON a.id=b.wid WHERE EXISTS(SELECT wid FROM wanted) OR a.id=2`
+    const result = executeSql({ tables, query })
+    expect(result.columns).toEqual(Object.keys(expected))
+    expect(await collect(result)).toEqual([expected])
   })
 
   it('keeps marks out of qualified stars over joins', async () => {
