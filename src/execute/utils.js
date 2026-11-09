@@ -1,4 +1,5 @@
 import { collectBatches } from '../backend/batchAdapters.js'
+import { foldEvaluatedRows } from './fold.js'
 
 /**
  * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
@@ -116,15 +117,21 @@ export async function collect(results) {
     return result
   }
 
-  return Promise.all(rows.map(async asyncRow => {
-    const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
-    /** @type {Record<string, SqlPrimitive>} */
-    const item = {}
-    for (let i = 0; i < asyncRow.columns.length; i++) {
-      item[asyncRow.columns[i]] = values[i]
-    }
-    return item
-  }))
+  /** @type {Record<string, SqlPrimitive>[]} */
+  const result = []
+  await foldEvaluatedRows({
+    rows,
+    signal: querySignals.get(results),
+    async evaluate(asyncRow) {
+      const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
+      /** @type {Record<string, SqlPrimitive>} */
+      const item = {}
+      for (let i = 0; i < asyncRow.columns.length; i++) item[asyncRow.columns[i]] = values[i]
+      return item
+    },
+    fold(value) { result.push(value) },
+  })
+  return result
 }
 
 /**

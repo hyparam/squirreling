@@ -9,12 +9,14 @@ import { memorySource } from '../../src/backend/dataSource.js'
  * The source respects the abort signal.
  *
  * @param {Record<string, SqlPrimitive>[]} data
- * @returns {{ source: AsyncDataSource, getScanCount: () => number, getRowCount: () => number }}
+ * @returns {{ source: AsyncDataSource, getScanCount: () => number, getRowCount: () => number, getActiveCount: () => number, getPeakCount: () => number }}
  */
 export function trackingSource(data) {
   const inner = memorySource({ data })
   let scanCount = 0
   let rowCount = 0
+  let activeCount = 0
+  let peakCount = 0
 
   return {
     source: {
@@ -28,10 +30,16 @@ export function trackingSource(data) {
         const { rows, appliedWhere, appliedLimitOffset } = inner.scan(options)
         return {
           async *rows() {
-            for await (const row of rows()) {
-              if (options.signal?.aborted) break
-              rowCount++
-              yield row
+            activeCount++
+            peakCount = Math.max(peakCount, activeCount)
+            try {
+              for await (const row of rows()) {
+                if (options.signal?.aborted) break
+                rowCount++
+                yield row
+              }
+            } finally {
+              activeCount--
             }
           },
           appliedWhere,
@@ -41,5 +49,7 @@ export function trackingSource(data) {
     },
     getScanCount: () => scanCount,
     getRowCount: () => rowCount,
+    getActiveCount: () => activeCount,
+    getPeakCount: () => peakCount,
   }
 }

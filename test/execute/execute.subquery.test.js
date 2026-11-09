@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { collect, executeSql } from '../../src/index.js'
+import { collect, executeSql, parseSql } from '../../src/index.js'
+import { trackingSource } from './trackingSource.js'
 
 describe('subqueries', () => {
   const users = [
@@ -757,5 +758,147 @@ describe('subqueries', () => {
         { id: 3, total: null },
       ])
     })
+  })
+})
+
+describe('bounded expression subqueries', () => {
+  it('builds projected membership once for a grouped report query', async () => {
+    const data = Array.from({ length: 400 }, (_, id) => ({ id, poll: id % 2 === 0, tokens: 1 }))
+    const tracked = trackingSource(data)
+    const result = await collect(executeSql({
+      tables: { messages: tracked.source },
+      query: `WITH poll AS (SELECT DISTINCT id FROM messages WHERE poll = true),
+        usage AS (SELECT id, tokens FROM messages)
+        SELECT (usage.id IN (SELECT id FROM poll)) AS is_poll,
+          COUNT(*) AS n, SUM(tokens) AS tokens FROM usage GROUP BY 1`,
+    }))
+    expect(result).toEqual([
+      { is_poll: true, n: 200, tokens: 200 },
+      { is_poll: false, n: 200, tokens: 200 },
+    ])
+    expect(tracked.getScanCount()).toBe(2)
+    expect(tracked.getRowCount()).toBe(800)
+    expect(tracked.getActiveCount()).toBe(0)
+  })
+
+  it('shares in-flight scalar and EXISTS results without rescanning', async () => {
+    const inputs = Array.from({ length: 80 }, (_, id) => ({ id }))
+    const scalar = trackingSource([{ value: 7 }])
+    const exists = trackingSource([{ value: 1 }])
+    const result = await collect(executeSql({
+      tables: { inputs, scalar: scalar.source, matches: exists.source },
+      query: `SELECT id, (SELECT value FROM scalar LIMIT 1) AS value,
+        EXISTS (SELECT value FROM matches) AS present FROM inputs`,
+    }))
+    expect(result).toEqual(inputs.map(({ id }) => ({ id, value: 7, present: true })))
+    expect(scalar.getScanCount()).toBe(1)
+    expect(exists.getScanCount()).toBe(1)
+  })
+
+  it('bounds correlated scans while keeping results specific to the inputs row', async () => {
+    const inputs = Array.from({ length: 160 }, (_, id) => ({ id }))
+    const candidates = trackingSource([{ value: 5 }, { value: 80 }])
+    const result = await collect(executeSql({
+      tables: { inputs, candidates: candidates.source },
+      query: 'SELECT o.id, o.id IN (SELECT value FROM candidates i WHERE i.value >= o.id) AS matched FROM inputs o',
+    }))
+    expect(result).toEqual(inputs.map(({ id }) => ({ id, matched: id === 5 || id === 80 })))
+    expect(candidates.getScanCount()).toBe(160)
+    expect(candidates.getPeakCount()).toBeLessThanOrEqual(4)
+    expect(candidates.getActiveCount()).toBe(0)
+  })
+
+  it('does not share membership between inputs rows through a CTE', async () => {
+    const result = await collect(executeSql({
+      tables: { inputs: [{ id: 1 }, { id: 2 }], candidates: [{ id: 1 }] },
+      query: `WITH matches AS (SELECT id FROM candidates)
+        SELECT o.id, o.id IN (SELECT id FROM matches WHERE id = o.id) AS matched FROM inputs o`,
+    }))
+    expect(result).toEqual([{ id: 1, matched: true }, { id: 2, matched: false }])
+  })
+
+  it('lets nested correlated expressions progress while outer scan slots are occupied', async () => {
+    const inputs = Array.from({ length: 40 }, (_, id) => ({ id }))
+    const candidates = trackingSource(inputs.map(({ id }) => ({ value: id })))
+    const matches = trackingSource(inputs.map(({ id }) => ({ value: id })))
+    const result = await collect(executeSql({
+      tables: { inputs, candidates: candidates.source, matches: matches.source },
+      query: `SELECT o.id, (SELECT (SELECT m.value FROM matches m
+        WHERE m.value = i.value LIMIT 1) FROM candidates i
+        WHERE i.value = o.id LIMIT 1) AS value FROM inputs o`,
+    }))
+    expect(result).toEqual(inputs.map(({ id }) => ({ id, value: id })))
+    expect(candidates.getScanCount()).toBe(40)
+    expect(matches.getScanCount()).toBe(40)
+    expect(candidates.getPeakCount()).toBeLessThanOrEqual(4)
+    expect(matches.getPeakCount()).toBeLessThanOrEqual(4)
+    expect(candidates.getActiveCount()).toBe(0)
+    expect(matches.getActiveCount()).toBe(0)
+  })
+
+  it('distinguishes a shadowed local alias from an inputs dependency', async () => {
+    const candidates = trackingSource([{ id: 1 }, { id: 2 }])
+    const result = await collect(executeSql({
+      tables: { inputs: [{ id: 1 }, { id: 3 }], candidates: candidates.source },
+      query: 'SELECT o.id, o.id IN (SELECT o.id FROM candidates o) AS matched FROM inputs o',
+    }))
+    expect(result).toEqual([{ id: 1, matched: true }, { id: 3, matched: false }])
+    expect(candidates.getScanCount()).toBe(1)
+  })
+
+  it('preserves membership coercion, nulls, empty inputs, and NaN', async () => {
+    const inputs = [{ id: 1 }, { id: 2 }, { id: null }, { id: NaN }]
+    const result = await collect(executeSql({
+      tables: { inputs, candidates: [{ value: '1' }, { value: null }, { value: NaN }] },
+      query: `SELECT id IN (SELECT value FROM candidates) AS matched,
+        id NOT IN (SELECT value FROM candidates) AS absent,
+        id IN (SELECT value FROM candidates WHERE false) AS empty FROM inputs`,
+    }))
+    expect(result).toEqual([
+      { matched: true, absent: false, empty: false },
+      { matched: null, absent: null, empty: false },
+      { matched: null, absent: null, empty: false },
+      { matched: null, absent: null, empty: false },
+    ])
+  })
+
+  it('keeps membership state private to each iteration of reusable results', async () => {
+    const candidates = [{ value: 1 }]
+    const result = executeSql({
+      tables: { inputs: [{ id: 1 }, { id: 2 }], candidates },
+      query: 'SELECT id, id IN (SELECT value FROM candidates) AS matched FROM inputs',
+    })
+    expect(await collect(result)).toEqual([{ id: 1, matched: true }, { id: 2, matched: false }])
+    candidates[0].value = 2
+    expect(await collect(result)).toEqual([{ id: 1, matched: false }, { id: 2, matched: true }])
+  })
+
+  it('does not cache results on an AST reused by concurrent executions', async () => {
+    const query = parseSql({ query: 'SELECT id IN (SELECT value FROM candidates) AS matched FROM inputs' })
+    const results = await Promise.all([1, 2].map(value => collect(executeSql({
+      tables: { inputs: [{ id: 1 }], candidates: [{ value }] }, query,
+    }))))
+    expect(results).toEqual([[{ matched: true }], [{ matched: false }]])
+  })
+
+  it('lets a timer cancel nested short scans and closes all active iterators', async () => {
+    const inputs = Array.from({ length: 48 }, (_, id) => ({ id }))
+    const candidates = trackingSource(Array.from({ length: 512 }, (_, value) => ({ value })))
+    const controller = new AbortController()
+    const reason = new Error('cancel nested expression scans')
+    const timer = setTimeout(() => controller.abort(reason), 0)
+    try {
+      await expect(collect(executeSql({
+        tables: { inputs, candidates: candidates.source },
+        query: `SELECT o.id, (SELECT i.value FROM candidates i
+          WHERE i.value > o.id + 1000 LIMIT 1) AS value FROM inputs o`,
+        signal: controller.signal,
+      }))).rejects.toBe(reason)
+      expect(candidates.getScanCount()).toBeLessThan(48)
+      expect(candidates.getPeakCount()).toBeLessThanOrEqual(4)
+      expect(candidates.getActiveCount()).toBe(0)
+    } finally {
+      clearTimeout(timer)
+    }
   })
 })
