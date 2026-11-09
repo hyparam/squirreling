@@ -34,8 +34,12 @@ export function executeSemiJoin(plan, context) {
     maxRows: left.maxRows,
     async *rows() {
       const filters = dynamicFilter(pruneKeys.length)
-      const root = await buildTrie(plan, context, pruneKeys.length ? filters : undefined)
-      if (!mark && neverPasses(plan, root)) return
+      // Mark joins only need membership when a consumer reads a mark cell.
+      // Share the pending build across rows, including concurrent cell reads.
+      /** @type {Promise<MembershipTrie> | undefined} */
+      let build
+      const root = mark ? undefined : await buildTrie(plan, context, pruneKeys.length ? filters : undefined)
+      if (root && neverPasses(plan, root)) return
       const probe = executePlan({
         plan: pruneKeys.length ? filters.apply(plan.left, pruneKeys) : plan.left,
         context: { ...context, deferScans: true },
@@ -50,9 +54,9 @@ export function executeSemiJoin(plan, context) {
           let result
           yield {
             columns: [...row.columns, mark],
-            cells: { ...row.cells, [mark]: () => result ??= evaluateMembership(plan, root, row, index, context) },
+            cells: { ...row.cells, [mark]: () => result ??= (build ??= buildTrie(plan, context)).then(root => evaluateMembership(plan, root, row, index, context)) },
           }
-        } else if (await evaluateMembership(plan, root, row, index, context)) {
+        } else if (root && await evaluateMembership(plan, root, row, index, context)) {
           yield row
         }
       }

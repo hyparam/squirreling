@@ -3,6 +3,10 @@ import { memorySource } from '../../src/backend/dataSource.js'
 import { collect, executePlan, executeSql, planSql } from '../../src/index.js'
 import { trackingSource } from './trackingSource.js'
 
+/**
+ * @import { AsyncDataSource } from '../../src/types.js'
+ */
+
 describe('IN mark join', () => {
   it('scans the subquery once for a grouped membership key', async () => {
     const u = Array.from({ length: 400 }, (_, i) => ({ message_id: i, tokens: 1 }))
@@ -174,5 +178,42 @@ describe('IN mark join', () => {
     expect(await collect(executeSql({ tables, query: 'SELECT id FROM items WHERE NOT EXISTS (SELECT id FROM wanted)' }))).toEqual([])
     expect(wanted.getScanCount()).toBe(2)
     expect(wanted.getRowCount()).toBe(2)
+  })
+})
+
+describe('mark membership', () => {
+  it.each([{ data: [] }, { data: [{ id: 1 }] }])('evaluates membership on an empty scalar aggregate with right input $data', async ({ data }) => {
+    const tables = {
+      items: memorySource({ data: [], columns: ['id'] }),
+      wanted: memorySource({ data, columns: ['id'] }),
+    }
+    expect(await collect(executeSql({
+      tables,
+      query: 'SELECT COUNT(*) AS n, EXISTS (SELECT id FROM wanted) AS hit, 1 IN (SELECT id FROM wanted) AS included, NOT EXISTS (SELECT id FROM wanted) AS missing FROM items',
+    }))).toEqual([{ n: 0, hit: !!data.length, included: !!data.length, missing: !data.length }])
+  })
+
+  it('builds membership only when requested and shares the build across rows', async () => {
+    const source = memorySource({ data: [{ id: 1 }] })
+    let scans = 0
+    /** @type {AsyncDataSource} */
+    const wanted = {
+      columns: ['id'],
+      scan(options) {
+        scans++
+        return source.scan(options)
+      },
+    }
+    const tables = { items: [{ id: 1 }, { id: 2 }], wanted }
+    expect(await collect(executeSql({
+      tables,
+      query: 'SELECT CASE WHEN false THEN id IN (SELECT id FROM wanted) ELSE false END AS hit FROM items',
+    }))).toEqual([{ hit: false }, { hit: false }])
+    expect(scans).toBe(0)
+    const result = executeSql({ tables, query: 'SELECT id IN (SELECT id FROM wanted) AS hit FROM items' })
+    expect(await collect(result)).toEqual([{ hit: true }, { hit: false }])
+    expect(scans).toBe(1)
+    expect(await collect(result)).toEqual([{ hit: true }, { hit: false }])
+    expect(scans).toBe(2)
   })
 })

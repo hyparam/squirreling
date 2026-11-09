@@ -1,5 +1,6 @@
 import { derivedAlias } from '../expression/alias.js'
 import { findAggregate } from '../validation/aggregates.js'
+import { isAggregateFunc } from '../validation/functions.js'
 import { findWindow } from '../validation/windows.js'
 import { collectColumnsFromExpr, statementScope } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
@@ -165,6 +166,7 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
  * @param {object} options
  * @param {SelectColumn[]} options.columns
  * @param {OrderByItem[]} options.orderBy
+ * @param {boolean} options.scalarAggregate
  * @param {ExprNode[]} options.groupBy
  * @param {string[]} options.scopeAliases
  * @param {Set<string>} options.scopeColumns
@@ -173,7 +175,7 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
  * @param {Map<string, string[]>} [options.cteColumns]
  * @returns {{ columns: SelectColumn[], orderBy: OrderByItem[], groupBy: ExprNode[], markJoins: Omit<SemiJoinNode, 'left'>[] }}
  */
-export function planMarkJoins({ columns, orderBy, groupBy, scopeAliases, scopeColumns, planQuery, tables, cteColumns }) {
+export function planMarkJoins({ columns, orderBy, groupBy, scalarAggregate, scopeAliases, scopeColumns, planQuery, tables, cteColumns }) {
   /** @type {Omit<SemiJoinNode, 'left'>[]} */
   const markJoins = []
   // The same node can appear in several clauses (GROUP BY 1, aliases).
@@ -206,12 +208,12 @@ export function planMarkJoins({ columns, orderBy, groupBy, scopeAliases, scopeCo
   columns = columns.map(col => {
     if (col.type !== 'derived') return col
     const before = rewrites
-    const expr = mapScalarExpressions(col.expr, rewriteMembership)
+    const expr = mapScalarExpressions(col.expr, rewriteMembership, scalarAggregate)
     if (rewrites === before) return col
     return { ...col, alias: col.alias ?? derivedAlias(col.expr), expr }
   })
   groupBy = groupBy.map(expr => mapScalarExpressions(expr, rewriteMembership))
-  orderBy = orderBy.map(term => ({ ...term, expr: mapScalarExpressions(term.expr, rewriteMembership) }))
+  orderBy = orderBy.map(term => ({ ...term, expr: mapScalarExpressions(term.expr, rewriteMembership, scalarAggregate) }))
   return { columns, orderBy, groupBy, markJoins }
 }
 
@@ -335,49 +337,55 @@ export function decorrelateExists(query, outerScope, tables, cteColumns, aggrega
  * Rewrites scalar expressions without entering a nested lexical query scope.
  * @param {ExprNode} node
  * @param {(node: ExprNode) => ExprNode} rewrite
+ * @param {boolean} [aggregateOnly]
  * @returns {ExprNode}
  */
-function mapScalarExpressions(node, rewrite) {
+function mapScalarExpressions(node, rewrite, aggregateOnly = false) {
   if (!node) return node
+  // Only aggregate arguments read input rows. Other expressions must still
+  // evaluate on the synthesized row when a scalar aggregate has no input.
+  if (aggregateOnly && node.type === 'function' && isAggregateFunc(node.funcName.toUpperCase())) {
+    return mapScalarExpressions(node, rewrite)
+  }
   if (node.type === 'unary') {
-    return { ...node, argument: mapScalarExpressions(node.argument, rewrite) }
+    return { ...node, argument: mapScalarExpressions(node.argument, rewrite, aggregateOnly) }
   }
   if (node.type === 'binary') {
-    return { ...node, left: mapScalarExpressions(node.left, rewrite), right: mapScalarExpressions(node.right, rewrite) }
+    return { ...node, left: mapScalarExpressions(node.left, rewrite, aggregateOnly), right: mapScalarExpressions(node.right, rewrite, aggregateOnly) }
   }
   if (node.type === 'function') {
-    return { ...node, args: node.args.map(arg => mapScalarExpressions(arg, rewrite)) }
+    return { ...node, args: node.args.map(arg => mapScalarExpressions(arg, rewrite, aggregateOnly)) }
   }
   if (node.type === 'cast') {
-    return { ...node, expr: mapScalarExpressions(node.expr, rewrite) }
+    return { ...node, expr: mapScalarExpressions(node.expr, rewrite, aggregateOnly) }
   }
   if (node.type === 'in valuelist') {
     return {
       ...node,
-      expr: mapScalarExpressions(node.expr, rewrite),
-      values: node.values.map(v => mapScalarExpressions(v, rewrite)),
+      expr: mapScalarExpressions(node.expr, rewrite, aggregateOnly),
+      values: node.values.map(v => mapScalarExpressions(v, rewrite, aggregateOnly)),
     }
   }
   if (node.type === 'subscript') {
     return {
       ...node,
-      expr: mapScalarExpressions(node.expr, rewrite),
-      index: mapScalarExpressions(node.index, rewrite),
+      expr: mapScalarExpressions(node.expr, rewrite, aggregateOnly),
+      index: mapScalarExpressions(node.index, rewrite, aggregateOnly),
     }
   }
   if (node.type === 'case') {
     return {
       ...node,
-      caseExpr: mapScalarExpressions(node.caseExpr, rewrite),
+      caseExpr: mapScalarExpressions(node.caseExpr, rewrite, aggregateOnly),
       whenClauses: node.whenClauses.map(w => ({
         ...w,
-        condition: mapScalarExpressions(w.condition, rewrite),
-        result: mapScalarExpressions(w.result, rewrite),
+        condition: mapScalarExpressions(w.condition, rewrite, aggregateOnly),
+        result: mapScalarExpressions(w.result, rewrite, aggregateOnly),
       })),
-      elseResult: mapScalarExpressions(node.elseResult, rewrite),
+      elseResult: mapScalarExpressions(node.elseResult, rewrite, aggregateOnly),
     }
   }
-  return rewrite(node)
+  return aggregateOnly ? node : rewrite(node)
 }
 
 /**

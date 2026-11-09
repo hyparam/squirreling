@@ -270,6 +270,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   if (!outerScope?.length && !windows.length && !columns.some(col => col.type === 'star')) {
     const marked = planMarkJoins({
       columns, orderBy, groupBy, scopeAliases, scopeColumns, tables, cteColumns, planQuery,
+      scalarAggregate: hasAggregate && !groupBy.length,
     })
     columns = marked.columns
     orderBy = marked.orderBy
