@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.4]
+ - String functions accept JSON object and array values as JSON text, the same as `CAST(x AS VARCHAR)`, instead of throwing
+
 ## [0.17.3]
  - Throw an error for an unparseable timestamp string literal before scan pushdown, instead of matching nothing
 
