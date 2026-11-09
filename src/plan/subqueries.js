@@ -353,7 +353,7 @@ function isSingleRowAggregate(query, expr, outerScope, tables, cteColumns) {
 export function decorrelateExists(query, outerScope, tables, cteColumns, aggregate = false) {
   if (query.type !== 'select' || query.limit !== undefined || query.offset ||
       query.groupBy.length || query.having ||
-      !aggregate && query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || col.expr.type === 'window'))) return
+      !aggregate && query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || findWindow(col.expr)))) return
   const scope = statementScope(query) ?? []
   /** @type {IdentifierNode[]} */
   const left = []
