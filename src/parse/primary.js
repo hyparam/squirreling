@@ -135,7 +135,7 @@ function parsePrimaryBase(state) {
       const toType = typeTok.value.toUpperCase()
       if (!isCastType(toType)) {
         throw new SyntaxError({
-          expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL, TIMESTAMP)',
+          expected: 'cast type (STRING, INT, BIGINT, FLOAT, BOOL, TIMESTAMP, DATE)',
           after: 'AS',
           ...typeTok,
         })
@@ -151,9 +151,9 @@ function parsePrimaryBase(state) {
       }
     }
 
-    // TIMESTAMP '2026-01-01 00:00:00' typed literal
-    if (funcNameUpper === 'TIMESTAMP' && next.type === 'string') {
-      consume(state) // TIMESTAMP
+    // TIMESTAMP '2026-01-01 00:00:00' or DATE '2026-01-01' typed literal
+    if ((funcNameUpper === 'TIMESTAMP' || funcNameUpper === 'DATE') && next.type === 'string') {
+      consume(state) // TIMESTAMP or DATE
       const strTok = consume(state) // string literal
       return {
         type: 'cast',
@@ -163,7 +163,7 @@ function parsePrimaryBase(state) {
           positionStart: strTok.positionStart,
           positionEnd: strTok.positionEnd,
         },
-        toType: 'TIMESTAMP',
+        toType: funcNameUpper === 'DATE' ? 'DATE' : 'TIMESTAMP',
         positionStart,
         positionEnd: state.lastPos,
       }

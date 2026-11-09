@@ -25,6 +25,61 @@ describe('date/time functions', () => {
     })
   })
 
+  describe('comparing dates with strings', () => {
+    const events = [
+      { id: 1, ts: new Date('2024-06-14T12:00:00Z'), day: '2024-06-15' },
+      { id: 2, ts: new Date('2024-06-15T00:00:00Z'), day: '2024-06-15' },
+      { id: 3, ts: new Date('2024-06-16T08:00:00Z'), day: 'not a date' },
+    ]
+
+    it('should compare a timestamp column with a string column', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT id FROM events WHERE ts >= day',
+      }))
+      expect(result).toEqual([{ id: 2 }])
+    })
+
+    it('should treat an unparseable string as unknown', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: 'SELECT id, ts < day AS lt FROM events',
+      }))
+      expect(result).toEqual([
+        { id: 1, lt: true },
+        { id: 2, lt: false },
+        { id: 3, lt: null },
+      ])
+    })
+
+    it('should compare a timestamp column with CURRENT_DATE', async () => {
+      const data = [
+        { id: 1, ts: new Date('2000-01-01T00:00:00Z') },
+        { id: 2, ts: new Date('3000-01-01T00:00:00Z') },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id FROM data WHERE ts >= CURRENT_DATE',
+      }))
+      expect(result).toEqual([{ id: 2 }])
+    })
+
+    it('should match a timestamp against string values in IN and CASE', async () => {
+      const result = await collect(executeSql({
+        tables: { events },
+        query: `SELECT id,
+          ts IN (day, '2000-01-01') AS hit,
+          CASE ts WHEN day THEN 'same' ELSE 'diff' END AS c
+          FROM events`,
+      }))
+      expect(result).toEqual([
+        { id: 1, hit: false, c: 'diff' },
+        { id: 2, hit: true, c: 'same' },
+        { id: 3, hit: false, c: 'diff' },
+      ])
+    })
+  })
+
   describe('CURRENT_TIME', () => {
     it('should return time in HH:MM:SS.sss format', async () => {
       const result = await collect(executeSql({

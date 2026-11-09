@@ -127,6 +127,18 @@ export function applyBinaryOp(op, a, b) {
   if (a == null || b == null) {
     return null
   }
+  // A string compared with a Date is read as a timestamp, so a string-typed
+  // date (like CURRENT_DATE or a CSV column) compares with a timestamp column.
+  // A string that does not parse makes the comparison UNKNOWN.
+  if (COMPARISON_OPS.has(op)) {
+    if (a instanceof Date && typeof b === 'string') {
+      b = toDate(b)
+      if (!b) return null
+    } else if (b instanceof Date && typeof a === 'string') {
+      a = toDate(a)
+      if (!a) return null
+    }
+  }
   // Compare Date values by their time so distinct instances for the same
   // instant are equal, matching SQL TIMESTAMP semantics rather than JS identity.
   if (a instanceof Date && b instanceof Date) {

@@ -1,4 +1,5 @@
 import { collectBatches } from '../backend/batchAdapters.js'
+import { toDate } from '../expression/date.js'
 
 /**
  * @import { AsyncRow, OrderByItem, QueryResults, SqlPrimitive } from '../types.js'
@@ -164,14 +165,18 @@ export function maxBounds(a, b) {
 
 /**
  * SQL equality for primitives. Two Date instances for the same instant compare
- * equal (JS `==` would compare by identity).
+ * equal (JS `==` would compare by identity), and a string compared with a Date
+ * is read as a timestamp.
  *
  * @param {SqlPrimitive} a
  * @param {SqlPrimitive} b
  * @returns {boolean}
  */
 export function sqlEquals(a, b) {
+  if (a instanceof Date && typeof b === 'string') b = toDate(b)
+  else if (b instanceof Date && typeof a === 'string') a = toDate(a)
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime()
+  if (a instanceof Date || b instanceof Date) return false
   return a == b
 }
 
