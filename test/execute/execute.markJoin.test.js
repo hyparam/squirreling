@@ -217,3 +217,124 @@ describe('mark membership', () => {
     expect(scans).toBe(2)
   })
 })
+
+describe('scalar single join', () => {
+  it('reads an uncorrelated scalar subquery once', async () => {
+    const wanted = trackingSource([{ id: 3 }, { id: 1 }, { id: 2 }])
+    const tables = { items: [{ id: 1 }, { id: 2 }], wanted: wanted.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT id, (SELECT id FROM wanted ORDER BY id LIMIT 1) AS v FROM items' }))).toEqual([
+      { id: 1, v: 1 },
+      { id: 2, v: 1 },
+    ])
+    expect(wanted.getScanCount()).toBe(1)
+  })
+
+  it('returns NULL for an empty scalar subquery', async () => {
+    const tables = { items: [{ id: 1 }], wanted: memorySource({ data: [], columns: ['id'] }) }
+    expect(await collect(executeSql({ tables, query: 'SELECT id, (SELECT id FROM wanted) AS v FROM items' }))).toEqual([{ id: 1, v: null }])
+  })
+
+  it('rejects a scalar subquery with more than one row when read', async () => {
+    const tables = { items: [{ id: 1 }], wanted: [{ id: 1 }, { id: 2 }] }
+    await expect(collect(executeSql({ tables, query: 'SELECT id, (SELECT id FROM wanted) AS v FROM items' }))).rejects.toThrow('Scalar subquery returned more than one row')
+    expect(await collect(executeSql({ tables: { ...tables, items: memorySource({ data: [], columns: ['id'] }) }, query: 'SELECT id, (SELECT id FROM wanted) AS v FROM items' }))).toEqual([])
+  })
+
+  it('joins a correlated scalar subquery on equality keys', async () => {
+    const names = trackingSource([{ id: 1, name: 'a' }, { id: 2, name: 'b' }, { id: 2, name: 'c' }])
+    const tables = { items: [{ id: 1 }, { id: 3 }, { id: null }], names: names.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT id, (SELECT n.name FROM names n WHERE n.id = items.id) AS name FROM items' }))).toEqual([
+      { id: 1, name: 'a' },
+      { id: 3, name: null },
+      { id: null, name: null },
+    ])
+    expect(names.getScanCount()).toBe(1)
+    await expect(collect(executeSql({ tables: { ...tables, items: [{ id: 2 }] }, query: 'SELECT (SELECT n.name FROM names n WHERE n.id = items.id) AS name FROM items' }))).rejects.toThrow('Scalar subquery returned more than one row')
+  })
+
+  it('keeps a correlated DISTINCT scalar on the per-row path', async () => {
+    const tables = { items: memorySource({ data: [{ id: 2 }] }), names: memorySource({ data: [{ id: 2, name: 'b' }, { id: 2, name: 'b' }] }) }
+    const query = 'SELECT (SELECT DISTINCT n.name FROM names n WHERE n.id = items.id) AS name FROM items'
+    const plan = planSql({ query, tables })
+    if (plan.type !== 'Project') throw new Error('expected project')
+    expect(plan.child.type).toBe('Scan')
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ name: 'b' }])
+  })
+
+  it('uses an uncorrelated scalar in a grouped query', async () => {
+    const limits = trackingSource([{ n: 2 }])
+    const tables = { items: [{ g: 'a' }, { g: 'a' }, { g: 'b' }], limits: limits.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT g, COUNT(*) >= (SELECT n FROM limits) AS big FROM items GROUP BY g ORDER BY g' }))).toEqual([
+      { g: 'a', big: true },
+      { g: 'b', big: false },
+    ])
+    expect(limits.getScanCount()).toBe(1)
+  })
+})
+
+describe('mark joins in other clauses', () => {
+  it('filters a WHERE disjunction with one scan', async () => {
+    const wanted = trackingSource([{ id: 2 }, { id: null }])
+    const tables = { items: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: null }], wanted: wanted.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT id FROM items WHERE id = 1 OR id IN (SELECT id FROM wanted)' }))).toEqual([{ id: 1 }, { id: 2 }])
+    expect(await collect(executeSql({ tables, query: 'SELECT id FROM items WHERE id = 1 OR id NOT IN (SELECT id FROM wanted)' }))).toEqual([{ id: 1 }])
+    expect(wanted.getScanCount()).toBe(2)
+  })
+
+  it('filters on a scalar subquery in WHERE', async () => {
+    const limits = trackingSource([{ n: 2 }])
+    const tables = { items: [{ id: 1 }, { id: 2 }, { id: 3 }], limits: limits.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT id FROM items WHERE id >= (SELECT n FROM limits) LIMIT 1' }))).toEqual([{ id: 2 }])
+    expect(limits.getScanCount()).toBe(1)
+  })
+
+  it('keeps marks out of star expansion', async () => {
+    const wanted = trackingSource([{ id: 2 }])
+    const tables = { items: [{ id: 1, v: 'x' }, { id: 2, v: 'y' }], wanted: wanted.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT *, id IN (SELECT id FROM wanted) AS hit FROM items' }))).toEqual([
+      { id: 1, v: 'x', hit: false },
+      { id: 2, v: 'y', hit: true },
+    ])
+    expect(await collect(executeSql({ tables, query: 'SELECT * FROM items WHERE id = 1 OR EXISTS (SELECT id FROM wanted WHERE id = 5)' }))).toEqual([{ id: 1, v: 'x' }])
+    expect(wanted.getScanCount()).toBe(2)
+  })
+
+  it('keeps marks out of qualified stars over joins', async () => {
+    const tables = { a: [{ id: 1, x: 'p' }, { id: 2, x: 'q' }], b: [{ id: 1, y: 'r' }, { id: 2, y: 's' }], wanted: [{ id: 2 }] }
+    expect(await collect(executeSql({ tables, query: 'SELECT a.*, b.y, a.id IN (SELECT id FROM wanted) AS hit FROM a JOIN b ON a.id = b.id ORDER BY a.id' }))).toEqual([
+      { id: 1, x: 'p', y: 'r', hit: false },
+      { id: 2, x: 'q', y: 's', hit: true },
+    ])
+  })
+
+  it('evaluates membership alongside window functions', async () => {
+    const wanted = trackingSource([{ id: 2 }])
+    const tables = { items: [{ id: 1 }, { id: 2 }], wanted: wanted.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT id, ROW_NUMBER() OVER (ORDER BY id DESC) AS rn, id IN (SELECT id FROM wanted) AS hit FROM items ORDER BY id' }))).toEqual([
+      { id: 1, rn: 2, hit: false },
+      { id: 2, rn: 1, hit: true },
+    ])
+    expect(wanted.getScanCount()).toBe(1)
+  })
+
+  it('filters HAVING membership on aggregates above the aggregate', async () => {
+    const counts = trackingSource([{ n: 2 }, { n: null }])
+    const tables = { items: [{ g: 'a' }, { g: 'a' }, { g: 'b' }, { g: 'c' }, { g: 'c' }], counts: counts.source }
+    const query = 'SELECT g, COUNT(*) AS n FROM items GROUP BY g HAVING COUNT(*) IN (SELECT n FROM counts) ORDER BY g'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ g: 'a', n: 2 }, { g: 'c', n: 2 }])
+    expect(counts.getScanCount()).toBe(1)
+    expect(await collect(executeSql({ tables, query: 'SELECT g FROM items GROUP BY g HAVING g = \'b\' OR MAX(g) IN (SELECT \'c\' AS v FROM counts) ORDER BY g' }))).toEqual([{ g: 'b' }, { g: 'c' }])
+    expect(await collect(executeSql({ tables, query: 'SELECT g, COUNT(*) AS n FROM items GROUP BY g HAVING n NOT IN (SELECT n FROM counts WHERE n IS NOT NULL) ORDER BY g' }))).toEqual([{ g: 'b', n: 1 }])
+  })
+
+  it('filters HAVING membership on a scalar aggregate', async () => {
+    const tables = { items: memorySource({ data: [], columns: ['id'] }), counts: [{ n: 0 }] }
+    expect(await collect(executeSql({ tables, query: 'SELECT COUNT(*) AS n FROM items HAVING COUNT(*) IN (SELECT n FROM counts)' }))).toEqual([{ n: 0 }])
+    expect(await collect(executeSql({ tables, query: 'SELECT COUNT(*) AS n FROM items HAVING COUNT(*) NOT IN (SELECT n FROM counts)' }))).toEqual([])
+  })
+
+  it('leaves correlated HAVING membership on aggregates on the per-row path', async () => {
+    const tables = { items: [{ g: 'a' }, { g: 'a' }, { g: 'b' }], counts: [{ g: 'a', n: 2 }, { g: 'b', n: 2 }] }
+    expect(await collect(executeSql({ tables, query: 'SELECT g FROM items GROUP BY g HAVING COUNT(*) IN (SELECT c.n FROM counts c WHERE c.g = items.g) ORDER BY g' }))).toEqual([{ g: 'a' }])
+  })
+})

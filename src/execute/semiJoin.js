@@ -10,14 +10,15 @@ import { yieldToEventLoop } from './yield.js'
  */
 
 /**
- * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number }} Membership
+ * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number, first?: SqlPrimitive }} Membership
  * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership }} MembershipTrie
  */
 
 /**
  * Executes IN / EXISTS membership with one build of the right input per
  * iteration. Filters left rows, or with `mark`, annotates every left row with
- * its result. The trie belongs to this operator, never to the context or AST.
+ * its result. A scalar test is a single join: the mark holds the subquery's
+ * only value. The trie belongs to this operator, never to the context or AST.
  *
  * @param {SemiJoinNode} plan
  * @param {ExecuteContext} context
@@ -90,7 +91,7 @@ async function buildTrie(plan, context, filters) {
   const root = { groups: new Map() }
   // An uncorrelated IN over an empty set is false, not absent.
   if (plan.test === 'in' && !plan.keys) root.membership = emptyMembership()
-  const offset = plan.test === 'in' ? 1 : 0
+  const offset = plan.test === 'exists' ? 0 : 1
   let count = 0
   for await (const inner of executePlan({ plan: plan.right, context }).rows()) {
     context.signal?.throwIfAborted()
@@ -113,6 +114,12 @@ async function buildTrie(plan, context, filters) {
       continue
     }
     const value = await inner.cells[inner.columns[0]]()
+    if (plan.test === 'scalar') {
+      if (!node.membership.count++) node.membership.first = value
+      // Two rows already make an uncorrelated scalar an error.
+      if (!plan.keys && node.membership.count > 1) break
+      continue
+    }
     addValue(node.membership, value)
     if (value != null) filters?.add([value, ...keys])
   }
@@ -136,19 +143,30 @@ function neverPasses(plan, root) {
 
 /**
  * SQL result of the membership test for one left row: three-valued for IN,
- * boolean for EXISTS.
+ * boolean for EXISTS, and the single value (or NULL) for a scalar.
  *
  * @param {SemiJoinNode} plan
  * @param {MembershipTrie} root
  * @param {AsyncRow} row
  * @param {number} rowIndex
  * @param {ExecuteContext} context
- * @returns {Promise<boolean | null>}
+ * @returns {Promise<SqlPrimitive>}
  */
 async function evaluateMembership(plan, root, row, rowIndex, context) {
   const keys = await Promise.all((plan.keys ?? []).map(node => evaluateExpr({ node, row, rowIndex, context })))
   const leaves = keys.some(value => value == null) ? [] : findLeaves(root, keys, 0)
   if (plan.test === 'exists') return leaves.length > 0 !== plan.not
+  if (plan.test === 'scalar') {
+    let count = 0
+    /** @type {SqlPrimitive} */
+    let value = null
+    for (const leaf of leaves) {
+      count += leaf.membership?.count ?? 0
+      value = leaf.membership?.first ?? value
+    }
+    if (count > 1) throw new Error('Scalar subquery returned more than one row')
+    return value
+  }
   const value = await evaluateExpr({ node: plan.expr, row, rowIndex, context })
   /** @type {boolean | null} */
   let matched = false
