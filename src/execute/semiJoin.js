@@ -47,7 +47,7 @@ export function executeSemiJoin(plan, context) {
       let rowIndex = 0
       for await (const row of probe.rows()) {
         context.signal?.throwIfAborted()
-        const index = rowIndex++
+        const index = ++rowIndex
         if (rowIndex % 4000 === 0) await yieldToEventLoop()
         if (mark) {
           /** @type {Promise<SqlPrimitive> | undefined} */
