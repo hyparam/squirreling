@@ -318,6 +318,31 @@ describe('mark joins in other clauses', () => {
     expect(await collect(result)).toEqual([expected])
   })
 
+  it('preserves literal dotted columns in a bare star with a mark', async () => {
+    const tables = { items: [{ id: 1, 'x.y': 7 }], wanted: [{ id: 1 }] }
+    const result = executeSql({ tables, query: 'SELECT *, id IN (SELECT id FROM wanted) AS hit FROM items' })
+    expect(result.columns).toEqual(['id', 'x.y', 'hit'])
+    expect(await collect(result)).toEqual([{ id: 1, 'x.y': 7, hit: true }])
+  })
+
+  it('preserves literal dotted columns in a qualified star with a mark', async () => {
+    const tables = { items: [{ id: 1, 'x.y': 7 }], wanted: [{ id: 1 }] }
+    const result = executeSql({ tables, query: 'SELECT items.*, id IN (SELECT id FROM wanted) AS hit FROM items' })
+    expect(result.columns).toEqual(['id', 'x.y', 'hit'])
+    expect(await collect(result)).toEqual([{ id: 1, 'x.y': 7, hit: true }])
+  })
+
+  it('sorts only groups retained by rewritten HAVING', async () => {
+    const tables = {
+      items: [{ g: 'a', v: 1 }, { g: 'b', v: 2 }, { g: 'c', v: 3 }],
+      wanted: [{ g: 'a' }, { g: 'c' }],
+      ranks: [{ g: 'a', n: 2 }, { g: 'b', n: 0 }, { g: 'b', n: 1 }, { g: 'c', n: 1 }],
+    }
+    const query = 'SELECT g FROM items GROUP BY g HAVING g IN (SELECT g FROM wanted) ORDER BY (SELECT n FROM ranks WHERE ranks.g = items.g)'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ g: 'c' }, { g: 'a' }])
+    expect(await collect(executeSql({ tables, query: 'SELECT g FROM items GROUP BY g HAVING g IN (SELECT g FROM wanted) ORDER BY SUM(v) DESC LIMIT 1' }))).toEqual([{ g: 'c' }])
+  })
+
   it('keeps marks out of qualified stars over joins', async () => {
     const tables = { a: [{ id: 1, x: 'p' }, { id: 2, x: 'q' }], b: [{ id: 1, y: 'r' }, { id: 2, y: 's' }], wanted: [{ id: 2 }] }
     expect(await collect(executeSql({ tables, query: 'SELECT a.*, b.y, a.id IN (SELECT id FROM wanted) AS hit FROM a JOIN b ON a.id = b.id ORDER BY a.id' }))).toEqual([

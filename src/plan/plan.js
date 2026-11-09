@@ -332,7 +332,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   }
   const markJoins = marker?.markJoins ?? []
   // Marks are extra columns on the source rows; stars must not expose them.
-  if (markJoins.length && hasStar) columns = expandStars(columns, sourceNames, sourceAlias)
+  if (markJoins.length && hasStar) columns = expandStars(columns, sourceNames, sourceAlias, select.joins.length > 0)
   const scalar = decorrelateScalars({
     select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns,
     rewriteProjection: !useGrouping && !windows.length,
@@ -388,6 +388,17 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   ) : columns
 
   if (useGrouping) {
+    // Keep group context in lazy output cells, but only read sort keys after
+    // the rewritten HAVING has discarded excluded groups.
+    const deferredOrderBy = havingFilter && select.groupBy.length ? orderBy.map(term => {
+      let name = `__having_order_${hiddenColumns.length}`
+      while (outputs.has(name) || scopeColumns.has(name) || hiddenColumns.some(col => col.alias === name)) name += '_'
+      const { expr } = term
+      hiddenColumns.push({ type: 'derived', expr, alias: name, positionStart: expr.positionStart, positionEnd: expr.positionEnd })
+      /** @type {IdentifierNode} */
+      const key = { type: 'identifier', name, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+      return { ...term, expr: key }
+    }) : undefined
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
     if (select.groupBy.length) {
@@ -399,7 +410,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
         having,
         child: plan,
       }
-      if (orderBy.length) aggregatePlan.orderBy = orderBy
+      if (orderBy.length && !deferredOrderBy) aggregatePlan.orderBy = orderBy
       plan = aggregatePlan
     } else if (!select.having && !select.where && plan.type === 'Scan' && isOwnScan && isAllCountStar(select.columns)) {
       plan = { type: 'Count', table: plan.table, columns: select.columns }
@@ -410,6 +421,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     if (havingMarker && havingFilter) {
       for (const markJoin of havingMarker.markJoins) plan = { ...markJoin, left: plan }
       plan = { type: 'Filter', condition: havingFilter, child: plan }
+      if (deferredOrderBy?.length) plan = { type: 'Sort', orderBy: deferredOrderBy, child: plan }
       // Drop hidden inputs and marks, keeping the output column names.
       plan = {
         type: 'Project',
@@ -499,14 +511,15 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
  * @param {SelectColumn[]} columns
  * @param {string[]} sourceNames - inferred source cell keys
  * @param {string | undefined} sourceAlias
+ * @param {boolean} qualified - whether source keys carry join qualifiers
  * @returns {SelectColumn[]}
  */
-function expandStars(columns, sourceNames, sourceAlias) {
+function expandStars(columns, sourceNames, sourceAlias, qualified) {
   return columns.flatMap(col => {
     if (col.type !== 'star') return [col]
     const position = { positionStart: col.positionStart, positionEnd: col.positionEnd }
     return sourceNames.flatMap(key => {
-      const dot = key.indexOf('.')
+      const dot = qualified ? key.indexOf('.') : -1
       const prefix = dot >= 0 ? key.slice(0, dot) : undefined
       const name = dot >= 0 ? key.slice(dot + 1) : key
       if (col.table && col.table !== (prefix ?? sourceAlias)) return []
