@@ -1,3 +1,4 @@
+import { stringify } from '../execute/utils.js'
 import { ArgValueError } from '../validation/executionErrors.js'
 
 /**
@@ -20,20 +21,25 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
   if (funcName === 'CONCAT') {
     // Returns NULL if any argument is NULL
     if (args.some(a => a == null)) return null
-    if (args.some(a => typeof a === 'object')) {
+    if (args.some(a => a instanceof Date)) {
       throw new ArgValueError({
         ...node,
-        message: 'does not support object arguments',
-        hint: 'Use CAST to convert objects to strings first.',
+        message: 'does not support date arguments',
+        hint: 'Use CAST to convert dates to strings first.',
         rowIndex,
       })
     }
-    return args.map(a => String(a)).join('')
+    return args.map(a => typeof a === 'object' ? stringify(a) : String(a)).join('')
   }
 
   // String first arg
-  const [val] = args
-  if (val == null) return null
+  const [rawVal] = args
+  if (rawVal == null) return null
+  // Objects (JSON columns) coerce to JSON text, the same as CAST(x AS VARCHAR)
+  // and LIKE, so string functions work on them as in DuckDB or MySQL. Arrays
+  // keep their LENGTH as element count.
+  const val = typeof rawVal === 'object' && !(rawVal instanceof Date) &&
+    !(funcName === 'LENGTH' && Array.isArray(rawVal)) ? stringify(rawVal) : rawVal
 
   if (funcName === 'CHR') {
     const codePoint = typeof val === 'number' || typeof val === 'bigint' ? Number(val) : NaN
@@ -66,14 +72,6 @@ export function evaluateStringFunc({ funcName, node, args, rowIndex }) {
     })
   }
 
-  if (typeof val === 'object' && !(val instanceof Date)) {
-    throw new ArgValueError({
-      ...node,
-      message: `does not support ${Array.isArray(val) ? 'array' : 'object'} arguments`,
-      hint: 'Use CAST to convert to a string first.',
-      rowIndex,
-    })
-  }
   const str = String(val)
 
   if (funcName === 'UPPER') {

@@ -107,6 +107,15 @@ describe('string functions', () => {
   })
 
   describe('CONCAT', () => {
+    it('should concatenate object arguments as JSON text', async () => {
+      const data = [{ id: 1, obj: { a: 1 } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT CONCAT(\'x\', obj) AS s FROM data',
+      }))
+      expect(result).toEqual([{ s: 'x{"a":1}' }])
+    })
+
     it('should concatenate two columns', async () => {
       const users = [
         { id: 1, first_name: 'Alice', last_name: 'Smith' },
@@ -300,12 +309,13 @@ describe('string functions', () => {
       }))).rejects.toThrow('LENGTH(string): expected string or array, got number. Use CAST to convert to a string first. (row 1)')
     })
 
-    it('should reject object arguments', async () => {
+    it('should measure object arguments as JSON text', async () => {
       const data = [{ id: 1, obj: { a: 1 } }]
-      await expect(collect(executeSql({
+      const result = await collect(executeSql({
         tables: { data },
-        query: 'SELECT LENGTH(obj) FROM data',
-      }))).rejects.toThrow('LENGTH(string): expected string or array, got object. Use CAST to convert to a string first. (row 1)')
+        query: 'SELECT LENGTH(obj) AS len FROM data',
+      }))
+      expect(result[0].len).toBe(7)
     })
 
     it('should reject date arguments', async () => {
@@ -372,12 +382,13 @@ describe('string functions', () => {
       }))).rejects.toThrow('OCTET_LENGTH(string): expected string, got number. Use CAST to convert to a string first. (row 1)')
     })
 
-    it('should reject object arguments', async () => {
-      const data = [{ id: 1, obj: { a: 1 } }]
-      await expect(collect(executeSql({
+    it('should measure object arguments as JSON text', async () => {
+      const data = [{ id: 1, obj: { a: 'é' } }]
+      const result = await collect(executeSql({
         tables: { data },
-        query: 'SELECT OCTET_LENGTH(obj) FROM data',
-      }))).rejects.toThrow('OCTET_LENGTH(string): expected string, got object. Use CAST to convert to a string first. (row 1)')
+        query: 'SELECT OCTET_LENGTH(obj) AS len FROM data',
+      }))
+      expect(result[0].len).toBe(10)
     })
 
     it('should reject wrong argument count', () => {
@@ -585,6 +596,15 @@ describe('string functions', () => {
   })
 
   describe('SUBSTR', () => {
+    it('should clip object arguments as JSON text', async () => {
+      const data = [{ id: 1, args: { command: 'ls -la' } }]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT SUBSTR(args, 1, 10) AS sub, SUBSTR(args, 1, 10) = SUBSTR(CAST(args AS VARCHAR), 1, 10) AS same FROM data',
+      }))
+      expect(result).toEqual([{ sub: '{"command"', same: true }])
+    })
+
     it('should work as an alias for SUBSTRING', async () => {
       const data = [
         { id: 1, text: 'Hello World' },
