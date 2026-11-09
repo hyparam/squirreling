@@ -6,7 +6,7 @@ import { andPredicate, collectConjuncts } from './predicates.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, IdentifierNode, OrderByItem, SelectColumn, SelectStatement, Statement } from '../types.js'
- * @import { QueryPlan } from './types.js'
+ * @import { QueryPlan, SemiJoinNode } from './types.js'
  */
 
 /**
@@ -153,6 +153,106 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
     select = { ...select, where: scanWhere }
   }
   return { select, columns, orderBy, scalarJoins, scalarWhere }
+}
+
+/**
+ * Replaces IN and EXISTS subqueries in the projection, grouping keys, and
+ * ordering with a column from a mark join, so each subquery runs once per
+ * execution instead of once per row. Uncorrelated subqueries and plain
+ * equality correlations qualify; other correlations, and IN operands that
+ * read aggregate or window results, stay on the per-row path.
+ *
+ * @param {object} options
+ * @param {SelectColumn[]} options.columns
+ * @param {OrderByItem[]} options.orderBy
+ * @param {ExprNode[]} options.groupBy
+ * @param {string[]} options.scopeAliases
+ * @param {Set<string>} options.scopeColumns
+ * @param {(query: Statement) => QueryPlan} options.planQuery
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @returns {{ columns: SelectColumn[], orderBy: OrderByItem[], groupBy: ExprNode[], markJoins: Omit<SemiJoinNode, 'left'>[] }}
+ */
+export function planMarkJoins({ columns, orderBy, groupBy, scopeAliases, scopeColumns, planQuery, tables, cteColumns }) {
+  /** @type {Omit<SemiJoinNode, 'left'>[]} */
+  const markJoins = []
+  // The same node can appear in several clauses (GROUP BY 1, aliases).
+  /** @type {Map<ExprNode, IdentifierNode>} */
+  const marks = new Map()
+  let rewrites = 0
+  /**
+   * @param {ExprNode} expr
+   * @returns {ExprNode}
+   */
+  function rewriteMembership(expr) {
+    const existing = marks.get(expr)
+    if (existing) {
+      rewrites++
+      return existing
+    }
+    let name = `__mark_${markJoins.length}`
+    while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
+    const join = planMembership(expr, name)
+    if (!join) return expr
+    markJoins.push(join)
+    /** @type {IdentifierNode} */
+    const mark = { type: 'identifier', name, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+    marks.set(expr, mark)
+    rewrites++
+    return mark
+  }
+  /**
+   * @param {ExprNode} expr
+   * @param {string} name
+   * @returns {Omit<SemiJoinNode, 'left'> | undefined}
+   */
+  function planMembership(expr, name) {
+    if (expr.type === 'in' && (findAggregate(expr.expr) || findWindow(expr.expr))) return
+    if (expr.type !== 'in' && expr.type !== 'exists' && expr.type !== 'not exists') return
+    const query = expr.subquery
+    /** @type {SemiJoinNode['mark']} */
+    const mark = { name, test: expr.type === 'in' ? 'in' : 'exists' }
+    /** @type {ExprNode} */
+    const operand = expr.type === 'in' ? expr.expr : { type: 'literal', value: null, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+    const not = expr.type === 'not exists'
+    /** @type {IdentifierNode[]} */
+    const correlated = []
+    collectColumnsFromExpr({ type: 'subquery', subquery: query, positionStart: expr.positionStart, positionEnd: expr.positionEnd }, correlated, undefined, {
+      tables, cteColumns, outerAliases: new Set(scopeAliases),
+    })
+    if (!correlated.length) {
+      const scope = statementScope(query)
+      const right = planQuery(query)
+      return {
+        type: 'SemiJoin', expr: operand, not, mark,
+        right: scope ? { type: 'Subquery', child: right, scope } : right,
+      }
+    }
+    // Equality correlations become join keys. For IN, the right input
+    // carries the membership value ahead of the keys.
+    const value = query.type === 'select' && query.columns.length === 1 ? query.columns[0] : undefined
+    if (expr.type === 'in' && value?.type !== 'derived') return
+    const keys = decorrelateExists(query, scopeAliases, tables, cteColumns)
+    if (!keys) return
+    const columns = value?.type === 'derived' && expr.type === 'in'
+      ? [{ ...value, alias: '__mark_value' }, ...keys.query.columns]
+      : keys.query.columns
+    const right = planQuery({ ...keys.query, columns })
+    return {
+      type: 'SemiJoin', expr: operand, keys: keys.left, not, mark,
+      right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
+    }
+  }
+  columns = columns.map(col => {
+    if (col.type !== 'derived') return col
+    const before = rewrites
+    const expr = mapScalarExpressions(col.expr, rewriteMembership)
+    if (rewrites === before) return col
+    return { ...col, alias: col.alias ?? derivedAlias(col.expr), expr }
+  })
+  groupBy = groupBy.map(expr => mapScalarExpressions(expr, rewriteMembership))
+  orderBy = orderBy.map(term => ({ ...term, expr: mapScalarExpressions(term.expr, rewriteMembership) }))
+  return { columns, orderBy, groupBy, markJoins }
 }
 
 /**

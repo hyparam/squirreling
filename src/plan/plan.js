@@ -8,7 +8,7 @@ import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
-import { decorrelateExists, decorrelateScalars } from './subqueries.js'
+import { decorrelateExists, decorrelateScalars, planMarkJoins } from './subqueries.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -301,6 +301,24 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     }
     select = { ...select, where: residual }
   }
+  // Membership tests outside WHERE become mark joins: one build of the
+  // subquery per execution, read back as a boolean column.
+  /** @type {Omit<SemiJoinNode, 'left'>[]} */
+  let markJoins = []
+  // Resolve SELECT aliases in GROUP BY expressions at plan time
+  let groupBy = aliases.size > 0
+    ? select.groupBy.map(expr => resolveAliases(expr, aliases))
+    : select.groupBy
+  if (!outerScope?.length && !windows.length && !columns.some(col => col.type === 'star')) {
+    const marked = planMarkJoins({
+      columns, orderBy, groupBy, scopeAliases, scopeColumns, tables, cteColumns,
+      planQuery: query => planStatement({ stmt: query, tables, ctePlans, cteColumns }),
+    })
+    columns = marked.columns
+    orderBy = marked.orderBy
+    groupBy = marked.groupBy
+    markJoins = marked.markJoins
+  }
   const scalar = decorrelateScalars({
     select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns,
     rewriteProjection: !useGrouping && !windows.length,
@@ -341,6 +359,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   }
 
   for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
+  for (const markJoin of markJoins) plan = { ...markJoin, left: plan }
 
   for (const joinScalar of scalarJoins) plan = joinScalar(plan)
   if (scalarWhere) plan = { type: 'Filter', condition: scalarWhere, child: plan }
@@ -357,10 +376,6 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
     if (select.groupBy.length) {
-      // Resolve SELECT aliases in GROUP BY expressions at plan time
-      const groupBy = aliases.size > 0
-        ? select.groupBy.map(expr => resolveAliases(expr, aliases))
-        : select.groupBy
       /** @type {QueryPlan} */
       const aggregatePlan = {
         type: 'HashAggregate',

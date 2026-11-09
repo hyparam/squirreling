@@ -101,7 +101,8 @@ export interface ScalarAggregateNode {
 }
 
 // Join nodes
-// WHERE IN / NOT IN: retain left rows using membership in the right output.
+// WHERE IN / NOT IN: retain left rows using membership in the right output,
+// or with `mark`, annotate every left row with its membership.
 export interface SemiJoinNode {
   type: 'SemiJoin'
   left: QueryPlan
@@ -110,6 +111,10 @@ export interface SemiJoinNode {
   // EXISTS equality keys; NOT uses anti-join rather than NOT IN null semantics.
   keys?: ExprNode[]
   not: boolean
+  // Mark join: keep every left row and add a column holding the IN
+  // (three-valued) or EXISTS result, for membership tests outside WHERE.
+  // With keys, the right input yields [value (IN only), ...keys].
+  mark?: { name: string, test: 'in' | 'exists' }
 }
 
 export interface HashJoinNode {
