@@ -38,11 +38,18 @@ export function applyCast(node, value, rowIndex) {
     return isNaN(number) ? null : number
   }
   if (toType === 'BOOLEAN' || toType === 'BOOL') return Boolean(value)
+  let date
   if (typeof value === 'number' || typeof value === 'bigint') {
-    const date = new Date(Number(value))
-    return isNaN(date.getTime()) ? null : date
+    date = new Date(Number(value))
+    if (isNaN(date.getTime())) return null
+  } else {
+    date = toDate(value)
   }
-  return toDate(value)
+  // DATE truncates to midnight UTC
+  if (date && toType === 'DATE') {
+    date = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  }
+  return date
 }
 
 /**

@@ -100,6 +100,45 @@ describe('CAST calls', () => {
     ])
   })
 
+  it('should handle CAST to DATE', async () => {
+    const data = [
+      { v: '2024-06-15T13:45:00Z' },
+      { v: '2024-06-15' },
+      { v: 1718459100000 },
+      { v: new Date('2024-06-15T13:45:00Z') },
+      { v: null },
+      { v: 'not a date' },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT CAST(v AS DATE) as d FROM data',
+    }))
+    expect(result.map(r => r.d)).toEqual([
+      new Date('2024-06-15T00:00:00Z'),
+      new Date('2024-06-15T00:00:00Z'),
+      new Date('2024-06-15T00:00:00Z'),
+      new Date('2024-06-15T00:00:00Z'),
+      null,
+      null,
+    ])
+  })
+
+  it('should compare against a DATE literal', async () => {
+    const data = [
+      { ts: new Date('2024-06-14T23:00:00Z') },
+      { ts: new Date('2024-06-15T00:00:00Z') },
+      { ts: new Date('2024-06-16T08:00:00Z') },
+    ]
+    const result = await collect(executeSql({
+      tables: { data },
+      query: 'SELECT ts FROM data WHERE CAST(ts AS DATE) = DATE \'2024-06-15\' OR ts > CAST(\'2024-06-16\' AS DATE)',
+    }))
+    expect(result.map(r => r.ts)).toEqual([
+      new Date('2024-06-15T00:00:00Z'),
+      new Date('2024-06-16T08:00:00Z'),
+    ])
+  })
+
   it('should round-trip CAST TIMESTAMP through BIGINT', async () => {
     const data = [{ ts: new Date('2024-01-01T00:00:00Z') }]
     const result = await collect(executeSql({
