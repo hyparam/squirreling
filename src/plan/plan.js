@@ -297,12 +297,12 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const hiddenColumns = []
   /** @type {ExprNode | undefined} */
   let havingFilter
+  const outputs = new Set(columns.map(col => col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : ''))
   const havingMarker = marker && having && !hasStar ? markJoinPlanner({
-    prefix: '__having_mark_', scopeAliases, scopeColumns, tables, cteColumns, planQuery,
+    prefix: '__having_mark_', scopeAliases, scopeColumns: new Set([...scopeColumns, ...outputs]), tables, cteColumns, planQuery,
     uncorrelatedOnly: true, scalarAggregates: true,
   }) : undefined
   if (havingMarker && having) {
-    const outputs = new Set(columns.map(col => col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : ''))
     /** @type {ExprNode[]} */
     const terms = []
     collectConjuncts(having, terms)

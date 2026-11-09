@@ -346,6 +346,12 @@ describe('mark joins in other clauses', () => {
     expect(await collect(executeSql({ tables, query: 'SELECT g, COUNT(*) AS n FROM items GROUP BY g HAVING n NOT IN (SELECT n FROM counts WHERE n IS NOT NULL) ORDER BY g' }))).toEqual([{ g: 'b', n: 1 }])
   })
 
+  it('preserves output aliases that collide with HAVING mark names', async () => {
+    const tables = { items: [{ id: 1 }, { id: 2 }], counts: [{ n: 1 }] }
+    const query = 'SELECT COUNT(*) AS __having_mark_0, COUNT(*) AS __having_mark_0_ FROM items HAVING COUNT(*) > (SELECT n FROM counts)'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ __having_mark_0: 2, __having_mark_0_: 2 }])
+  })
+
   it('filters HAVING membership on a scalar aggregate', async () => {
     const tables = { items: memorySource({ data: [], columns: ['id'] }), counts: [{ n: 0 }] }
     expect(await collect(executeSql({ tables, query: 'SELECT COUNT(*) AS n FROM items HAVING COUNT(*) IN (SELECT n FROM counts)' }))).toEqual([{ n: 0 }])
