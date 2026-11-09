@@ -8,6 +8,18 @@ import { parseSql } from '../../src/parse/parse.js'
  */
 
 describe('IN semi-join', () => {
+  it.each([
+    'SELECT CHR(id) IN (SELECT id FROM b) FROM a',
+    'SELECT id FROM a WHERE CHR(id) IN (SELECT id FROM b)',
+  ])('reports one-based row indexes for %s', async query => {
+    for (const ids of [[-1], [65, -1]]) {
+      const tables = { a: ids.map(id => ({ id })), b: [{ id: 'A' }] }
+      await expect(collect(executeSql({ tables, query }))).rejects.toThrow(
+        `CHR(code_point): expected a Unicode scalar value (0..0x10ffff, excluding surrogates) (row ${ids.length})`
+      )
+    }
+  })
+
   it('scans once per iteration and keeps reusable plans and ASTs stateless', async () => {
     const data = [{ id: 2 }, { id: null }]
     const source = memorySource({ data })

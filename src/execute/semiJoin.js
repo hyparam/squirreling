@@ -5,59 +5,228 @@ import { sqlEquals } from './utils.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
- * @import { KeyTrie } from '../internalTypes.js'
- * @import { ExecuteContext, QueryResults, SqlPrimitive } from '../types.js'
+ * @import { AsyncRow, ExecuteContext, ExprNode, QueryResults, SqlPrimitive } from '../types.js'
  * @import { SemiJoinNode } from '../plan/types.js'
  */
 
 /**
- * Executes WHERE IN / NOT IN with one build of the right input per iteration.
- * The membership set belongs to this operator, never to the context or AST.
+ * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number }} Membership
+ * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership }} MembershipTrie
+ */
+
+/**
+ * Executes IN / EXISTS membership with one build of the right input per
+ * iteration. Filters left rows, or with `mark`, annotates every left row with
+ * its result. The trie belongs to this operator, never to the context or AST.
  *
  * @param {SemiJoinNode} plan
  * @param {ExecuteContext} context
  * @returns {QueryResults}
  */
 export function executeSemiJoin(plan, context) {
-  if (plan.keys) return executeExistsJoin(plan, context)
   const left = executePlan({ plan: plan.left, context: { ...context, deferScans: true } })
+  const { mark } = plan
+  // Only a positive filter can prune the left input by right-side values.
+  const pruneKeys = !mark && !plan.not ? filterKeys(plan) : []
   return {
-    columns: left.columns,
+    columns: mark ? [...left.columns, mark] : left.columns,
+    numRows: mark ? left.numRows : undefined,
     maxRows: left.maxRows,
     async *rows() {
-      /** @type {Map<string, Set<SqlPrimitive>>} */
-      const values = new Map()
-      let hasNull = false
-      let count = 0
-      let rowIndex = 0
-      const filters = dynamicFilter(1)
-      for await (const inner of executePlan({ plan: plan.right, context }).rows()) {
-        context.signal?.throwIfAborted()
-        if (++count % 4000 === 0) await yieldToEventLoop()
-        const value = await inner.cells[inner.columns[0]]()
-        if (value == null) hasNull = true
-        else {
-          const type = typeof value
-          let group = values.get(type)
-          if (!group) values.set(type, group = new Set())
-          group.add(value)
-          if (!plan.not) filters.add([value])
-        }
-      }
-      if (!plan.not && !values.size || plan.not && hasNull) return
+      const filters = dynamicFilter(pruneKeys.length)
+      // Mark joins only need membership when a consumer reads a mark cell.
+      // Share the pending build across rows, including concurrent cell reads.
+      /** @type {Promise<MembershipTrie> | undefined} */
+      let build
+      const root = mark ? undefined : await buildTrie(plan, context, pruneKeys.length ? filters : undefined)
+      if (root && neverPasses(plan, root)) return
       const probe = executePlan({
-        plan: plan.not ? plan.left : filters.apply(plan.left, [plan.expr]),
+        plan: pruneKeys.length ? filters.apply(plan.left, pruneKeys) : plan.left,
         context: { ...context, deferScans: true },
       })
+      let rowIndex = 0
       for await (const row of probe.rows()) {
         context.signal?.throwIfAborted()
-        if (++rowIndex % 4000 === 0) await yieldToEventLoop()
-        const value = await evaluateExpr({ node: plan.expr, row, rowIndex, context })
-        const matched = count === 0 ? false : value == null ? null : contains(values, value) ? true : hasNull ? null : false
-        if (matched !== null && matched !== plan.not) yield row
+        const index = ++rowIndex
+        if (rowIndex % 4000 === 0) await yieldToEventLoop()
+        if (mark) {
+          /** @type {Promise<SqlPrimitive> | undefined} */
+          let result
+          yield {
+            columns: [...row.columns, mark],
+            cells: { ...row.cells, [mark]: () => result ??= (build ??= buildTrie(plan, context)).then(root => evaluateMembership(plan, root, row, index, context)) },
+          }
+        } else if (root && await evaluateMembership(plan, root, row, index, context)) {
+          yield row
+        }
       }
     },
   }
+}
+
+/**
+ * Left expressions whose values must appear on the right for a row to pass.
+ *
+ * @param {SemiJoinNode} plan
+ * @returns {ExprNode[]}
+ */
+function filterKeys(plan) {
+  const keys = plan.keys ?? []
+  return plan.test === 'in' ? [plan.expr, ...keys] : keys
+}
+
+/**
+ * Reads the right input once. Correlation keys index the trie; each leaf
+ * holds the IN values for its key. Rows with a NULL key can never satisfy the
+ * equality, so they are skipped. Uncorrelated EXISTS stops at the first row.
+ *
+ * @param {SemiJoinNode} plan
+ * @param {ExecuteContext} context
+ * @param {ReturnType<typeof dynamicFilter>} [filters]
+ * @returns {Promise<MembershipTrie>}
+ */
+async function buildTrie(plan, context, filters) {
+  /** @type {MembershipTrie} */
+  const root = { groups: new Map() }
+  // An uncorrelated IN over an empty set is false, not absent.
+  if (plan.test === 'in' && !plan.keys) root.membership = emptyMembership()
+  const offset = plan.test === 'in' ? 1 : 0
+  let count = 0
+  for await (const inner of executePlan({ plan: plan.right, context }).rows()) {
+    context.signal?.throwIfAborted()
+    if (++count % 4000 === 0) await yieldToEventLoop()
+    const keys = plan.keys ? await Promise.all(inner.columns.slice(offset).map(col => inner.cells[col]())) : []
+    if (keys.some(value => value == null)) continue
+    let node = root
+    for (const key of keys) {
+      const type = typeof key
+      let group = node.groups.get(type)
+      if (!group) node.groups.set(type, group = new Map())
+      let child = group.get(key)
+      if (!child) group.set(key, child = { groups: new Map() })
+      node = child
+    }
+    node.membership ??= emptyMembership()
+    if (plan.test === 'exists') {
+      filters?.add(keys)
+      if (!plan.keys) break
+      continue
+    }
+    const value = await inner.cells[inner.columns[0]]()
+    addValue(node.membership, value)
+    if (value != null) filters?.add([value, ...keys])
+  }
+  return root
+}
+
+/**
+ * True when no left row can pass the filter, so the left input is never read.
+ *
+ * @param {SemiJoinNode} plan
+ * @param {MembershipTrie} root
+ * @returns {boolean}
+ */
+function neverPasses(plan, root) {
+  if (plan.keys) return !plan.not && !root.groups.size
+  const { membership } = root
+  if (plan.test === 'exists') return plan.not === !!membership
+  // IN needs a non-NULL value; NOT IN fails for every row once a NULL is seen.
+  return plan.not ? !!membership?.hasNull : !membership?.values.size
+}
+
+/**
+ * SQL result of the membership test for one left row: three-valued for IN,
+ * boolean for EXISTS.
+ *
+ * @param {SemiJoinNode} plan
+ * @param {MembershipTrie} root
+ * @param {AsyncRow} row
+ * @param {number} rowIndex
+ * @param {ExecuteContext} context
+ * @returns {Promise<boolean | null>}
+ */
+async function evaluateMembership(plan, root, row, rowIndex, context) {
+  const keys = await Promise.all((plan.keys ?? []).map(node => evaluateExpr({ node, row, rowIndex, context })))
+  const leaves = keys.some(value => value == null) ? [] : findLeaves(root, keys, 0)
+  if (plan.test === 'exists') return leaves.length > 0 !== plan.not
+  const value = await evaluateExpr({ node: plan.expr, row, rowIndex, context })
+  /** @type {boolean | null} */
+  let matched = false
+  for (const leaf of leaves) {
+    const found = leaf.membership && matches(leaf.membership, value)
+    if (found) {
+      matched = true
+      break
+    }
+    if (found === null) matched = null
+  }
+  return plan.not && matched !== null ? !matched : matched
+}
+
+/**
+ * Collects every leaf whose key path SQL-equals the given values.
+ * Same-type primitives use a direct lookup; cross-type values and Dates fall
+ * back to the evaluator's coercive equality.
+ *
+ * @param {MembershipTrie} node
+ * @param {SqlPrimitive[]} values
+ * @param {number} index
+ * @returns {MembershipTrie[]}
+ */
+function findLeaves(node, values, index) {
+  if (index === values.length) return node.membership ? [node] : []
+  const value = values[index]
+  const type = typeof value
+  /** @type {MembershipTrie[]} */
+  const leaves = []
+  if (type !== 'object' && !Number.isNaN(value)) {
+    const child = node.groups.get(type)?.get(value)
+    if (child) leaves.push(...findLeaves(child, values, index + 1))
+  }
+  for (const [valueType, group] of node.groups) {
+    if (valueType === type && type !== 'object') continue
+    for (const [candidate, child] of group) {
+      if (sqlEquals(value, candidate)) leaves.push(...findLeaves(child, values, index + 1))
+    }
+  }
+  return leaves
+}
+
+/**
+ * @returns {Membership}
+ */
+function emptyMembership() {
+  return { values: new Map(), hasNull: false, count: 0 }
+}
+
+/**
+ * @param {Membership} membership
+ * @param {SqlPrimitive} value
+ */
+function addValue(membership, value) {
+  membership.count++
+  if (value == null) {
+    membership.hasNull = true
+    return
+  }
+  const type = typeof value
+  let group = membership.values.get(type)
+  if (!group) membership.values.set(type, group = new Set())
+  group.add(value)
+}
+
+/**
+ * SQL three-valued IN result for one probe value.
+ *
+ * @param {Membership} membership
+ * @param {SqlPrimitive} value
+ * @returns {boolean | null}
+ */
+function matches({ values, hasNull, count }, value) {
+  if (count === 0) return false
+  if (value == null) return null
+  if (contains(values, value)) return true
+  return hasNull ? null : false
 }
 
 /**
@@ -75,79 +244,6 @@ function contains(values, value) {
     if (valueType === type && type !== 'object') continue
     for (const candidate of group) {
       if (sqlEquals(value, candidate)) return true
-    }
-  }
-  return false
-}
-
-/**
- * Builds a tuple membership trie once. Type partitions preserve the evaluator's
- * coercive equality without making same-type primitive lookups linear.
- *
- * @param {SemiJoinNode} plan
- * @param {ExecuteContext} context
- * @returns {QueryResults}
- */
-function executeExistsJoin(plan, context) {
-  const left = executePlan({ plan: plan.left, context: { ...context, deferScans: true } })
-  return {
-    columns: left.columns,
-    maxRows: left.maxRows,
-    async *rows() {
-      /** @type {KeyTrie} */
-      const root = { groups: new Map() }
-      let count = 0
-      const filters = dynamicFilter(plan.keys?.length ?? 0)
-      for await (const inner of executePlan({ plan: plan.right, context }).rows()) {
-        context.signal?.throwIfAborted()
-        if (++count % 4000 === 0) await yieldToEventLoop()
-        const values = await Promise.all(inner.columns.map(col => inner.cells[col]()))
-        if (values.some(value => value == null)) continue
-        if (!plan.not) filters.add(values)
-        let node = root
-        for (const value of values) {
-          const type = typeof value
-          let group = node.groups.get(type)
-          if (!group) node.groups.set(type, group = new Map())
-          let child = group.get(value)
-          if (!child) group.set(value, child = { groups: new Map() })
-          node = child
-        }
-      }
-      if (!plan.not && !root.groups.size) return
-      const probe = executePlan({
-        plan: plan.not ? plan.left : filters.apply(plan.left, plan.keys ?? []),
-        context: { ...context, deferScans: true },
-      })
-      for await (const row of probe.rows()) {
-        context.signal?.throwIfAborted()
-        if (++count % 4000 === 0) await yieldToEventLoop()
-        const values = await Promise.all((plan.keys ?? []).map(node => evaluateExpr({ node, row, context })))
-        const matched = !values.some(value => value == null) && matchesKeys(root, values, 0)
-        if (matched !== plan.not) yield row
-      }
-    },
-  }
-}
-
-/**
- * @param {KeyTrie} node
- * @param {SqlPrimitive[]} values
- * @param {number} index
- * @returns {boolean}
- */
-function matchesKeys(node, values, index) {
-  if (index === values.length) return true
-  const value = values[index]
-  const type = typeof value
-  if (type !== 'object' && !Number.isNaN(value)) {
-    const child = node.groups.get(type)?.get(value)
-    if (child && matchesKeys(child, values, index + 1)) return true
-  }
-  for (const [valueType, group] of node.groups) {
-    if (valueType === type && type !== 'object') continue
-    for (const [candidate, child] of group) {
-      if (sqlEquals(value, candidate) && matchesKeys(child, values, index + 1)) return true
     }
   }
   return false

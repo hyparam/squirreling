@@ -101,15 +101,21 @@ export interface ScalarAggregateNode {
 }
 
 // Join nodes
-// WHERE IN / NOT IN: retain left rows using membership in the right output.
+// IN / EXISTS membership against a right input read once per iteration.
+// Filters left rows by default; with `mark`, keeps every left row and adds
+// a column holding the result instead. Equality correlations become keys,
+// and the right input then yields [value (IN only), ...keys].
 export interface SemiJoinNode {
   type: 'SemiJoin'
+  test: 'in' | 'exists'
   left: QueryPlan
   right: QueryPlan
+  // IN operand; a placeholder for EXISTS
   expr: ExprNode
-  // EXISTS equality keys; NOT uses anti-join rather than NOT IN null semantics.
   keys?: ExprNode[]
+  // NOT IN keeps three-valued NULL semantics; NOT EXISTS is an anti-join
   not: boolean
+  mark?: string
 }
 
 export interface HashJoinNode {

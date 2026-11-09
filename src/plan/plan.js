@@ -8,7 +8,7 @@ import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
-import { decorrelateExists, decorrelateScalars } from './subqueries.js'
+import { decorrelateScalars, planMarkJoins, planMembership } from './subqueries.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -233,6 +233,13 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   if (hints.columns?.length === 0 && select.from?.type === 'subquery') {
     hints.columns = undefined
   }
+  /**
+   * @param {Statement} query
+   * @returns {QueryPlan}
+   */
+  function planQuery(query) {
+    return planStatement({ stmt: query, tables, ctePlans, cteColumns })
+  }
   // A WHERE membership test is a semi-join, not a row-by-row expression
   // subquery. Keep the original SELECT for column demand analysis above.
   /** @type {Omit<SemiJoinNode, 'left'>[]} */
@@ -246,60 +253,29 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     for (const conjunct of conjuncts) {
       const not = conjunct.type === 'unary' && conjunct.op === 'NOT'
       const expr = not ? conjunct.argument : conjunct
-      if (expr.type === 'exists' || expr.type === 'not exists') {
-        const keys = decorrelateExists(expr.subquery, scopeAliases, tables, cteColumns)
-        if (keys) {
-          const right = planStatement({ stmt: keys.query, tables, ctePlans, cteColumns })
-          semiJoins.push({
-            type: 'SemiJoin',
-            expr: keys.left[0],
-            keys: keys.left,
-            not: not !== (expr.type === 'not exists'),
-            right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
-          })
-          continue
-        }
-      }
-      if (expr.type !== 'in') {
-        residual = andPredicate(residual, conjunct)
-        continue
-      }
-      /** @type {IdentifierNode[]} */
-      const correlated = []
-      collectColumnsFromExpr({ type: 'subquery', subquery: expr.subquery, positionStart: expr.positionStart, positionEnd: expr.positionEnd }, correlated, undefined, {
-        tables, cteColumns, outerAliases: new Set(scopeAliases),
-      })
-      if (correlated.length) {
-        // Positive correlated IN is EXISTS with an extra equality. NOT IN
-        // needs three-valued membership semantics and stays on the fallback.
-        // Unqualified operands must stay in the outer scope: moving them
-        // into the subquery could bind them to an inner column instead.
-        const sub = expr.subquery
-        const column = sub.type === 'select' && sub.columns.length === 1 ? sub.columns[0] : undefined
-        if (!not && sub.type === 'select' && column?.type === 'derived' &&
-            column.expr.type === 'identifier' && expr.expr.type === 'identifier' && expr.expr.prefix) {
-          /** @type {ExprNode} */
-          const equality = { type: 'binary', op: '=', left: column.expr, right: expr.expr, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
-          const keys = decorrelateExists({ ...sub, where: andPredicate(sub.where, equality) }, scopeAliases, tables, cteColumns)
-          if (keys) {
-            const right = planStatement({ stmt: keys.query, tables, ctePlans, cteColumns })
-            semiJoins.push({ type: 'SemiJoin', expr: keys.left[0], keys: keys.left, not: false, right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] } })
-            continue
-          }
-        }
-        residual = andPredicate(residual, conjunct)
-        continue
-      }
-      const right = planStatement({ stmt: expr.subquery, tables, ctePlans, cteColumns })
-      const scope = statementScope(expr.subquery)
-      semiJoins.push({
-        type: 'SemiJoin',
-        expr: expr.expr,
-        not,
-        right: scope ? { type: 'Subquery', child: right, scope } : right,
-      })
+      const join = planMembership({ expr, scopeAliases, tables, cteColumns, planQuery })
+      if (join) semiJoins.push({ ...join, not: not !== (expr.type === 'not exists') })
+      else residual = andPredicate(residual, conjunct)
     }
     select = { ...select, where: residual }
+  }
+  // Membership tests outside WHERE become mark joins: one build of the
+  // subquery per execution, read back as a boolean column.
+  /** @type {Omit<SemiJoinNode, 'left'>[]} */
+  let markJoins = []
+  // Resolve SELECT aliases in GROUP BY expressions at plan time
+  let groupBy = aliases.size > 0
+    ? select.groupBy.map(expr => resolveAliases(expr, aliases))
+    : select.groupBy
+  if (!outerScope?.length && !windows.length && !columns.some(col => col.type === 'star')) {
+    const marked = planMarkJoins({
+      columns, orderBy, groupBy, scopeAliases, scopeColumns, tables, cteColumns, planQuery,
+      scalarAggregate: hasAggregate && !groupBy.length,
+    })
+    columns = marked.columns
+    orderBy = marked.orderBy
+    groupBy = marked.groupBy
+    markJoins = marked.markJoins
   }
   const scalar = decorrelateScalars({
     select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns,
@@ -341,6 +317,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   }
 
   for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
+  for (const markJoin of markJoins) plan = { ...markJoin, left: plan }
 
   for (const joinScalar of scalarJoins) plan = joinScalar(plan)
   if (scalarWhere) plan = { type: 'Filter', condition: scalarWhere, child: plan }
@@ -357,10 +334,6 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
     if (select.groupBy.length) {
-      // Resolve SELECT aliases in GROUP BY expressions at plan time
-      const groupBy = aliases.size > 0
-        ? select.groupBy.map(expr => resolveAliases(expr, aliases))
-        : select.groupBy
       /** @type {QueryPlan} */
       const aggregatePlan = {
         type: 'HashAggregate',
