@@ -202,9 +202,10 @@ describe('uncorrelated scalar aggregate joins', () => {
   it.each([
     ['select c.k from c where c.k = (select max(x) from r group by j having max(x) = 9) - 8', [{ k: 1 }]],
     ['select c.k from c where c.k < (select max(x) from r limit 1) - 6', [{ k: 1 }, { k: 2 }]],
-  ])('keeps grouped and limited subqueries on the per-row path: %s', async (query, expected) => {
+  ])('shares grouped and limited scalar results without lifting them into joins: %s', async (query, expected) => {
     const { source: r, scans } = counted(tables.r)
+    expect(JSON.stringify(planSql({ tables: { ...tables, r }, query }))).not.toContain('NestedLoopJoin')
     expect(await collect(executeSql({ tables: { ...tables, r }, query }))).toEqual(expected)
-    expect(scans.length).toBeGreaterThan(1)
+    expect(scans).toHaveLength(1)
   })
 })

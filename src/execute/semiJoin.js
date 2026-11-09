@@ -68,7 +68,7 @@ export function executeSemiJoin(plan, context) {
  * @param {SqlPrimitive} value
  * @returns {boolean}
  */
-function contains(values, value) {
+export function contains(values, value) {
   const type = typeof value
   if (type !== 'object' && !(typeof value === 'number' && Number.isNaN(value)) && values.get(type)?.has(value)) return true
   for (const [valueType, group] of values) {

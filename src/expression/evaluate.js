@@ -1,4 +1,7 @@
 import { executeStatement } from '../execute/execute.js'
+import { foldEvaluatedRows } from '../execute/fold.js'
+import { contains } from '../execute/semiJoin.js'
+import { checkExecution, runSubquery } from '../execute/subqueries.js'
 import { isPlainObject, keyify, sqlEquals } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 import { ArgValueError, ExecutionError } from '../validation/executionErrors.js'
@@ -32,23 +35,12 @@ const YIELD_INTERVAL = 4000
  */
 export async function evaluateAll(node, rows, context) {
   /** @type {SqlPrimitive[]} */
-  const results = new Array(rows.length)
-  /** @type {Promise<SqlPrimitive>[]} */
-  const pending = new Array(Math.min(YIELD_INTERVAL, rows.length))
-  for (let i = 0; i < rows.length; i += YIELD_INTERVAL) {
-    if (i > 0) {
-      await yieldToEventLoop()
-      context.signal?.throwIfAborted()
-    }
-    const end = Math.min(i + YIELD_INTERVAL, rows.length)
-    const chunkLen = end - i
-    pending.length = chunkLen
-    for (let j = 0; j < chunkLen; j++) {
-      pending[j] = evaluateExpr({ node, row: rows[i + j], context })
-    }
-    const chunk = await Promise.all(pending)
-    for (let j = 0; j < chunkLen; j++) results[i + j] = chunk[j]
-  }
+  const results = []
+  await foldEvaluatedRows({
+    rows, signal: context.signal,
+    evaluate: row => evaluateExpr({ node, row, context }),
+    fold(value) { results.push(value) },
+  })
   return results
 }
 
@@ -64,6 +56,8 @@ export async function evaluateAll(node, rows, context) {
  * @returns {Promise<SqlPrimitive>} The result of the evaluation
  */
 export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
+  const pause = checkExecution(context)
+  if (pause) await pause
   if (node.type === 'literal') {
     return node.value
   }
@@ -153,19 +147,21 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
 
   // Scalar subquery - returns a single value
   if (node.type === 'subquery') {
-    const outerScope = context.scope
-    const subContext = outerScope
-      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
-      : context
-    const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
-    try {
-      const { value } = await gen.next()
-      if (!value) return null
-      if (!(await gen.next()).done) throw new Error('Scalar subquery returned more than one row')
-      return await value.cells[value.columns[0]]()
-    } finally {
-      await gen.return(undefined)
-    }
+    return runSubquery(node, context, async () => {
+      const outerScope = context.scope
+      const subContext = outerScope
+        ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+        : context
+      const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
+      try {
+        const { value } = await gen.next()
+        if (!value) return null
+        if (!(await gen.next()).done) throw new Error('Scalar subquery returned more than one row')
+        return await value.cells[value.columns[0]]()
+      } finally {
+        await gen.return(undefined)
+      }
+    })
   }
 
   // Unary operators
@@ -715,38 +711,59 @@ export async function evaluateExpr({ node, row, rowIndex, rows, context }) {
   // IN with subqueries, same three-valued logic as the value-list form
   if (node.type === 'in') {
     const exprVal = await evaluateExpr({ node: node.expr, row, rowIndex, rows, context })
-    const outerScope = context.scope
-    const subContext = outerScope
-      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
-      : context
-    const subResult = executeStatement({ query: node.subquery, context: subContext, outerScope })
-    let sawNull = false
-    let innerCount = 0
-    for await (const resRow of subResult.rows()) {
-      if (++innerCount % YIELD_INTERVAL === 0) {
-        await yieldToEventLoop()
-        context.signal?.throwIfAborted()
+    const result = await runSubquery(node, context, async shared => {
+      const outerScope = context.scope
+      const subContext = outerScope
+        ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+        : context
+      const subResult = executeStatement({ query: node.subquery, context: subContext, outerScope })
+      let sawNull = false
+      let innerCount = 0
+      /** @type {Map<string, Set<SqlPrimitive>>} */
+      const values = new Map()
+      for await (const resRow of subResult.rows()) {
+        const pause = checkExecution(context)
+        if (pause) await pause
+        if (++innerCount % YIELD_INTERVAL === 0) {
+          await yieldToEventLoop()
+          context.signal?.throwIfAborted()
+        }
+        const value = await resRow.cells[resRow.columns[0]]()
+        if (shared) {
+          if (value == null) sawNull = true
+          else {
+            const type = typeof value
+            let group = values.get(type)
+            if (!group) values.set(type, group = new Set())
+            group.add(value)
+          }
+        } else if (exprVal == null || value == null) {
+          sawNull = true
+        } else if (exprVal != null && sqlEquals(exprVal, value)) {
+          return true
+        }
       }
-      const value = await resRow.cells[resRow.columns[0]]()
-      if (exprVal == null || value == null) {
-        sawNull = true
-      } else if (exprVal != null && sqlEquals(exprVal, value)) {
-        return true
-      }
-    }
-    return sawNull ? null : false
+      return shared ? { values, count: innerCount, hasNull: sawNull } : sawNull ? null : false
+    })
+    if (result === null || typeof result === 'boolean') return result
+    return result.count === 0 ? false : exprVal == null ? null : contains(result.values, exprVal) ? true : result.hasNull ? null : false
   }
 
   // EXISTS and NOT EXISTS with subqueries
   if (node.type === 'exists' || node.type === 'not exists') {
-    const outerScope = context.scope
-    const subContext = outerScope
-      ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
-      : context
-    const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
-    const results = await gen.next()
-    gen.return(undefined)
-    return node.type === 'exists' ? results.done === false : results.done === true
+    return runSubquery(node, context, async () => {
+      const outerScope = context.scope
+      const subContext = outerScope
+        ? { ...context, outerRow: row, outerAliases: new Set(outerScope) }
+        : context
+      const gen = executeStatement({ query: node.subquery, context: subContext, outerScope }).rows()
+      try {
+        const results = await gen.next()
+        return node.type === 'exists' ? results.done === false : results.done === true
+      } finally {
+        await gen.return(undefined)
+      }
+    })
   }
 
   // CASE expressions

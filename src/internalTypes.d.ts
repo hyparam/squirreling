@@ -1,4 +1,18 @@
-import type { ColumnReadRequest, ColumnResult, ColumnVector, SqlPrimitive } from './types.js'
+import type { ColumnReadRequest, ColumnResult, ColumnVector, ExprNode, SqlPrimitive } from './types.js'
+
+export interface SubqueryExecution {
+  correlated: boolean
+  active: number
+  waiters: (() => void)[]
+  result?: Promise<unknown>
+}
+
+export interface QueryExecution {
+  subqueries: WeakMap<ExprNode, SubqueryExecution>
+  checks: number
+  yieldedAt: number
+  yielding?: Promise<void>
+}
 
 export interface KeyTrie {
   groups: Map<string, Map<SqlPrimitive, KeyTrie>>

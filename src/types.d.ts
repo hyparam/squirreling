@@ -1,5 +1,6 @@
 import type { ExprNode, SqlPrimitive, Statement } from './ast.js'
 import type { QueryPlan } from './plan/types.js'
+import type { QueryExecution } from './internalTypes.js'
 
 export * from './ast.js'
 export { ParserState, Token, TokenType } from './parse/types.js'
@@ -200,6 +201,8 @@ export interface PlanSqlOptions {
 // executePlan(plan, context)
 export interface ExecuteContext {
   tables: Record<string, AsyncDataSource>
+  // Shared only within one result iteration, including nested subqueries.
+  execution?: QueryExecution
   functions?: Record<string, UserDefinedFunction>
   signal?: AbortSignal
   // current query's FROM + JOIN aliases (e.g. ['a', 'b'])

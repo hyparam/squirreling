@@ -17,7 +17,8 @@ import { normalizeScanColumnResult } from './scanColumn.js'
 import { scanFilter } from './scanFilter.js'
 import { executeSort } from './sort.js'
 import { executeSemiJoin } from './semiJoin.js'
-import { addBounds, minBounds, stableRowKey } from './utils.js'
+import { createQueryExecution } from './subqueries.js'
+import { addBounds, bindQuerySignal, minBounds, stableRowKey } from './utils.js'
 import { executeWindow } from './window.js'
 import { yieldToEventLoop } from './yield.js'
 
@@ -98,6 +99,32 @@ export function executeStatement({ query, context, outerScope }) {
  * @returns {QueryResults}
  */
 export function executePlan({ plan, context }) {
+  if (!context.execution) {
+    // Preserve eager metadata and source negotiation for the first read, but
+    // give every later (or concurrent) iteration its own cache and work clock.
+    // Holding QueryResults after collection must not retain subquery values.
+    /** @returns {QueryResults} */
+    function start() {
+      return executePlan({ plan, context: { ...context, execution: createQueryExecution() } })
+    }
+    /** @type {QueryResults | undefined} */
+    let first = start()
+    /** @returns {QueryResults} */
+    function next() {
+      const result = first ?? start()
+      first = undefined
+      return result
+    }
+    const result = { ...first, rows() { return next().rows() } }
+    if (first.batches) {
+      result.batches = async function* executionBatches() {
+        const inner = next()
+        if (inner.batches) yield* inner.batches()
+        else yield* rowsToBatches(inner.rows(), inner.columns, { signal: context.signal })
+      }
+    }
+    return bindQuerySignal(result, context.signal)
+  }
   if (context.currentTimestamp === undefined) {
     context = { ...context, currentTimestamp: new Date().toISOString() }
   }
@@ -681,7 +708,8 @@ function executeCount(plan, context) {
     numRows: 1,
     maxRows: 1,
     async *rows() {
-      const countPromise = (async () => {
+      /** @returns {Promise<number>} */
+      async function countRows() {
         signal?.throwIfAborted()
         // Use source numRows if available
         if (table.numRows !== undefined) return table.numRows
@@ -715,12 +743,16 @@ function executeCount(plan, context) {
         }
         signal?.throwIfAborted()
         return count
-      })()
+      }
 
+      // Start when a cell is read. An abort while the lazy row is collected
+      // must not leave an eagerly started count rejecting without a consumer.
+      /** @type {Promise<number> | undefined} */
+      let countPromise
       /** @type {AsyncCells} */
       const cells = {}
       for (const alias of columns) {
-        cells[alias] = () => countPromise
+        cells[alias] = () => countPromise ??= countRows()
       }
       yield { columns, cells }
     },

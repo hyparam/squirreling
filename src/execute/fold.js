@@ -4,14 +4,11 @@ import { yieldToEventLoop } from './yield.js'
  * @import { AsyncRow } from '../types.js'
  */
 
-// Chunk sizing for foldEvaluatedRows. Dispatch starts small so one chunk of
-// unexpectedly fat values cannot overshoot far, then adapts to the observed
-// result sizes: small values grow the chunk toward MAX_CHUNK_ROWS so async
-// cells still overlap, while large values (e.g. long string group keys)
-// shrink it so in-flight results stay near CHUNK_BYTE_BUDGET instead of
-// scaling with row count.
+// Keep async work bounded even when small results hide expensive inner scans.
+// Large values (e.g. long string group keys) shrink the row cap further so
+// in-flight results stay near CHUNK_BYTE_BUDGET instead of scaling with rows.
 const INITIAL_CHUNK_ROWS = 64
-const MAX_CHUNK_ROWS = 4000
+const MAX_CHUNK_ROWS = 64
 const CHUNK_BYTE_BUDGET = 16 * 1024 * 1024
 
 /**
@@ -35,9 +32,8 @@ function valueBytes(value) {
  * Evaluates a value for every row and folds each result in row order, holding
  * at most one adaptively sized chunk of evaluated values. Rows in a chunk are
  * dispatched together so async cells overlap, and the chunk boundary yields
- * to the event loop so aborts can fire. Chunks are bounded by bytes, not row
- * count: a fixed 4000-row chunk of ~90KB string keys would hold hundreds of
- * megabytes of results at once.
+ * to the event loop so aborts can fire. Both row count and observed value
+ * sizes bound each chunk: small results can still require large inner scans.
  *
  * @template T
  * @param {Object} options
@@ -61,7 +57,12 @@ export async function foldEvaluatedRows({ rows, evaluate, fold, signal }) {
     for (let i = start; i < end; i++) {
       pending[i - start] = evaluate(rows[i], i)
     }
-    const values = await Promise.all(pending)
+    const values = await Promise.all(pending).catch(async error => {
+      // Do not return an abort while other cells are still holding scan slots.
+      await Promise.allSettled(pending)
+      throw error
+    })
+    signal?.throwIfAborted()
     let bytes = 0
     for (let j = 0; j < values.length; j++) {
       bytes += valueBytes(values[j])
