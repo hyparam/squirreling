@@ -192,57 +192,17 @@ export function planMarkJoins({ columns, orderBy, groupBy, scopeAliases, scopeCo
     }
     let name = `__mark_${markJoins.length}`
     while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
-    const join = planMembership(expr, name)
+    if (expr.type === 'in' && (findAggregate(expr.expr) || findWindow(expr.expr))) return expr
+    const join = planMembership({ expr, scopeAliases, tables, cteColumns, planQuery })
     if (!join) return expr
-    markJoins.push(join)
+    markJoins.push({ ...join, not: expr.type === 'not exists', mark: name })
     /** @type {IdentifierNode} */
     const mark = { type: 'identifier', name, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
     marks.set(expr, mark)
     rewrites++
     return mark
   }
-  /**
-   * @param {ExprNode} expr
-   * @param {string} name
-   * @returns {Omit<SemiJoinNode, 'left'> | undefined}
-   */
-  function planMembership(expr, name) {
-    if (expr.type === 'in' && (findAggregate(expr.expr) || findWindow(expr.expr))) return
-    if (expr.type !== 'in' && expr.type !== 'exists' && expr.type !== 'not exists') return
-    const query = expr.subquery
-    /** @type {SemiJoinNode['mark']} */
-    const mark = { name, test: expr.type === 'in' ? 'in' : 'exists' }
-    /** @type {ExprNode} */
-    const operand = expr.type === 'in' ? expr.expr : { type: 'literal', value: null, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
-    const not = expr.type === 'not exists'
-    /** @type {IdentifierNode[]} */
-    const correlated = []
-    collectColumnsFromExpr({ type: 'subquery', subquery: query, positionStart: expr.positionStart, positionEnd: expr.positionEnd }, correlated, undefined, {
-      tables, cteColumns, outerAliases: new Set(scopeAliases),
-    })
-    if (!correlated.length) {
-      const scope = statementScope(query)
-      const right = planQuery(query)
-      return {
-        type: 'SemiJoin', expr: operand, not, mark,
-        right: scope ? { type: 'Subquery', child: right, scope } : right,
-      }
-    }
-    // Equality correlations become join keys. For IN, the right input
-    // carries the membership value ahead of the keys.
-    const value = query.type === 'select' && query.columns.length === 1 ? query.columns[0] : undefined
-    if (expr.type === 'in' && value?.type !== 'derived') return
-    const keys = decorrelateExists(query, scopeAliases, tables, cteColumns)
-    if (!keys) return
-    const columns = value?.type === 'derived' && expr.type === 'in'
-      ? [{ ...value, alias: '__mark_value' }, ...keys.query.columns]
-      : keys.query.columns
-    const right = planQuery({ ...keys.query, columns })
-    return {
-      type: 'SemiJoin', expr: operand, keys: keys.left, not, mark,
-      right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
-    }
-  }
+
   columns = columns.map(col => {
     if (col.type !== 'derived') return col
     const before = rewrites
@@ -253,6 +213,51 @@ export function planMarkJoins({ columns, orderBy, groupBy, scopeAliases, scopeCo
   groupBy = groupBy.map(expr => mapScalarExpressions(expr, rewriteMembership))
   orderBy = orderBy.map(term => ({ ...term, expr: mapScalarExpressions(term.expr, rewriteMembership) }))
   return { columns, orderBy, groupBy, markJoins }
+}
+
+/**
+ * Plans the right input of an IN or EXISTS test so it is read once per
+ * execution. Uncorrelated subqueries are planned as written. Plain equality
+ * correlations become keys, and the right input yields [value (IN only),
+ * ...keys]. Returns undefined for anything else, which stays per-row.
+ *
+ * @param {object} options
+ * @param {ExprNode} options.expr
+ * @param {string[]} options.scopeAliases
+ * @param {(query: Statement) => QueryPlan} options.planQuery
+ * @param {Record<string, AsyncDataSource>} [options.tables]
+ * @param {Map<string, string[]>} [options.cteColumns]
+ * @returns {Omit<SemiJoinNode, 'left' | 'not'> | undefined}
+ */
+export function planMembership({ expr, scopeAliases, planQuery, tables, cteColumns }) {
+  if (expr.type !== 'in' && expr.type !== 'exists' && expr.type !== 'not exists') return
+  const query = expr.subquery
+  const test = expr.type === 'in' ? 'in' : 'exists'
+  // EXISTS has no operand; keep a placeholder so the node shape is uniform.
+  /** @type {ExprNode} */
+  const operand = expr.type === 'in' ? expr.expr : { type: 'literal', value: null, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+  /** @type {IdentifierNode[]} */
+  const correlated = []
+  collectColumnsFromExpr({ type: 'subquery', subquery: query, positionStart: expr.positionStart, positionEnd: expr.positionEnd }, correlated, undefined, {
+    tables, cteColumns, outerAliases: new Set(scopeAliases),
+  })
+  if (!correlated.length) {
+    const scope = statementScope(query)
+    const right = planQuery(query)
+    return { type: 'SemiJoin', test, expr: operand, right: scope ? { type: 'Subquery', child: right, scope } : right }
+  }
+  const value = query.type === 'select' && query.columns.length === 1 ? query.columns[0] : undefined
+  if (test === 'in' && value?.type !== 'derived') return
+  const keys = decorrelateExists(query, scopeAliases, tables, cteColumns)
+  if (!keys) return
+  const columns = test === 'in' && value?.type === 'derived'
+    ? [{ ...value, alias: '__membership_value' }, ...keys.query.columns]
+    : keys.query.columns
+  const right = planQuery({ ...keys.query, columns })
+  return {
+    type: 'SemiJoin', test, expr: operand, keys: keys.left,
+    right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
+  }
 }
 
 /**

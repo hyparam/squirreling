@@ -155,4 +155,24 @@ describe('IN mark join', () => {
     const tables = { items: [{ g: 'a' }, { g: 'a' }, { g: 'b' }], wanted: [{ n: 2 }] }
     expect(await collect(executeSql({ tables, query: 'SELECT g, COUNT(*) IN (SELECT n FROM wanted) AS hit FROM items GROUP BY g ORDER BY g' }))).toEqual([{ g: 'a', hit: true }, { g: 'b', hit: false }])
   })
+
+  it('filters correlated NOT IN in WHERE with one scan', async () => {
+    const wanted = trackingSource([{ id: 1, g: 'a' }, { id: null, g: 'a' }, { id: 2, g: 'b' }])
+    const tables = { items: memorySource({ data: [{ id: 1, g: 'a' }, { id: 3, g: 'a' }, { id: 1, g: 'b' }, { id: 2, g: 'b' }, { id: null, g: 'b' }, { id: 1, g: 'c' }] }), wanted: wanted.source }
+    const query = 'SELECT id, g FROM items WHERE id NOT IN (SELECT w.id FROM wanted w WHERE w.g = items.g)'
+    const plan = planSql({ query, tables })
+    if (plan.type !== 'Project') throw new Error('expected project')
+    expect(plan.child.type).toBe('SemiJoin')
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ id: 1, g: 'b' }, { id: 1, g: 'c' }])
+    expect(wanted.getScanCount()).toBe(1)
+  })
+
+  it('filters uncorrelated EXISTS in WHERE with one scan', async () => {
+    const wanted = trackingSource([{ id: 1 }, { id: 2 }])
+    const tables = { items: [{ id: 1 }, { id: 2 }], wanted: wanted.source }
+    expect(await collect(executeSql({ tables, query: 'SELECT id FROM items WHERE EXISTS (SELECT id FROM wanted)' }))).toEqual([{ id: 1 }, { id: 2 }])
+    expect(await collect(executeSql({ tables, query: 'SELECT id FROM items WHERE NOT EXISTS (SELECT id FROM wanted)' }))).toEqual([])
+    expect(wanted.getScanCount()).toBe(2)
+    expect(wanted.getRowCount()).toBe(2)
+  })
 })
