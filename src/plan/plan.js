@@ -274,14 +274,19 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   const scopeColumns = collectScopeColumns({ select, cteColumns, tables })
   /** @type {Map<string, ExprNode>} */
   const aliases = new Map()
+  // Aliases a later SELECT expression can read. A source column of the same
+  // name takes precedence there, though not in GROUP BY or ORDER BY.
+  /** @type {Map<string, ExprNode>} */
+  const lateralAliases = new Map()
   let columns = select.columns.map((col, i) => {
     if (col.type === 'derived') {
       validateTableRefs(col.expr, scopeTables, scopeColumns)
       // Wrapper identifiers read the subquery, not earlier projection aliases.
-      const expr = select.positional ? col.expr : resolveAliases(col.expr, aliases)
+      const expr = select.positional ? col.expr : resolveAliases(col.expr, lateralAliases)
       const original = aliasSelect?.columns[i] ?? col
       if (original.type === 'derived' && original.alias) {
         aliases.set(original.alias, expr)
+        if (!scopeColumns.has(original.alias)) lateralAliases.set(original.alias, expr)
       }
       return { ...col, expr }
     }
@@ -534,10 +539,24 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   } else {
     // Non-aggregation path
 
+    // When the parent only needs specific columns, drop unneeded projections.
+    // DISTINCT compares whole rows, so it keeps them all.
+    let projectColumns = columns
+    if (parentColumns && !select.distinct) {
+      projectColumns = projectColumns.filter(col =>
+        col.type === 'star' || parentColumns.some(id => id.name === (col.alias ?? derivedAlias(col.expr)))
+      )
+    }
+
     // Window functions: insert before Sort so outer ORDER BY can reference
-    // the window output aliases.
-    if (windows.length) {
-      plan = { type: 'Window', windows, child: plan }
+    // the window output aliases. Skip windows whose column was dropped.
+    /** @type {IdentifierNode[]} */
+    const windowReads = []
+    for (const col of projectColumns) if (col.type === 'derived') collectColumnsFromExpr(col.expr, windowReads)
+    for (const term of orderBy) collectColumnsFromExpr(term.expr, windowReads)
+    const readWindows = windows.filter(w => windowReads.some(id => id.name === w.alias))
+    if (readWindows.length) {
+      plan = { type: 'Window', windows: readWindows, child: plan }
     }
 
     // ORDER BY (before projection so it can access all columns)
@@ -553,13 +572,6 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
     // Fast path for SELECT * without joins
     const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !markJoins.length
     if (!isPassthrough) {
-      let projectColumns = columns
-      // When parent only needs specific columns, drop unneeded projections
-      if (parentColumns) {
-        projectColumns = projectColumns.filter(col =>
-          col.type === 'star' || parentColumns.some(id => id.name === (col.alias ?? derivedAlias(col.expr)))
-        )
-      }
       // Normalize identifiers to match the child's cell-key layout, so the
       // Project executor can look up cells by exact name instead of relying
       // on the evaluator's suffix-search fallback.

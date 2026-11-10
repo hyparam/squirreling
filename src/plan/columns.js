@@ -140,20 +140,25 @@ export function extractColumns({ select, parentColumns, scopeColumns, cteColumns
   /** @type {Set<string>} */
   const selectAliases = new Set()
 
-  for (const col of select.columns) {
+  // Earlier aliases a later SELECT expression reads instead of a source
+  // column. A source column of the same name takes precedence.
+  /** @type {Set<string>} */
+  const lateralAliases = new Set()
+  const read = readColumns({ select, parentColumns, scopeColumns, context: collectionContext })
+
+  for (let i = 0; i < select.columns.length; i++) {
+    const col = select.columns[i]
     if (col.type === 'star' && col.table) {
       // SELECT table.* means all columns needed
       perTable.set(col.table, undefined)
     } else if (col.type === 'derived') {
-      // When parentColumns is set, skip columns the parent doesn't need
-      if (parentColumns) {
-        const outputName = col.alias ?? derivedAlias(col.expr)
-        if (!parentColumns.some(id => id.name === outputName)) continue
+      // Skip columns that neither the parent nor this SELECT reads
+      if (!read || read.has(i)) {
+        collectColumnsFromExpr(col.expr, identifiers, lateralAliases, collectionContext)
       }
-      // Exclude earlier SELECT aliases so they aren't treated as source columns
-      collectColumnsFromExpr(col.expr, identifiers, selectAliases, collectionContext)
       if (col.alias) {
         selectAliases.add(col.alias)
+        if (!scopeColumns?.has(col.alias)) lateralAliases.add(col.alias)
       }
     }
   }
@@ -244,6 +249,44 @@ export function extractColumns({ select, parentColumns, scopeColumns, cteColumns
     result.set(alias, set ? [...set] : undefined)
   }
   return result
+}
+
+/**
+ * Finds the SELECT columns that are evaluated when a parent reads only some
+ * of the output: the columns it names, and aliased columns that those or
+ * ORDER BY, GROUP BY and HAVING refer to by name. DISTINCT reads every column.
+ *
+ * @param {object} options
+ * @param {SelectStatement} options.select
+ * @param {IdentifierNode[]} [options.parentColumns]
+ * @param {Set<string>} [options.scopeColumns]
+ * @param {ColumnCollectionContext} [options.context]
+ * @returns {Set<number> | undefined} column indexes, or undefined for all
+ */
+function readColumns({ select, parentColumns, scopeColumns, context }) {
+  if (!parentColumns || select.distinct) return
+  /** @type {IdentifierNode[]} */
+  const references = []
+  for (const item of select.orderBy) collectColumnsFromExpr(item.expr, references, undefined, context)
+  for (const expr of select.groupBy) collectColumnsFromExpr(expr, references, undefined, context)
+  collectColumnsFromExpr(select.having, references, undefined, context)
+  const names = new Set(parentColumns.map(id => id.name))
+  for (const { prefix, name } of references) if (!prefix) names.add(name)
+  /** @type {Set<number>} */
+  const read = new Set()
+  // Walk backwards so a kept column marks the earlier aliases it reads
+  for (let i = select.columns.length - 1; i >= 0; i--) {
+    const col = select.columns[i]
+    if (col.type !== 'derived' || !names.has(col.alias ?? derivedAlias(col.expr))) continue
+    read.add(i)
+    /** @type {IdentifierNode[]} */
+    const identifiers = []
+    collectColumnsFromExpr(col.expr, identifiers, undefined, context)
+    for (const { prefix, name } of identifiers) {
+      if (!prefix && !scopeColumns?.has(name)) names.add(name)
+    }
+  }
+  return read
 }
 
 /**
