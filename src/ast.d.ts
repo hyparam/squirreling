@@ -212,6 +212,8 @@ export interface DerivedColumn extends AstBase {
 export type SelectColumn = StarColumn | DerivedColumn
 
 export interface OrderByItem extends AstBase {
+  /** Original positional reference, retained when resolved to an output alias. */
+  columnIndex?: number
   expr: ExprNode
   direction: 'ASC' | 'DESC'
   nulls?: 'FIRST' | 'LAST'

@@ -120,7 +120,7 @@ export function parseStatement(state) {
  * @returns {Statement}
  */
 function parseSetOperations(state) {
-  let { query: left } = parseIntersectOperations(state)
+  let { query: left, parenthesized } = parseIntersectOperations(state)
 
   while (true) {
     /** @type {SetOperator | undefined} */
@@ -130,11 +130,38 @@ function parseSetOperations(state) {
     } else if (match(state, 'keyword', 'EXCEPT')) {
       operator = 'EXCEPT'
     }
-    if (!operator) return left
+    if (!operator) break
 
     const all = !!match(state, 'keyword', 'ALL')
     left = setOperation(state, operator, all, left, parseIntersectOperations(state))
+    parenthesized = false
   }
+
+  const columns = leftmostColumns(left)
+  const hasAggregate = left.type !== 'select' || left.groupBy.length > 0 || left.columns.some(col =>
+    col.type === 'derived' && findAggregate(col.expr)
+  )
+  const orderBy = parseOrderBy(state, columns, parenthesized || hasAggregate, left.positionStart)
+  const { limit, offset } = parseLimitOffset(state)
+  match(state, 'semicolon')
+  if (parenthesized) {
+    if (!orderBy.length && limit === undefined && offset === undefined) return left
+    // Outer clauses must not replace ordering or limits inside the parentheses.
+    return {
+      type: 'select', distinct: false,
+      columns: [{ type: 'star', positionStart: left.positionStart, positionEnd: left.positionEnd }],
+      from: { type: 'subquery', query: left, positionStart: left.positionStart, positionEnd: left.positionEnd },
+      joins: [], groupBy: [], orderBy, limit, offset,
+      positionStart: left.positionStart, positionEnd: state.lastPos,
+    }
+  }
+  if (left.type === 'select' || left.type === 'compound') {
+    left.orderBy = orderBy
+    left.limit = limit
+    left.offset = offset
+    left.positionEnd = state.lastPos
+  }
+  return left
 }
 
 /**
@@ -173,9 +200,7 @@ function parseSetOperand(state) {
 }
 
 /**
- * Builds a compound statement. ORDER BY / LIMIT / OFFSET after the last
- * operand apply to the whole result: lifted from an unparenthesized SELECT,
- * or parsed here when the operand was parenthesized.
+ * Builds a compound statement before parsing its trailing clauses.
  *
  * @param {ParserState} state
  * @param {SetOperator} operator
@@ -185,41 +210,12 @@ function parseSetOperand(state) {
  * @returns {SetOperationStatement}
  */
 function setOperation(state, operator, all, left, operand) {
-  if (operand.parenthesized === true) {
-    const orderBy = parseOrderBy(state, leftmostColumns(left), true, left.positionStart)
-    const { limit, offset } = parseLimitOffset(state)
-    match(state, 'semicolon')
-    return {
-      type: 'compound',
-      operator,
-      all,
-      left,
-      right: operand.query,
-      orderBy,
-      limit,
-      offset,
-      positionStart: left.positionStart,
-      positionEnd: state.lastPos,
-    }
-  }
-  const right = operand.query
-  /** @type {SetOperationStatement} */
-  const compound = {
-    type: 'compound',
-    operator,
-    all,
-    left,
-    right,
-    orderBy: right.orderBy,
-    limit: right.limit,
-    offset: right.offset,
+  return {
+    type: 'compound', operator, all, left, right: operand.query,
+    orderBy: [],
     positionStart: left.positionStart,
-    positionEnd: right.positionEnd,
+    positionEnd: state.lastPos,
   }
-  right.orderBy = []
-  right.limit = undefined
-  right.offset = undefined
-  return compound
 }
 
 /**
@@ -251,7 +247,8 @@ function parseOrderBy(state, columns, postAgg, positionStart) {
   if (match(state, 'keyword', 'ORDER')) {
     expect(state, 'keyword', 'BY')
     while (true) {
-      const expr = resolvePositionalRef(parseExpression(state), columns, 'ORDER BY', postAgg)
+      const reference = parseExpression(state)
+      const expr = resolvePositionalRef(reference, columns, 'ORDER BY', postAgg)
       if (!postAgg) {
         expectNoAggregate(expr, 'ORDER BY')
       }
@@ -276,6 +273,7 @@ function parseOrderBy(state, columns, postAgg, positionStart) {
         }
       }
       orderBy.push({
+        ...postAgg && reference.type === 'literal' && expr !== reference ? { columnIndex: Number(reference.value) - 1 } : {},
         expr,
         direction,
         nulls,
@@ -428,16 +426,6 @@ function parseSelect(state) {
     having = parseExpression(state)
   }
 
-  const hasAggregate = groupBy.length > 0 || columns.some(col =>
-    col.type === 'derived' && findAggregate(col.expr)
-  )
-
-  const orderBy = parseOrderBy(state, columns, hasAggregate, positionStart)
-  const { limit, offset } = parseLimitOffset(state)
-
-  // optional trailing semicolon
-  match(state, 'semicolon')
-
   return {
     type: 'select',
     distinct,
@@ -447,9 +435,7 @@ function parseSelect(state) {
     where,
     groupBy,
     having,
-    orderBy,
-    limit,
-    offset,
+    orderBy: [],
     positionStart,
     positionEnd: state.lastPos,
   }

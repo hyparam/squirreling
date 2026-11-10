@@ -164,7 +164,13 @@ function uniqueRightColumns(stmt, leftColumns, columns) {
     used.add(alias)
     return { ...col, alias }
   })
-  return { ...stmt, columns: selectColumns }
+  const orderBy = stmt.orderBy.map(term => {
+    if (term.columnIndex === undefined || term.expr.type !== 'identifier') return term
+    const col = selectColumns[term.columnIndex]
+    if (col.type !== 'derived') return term
+    return { ...term, expr: { ...term.expr, name: col.alias ?? derivedAlias(col.expr) } }
+  })
+  return { ...stmt, columns: selectColumns, orderBy }
 }
 
 /**

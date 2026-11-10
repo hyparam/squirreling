@@ -2,6 +2,30 @@ import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
 describe('UNION execution', () => {
+  it('should preserve grouped positional ordering when duplicate right aliases are renamed', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 1, x: 1 }, { g: 1, x: 100 }, { g: 2, x: 50 }, { g: 2, x: 60 }] },
+      query: 'SELECT 0 AS a, 0 AS b UNION ALL (SELECT MIN(x) AS z, MAX(x) AS z FROM t GROUP BY g ORDER BY 2 DESC LIMIT 1)',
+    }))
+    expect(result).toEqual([{ a: 0, b: 0 }, { a: 1, b: 100 }])
+  })
+
+  it.each([
+    'SELECT 3 AS a UNION SELECT 2 AS b INTERSECT (SELECT 2 AS c) ORDER BY 1',
+    'SELECT 3 AS a UNION SELECT 2 AS b INTERSECT SELECT 2 AS c ORDER BY 1',
+  ])('should resolve compound positional ordering against final output: %s', async query => {
+    expect(await collect(executeSql({ tables: {}, query }))).toEqual([{ a: 2 }, { a: 3 }])
+  })
+
+  it.each([
+    ['(SELECT 1 AS a);', [{ a: 1 }]],
+    ['(SELECT 2 AS a UNION SELECT 1 AS a) ORDER BY a;', [{ a: 1 }, { a: 2 }]],
+    ['(SELECT 2 AS a UNION SELECT 1 AS a) ORDER BY 1 LIMIT 1 OFFSET 1;', [{ a: 2 }]],
+    ['(SELECT 2 AS a UNION SELECT 1 AS a ORDER BY a LIMIT 1) ORDER BY a DESC LIMIT 1;', [{ a: 1 }]],
+  ])('should apply suffixes outside standalone parentheses: %s', async (query, expected) => {
+    expect(await collect(executeSql({ tables: {}, query }))).toEqual(expected)
+  })
+
   const users = [
     { id: 1, name: 'Alice', age: 30 },
     { id: 2, name: 'Bob', age: 25 },
