@@ -36,6 +36,30 @@ describe('UNION execution', () => {
       expect(result).toEqual([{ a: 1, b: 2 }, { a: 1, b: 2 }])
     })
 
+    it.each([
+      'SELECT 1 AS a, 2 AS b UNION ALL SELECT 3 AS x, COUNT(*) AS y FROM x',
+      'SELECT 3 AS a, COUNT(*) AS b FROM x UNION ALL SELECT 1 AS x, 2 AS y',
+      'SELECT 1 AS a, 2 AS b UNION ALL SELECT 3 AS x, COUNT(*) AS y FROM x GROUP BY value',
+      'SELECT 3 AS a, COUNT(*) AS b FROM x GROUP BY value UNION ALL SELECT 1 AS x, 2 AS y',
+    ])('should align pruned aggregate operands: %s', async query => {
+      const result = await collect(executeSql({
+        tables: { x: [{ value: 1 }, { value: 1 }] },
+        query: `SELECT b FROM (${query}) t`,
+      }))
+      expect(result).toEqual([{ b: 2 }, { b: 2 }])
+    })
+
+    it.each([
+      'SELECT 1 AS a, 2 AS b UNION SELECT 3 AS x, 2 AS y UNION ALL SELECT 4 AS z, 2 AS w',
+      'SELECT 4 AS a, 2 AS b UNION ALL SELECT * FROM (SELECT 1 AS x, 2 AS y UNION SELECT 3 AS z, 2 AS w) u',
+    ])('should align nested deduplicating operands without changing multiplicity: %s', async query => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: `SELECT b FROM (${query}) t`,
+      }))
+      expect(result).toEqual([{ b: 2 }, { b: 2 }, { b: 2 }])
+    })
+
     it('should combine results from two queries', async () => {
       const result = await collect(executeSql({
         tables: { users },

@@ -85,8 +85,26 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     const index = leftColumns.indexOf(id.name)
     return index < 0 ? id : { ...id, name: rightColumns[index] }
   })
-  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
-  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
+  let left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
+  let right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
+
+  if (parentColumns) {
+    // Aggregates and nested deduplicating operations may retain extra columns.
+    // Project both operands to the same original positions before runtime renaming.
+    /** @type {SelectColumn[]} */
+    const leftProjection = []
+    /** @type {SelectColumn[]} */
+    const rightProjection = []
+    for (let i = 0; i < leftColumns.length; i++) {
+      const id = parentColumns.find(id => id.name === leftColumns[i])
+      if (!id) continue
+      const position = { positionStart: id.positionStart, positionEnd: id.positionEnd }
+      leftProjection.push({ ...position, type: 'derived', expr: { ...position, type: 'identifier', name: leftColumns[i] }, alias: leftColumns[i] })
+      rightProjection.push({ ...position, type: 'derived', expr: { ...position, type: 'identifier', name: rightColumns[i] }, alias: rightColumns[i] })
+    }
+    left = { type: 'Project', columns: leftProjection, child: left }
+    right = { type: 'Project', columns: rightProjection, child: right }
+  }
 
   /** @type {QueryPlan} */
   let plan = {
