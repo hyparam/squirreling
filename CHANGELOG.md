@@ -1,5 +1,14 @@
 # Squirreling Changelog
 
+## [0.17.6]
+ - Match `UNION`, `INTERSECT`, and `EXCEPT` columns by position instead of by name
+ - Parse parenthesized set operands, such as `(SELECT ...) UNION (SELECT ...)`
+ - Faster correlated scalar aggregate subqueries, including through CTEs and derived tables
+ - Faster joins against CTEs and derived tables: join key filters now reach the scans inside them
+ - Fix multi-column `GROUP BY`, `DISTINCT`, joins, and window partitions merging keys such as `('a|b', 'c')` and `('a', 'b|c')`
+ - Fix "column not found" errors and wrong `DISTINCT` results when a query reads only some columns of a derived table or CTE
+ - A select alias no longer shadows a source column of the same name in later select expressions, so `SELECT a AS b, b AS a` swaps the columns
+
 ## [0.17.5]
  - Support `CAST(x AS DATE)` and `DATE` literals
  - Compare dates with strings by parsing the string as a timestamp
