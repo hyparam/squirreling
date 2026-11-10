@@ -6,19 +6,20 @@ import { yieldToEventLoop } from './yield.js'
 
 /**
  * @import { AsyncRow, ExecuteContext, ExprNode, QueryResults, SqlPrimitive } from '../types.js'
- * @import { SemiJoinNode } from '../plan/types.js'
+ * @import { QueryPlan, SemiJoinNode } from '../plan/types.js'
  */
 
 /**
  * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number, firstRow?: AsyncRow }} Membership
- * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership }} MembershipTrie
+ * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership, empty?: Promise<SqlPrimitive> }} MembershipTrie
  */
 
 /**
  * Executes IN / EXISTS membership with one build of the right input per
  * iteration. Filters left rows, or with `mark`, annotates every left row with
  * its result. A scalar test is a single join: the mark holds the subquery's
- * only value. The trie belongs to this operator, never to the context or AST.
+ * only value, or for a grouped aggregate, the value of the row's group. The
+ * trie belongs to this operator, never to the context or AST.
  *
  * @param {SemiJoinNode} plan
  * @param {ExecuteContext} context
@@ -157,6 +158,9 @@ async function evaluateMembership(plan, root, row, rowIndex, context) {
   const leaves = keys.some(value => value == null) ? [] : findLeaves(root, keys, 0)
   if (plan.test === 'exists') return leaves.length > 0 !== plan.not
   if (plan.test === 'scalar') {
+    // Keys that equal several groups by coercion cannot merge their values.
+    if (plan.fallback && leaves.length > 1) return evaluateExpr({ node: plan.fallback, row, rowIndex, context })
+    if (plan.empty && !leaves.length) return root.empty ??= scalarValue(plan.empty, context)
     let count = 0
     /** @type {AsyncRow | undefined} */
     let firstRow
@@ -179,6 +183,18 @@ async function evaluateMembership(plan, root, row, rowIndex, context) {
     if (found === null) matched = null
   }
   return plan.not && matched !== null ? !matched : matched
+}
+
+/**
+ * Reads the single value of a plan that yields exactly one row.
+ *
+ * @param {QueryPlan} plan
+ * @param {ExecuteContext} context
+ * @returns {Promise<SqlPrimitive>}
+ */
+async function scalarValue(plan, context) {
+  for await (const row of executePlan({ plan, context }).rows()) return row.cells[row.columns[0]]()
+  return null
 }
 
 /**
