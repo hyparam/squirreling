@@ -1,7 +1,8 @@
 import { evaluateExpr } from '../expression/evaluate.js'
-import { keyify, maxBounds } from './utils.js'
+import { maxBounds } from './utils.js'
 import { executePlan } from './execute.js'
 import { dynamicFilter, filterScore } from './dynamicFilter.js'
+import { addJoinRow, findJoinRows, joinIndex } from './joinIndex.js'
 import { yieldToEventLoop } from './yield.js'
 
 /**
@@ -263,9 +264,8 @@ export function executeHashJoin(plan, context) {
       // Build phase: stream one side into the hash map. The full row list is
       // only retained when unmatched build rows must be emitted afterwards;
       // otherwise rows with NULL join keys are released immediately.
-      /** @type {Map<string | number | bigint | boolean, AsyncRow[]>} */
-      const hashMap = new Map()
-      const filters = dynamicFilter(buildKeys.length, true)
+      const hashMap = joinIndex()
+      const filters = dynamicFilter(buildKeys.length)
       /** @type {AsyncRow[] | undefined} */
       const buildRows = buildOuter ? [] : undefined
       /** @type {string[]} */
@@ -288,13 +288,7 @@ export function executeHashJoin(plan, context) {
         // join key is excluded from the hash table.
         if (keyValues.some(v => v == null)) continue
         if (!probeOuter) filters.add(keyValues)
-        const key = keyify(...keyValues)
-        let bucket = hashMap.get(key)
-        if (!bucket) {
-          bucket = []
-          hashMap.set(key, bucket)
-        }
-        bucket.push(buildRow)
+        addJoinRow(hashMap, keyValues, buildRow)
       }
 
       /** @type {string[] | undefined} */
@@ -302,14 +296,14 @@ export function executeHashJoin(plan, context) {
       /** @type {Set<AsyncRow> | undefined} */
       const matchedBuildRows = buildOuter ? new Set() : undefined
 
-      if (!probeOuter && !hashMap.size && !buildOuter) return
-      if (!probeOuter && hashMap.size) {
+      if (!probeOuter && !hashMap.groups.size && !buildOuter) return
+      if (!probeOuter && hashMap.groups.size) {
         const filtered = filters.apply(swap ? plan.right : plan.left, probeKeys)
         probe = executePlan({ plan: filtered, context: { ...context, deferScans: true } })
       }
 
       // Probe phase: stream the other side
-      for await (const probeRow of !probeOuter && !hashMap.size ? [] : probe.rows()) {
+      for await (const probeRow of !probeOuter && !hashMap.groups.size ? [] : probe.rows()) {
         context.signal?.throwIfAborted()
 
         if (!probeCols) {
@@ -321,23 +315,20 @@ export function executeHashJoin(plan, context) {
         )
         let matched = false
         if (!keyValues.some(v => v == null)) {
-          const key = keyify(...keyValues)
-          const candidates = hashMap.get(key)
-          if (candidates?.length) {
-            for (const buildRow of candidates) {
-              if (++innerCount % YIELD_INTERVAL === 0) {
-                await yieldToEventLoop()
-                context.signal?.throwIfAborted()
-              }
-              const merged = merge(probeRow, buildRow)
-              if (residual) {
-                const ok = await evaluateExpr({ node: residual, row: merged, context })
-                if (!ok) continue
-              }
-              matched = true
-              matchedBuildRows?.add(buildRow)
-              yield merged
+          const candidates = findJoinRows(hashMap, keyValues)
+          for (const buildRow of candidates) {
+            if (++innerCount % YIELD_INTERVAL === 0) {
+              await yieldToEventLoop()
+              context.signal?.throwIfAborted()
             }
+            const merged = merge(probeRow, buildRow)
+            if (residual) {
+              const ok = await evaluateExpr({ node: residual, row: merged, context })
+              if (!ok) continue
+            }
+            matched = true
+            matchedBuildRows?.add(buildRow)
+            yield merged
           }
         }
 

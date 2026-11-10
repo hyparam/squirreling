@@ -117,6 +117,14 @@ describe('correlated scalar aggregate joins', () => {
     expect(await collect(executeSql({ tables: { c: data, r: data }, query }))).toEqual([{ n: 3 }, { n: 3 }, { n: 3 }])
   })
 
+  it.each([{ id: 1 }, [1]])('preserves identity for object correlation keys %s', async a => {
+    const b = Array.isArray(a) ? [...a] : { ...a }
+    const tables = { c: [{ k: a }, { k: b }], r: [{ k: a, x: 2 }, { k: b, x: 8 }] }
+    const query = 'select (select sum(x) from r where r.k = c.k) n from c'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ n: 2 }, { n: 8 }])
+    expect(await collect(executeSql({ tables, query: query.replace(') n', ' limit 1) n') }))).toEqual([{ n: 2 }, { n: 8 }])
+  })
+
   it('does not collide with user columns', async () => {
     const query = 'select c.__scalar_0, (select count(*) from r where r.k = c.k) n from c'
     expect(await collect(executeSql({ tables: { ...tables, c: typedSource([{ k: 1, __scalar_0: 99 }]) }, query }))).toEqual([{ __scalar_0: 99, n: 2 }])

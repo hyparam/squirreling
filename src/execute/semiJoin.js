@@ -155,6 +155,11 @@ function neverPasses(plan, root) {
  */
 async function evaluateMembership(plan, root, row, rowIndex, context) {
   const keys = await Promise.all((plan.keys ?? []).map(node => evaluateExpr({ node, row, rowIndex, context })))
+  // Hash aggregation serializes objects, whereas correlation compares their
+  // identity. Its grouped rows cannot answer an object-valued probe safely.
+  if (plan.fallback && keys.some(value => value !== null && typeof value === 'object')) {
+    return evaluateExpr({ node: plan.fallback, row, rowIndex, context })
+  }
   const leaves = keys.some(value => value == null) ? [] : findLeaves(root, keys, 0)
   if (plan.test === 'exists') return leaves.length > 0 !== plan.not
   if (plan.test === 'scalar') {
