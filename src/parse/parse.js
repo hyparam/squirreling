@@ -10,6 +10,7 @@ import { tokenizeSql } from './tokenize.js'
 
 /**
  * @import { CTEDefinition, ExprNode, FromFunction, FromSubquery, FromTable, OrderByItem, ParseSqlOptions, ParserState, SelectColumn, SelectStatement, SetOperationStatement, SetOperator, Statement } from '../types.js'
+ * @typedef {{ query: Statement, parenthesized: true } | { query: SelectStatement | SetOperationStatement, parenthesized: false }} SetOperand
  */
 
 // Keywords that may legitimately follow the SELECT column list in place of FROM.
@@ -116,10 +117,10 @@ export function parseStatement(state) {
  * ORDER BY and LIMIT/OFFSET on the last segment apply to the entire compound result.
  *
  * @param {ParserState} state
- * @returns {SelectStatement | SetOperationStatement}
+ * @returns {Statement}
  */
 function parseSetOperations(state) {
-  let left = parseIntersectOperations(state)
+  let { query: left, parenthesized } = parseIntersectOperations(state)
 
   while (true) {
     /** @type {SetOperator | undefined} */
@@ -129,66 +130,206 @@ function parseSetOperations(state) {
     } else if (match(state, 'keyword', 'EXCEPT')) {
       operator = 'EXCEPT'
     }
-    if (!operator) return left
+    if (!operator) break
 
     const all = !!match(state, 'keyword', 'ALL')
-    const right = parseIntersectOperations(state)
-
-    // ORDER BY / LIMIT / OFFSET after a set operation apply to the compound result.
-    // If the right SELECT parsed them, lift them to the compound statement.
-    left = {
-      type: 'compound',
-      operator,
-      all,
-      left,
-      right,
-      orderBy: right.orderBy,
-      limit: right.limit,
-      offset: right.offset,
-      positionStart: left.positionStart,
-      positionEnd: right.positionEnd,
-    }
-
-    // Clear lifted clauses from the right SELECT
-    right.orderBy = []
-    right.limit = undefined
-    right.offset = undefined
+    left = setOperation(state, operator, all, left, parseIntersectOperations(state))
+    parenthesized = false
   }
+
+  const columns = leftmostColumns(left)
+  const hasAggregate = left.type !== 'select' || left.groupBy.length > 0 || left.columns.some(col =>
+    col.type === 'derived' && findAggregate(col.expr)
+  )
+  const orderBy = parseOrderBy(state, columns, parenthesized || hasAggregate, left.positionStart)
+  const { limit, offset } = parseLimitOffset(state)
+  match(state, 'semicolon')
+  if (parenthesized) {
+    if (!orderBy.length && limit === undefined && offset === undefined) return left
+    const names = columns.map(col => col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : undefined)
+    const positional = !columns.some(col => col.type === 'star') && new Set(names).size < names.length
+    // Outer clauses must not replace ordering or limits inside the parentheses.
+    return {
+      type: 'select', distinct: false,
+      ...positional ? { positional: true } : {},
+      // A star already describes the subquery's complete output. Repeating
+      // inner stars here would expand the same output multiple times.
+      columns: columns.some(col => col.type === 'star')
+        ? [{ type: 'star', positionStart: left.positionStart, positionEnd: left.positionEnd }]
+        : columns.map(col => col.type === 'star' ? col : {
+          ...col,
+          expr: { type: 'identifier', name: col.alias ?? derivedAlias(col.expr), positionStart: col.positionStart, positionEnd: col.positionEnd },
+        }),
+      from: { type: 'subquery', query: left, positionStart: left.positionStart, positionEnd: left.positionEnd },
+      joins: [], groupBy: [], orderBy, limit, offset,
+      positionStart: left.positionStart, positionEnd: state.lastPos,
+    }
+  }
+  if (left.type === 'select' || left.type === 'compound') {
+    left.orderBy = orderBy
+    left.limit = limit
+    left.offset = offset
+    left.positionEnd = state.lastPos
+  }
+  return left
 }
 
 /**
  * Parses a left-associative INTERSECT chain, which binds tighter than UNION/EXCEPT.
  *
  * @param {ParserState} state
- * @returns {SelectStatement | SetOperationStatement}
+ * @returns {SetOperand}
  */
 function parseIntersectOperations(state) {
-  /** @type {SelectStatement | SetOperationStatement} */
-  let left = parseSelect(state)
+  let operand = parseSetOperand(state)
 
   while (match(state, 'keyword', 'INTERSECT')) {
     const all = !!match(state, 'keyword', 'ALL')
-    const right = parseSelect(state)
-
-    left = {
-      type: 'compound',
-      operator: 'INTERSECT',
-      all,
-      left,
-      right,
-      orderBy: right.orderBy,
-      limit: right.limit,
-      offset: right.offset,
-      positionStart: left.positionStart,
-      positionEnd: right.positionEnd,
-    }
-
-    right.orderBy = []
-    right.limit = undefined
-    right.offset = undefined
+    operand = { query: setOperation(state, 'INTERSECT', all, operand.query, parseSetOperand(state)), parenthesized: false }
   }
 
-  return left
+  return operand
+}
+
+/**
+ * Parses one set operation operand: a SELECT, or a parenthesized statement
+ * that keeps its own ORDER BY and LIMIT.
+ *
+ * @param {ParserState} state
+ * @returns {SetOperand}
+ */
+function parseSetOperand(state) {
+  const tok = current(state)
+  if (tok.type === 'paren' && tok.value === '(') {
+    consume(state)
+    const query = parseStatement(state)
+    expect(state, 'paren', ')')
+    return { query, parenthesized: true }
+  }
+  return { query: parseSelect(state), parenthesized: false }
+}
+
+/**
+ * Builds a compound statement before parsing its trailing clauses.
+ *
+ * @param {ParserState} state
+ * @param {SetOperator} operator
+ * @param {boolean} all
+ * @param {Statement} left
+ * @param {SetOperand} operand
+ * @returns {SetOperationStatement}
+ */
+function setOperation(state, operator, all, left, operand) {
+  return {
+    type: 'compound', operator, all, left, right: operand.query,
+    orderBy: [],
+    positionStart: left.positionStart,
+    positionEnd: state.lastPos,
+  }
+}
+
+/**
+ * Columns of the first SELECT in a statement, which name a compound's output.
+ *
+ * @param {Statement} stmt
+ * @returns {SelectColumn[]}
+ */
+function leftmostColumns(stmt) {
+  if (stmt.type === 'compound') return leftmostColumns(stmt.left)
+  if (stmt.type === 'with') return leftmostColumns(stmt.query)
+  if (stmt.type === 'select') return stmt.columns
+  return []
+}
+
+/**
+ * Parses an optional ORDER BY list. Positional references resolve against
+ * `columns`, to output names when `postAgg` is set.
+ *
+ * @param {ParserState} state
+ * @param {SelectColumn[]} columns
+ * @param {boolean} postAgg
+ * @param {number} positionStart
+ * @returns {OrderByItem[]}
+ */
+function parseOrderBy(state, columns, postAgg, positionStart) {
+  /** @type {OrderByItem[]} */
+  const orderBy = []
+  if (match(state, 'keyword', 'ORDER')) {
+    expect(state, 'keyword', 'BY')
+    while (true) {
+      const reference = parseExpression(state)
+      const expr = resolvePositionalRef(reference, columns, 'ORDER BY', postAgg)
+      if (!postAgg) {
+        expectNoAggregate(expr, 'ORDER BY')
+      }
+      /** @type {'ASC' | 'DESC'} */
+      let direction = 'ASC'
+      if (match(state, 'keyword', 'ASC')) {
+        direction = 'ASC'
+      } else if (match(state, 'keyword', 'DESC')) {
+        direction = 'DESC'
+      }
+      /** @type {'FIRST' | 'LAST' | undefined} */
+      let nulls
+      if (match(state, 'keyword', 'NULLS')) {
+        const tok = consume(state)
+        const upper = tok.value.toUpperCase()
+        if (tok.type === 'identifier' && upper === 'FIRST') {
+          nulls = 'FIRST'
+        } else if (tok.type === 'identifier' && upper === 'LAST') {
+          nulls = 'LAST'
+        } else {
+          throw parseError(state, 'FIRST or LAST after NULLS')
+        }
+      }
+      orderBy.push({
+        ...postAgg && reference.type === 'literal' && expr !== reference ? { columnIndex: Number(reference.value) - 1 } : {},
+        expr,
+        direction,
+        nulls,
+        positionStart,
+        positionEnd: state.lastPos,
+
+      })
+      if (!match(state, 'comma')) break
+    }
+  }
+  return orderBy
+}
+
+/**
+ * Parses optional LIMIT and OFFSET clauses.
+ *
+ * @param {ParserState} state
+ * @returns {{ limit?: number, offset?: number }}
+ */
+function parseLimitOffset(state) {
+  /** @type {number | undefined} */
+  let limit
+  /** @type {number | undefined} */
+  let offset
+  if (match(state, 'keyword', 'LIMIT')) {
+    const tok = consume(state)
+    if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
+      throw parseError(state, 'positive integer LIMIT')
+    }
+    if (!Number.isInteger(tok.numericValue) || tok.numericValue < 0) {
+      throw parseError(state, 'positive integer LIMIT value')
+    }
+    limit = tok.numericValue
+  }
+
+  if (match(state, 'keyword', 'OFFSET')) {
+    const tok = consume(state)
+    if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
+      throw parseError(state, 'positive integer OFFSET value')
+    }
+    if (!Number.isInteger(tok.numericValue) || tok.numericValue < 0) {
+      throw parseError(state, 'positive integer OFFSET value')
+    }
+    offset = tok.numericValue
+  }
+  return { limit, offset }
 }
 
 /**
@@ -271,13 +412,6 @@ function parseSelect(state) {
   const groupBy = []
   /** @type {ExprNode | undefined} */
   let having
-  /** @type {OrderByItem[]} */
-  const orderBy = []
-  /** @type {number | undefined} */
-  let limit
-  /** @type {number | undefined} */
-  let offset
-
   if (match(state, 'keyword', 'WHERE')) {
     where = parseExpression(state)
     expectNoAggregate(where, 'WHERE')
@@ -302,74 +436,6 @@ function parseSelect(state) {
     having = parseExpression(state)
   }
 
-  const hasAggregate = groupBy.length > 0 || columns.some(col =>
-    col.type === 'derived' && findAggregate(col.expr)
-  )
-
-  if (match(state, 'keyword', 'ORDER')) {
-    expect(state, 'keyword', 'BY')
-    while (true) {
-      const expr = resolvePositionalRef(parseExpression(state), columns, 'ORDER BY', hasAggregate)
-      if (!hasAggregate) {
-        expectNoAggregate(expr, 'ORDER BY')
-      }
-      /** @type {'ASC' | 'DESC'} */
-      let direction = 'ASC'
-      if (match(state, 'keyword', 'ASC')) {
-        direction = 'ASC'
-      } else if (match(state, 'keyword', 'DESC')) {
-        direction = 'DESC'
-      }
-      /** @type {'FIRST' | 'LAST' | undefined} */
-      let nulls
-      if (match(state, 'keyword', 'NULLS')) {
-        const tok = consume(state)
-        const upper = tok.value.toUpperCase()
-        if (tok.type === 'identifier' && upper === 'FIRST') {
-          nulls = 'FIRST'
-        } else if (tok.type === 'identifier' && upper === 'LAST') {
-          nulls = 'LAST'
-        } else {
-          throw parseError(state, 'FIRST or LAST after NULLS')
-        }
-      }
-      orderBy.push({
-        expr,
-        direction,
-        nulls,
-        positionStart,
-        positionEnd: state.lastPos,
-
-      })
-      if (!match(state, 'comma')) break
-    }
-  }
-
-  if (match(state, 'keyword', 'LIMIT')) {
-    const tok = consume(state)
-    if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
-      throw parseError(state, 'positive integer LIMIT')
-    }
-    if (!Number.isInteger(tok.numericValue) || tok.numericValue < 0) {
-      throw parseError(state, 'positive integer LIMIT value')
-    }
-    limit = tok.numericValue
-  }
-
-  if (match(state, 'keyword', 'OFFSET')) {
-    const tok = consume(state)
-    if (tok.type !== 'number' || typeof tok.numericValue !== 'number') {
-      throw parseError(state, 'positive integer OFFSET value')
-    }
-    if (!Number.isInteger(tok.numericValue) || tok.numericValue < 0) {
-      throw parseError(state, 'positive integer OFFSET value')
-    }
-    offset = tok.numericValue
-  }
-
-  // optional trailing semicolon
-  match(state, 'semicolon')
-
   return {
     type: 'select',
     distinct,
@@ -379,9 +445,7 @@ function parseSelect(state) {
     where,
     groupBy,
     having,
-    orderBy,
-    limit,
-    offset,
+    orderBy: [],
     positionStart,
     positionEnd: state.lastPos,
   }

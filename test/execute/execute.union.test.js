@@ -2,6 +2,122 @@ import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
 describe('UNION execution', () => {
+  it.each([
+    '(SELECT 1 AS x, 2 AS x) LIMIT 1',
+    '((SELECT 1 AS x, 2 AS x) LIMIT 1) OFFSET 0',
+    'WITH c AS (SELECT 1 AS n) SELECT n AS x, n + 1 AS x FROM c',
+    '(WITH c AS (SELECT 1 AS n) SELECT n AS x, n + 1 AS x FROM c) LIMIT 1',
+    'WITH c AS (SELECT 1 AS n) (SELECT n AS x, n + 1 AS x FROM c) LIMIT 1',
+  ])('preserves repeated right output positions through wrappers: %s', async operand => {
+    const query = `SELECT 0 AS a, 0 AS b UNION ALL (${operand})`
+    expect(await collect(executeSql({ tables: {}, query }))).toEqual([{ a: 0, b: 0 }, { a: 1, b: 2 }])
+    expect(await collect(executeSql({ tables: {}, query: `SELECT a FROM (${query}) result` }))).toEqual([{ a: 0 }, { a: 1 }])
+  })
+
+  it.each([
+    '(SELECT MIN(n) AS x, MAX(n) AS x FROM c GROUP BY g ORDER BY 1 LIMIT 2) ORDER BY 1 LIMIT 1',
+    'WITH c AS (SELECT * FROM t) SELECT MIN(n) AS x, MAX(n) AS x FROM c GROUP BY g ORDER BY 1 LIMIT 1',
+  ])('preserves alias and positional ordering bindings through wrappers: %s', async operand => {
+    const tables = { t: [{ g: 1, n: 1 }, { g: 1, n: 100 }, { g: 2, n: 2 }, { g: 2, n: 3 }] }
+    const query = `WITH c AS (SELECT * FROM t) SELECT 0 AS a, 0 AS b UNION ALL (${operand})`
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ a: 0, b: 0 }, { a: 1, b: 100 }])
+  })
+
+  it.each(['b + 0', 'x + b'])('should preserve original expression bindings when renaming outputs: %s', async expr => {
+    const result = await collect(executeSql({
+      tables: { t: [{ b: 99 }] },
+      query: `SELECT 1 AS a, 2 AS b, 3 AS c UNION ALL SELECT 4 AS x, 5 AS x, ${expr} AS z FROM t`,
+    }))
+    expect(result).toEqual([{ a: 1, b: 2, c: 3 }, { a: 4, b: 5, c: expr === 'b + 0' ? 99 : 104 }])
+  })
+
+  it('should preserve grouped positional ordering when duplicate right aliases are renamed', async () => {
+    const result = await collect(executeSql({
+      tables: { t: [{ g: 1, x: 1 }, { g: 1, x: 100 }, { g: 2, x: 50 }, { g: 2, x: 60 }] },
+      query: 'SELECT 0 AS a, 0 AS b UNION ALL (SELECT MIN(x) AS z, MAX(x) AS z FROM t GROUP BY g ORDER BY 2 DESC LIMIT 1)',
+    }))
+    expect(result).toEqual([{ a: 0, b: 0 }, { a: 1, b: 100 }])
+  })
+
+  it.each([
+    'SELECT 3 AS a UNION SELECT 2 AS b INTERSECT (SELECT 2 AS c) ORDER BY 1',
+    'SELECT 3 AS a UNION SELECT 2 AS b INTERSECT SELECT 2 AS c ORDER BY 1',
+  ])('should resolve compound positional ordering against final output: %s', async query => {
+    expect(await collect(executeSql({ tables: {}, query }))).toEqual([{ a: 2 }, { a: 3 }])
+  })
+
+  it.each([
+    ['(SELECT 1 AS a);', [{ a: 1 }]],
+    ['((SELECT 1 AS a, 2 AS b) LIMIT 1) ORDER BY 2', [{ a: 1, b: 2 }]],
+    ['((SELECT 1 AS a, 2 AS b UNION ALL SELECT 2 AS a, 1 AS b) LIMIT 2) ORDER BY 2', [{ a: 2, b: 1 }, { a: 1, b: 2 }]],
+    ['(SELECT 2 AS a UNION SELECT 1 AS a) ORDER BY a;', [{ a: 1 }, { a: 2 }]],
+    ['(SELECT 2 AS a UNION SELECT 1 AS a) ORDER BY 1 LIMIT 1 OFFSET 1;', [{ a: 2 }]],
+    ['(SELECT 2 AS a UNION SELECT 1 AS a ORDER BY a LIMIT 1) ORDER BY a DESC LIMIT 1;', [{ a: 1 }]],
+  ])('should apply suffixes outside standalone parentheses: %s', async (query, expected) => {
+    expect(await collect(executeSql({ tables: {}, query }))).toEqual(expected)
+  })
+
+  describe('rewrite scope invariants', () => {
+    const tables = { t: [{ x: 1, a: 0, b: 0, z_2: 0 }, { x: 3, a: 0, b: 0, z_2: 0 }] }
+
+    it.each(['a', 'b', 'z_1'])('keeps source HAVING bindings when generating aliases: %s', async name => {
+      const result = await collect(executeSql({
+        tables: { t: [{ x: 1, [name]: 0 }, { x: 3, [name]: 0 }] },
+        query: `SELECT 0 AS a, 0 AS b UNION ALL (SELECT MIN(x) AS z, MAX(x) AS z FROM t GROUP BY ${name} HAVING ${name} > 0)`,
+      }))
+      expect(result).toEqual([{ a: 0, b: 0 }])
+    })
+
+    it('keeps qualified star columns alongside computed outputs', async () => {
+      expect(await collect(executeSql({
+        tables: { t: [{ x: 1 }] },
+        query: '(SELECT t.*, x + 1 AS next FROM t) LIMIT 1',
+      }))).toEqual([{ x: 1, next: 2 }])
+    })
+
+    it.each(['UNION ALL', 'UNION', 'INTERSECT', 'INTERSECT ALL', 'EXCEPT', 'EXCEPT ALL'])(
+      'preserves HAVING bindings under duplicate output renaming in %s', async operator => {
+        for (const aggregate of ['MIN(x)', 'ARRAY_AGG(x)']) {
+          for (const grouping of ['', 'GROUP BY a, b, z_2']) {
+            for (const having of ['a > 0', 'b > 0', 'z_2 > 0', 'z > 2', 'z < 2', 'z IN (SELECT 3)', 'a IN (SELECT 0)', 'MAX(x) > 2']) {
+              for (const projection of ['*', 'b']) {
+                const suffix = `FROM t ${grouping} HAVING ${having}`
+                const duplicate = `SELECT ${aggregate} AS z, MAX(x) AS z ${suffix}`
+                const distinct = `SELECT ${aggregate} AS first_value, MAX(x) AS z ${suffix}`
+                const left = 'SELECT 1 AS a, 3 AS b'
+                const query = `SELECT ${projection} FROM (${left} ${operator} (${duplicate})) result`
+                const reference = `SELECT ${projection} FROM (${left} ${operator} (${distinct})) result`
+                expect(await collect(executeSql({ tables, query })), query).toEqual(
+                  await collect(executeSql({ tables, query: reference }))
+                )
+              }
+            }
+          }
+        }
+      }
+    )
+
+    it.each([
+      ['t.*', 't'],
+      ['s.*', 't AS s'],
+      ['s.*', '(SELECT x, a FROM t) AS s'],
+      ['t.*, x + 1 AS next', 't'],
+      ['x + 1 AS next, t.*', 't'],
+      ['t.*, u.*', 't JOIN (SELECT 9 AS y) u ON true'],
+    ])('preserves the output of parenthesized %s from %s', async (projection, from) => {
+      for (const inner of ['', 'ORDER BY x DESC LIMIT 1']) {
+        for (const outer of ['LIMIT 1', 'ORDER BY x DESC LIMIT 1', 'ORDER BY x LIMIT 1 OFFSET 1']) {
+          const body = `SELECT ${projection} FROM ${from} ${inner}`
+          const query = `(${body}) ${outer}`
+          const reference = `SELECT * FROM (${body}) result ${outer}`
+          expect(await collect(executeSql({ tables, query })), query).toEqual(
+            await collect(executeSql({ tables, query: reference }))
+          )
+        }
+      }
+    })
+  })
+
   const users = [
     { id: 1, name: 'Alice', age: 30 },
     { id: 2, name: 'Bob', age: 25 },
@@ -16,9 +132,8 @@ describe('UNION execution', () => {
 
   describe('UNION ALL', () => {
     it.each(['UNION ALL', 'UNION', 'INTERSECT', 'EXCEPT'])(
-      'should reject duplicate operand aliases in %s before pruning', operator => {
+      'should reject duplicate left operand aliases in %s before pruning', operator => {
         for (const operands of [
-          `SELECT 1 AS a, 2 AS b ${operator} SELECT 3 AS x, 4 AS x`,
           `SELECT 1 AS a, 2 AS a ${operator} SELECT 3 AS x, 4 AS y`,
           `SELECT 1 AS a, 2 AS a ${operator} SELECT 3 AS a, 4 AS a`,
         ]) {
@@ -476,6 +591,119 @@ describe('UNION execution', () => {
         { name: 'Bob' },
         { name: 'Charlie' },
       ])
+    })
+  })
+
+  describe('parenthesized operands', () => {
+    it('should parse parenthesized operands on both sides', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: '(SELECT name FROM users WHERE id = 1) UNION ALL (SELECT name FROM users WHERE id = 3)',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }, { name: 'Charlie' }])
+    })
+
+    it('should keep ORDER BY and LIMIT inside a parenthesized operand', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          (SELECT name FROM users ORDER BY age DESC LIMIT 1)
+          UNION ALL
+          (SELECT name FROM users ORDER BY age LIMIT 1)
+        `,
+      }))
+      expect(result).toEqual([{ name: 'Charlie' }, { name: 'Bob' }])
+    })
+
+    it('should apply ORDER BY and LIMIT after the last parenthesized operand to the whole result', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: '(SELECT id FROM users) UNION ALL (SELECT amount FROM orders) ORDER BY id DESC LIMIT 2',
+      }))
+      expect(result).toEqual([{ id: 200 }, { id: 150 }])
+    })
+
+    it('should resolve positional ORDER BY after parenthesized operands', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: '(SELECT id AS n FROM users) UNION ALL (SELECT amount FROM orders) ORDER BY 1 LIMIT 2',
+      }))
+      expect(result).toEqual([{ n: 1 }, { n: 2 }])
+    })
+
+    it('should nest parenthesized set operations', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: '((SELECT id FROM users) EXCEPT (SELECT 2)) UNION ALL (SELECT 9)',
+      }))
+      expect(result).toEqual([{ id: 1 }, { id: 3 }, { id: 9 }])
+    })
+
+    it('should accept a lone parenthesized query', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: '(SELECT name FROM users WHERE id = 2)',
+      }))
+      expect(result).toEqual([{ name: 'Bob' }])
+    })
+  })
+
+  describe('repeated column names', () => {
+    it.each([
+      ['UNION ALL', [{ a: 1, b: 2 }, { a: 3, b: 4 }]],
+      ['INTERSECT', []],
+      ['EXCEPT', [{ a: 1, b: 2 }]],
+    ])('should match repeated right aliases by position in %s', async (operator, expected) => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: `SELECT a, b FROM (SELECT 1 AS a, 2 AS b ${operator} SELECT 3 AS x, 4 AS x) t`,
+      }))
+      expect(result).toEqual(expected)
+    })
+
+    it('should accept repeated names in the right operand', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT name, age AS a, id AS b FROM users WHERE id = 1
+          UNION ALL
+          SELECT 'none', NULL, NULL
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', a: 30, b: 1 },
+        { name: 'none', a: null, b: null },
+      ])
+    })
+
+    it('should keep repeated right names distinct when the left name is taken', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT id AS null_3, age AS "NULL", name FROM users WHERE id = 2
+          UNION ALL
+          SELECT NULL, NULL, 'x'
+        `,
+      }))
+      expect(result).toEqual([
+        { null_3: 2, NULL: 25, name: 'Bob' },
+        { null_3: null, NULL: null, name: 'x' },
+      ])
+    })
+
+    it('should project repeated right names through an outer query', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT b FROM (SELECT id AS a, age AS b FROM users WHERE id = 3 UNION ALL SELECT MIN(id), MIN(id) FROM users) t',
+      }))
+      expect(result).toEqual([{ b: 35 }, { b: 1 }])
+    })
+
+    it('should reject repeated names in the left operand', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT NULL, NULL UNION ALL SELECT 1, 2',
+      })).toThrow('Set operation operands must have unique output column names')
     })
   })
 })

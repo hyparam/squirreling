@@ -33,6 +33,7 @@ export function planSql({ query, functions, tables, ctePlans, cteColumns }) {
  *
  * @param {object} options
  * @param {Statement} options.stmt
+ * @param {Statement} [options.aliasStmt] - statement before positional output renaming
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
@@ -40,7 +41,7 @@ export function planSql({ query, functions, tables, ctePlans, cteColumns }) {
  * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
+export function planStatement({ stmt, aliasStmt, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
   if (stmt.type === 'show tables') {
     return { type: 'ShowTables' }
   }
@@ -53,12 +54,12 @@ export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumn
       ctePlans.set(cte.name.toLowerCase(), ctePlan)
       cteColumns.set(cte.name.toLowerCase(), inferStatementColumns({ stmt: cte.query, cteColumns, tables }))
     }
-    return planStatement({ stmt: stmt.query, ctePlans, cteColumns, tables, parentColumns, outerScope })
+    return planStatement({ stmt: stmt.query, aliasStmt: aliasStmt?.type === 'with' ? aliasStmt.query : undefined, ctePlans, cteColumns, tables, parentColumns, outerScope })
   }
   if (stmt.type === 'compound') {
     return planSetOperation({ compound: stmt, ctePlans, cteColumns, tables, parentColumns })
   }
-  return planSelect({ select: stmt, ctePlans, cteColumns, tables, parentColumns, outerScope })
+  return planSelect({ select: stmt, aliasSelect: aliasStmt?.type === 'select' ? aliasStmt : undefined, ctePlans, cteColumns, tables, parentColumns, outerScope })
 }
 
 /**
@@ -74,7 +75,8 @@ export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumn
  */
 function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumns }) {
   const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
-  const rightColumns = inferStatementColumns({ stmt: compound.right, cteColumns, tables })
+  const rightStmt = uniqueRightColumns(compound.right, leftColumns, inferStatementColumns({ stmt: compound.right, cteColumns, tables }), { cteColumns, tables })
+  const rightColumns = inferStatementColumns({ stmt: rightStmt, cteColumns, tables })
   if (leftColumns.length !== rightColumns.length) {
     throw new Error(`Set operation operands must have the same number of columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
   }
@@ -95,7 +97,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     return index < 0 ? id : { ...id, name: rightColumns[index] }
   })
   let left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
-  let right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
+  let right = planStatement({ stmt: rightStmt, aliasStmt: rightStmt !== compound.right ? compound.right : undefined, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
 
   if (parentColumns) {
     // Aggregates and nested deduplicating operations may retain extra columns.
@@ -123,7 +125,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     left,
     right,
     leftScope: statementScope(compound.left),
-    rightScope: statementScope(compound.right),
+    rightScope: statementScope(rightStmt),
   }
 
   if (compound.orderBy.length) {
@@ -138,10 +140,69 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
 }
 
 /**
+ * Right operand columns match by position, so their names only need to be
+ * distinct. Repeats such as `NULL, NULL` are realiased, preferring the left
+ * operand's name for that position.
+ *
+ * @param {Statement} stmt
+ * @param {string[]} leftColumns
+ * @param {string[]} columns
+ * @param {{ cteColumns?: Map<string, string[]>, tables?: Record<string, AsyncDataSource> }} context
+ * @returns {Statement}
+ */
+function uniqueRightColumns(stmt, leftColumns, columns, context) {
+  if (new Set(columns).size === columns.length) return stmt
+  if (stmt.type === 'with') {
+    const cteColumns = new Map(context.cteColumns)
+    for (const cte of stmt.ctes) {
+      cteColumns.set(cte.name.toLowerCase(), inferStatementColumns({ stmt: cte.query, ...context, cteColumns }))
+    }
+    return { ...stmt, query: uniqueRightColumns(stmt.query, leftColumns, columns, { ...context, cteColumns }) }
+  }
+  if (stmt.type !== 'select' || stmt.columns.some(col => col.type === 'star')) return stmt
+  // Rename inner outputs before the wrapper reads them by name.
+  if (stmt.positional && stmt.from?.type === 'subquery') {
+    const query = uniqueRightColumns(stmt.from.query, leftColumns, columns, context)
+    const names = inferStatementColumns({ stmt: query, ...context })
+    stmt = {
+      ...stmt,
+      from: { ...stmt.from, query },
+      columns: stmt.columns.map((col, i) => col.type === 'derived' ? {
+        ...col, alias: columns[i],
+        expr: { type: 'identifier', name: names[i], positionStart: col.positionStart, positionEnd: col.positionEnd },
+      } : col),
+    }
+  }
+  // Synthetic names must not shadow source bindings or referenced identifiers.
+  const used = new Set([...columns, ...collectScopeColumns({ select: stmt, ...context })])
+  /** @type {IdentifierNode[]} */
+  const references = []
+  for (const col of stmt.columns) {
+    if (col.type === 'derived') collectColumnsFromExpr(col.expr, references)
+  }
+  for (const expr of [stmt.where, stmt.having, ...stmt.groupBy, ...stmt.orderBy.map(term => term.expr)]) {
+    collectColumnsFromExpr(expr, references)
+  }
+  for (const id of references) used.add(id.name)
+  const selectColumns = stmt.columns.map((col, i) => {
+    const name = columns[i]
+    // Name-keyed output cells give the last occurrence ownership of a name.
+    // Keep that binding for HAVING, including expressions with subqueries.
+    if (columns.lastIndexOf(name) === i) return col
+    let alias = leftColumns[i]
+    for (let n = i + 1; alias === undefined || used.has(alias); n++) alias = `${name}_${n}`
+    used.add(alias)
+    return { ...col, alias }
+  })
+  return { ...stmt, columns: selectColumns }
+}
+
+/**
  * Builds a plan for a SELECT statement with CTEs pre-resolved.
  *
  * @param {object} options
  * @param {SelectStatement} options.select
+ * @param {SelectStatement} [options.aliasSelect] - original statement before output renaming
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {Record<string, AsyncDataSource>} [options.tables]
@@ -149,7 +210,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
  * @param {string[]} [options.outerScope] - aliases from an outer query (for correlated subqueries)
  * @returns {QueryPlan}
  */
-function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
+function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentColumns, outerScope }) {
   // Reject window functions in clauses where they're not permitted.
   expectNoWindowFunction(select.where, 'WHERE')
   expectNoWindowFunction(select.having, 'HAVING')
@@ -184,7 +245,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Preserve the pre-substitution columns for column-extraction, so synthetic
   // `__window_N` identifiers are not requested from the data source.
-  const originalSelect = select
+  const originalSelect = select.positional ? select : aliasSelect ?? select
   select = { ...select, columns: windowColumns }
 
   // Check for aggregation
@@ -213,12 +274,14 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const scopeColumns = collectScopeColumns({ select, cteColumns, tables })
   /** @type {Map<string, ExprNode>} */
   const aliases = new Map()
-  let columns = select.columns.map(col => {
+  let columns = select.columns.map((col, i) => {
     if (col.type === 'derived') {
       validateTableRefs(col.expr, scopeTables, scopeColumns)
-      const expr = resolveAliases(col.expr, aliases)
-      if (col.alias) {
-        aliases.set(col.alias, expr)
+      // Wrapper identifiers read the subquery, not earlier projection aliases.
+      const expr = select.positional ? col.expr : resolveAliases(col.expr, aliases)
+      const original = aliasSelect?.columns[i] ?? col
+      if (original.type === 'derived' && original.alias) {
+        aliases.set(original.alias, expr)
       }
       return { ...col, expr }
     }
@@ -227,9 +290,16 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       const qualified = col.table + '.*'
       throw new TableNotFoundError({ table: col.table, qualified, tables: scopeTables, ...col })
     }
-    return col
+    // A single FROM source exposes bare cell keys; only joins qualify them.
+    return col.table && !select.joins.length ? { ...col, table: undefined } : col
   })
   let orderBy = resolveOrderByAliases(select.orderBy, aliases)
+  if (aliasSelect) {
+    orderBy = orderBy.map(term => {
+      const col = term.columnIndex === undefined ? undefined : columns[term.columnIndex]
+      return col?.type === 'derived' ? { ...term, expr: col.expr } : term
+    })
+  }
 
   // Validate qualified references in other clauses
   validateTableRefs(select.where, scopeTables, scopeColumns)
@@ -250,7 +320,8 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const hints = {}
   const perTableColumns = extractColumns({
     select: originalSelect,
-    parentColumns,
+    // Renamed outputs no longer match the original aliases used for extraction.
+    parentColumns: aliasSelect ? undefined : parentColumns,
     scopeColumns,
     cteColumns,
     tables,
@@ -385,7 +456,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   // Start with the data source (FROM clause)
   /** @type {QueryPlan} */
-  let plan = planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope })
+  let plan = planFrom({ select, aliasSelect, ctePlans, cteColumns, hints, tables, outerScope })
   pruneAggregateColumns(plan, subqueryNeeds)
 
   // Add JOINs
@@ -616,6 +687,7 @@ function pruneAggregateColumns(plan, needed) {
 /**
  * @param {object} options
  * @param {SelectStatement} options.select
+ * @param {SelectStatement} [options.aliasSelect]
  * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @param {ScanOptions} options.hints
@@ -623,7 +695,7 @@ function pruneAggregateColumns(plan, needed) {
  * @param {string[]} [options.outerScope]
  * @returns {QueryPlan}
  */
-function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
+function planFrom({ select, aliasSelect, ctePlans, cteColumns, hints, tables, outerScope }) {
   if (!select.from) {
     return { type: 'SingleRow' }
   }
@@ -642,6 +714,7 @@ function planFrom({ select, ctePlans, cteColumns, hints, tables, outerScope }) {
   } else {
     const subPlan = planStatement({
       stmt: select.from.query,
+      aliasStmt: select.positional && aliasSelect?.from?.type === 'subquery' ? aliasSelect.from.query : undefined,
       ctePlans,
       cteColumns,
       tables,
