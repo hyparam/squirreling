@@ -74,7 +74,8 @@ export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumn
  */
 function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumns }) {
   const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
-  const rightColumns = inferStatementColumns({ stmt: compound.right, cteColumns, tables })
+  const rightStmt = uniqueRightColumns(compound.right, leftColumns, inferStatementColumns({ stmt: compound.right, cteColumns, tables }))
+  const rightColumns = inferStatementColumns({ stmt: rightStmt, cteColumns, tables })
   if (leftColumns.length !== rightColumns.length) {
     throw new Error(`Set operation operands must have the same number of columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
   }
@@ -95,7 +96,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     return index < 0 ? id : { ...id, name: rightColumns[index] }
   })
   let left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
-  let right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
+  let right = planStatement({ stmt: rightStmt, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
 
   if (parentColumns) {
     // Aggregates and nested deduplicating operations may retain extra columns.
@@ -123,7 +124,7 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
     left,
     right,
     leftScope: statementScope(compound.left),
-    rightScope: statementScope(compound.right),
+    rightScope: statementScope(rightStmt),
   }
 
   if (compound.orderBy.length) {
@@ -135,6 +136,35 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
   }
 
   return plan
+}
+
+/**
+ * Right operand columns match by position, so their names only need to be
+ * distinct. Repeats such as `NULL, NULL` are realiased, preferring the left
+ * operand's name for that position.
+ *
+ * @param {Statement} stmt
+ * @param {string[]} leftColumns
+ * @param {string[]} columns
+ * @returns {Statement}
+ */
+function uniqueRightColumns(stmt, leftColumns, columns) {
+  if (new Set(columns).size === columns.length) return stmt
+  if (stmt.type !== 'select' || stmt.columns.some(col => col.type === 'star')) return stmt
+  const used = new Set(columns)
+  const seen = new Set()
+  const selectColumns = stmt.columns.map((col, i) => {
+    const name = columns[i]
+    if (!seen.has(name)) {
+      seen.add(name)
+      return col
+    }
+    let alias = leftColumns[i]
+    for (let n = i + 1; alias === undefined || used.has(alias); n++) alias = `${name}_${n}`
+    used.add(alias)
+    return { ...col, alias }
+  })
+  return { ...stmt, columns: selectColumns }
 }
 
 /**

@@ -16,9 +16,8 @@ describe('UNION execution', () => {
 
   describe('UNION ALL', () => {
     it.each(['UNION ALL', 'UNION', 'INTERSECT', 'EXCEPT'])(
-      'should reject duplicate operand aliases in %s before pruning', operator => {
+      'should reject duplicate left operand aliases in %s before pruning', operator => {
         for (const operands of [
-          `SELECT 1 AS a, 2 AS b ${operator} SELECT 3 AS x, 4 AS x`,
           `SELECT 1 AS a, 2 AS a ${operator} SELECT 3 AS x, 4 AS y`,
           `SELECT 1 AS a, 2 AS a ${operator} SELECT 3 AS a, 4 AS a`,
         ]) {
@@ -476,6 +475,119 @@ describe('UNION execution', () => {
         { name: 'Bob' },
         { name: 'Charlie' },
       ])
+    })
+  })
+
+  describe('parenthesized operands', () => {
+    it('should parse parenthesized operands on both sides', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: '(SELECT name FROM users WHERE id = 1) UNION ALL (SELECT name FROM users WHERE id = 3)',
+      }))
+      expect(result).toEqual([{ name: 'Alice' }, { name: 'Charlie' }])
+    })
+
+    it('should keep ORDER BY and LIMIT inside a parenthesized operand', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          (SELECT name FROM users ORDER BY age DESC LIMIT 1)
+          UNION ALL
+          (SELECT name FROM users ORDER BY age LIMIT 1)
+        `,
+      }))
+      expect(result).toEqual([{ name: 'Charlie' }, { name: 'Bob' }])
+    })
+
+    it('should apply ORDER BY and LIMIT after the last parenthesized operand to the whole result', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: '(SELECT id FROM users) UNION ALL (SELECT amount FROM orders) ORDER BY id DESC LIMIT 2',
+      }))
+      expect(result).toEqual([{ id: 200 }, { id: 150 }])
+    })
+
+    it('should resolve positional ORDER BY after parenthesized operands', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: '(SELECT id AS n FROM users) UNION ALL (SELECT amount FROM orders) ORDER BY 1 LIMIT 2',
+      }))
+      expect(result).toEqual([{ n: 1 }, { n: 2 }])
+    })
+
+    it('should nest parenthesized set operations', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: '((SELECT id FROM users) EXCEPT (SELECT 2)) UNION ALL (SELECT 9)',
+      }))
+      expect(result).toEqual([{ id: 1 }, { id: 3 }, { id: 9 }])
+    })
+
+    it('should accept a lone parenthesized query', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: '(SELECT name FROM users WHERE id = 2)',
+      }))
+      expect(result).toEqual([{ name: 'Bob' }])
+    })
+  })
+
+  describe('repeated column names', () => {
+    it.each([
+      ['UNION ALL', [{ a: 1, b: 2 }, { a: 3, b: 4 }]],
+      ['INTERSECT', []],
+      ['EXCEPT', [{ a: 1, b: 2 }]],
+    ])('should match repeated right aliases by position in %s', async (operator, expected) => {
+      const result = await collect(executeSql({
+        tables: {},
+        query: `SELECT a, b FROM (SELECT 1 AS a, 2 AS b ${operator} SELECT 3 AS x, 4 AS x) t`,
+      }))
+      expect(result).toEqual(expected)
+    })
+
+    it('should accept repeated names in the right operand', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT name, age AS a, id AS b FROM users WHERE id = 1
+          UNION ALL
+          SELECT 'none', NULL, NULL
+        `,
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', a: 30, b: 1 },
+        { name: 'none', a: null, b: null },
+      ])
+    })
+
+    it('should keep repeated right names distinct when the left name is taken', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT id AS null_3, age AS "NULL", name FROM users WHERE id = 2
+          UNION ALL
+          SELECT NULL, NULL, 'x'
+        `,
+      }))
+      expect(result).toEqual([
+        { null_3: 2, NULL: 25, name: 'Bob' },
+        { null_3: null, NULL: null, name: 'x' },
+      ])
+    })
+
+    it('should project repeated right names through an outer query', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: 'SELECT b FROM (SELECT id AS a, age AS b FROM users WHERE id = 3 UNION ALL SELECT MIN(id), MIN(id) FROM users) t',
+      }))
+      expect(result).toEqual([{ b: 35 }, { b: 1 }])
+    })
+
+    it('should reject repeated names in the left operand', () => {
+      expect(() => executeSql({
+        tables: { users },
+        query: 'SELECT NULL, NULL UNION ALL SELECT 1, 2',
+      })).toThrow('Set operation operands must have unique output column names')
     })
   })
 })
