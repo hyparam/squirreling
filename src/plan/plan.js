@@ -8,7 +8,7 @@ import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
-import { decorrelateScalars, planMarkJoins, planMembership } from './subqueries.js'
+import { decorrelateScalars, hasSubqueryExpression, hoistAggregateInputs, markJoinPlanner, planMembership } from './subqueries.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -240,10 +240,21 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   function planQuery(query) {
     return planStatement({ stmt: query, tables, ctePlans, cteColumns })
   }
-  // A WHERE membership test is a semi-join, not a row-by-row expression
-  // subquery. Keep the original SELECT for column demand analysis above.
+  // Membership and scalar subqueries become joins that read the subquery
+  // once per execution. A top-level WHERE membership test filters as a semi
+  // join; anything else reads a mark column. Keep the original SELECT for
+  // column demand analysis above.
+  const hasStar = columns.some(col => col.type === 'star')
+  const sourceNames = hasStar ? inferSelectSourceColumns({ select, cteColumns, tables }) : []
+  const scalarAggregate = hasAggregate && !select.groupBy.length
+  const marker = outerScope?.length || hasStar && !sourceNames.length ? undefined : markJoinPlanner({
+    prefix: '__mark_', scopeAliases, scopeColumns, tables, cteColumns, planQuery,
+    scalarAggregates: useGrouping || windows.length > 0,
+  })
   /** @type {Omit<SemiJoinNode, 'left'>[]} */
   const semiJoins = []
+  /** @type {ExprNode | undefined} */
+  let markWhere
   if (select.where && !outerScope?.length) {
     /** @type {ExprNode[]} */
     const conjuncts = []
@@ -254,29 +265,74 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       const not = conjunct.type === 'unary' && conjunct.op === 'NOT'
       const expr = not ? conjunct.argument : conjunct
       const join = planMembership({ expr, scopeAliases, tables, cteColumns, planQuery })
-      if (join) semiJoins.push({ ...join, not: not !== (expr.type === 'not exists') })
+      if (join && join.test !== 'scalar') {
+        semiJoins.push({ ...join, not: not !== (expr.type === 'not exists') })
+        continue
+      }
+      const marked = marker?.rewrite(conjunct) ?? conjunct
+      if (marked !== conjunct) markWhere = andPredicate(markWhere, marked)
       else residual = andPredicate(residual, conjunct)
     }
     select = { ...select, where: residual }
   }
-  // Membership tests outside WHERE become mark joins: one build of the
-  // subquery per execution, read back as a boolean column.
-  /** @type {Omit<SemiJoinNode, 'left'>[]} */
-  let markJoins = []
   // Resolve SELECT aliases in GROUP BY expressions at plan time
   let groupBy = aliases.size > 0
     ? select.groupBy.map(expr => resolveAliases(expr, aliases))
     : select.groupBy
-  if (!outerScope?.length && !windows.length && !columns.some(col => col.type === 'star')) {
-    const marked = planMarkJoins({
-      columns, orderBy, groupBy, scopeAliases, scopeColumns, tables, cteColumns, planQuery,
-      scalarAggregate: hasAggregate && !groupBy.length,
+  // A scalar aggregate over no rows evaluates its projection on a synthesized
+  // row, so only aggregate arguments may read marks there.
+  if (marker) {
+    columns = columns.map(col => {
+      if (col.type !== 'derived') return col
+      const expr = marker.rewrite(col.expr, scalarAggregate)
+      return expr === col.expr ? col : { ...col, alias: col.alias ?? derivedAlias(col.expr), expr }
     })
-    columns = marked.columns
-    orderBy = marked.orderBy
-    groupBy = marked.groupBy
-    markJoins = marked.markJoins
+    groupBy = groupBy.map(expr => marker.rewrite(expr))
+    orderBy = orderBy.map(term => ({ ...term, expr: marker.rewrite(term.expr, scalarAggregate) }))
   }
+  // HAVING membership runs above the aggregate, against output columns and
+  // hidden columns for the aggregates and keys it reads.
+  let { having } = select
+  /** @type {DerivedColumn[]} */
+  const hiddenColumns = []
+  /** @type {ExprNode | undefined} */
+  let havingFilter
+  const outputs = new Set(columns.map(col => col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : ''))
+  const havingMarker = marker && having && !hasStar ? markJoinPlanner({
+    prefix: '__having_mark_', scopeAliases, scopeColumns: new Set([...scopeColumns, ...outputs]), tables, cteColumns, planQuery,
+    uncorrelatedOnly: true, scalarAggregates: true,
+  }) : undefined
+  if (havingMarker && having) {
+    /** @type {ExprNode[]} */
+    const terms = []
+    collectConjuncts(having, terms)
+    having = undefined
+    for (const term of terms) {
+      if (!hasSubqueryExpression(term)) {
+        having = andPredicate(having, term)
+        continue
+      }
+      // HAVING can name output aliases, which exist only above the aggregate.
+      /** @type {DerivedColumn[]} */
+      const hidden = []
+      const hoisted = hoistAggregateInputs(term, outputs, expr => {
+        let name = `__having_${hiddenColumns.length + hidden.length}`
+        while (outputs.has(name) || scopeColumns.has(name)) name += '_'
+        hidden.push({ type: 'derived', expr, alias: name, positionStart: expr.positionStart, positionEnd: expr.positionEnd })
+        return { type: 'identifier', name, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+      })
+      const above = havingMarker.rewrite(hoisted)
+      if (!hasSubqueryExpression(above)) {
+        hiddenColumns.push(...hidden)
+        havingFilter = andPredicate(havingFilter, above)
+      } else {
+        having = andPredicate(having, term)
+      }
+    }
+  }
+  const markJoins = marker?.markJoins ?? []
+  // Marks are extra columns on the source rows; stars must not expose them.
+  if (markJoins.length && hasStar) columns = expandStars(columns, sourceNames, sourceAlias, select.joins.length > 0)
   const scalar = decorrelateScalars({
     select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns,
     rewriteProjection: !useGrouping && !windows.length,
@@ -288,7 +344,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   const { scalarJoins, scalarWhere } = scalar
   if (!select.joins.length) {
     hints.where = select.where
-    if (!needsBuffering && !select.distinct && !semiJoins.length && !scalarWhere) {
+    if (!needsBuffering && !select.distinct && !semiJoins.length && !markWhere && !scalarWhere) {
       hints.limit = select.limit
       hints.offset = select.offset
     }
@@ -318,6 +374,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
 
   for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
   for (const markJoin of markJoins) plan = { ...markJoin, left: plan }
+  if (markWhere) plan = { type: 'Filter', condition: markWhere, child: plan }
 
   for (const joinScalar of scalarJoins) plan = joinScalar(plan)
   if (scalarWhere) plan = { type: 'Filter', condition: scalarWhere, child: plan }
@@ -331,6 +388,17 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
   ) : columns
 
   if (useGrouping) {
+    // Keep group context in lazy output cells, but only read sort keys after
+    // the rewritten HAVING has discarded excluded groups.
+    const deferredOrderBy = havingFilter && select.groupBy.length ? orderBy.map(term => {
+      let name = `__having_order_${hiddenColumns.length}`
+      while (outputs.has(name) || scopeColumns.has(name) || hiddenColumns.some(col => col.alias === name)) name += '_'
+      const { expr } = term
+      hiddenColumns.push({ type: 'derived', expr, alias: name, positionStart: expr.positionStart, positionEnd: expr.positionEnd })
+      /** @type {IdentifierNode} */
+      const key = { type: 'identifier', name, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
+      return { ...term, expr: key }
+    }) : undefined
     // Aggregation path: GROUP BY or scalar aggregate
     // HAVING is integrated into aggregate nodes for access to group context
     if (select.groupBy.length) {
@@ -338,16 +406,31 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       const aggregatePlan = {
         type: 'HashAggregate',
         groupBy,
-        columns,
-        having: select.having,
+        columns: [...columns, ...hiddenColumns],
+        having,
         child: plan,
       }
-      if (orderBy.length) aggregatePlan.orderBy = orderBy
+      if (orderBy.length && !deferredOrderBy) aggregatePlan.orderBy = orderBy
       plan = aggregatePlan
     } else if (!select.having && !select.where && plan.type === 'Scan' && isOwnScan && isAllCountStar(select.columns)) {
       plan = { type: 'Count', table: plan.table, columns: select.columns }
     } else {
-      plan = { type: 'ScalarAggregate', columns, having: select.having, child: plan }
+      plan = { type: 'ScalarAggregate', columns: [...columns, ...hiddenColumns], having, child: plan }
+    }
+
+    if (havingMarker && havingFilter) {
+      for (const markJoin of havingMarker.markJoins) plan = { ...markJoin, left: plan }
+      plan = { type: 'Filter', condition: havingFilter, child: plan }
+      if (deferredOrderBy?.length) plan = { type: 'Sort', orderBy: deferredOrderBy, child: plan }
+      // Drop hidden inputs and marks, keeping the output column names.
+      plan = {
+        type: 'Project',
+        columns: columns.map(col => {
+          const name = col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : ''
+          return { type: 'derived', expr: { type: 'identifier', name, positionStart: col.positionStart, positionEnd: col.positionEnd }, alias: name, positionStart: col.positionStart, positionEnd: col.positionEnd }
+        }),
+        child: plan,
+      }
     }
 
     // ORDER BY (after aggregation)
@@ -385,7 +468,7 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
     // So the order is: Sort -> Project -> Distinct -> Limit
 
     // Fast path for SELECT * without joins
-    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !scalarJoins.length
+    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !scalarJoins.length && !markJoins.length
     if (!isPassthrough) {
       let projectColumns = columns
       // When parent only needs specific columns, drop unneeded projections
@@ -412,13 +495,39 @@ function planSelect({ select, ctePlans, cteColumns, tables, parentColumns, outer
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length && !scalarWhere) && (select.limit !== undefined || select.offset)) {
+    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length && !markWhere && !scalarWhere) && (select.limit !== undefined || select.offset)) {
       if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }
   }
 
   return plan
+}
+
+/**
+ * Expands star columns into explicit references, so columns added by joins
+ * planned below the projection are not exposed.
+ *
+ * @param {SelectColumn[]} columns
+ * @param {string[]} sourceNames - inferred source cell keys
+ * @param {string | undefined} sourceAlias
+ * @param {boolean} qualified - whether source keys carry join qualifiers
+ * @returns {SelectColumn[]}
+ */
+function expandStars(columns, sourceNames, sourceAlias, qualified) {
+  return columns.flatMap(col => {
+    if (col.type !== 'star') return [col]
+    const position = { positionStart: col.positionStart, positionEnd: col.positionEnd }
+    return sourceNames.flatMap(key => {
+      const dot = qualified ? key.indexOf('.') : -1
+      const prefix = dot >= 0 ? key.slice(0, dot) : undefined
+      const name = dot >= 0 ? key.slice(dot + 1) : key
+      if (col.table && col.table !== (prefix ?? sourceAlias)) return []
+      /** @type {DerivedColumn} */
+      const derived = { ...position, type: 'derived', expr: { ...position, type: 'identifier', prefix, name }, alias: name }
+      return [derived]
+    })
+  })
 }
 
 /**

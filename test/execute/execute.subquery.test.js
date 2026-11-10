@@ -492,6 +492,24 @@ describe('subqueries', () => {
 
   // scalar subqueries
   describe('scalar subqueries', () => {
+    it.each([
+      'ROW_NUMBER() OVER (ORDER BY w.id) + 0',
+      'ABS(ROW_NUMBER() OVER (ORDER BY w.id))',
+      'CAST(ROW_NUMBER() OVER (ORDER BY w.id) AS INTEGER)',
+      'CASE WHEN w.id > 0 THEN ROW_NUMBER() OVER (ORDER BY w.id) ELSE 0 END',
+    ])('should evaluate correlated nested windows per outer row: %s', async expression => {
+      const result = await collect(executeSql({
+        tables: {
+          items: [{ id: 1 }, { id: 2 }],
+          wanted: [{ id: 1 }, { id: 2 }],
+        },
+        query: `SELECT id, (
+          SELECT ${expression} FROM wanted w WHERE w.id = items.id
+        ) AS n FROM items ORDER BY id`,
+      }))
+      expect(result).toEqual([{ id: 1, n: 1 }, { id: 2, n: 1 }])
+    })
+
     it('should preserve outer references in joined derived tables', async () => {
       const result = await collect(executeSql({
         tables: {

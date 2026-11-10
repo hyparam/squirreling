@@ -157,25 +157,24 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
 }
 
 /**
- * Replaces IN and EXISTS subqueries in the projection, grouping keys, and
- * ordering with a column from a mark join, so each subquery runs once per
- * execution instead of once per row. Uncorrelated subqueries and plain
- * equality correlations qualify; other correlations, and IN operands that
- * read aggregate or window results, stay on the per-row path.
+ * Rewrites IN, EXISTS, and scalar subqueries into identifiers bound to mark
+ * joins, so each subquery runs once per execution instead of once per row.
+ * The caller places `markJoins` below the clauses it rewrote. Uncorrelated
+ * subqueries and plain equality correlations qualify; anything else, and IN
+ * operands that read aggregate or window results, stay on the per-row path.
  *
  * @param {object} options
- * @param {SelectColumn[]} options.columns
- * @param {OrderByItem[]} options.orderBy
- * @param {boolean} options.scalarAggregate
- * @param {ExprNode[]} options.groupBy
+ * @param {string} options.prefix - mark column name prefix
  * @param {string[]} options.scopeAliases
  * @param {Set<string>} options.scopeColumns
  * @param {(query: Statement) => QueryPlan} options.planQuery
+ * @param {boolean} [options.uncorrelatedOnly] - for marks above an aggregate
+ * @param {boolean} [options.scalarAggregates] - also take aggregate scalars
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @param {Map<string, string[]>} [options.cteColumns]
- * @returns {{ columns: SelectColumn[], orderBy: OrderByItem[], groupBy: ExprNode[], markJoins: Omit<SemiJoinNode, 'left'>[] }}
+ * @returns {{ markJoins: Omit<SemiJoinNode, 'left'>[], rewrite: (expr: ExprNode, aggregateOnly?: boolean) => ExprNode }}
  */
-export function planMarkJoins({ columns, orderBy, groupBy, scalarAggregate, scopeAliases, scopeColumns, planQuery, tables, cteColumns }) {
+export function markJoinPlanner({ prefix, scopeAliases, scopeColumns, planQuery, uncorrelatedOnly, scalarAggregates, tables, cteColumns }) {
   /** @type {Omit<SemiJoinNode, 'left'>[]} */
   const markJoins = []
   // The same node can appear in several clauses (GROUP BY 1, aliases).
@@ -192,11 +191,14 @@ export function planMarkJoins({ columns, orderBy, groupBy, scalarAggregate, scop
       rewrites++
       return existing
     }
-    let name = `__mark_${markJoins.length}`
-    while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
     if (expr.type === 'in' && (findAggregate(expr.expr) || findWindow(expr.expr))) return expr
+    // Uncorrelated aggregate scalars are already single-row cross joins.
+    if (expr.type === 'subquery' && !scalarAggregates && expr.subquery.type === 'select' &&
+        expr.subquery.columns.some(col => col.type === 'derived' && findAggregate(col.expr))) return expr
     const join = planMembership({ expr, scopeAliases, tables, cteColumns, planQuery })
-    if (!join) return expr
+    if (!join || uncorrelatedOnly && join.keys) return expr
+    let name = `${prefix}${markJoins.length}`
+    while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
     markJoins.push({ ...join, not: expr.type === 'not exists', mark: name })
     /** @type {IdentifierNode} */
     const mark = { type: 'identifier', name, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
@@ -204,24 +206,77 @@ export function planMarkJoins({ columns, orderBy, groupBy, scalarAggregate, scop
     rewrites++
     return mark
   }
-
-  columns = columns.map(col => {
-    if (col.type !== 'derived') return col
-    const before = rewrites
-    const expr = mapScalarExpressions(col.expr, rewriteMembership, scalarAggregate)
-    if (rewrites === before) return col
-    return { ...col, alias: col.alias ?? derivedAlias(col.expr), expr }
-  })
-  groupBy = groupBy.map(expr => mapScalarExpressions(expr, rewriteMembership))
-  orderBy = orderBy.map(term => ({ ...term, expr: mapScalarExpressions(term.expr, rewriteMembership, scalarAggregate) }))
-  return { columns, orderBy, groupBy, markJoins }
+  return {
+    markJoins,
+    rewrite(expr, aggregateOnly = false) {
+      const before = rewrites
+      const rewritten = mapScalarExpressions(expr, rewriteMembership, aggregateOnly)
+      return rewrites === before ? expr : rewritten
+    },
+  }
 }
 
 /**
- * Plans the right input of an IN or EXISTS test so it is read once per
- * execution. Uncorrelated subqueries are planned as written. Plain equality
- * correlations become keys, and the right input yields [value (IN only),
- * ...keys]. Returns undefined for anything else, which stays per-row.
+ * Replaces aggregate calls and plain column references with identifiers for
+ * hidden aggregate output columns, so an expression from HAVING can be
+ * evaluated above the aggregate. Output aliases are already available there.
+ *
+ * @param {ExprNode} node
+ * @param {Set<string>} outputs
+ * @param {(expr: ExprNode) => IdentifierNode} hide
+ * @returns {ExprNode}
+ */
+export function hoistAggregateInputs(node, outputs, hide) {
+  if (node.type === 'identifier') return !node.prefix && outputs.has(node.name) ? node : hide(node)
+  if (node.type === 'function' && isAggregateFunc(node.funcName.toUpperCase())) return hide(node)
+  if (node.type === 'in') return { ...node, expr: hoistAggregateInputs(node.expr, outputs, hide) }
+  if (node.type === 'unary') return { ...node, argument: hoistAggregateInputs(node.argument, outputs, hide) }
+  if (node.type === 'binary') {
+    return { ...node, left: hoistAggregateInputs(node.left, outputs, hide), right: hoistAggregateInputs(node.right, outputs, hide) }
+  }
+  if (node.type === 'function') return { ...node, args: node.args.map(arg => hoistAggregateInputs(arg, outputs, hide)) }
+  if (node.type === 'cast') return { ...node, expr: hoistAggregateInputs(node.expr, outputs, hide) }
+  if (node.type === 'in valuelist') {
+    return { ...node, expr: hoistAggregateInputs(node.expr, outputs, hide), values: node.values.map(v => hoistAggregateInputs(v, outputs, hide)) }
+  }
+  if (node.type === 'subscript') {
+    return { ...node, expr: hoistAggregateInputs(node.expr, outputs, hide), index: hoistAggregateInputs(node.index, outputs, hide) }
+  }
+  if (node.type === 'case') {
+    return {
+      ...node,
+      caseExpr: node.caseExpr && hoistAggregateInputs(node.caseExpr, outputs, hide),
+      whenClauses: node.whenClauses.map(w => ({
+        ...w,
+        condition: hoistAggregateInputs(w.condition, outputs, hide),
+        result: hoistAggregateInputs(w.result, outputs, hide),
+      })),
+      elseResult: node.elseResult && hoistAggregateInputs(node.elseResult, outputs, hide),
+    }
+  }
+  return node
+}
+
+/**
+ * True when an expression still evaluates a subquery per row.
+ *
+ * @param {ExprNode} expr
+ * @returns {boolean}
+ */
+export function hasSubqueryExpression(expr) {
+  let found = false
+  mapScalarExpressions(expr, node => {
+    if (node.type === 'in' || node.type === 'exists' || node.type === 'not exists' || node.type === 'subquery') found = true
+    return node
+  })
+  return found
+}
+
+/**
+ * Plans the right input of an IN, EXISTS, or scalar subquery so it is read
+ * once per execution. Uncorrelated subqueries are planned as written. Plain
+ * equality correlations become keys, and the right input yields [value (IN,
+ * scalar), ...keys]. Returns undefined for anything else, which stays per-row.
  *
  * @param {object} options
  * @param {ExprNode} options.expr
@@ -232,10 +287,11 @@ export function planMarkJoins({ columns, orderBy, groupBy, scalarAggregate, scop
  * @returns {Omit<SemiJoinNode, 'left' | 'not'> | undefined}
  */
 export function planMembership({ expr, scopeAliases, planQuery, tables, cteColumns }) {
-  if (expr.type !== 'in' && expr.type !== 'exists' && expr.type !== 'not exists') return
+  if (expr.type !== 'in' && expr.type !== 'exists' && expr.type !== 'not exists' && expr.type !== 'subquery') return
   const query = expr.subquery
-  const test = expr.type === 'in' ? 'in' : 'exists'
-  // EXISTS has no operand; keep a placeholder so the node shape is uniform.
+  /** @type {SemiJoinNode['test']} */
+  const test = expr.type === 'in' ? 'in' : expr.type === 'subquery' ? 'scalar' : 'exists'
+  // Only IN has an operand; keep a placeholder so the node shape is uniform.
   /** @type {ExprNode} */
   const operand = expr.type === 'in' ? expr.expr : { type: 'literal', value: null, positionStart: expr.positionStart, positionEnd: expr.positionEnd }
   /** @type {IdentifierNode[]} */
@@ -249,10 +305,12 @@ export function planMembership({ expr, scopeAliases, planQuery, tables, cteColum
     return { type: 'SemiJoin', test, expr: operand, right: scope ? { type: 'Subquery', child: right, scope } : right }
   }
   const value = query.type === 'select' && query.columns.length === 1 ? query.columns[0] : undefined
-  if (test === 'in' && value?.type !== 'derived') return
+  if (test !== 'exists' && value?.type !== 'derived') return
+  // Decorrelation drops DISTINCT, which decides whether a scalar is one row.
+  if (test === 'scalar' && query.type === 'select' && query.distinct) return
   const keys = decorrelateExists(query, scopeAliases, tables, cteColumns)
   if (!keys) return
-  const columns = test === 'in' && value?.type === 'derived'
+  const columns = test !== 'exists' && value?.type === 'derived'
     ? [{ ...value, alias: '__membership_value' }, ...keys.query.columns]
     : keys.query.columns
   const right = planQuery({ ...keys.query, columns })
@@ -295,7 +353,7 @@ function isSingleRowAggregate(query, expr, outerScope, tables, cteColumns) {
 export function decorrelateExists(query, outerScope, tables, cteColumns, aggregate = false) {
   if (query.type !== 'select' || query.limit !== undefined || query.offset ||
       query.groupBy.length || query.having ||
-      !aggregate && query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || col.expr.type === 'window'))) return
+      !aggregate && query.columns.some(col => col.type === 'derived' && (findAggregate(col.expr) || findWindow(col.expr)))) return
   const scope = statementScope(query) ?? []
   /** @type {IdentifierNode[]} */
   const left = []

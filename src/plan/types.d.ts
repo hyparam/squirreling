@@ -103,11 +103,12 @@ export interface ScalarAggregateNode {
 // Join nodes
 // IN / EXISTS membership against a right input read once per iteration.
 // Filters left rows by default; with `mark`, keeps every left row and adds
-// a column holding the result instead. Equality correlations become keys,
-// and the right input then yields [value (IN only), ...keys].
+// a column holding the result instead. A scalar test (mark only) is a single
+// join whose mark is the subquery's one value. Equality correlations become
+// keys, and the right input then yields [value (IN, scalar), ...keys].
 export interface SemiJoinNode {
   type: 'SemiJoin'
-  test: 'in' | 'exists'
+  test: 'in' | 'exists' | 'scalar'
   left: QueryPlan
   right: QueryPlan
   // IN operand; a placeholder for EXISTS

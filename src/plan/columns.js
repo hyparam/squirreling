@@ -456,50 +456,16 @@ export function inferStatementColumns({ stmt, cteColumns, tables }) {
  */
 export function inferSelectSourceColumns({ select, cteColumns, tables }) {
   if (!select.from) return []
-  if (select.from.type === 'subquery') {
-    return inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
-  }
-
-  if (select.from.type === 'function') {
-    if (!select.joins.length) {
-      return tableFunctionColumnNames(select.from)
-    }
-    /** @type {string[]} */
-    const result = []
-    const alias = fromAlias(select.from)
-    for (const col of tableFunctionColumnNames(select.from)) {
-      result.push(`${alias}.${col}`)
-    }
-    for (const join of select.joins) {
-      const joinAlias = join.alias ?? join.table
-      if (join.fromFunction) {
-        for (const col of tableFunctionColumnNames(join.fromFunction)) {
-          result.push(`${joinAlias}.${col}`)
-        }
-      } else if (join.subquery) {
-        for (const col of inferStatementColumns({ stmt: join.subquery.query, cteColumns, tables })) {
-          result.push(`${joinAlias}.${col}`)
-        }
-      } else {
-        for (const col of lookupTableColumns(join.table, cteColumns, tables)) {
-          result.push(`${joinAlias}.${col}`)
-        }
-      }
-    }
-    return result
-  }
-
-  if (!select.joins.length) {
-    return lookupTableColumns(select.from.table, cteColumns, tables)
-  }
+  const sourceColumns = select.from.type === 'subquery'
+    ? inferStatementColumns({ stmt: select.from.query, cteColumns, tables })
+    : select.from.type === 'function'
+      ? tableFunctionColumnNames(select.from)
+      : lookupTableColumns(select.from.table, cteColumns, tables)
+  if (!select.joins.length) return sourceColumns
 
   // Collect all sources, then prefix each table's columns
-  /** @type {string[]} */
-  const result = []
-  const sourceAlias = select.from.alias ?? select.from.table
-  for (const col of lookupTableColumns(select.from.table, cteColumns, tables)) {
-    result.push(`${sourceAlias}.${col}`)
-  }
+  const sourceAlias = fromAlias(select.from)
+  const result = sourceColumns.map(col => `${sourceAlias}.${col}`)
   for (const join of select.joins) {
     const joinAlias = join.alias ?? join.table
     if (join.fromFunction) {
