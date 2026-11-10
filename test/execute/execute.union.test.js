@@ -37,6 +37,15 @@ describe('UNION execution', () => {
     })
 
     it.each([
+      'SELECT * FROM (WITH c AS (SELECT 1 AS a) SELECT * FROM c) t UNION ALL SELECT 2 AS a',
+      'SELECT 1 AS a UNION ALL SELECT * FROM (WITH c AS (SELECT 2 AS a) SELECT * FROM c) t',
+      'SELECT a FROM (SELECT * FROM (WITH c AS (SELECT 1 AS a, 3 AS b), d AS (SELECT * FROM c) SELECT * FROM d) t UNION ALL SELECT 2 AS x, 4 AS y) u',
+    ])('should resolve nested CTE columns before validating operands: %s', async query => {
+      const result = await collect(executeSql({ tables: {}, query }))
+      expect(result).toEqual([{ a: 1 }, { a: 2 }])
+    })
+
+    it.each([
       ['COUNT(*) AS a', 'COUNT(*) AS a', 'a', 20],
       ['COUNT(*) AS a', 'COUNT(*) AS c', 'a DESC', 10],
       ['COUNT(*) AS a', 'COUNT(*) AS c', '-a', 10],

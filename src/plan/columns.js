@@ -423,6 +423,10 @@ export function inferStatementColumns({ stmt, cteColumns, tables }) {
     return ['name']
   }
   if (stmt.type === 'with') {
+    cteColumns = new Map(cteColumns)
+    for (const cte of stmt.ctes) {
+      cteColumns.set(cte.name.toLowerCase(), inferStatementColumns({ stmt: cte.query, cteColumns, tables }))
+    }
     return inferStatementColumns({ stmt: stmt.query, cteColumns, tables })
   }
   if (stmt.type === 'compound') {
