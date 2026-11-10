@@ -216,8 +216,9 @@ export function stringify(value) {
  */
 export function keyify(...values) {
   if (values.length === 1 && typeof values[0] !== 'object') return values[0]
-  // Strings must be stringified to avoid collisions when joined
-  return values.map(v => typeof v === 'object' ? stringify(v) : v).join('|')
+  // Length-prefix strings so a tuple cannot be confused with another that
+  // splits differently, or with the same text as a number or NULL.
+  return values.map(v => typeof v === 'string' ? `${v.length}:${v}` : typeof v === 'object' ? stringify(v) : v).join('|')
 }
 
 /**
