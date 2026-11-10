@@ -73,13 +73,46 @@ export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumn
  * @returns {QueryPlan}
  */
 function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumns }) {
-  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
-  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns })
   const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
   const rightColumns = inferStatementColumns({ stmt: compound.right, cteColumns, tables })
+  if (leftColumns.length !== rightColumns.length) {
+    throw new Error(`Set operation operands must have the same number of columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
+  }
+  // Name-keyed cells cannot preserve distinct positions with duplicate names.
+  if (new Set(leftColumns).size !== leftColumns.length || new Set(rightColumns).size !== rightColumns.length) {
+    throw new Error('Set operation operands must have unique output column names')
+  }
+  // Deduplicating operators compare whole rows, so only UNION ALL can prune.
+  if (compound.operator !== 'UNION' || !compound.all) parentColumns = undefined
+  if (parentColumns) {
+    // Sorting happens after operand projection, so retain its dependencies too.
+    parentColumns = [...parentColumns]
+    for (const term of compound.orderBy) collectColumnsFromExpr(term.expr, parentColumns)
+  }
+  // Output names come from the left operand; right columns match by position.
+  const rightParentColumns = parentColumns?.map(id => {
+    const index = leftColumns.indexOf(id.name)
+    return index < 0 ? id : { ...id, name: rightColumns[index] }
+  })
+  let left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
+  let right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
 
-  if (leftColumns.length !== rightColumns.length || leftColumns.some((col, idx) => col !== rightColumns[idx])) {
-    throw new Error(`Set operation operands must have identical columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
+  if (parentColumns) {
+    // Aggregates and nested deduplicating operations may retain extra columns.
+    // Project both operands to the same original positions before runtime renaming.
+    /** @type {SelectColumn[]} */
+    const leftProjection = []
+    /** @type {SelectColumn[]} */
+    const rightProjection = []
+    for (let i = 0; i < leftColumns.length; i++) {
+      const id = parentColumns.find(id => id.name === leftColumns[i])
+      if (!id) continue
+      const position = { positionStart: id.positionStart, positionEnd: id.positionEnd }
+      leftProjection.push({ ...position, type: 'derived', expr: { ...position, type: 'identifier', name: leftColumns[i] }, alias: leftColumns[i] })
+      rightProjection.push({ ...position, type: 'derived', expr: { ...position, type: 'identifier', name: rightColumns[i] }, alias: rightColumns[i] })
+    }
+    left = { type: 'Project', columns: leftProjection, child: left }
+    right = { type: 'Project', columns: rightProjection, child: right }
   }
 
   /** @type {QueryPlan} */

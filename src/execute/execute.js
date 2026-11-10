@@ -1218,6 +1218,31 @@ function identifierColumnIndex(identifier, childColumns) {
 }
 
 /**
+ * Renames result columns by position, keeping the same cells.
+ *
+ * @param {QueryResults} results
+ * @param {string[]} names
+ * @returns {QueryResults}
+ */
+function renameColumns(results, names) {
+  const { columns } = results
+  if (columns.every((name, index) => name === names[index])) return results
+  return {
+    columns: names,
+    numRows: results.numRows,
+    maxRows: results.maxRows,
+    async *rows() {
+      for await (const row of results.rows()) {
+        /** @type {AsyncRow['cells']} */
+        const cells = {}
+        for (let i = 0; i < names.length; i++) cells[names[i]] = row.cells[row.columns[i]]
+        yield { columns: names, cells }
+      }
+    },
+  }
+}
+
+/**
  * Executes a set operation (UNION, INTERSECT, EXCEPT)
  *
  * @param {SetOperationNode} plan
@@ -1229,7 +1254,7 @@ function executeSetOperation(plan, context) {
   const leftContext = plan.leftScope === undefined ? context : { ...context, scope: plan.leftScope }
   const rightContext = plan.rightScope === undefined ? context : { ...context, scope: plan.rightScope }
   const left = executePlan({ plan: plan.left, context: leftContext })
-  const right = executePlan({ plan: plan.right, context: rightContext })
+  const right = renameColumns(executePlan({ plan: plan.right, context: rightContext }), left.columns)
 
   if (plan.operator === 'UNION') {
     if (plan.all) {
