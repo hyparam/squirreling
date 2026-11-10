@@ -37,6 +37,24 @@ describe('UNION execution', () => {
     })
 
     it.each([
+      ['COUNT(*) AS a', 'COUNT(*) AS a', 'a', 20],
+      ['COUNT(*) AS a', 'COUNT(*) AS c', 'a DESC', 10],
+      ['COUNT(*) AS a', 'COUNT(*) AS c', '-a', 10],
+      ['value AS a', 'value AS c', 'a', 20],
+    ])('should retain omitted compound sorting columns: %s, %s, %s', async (left, right, orderBy, b) => {
+      const result = await collect(executeSql({
+        tables: { x: [{ value: 3 }, { value: 4 }], y: [{ value: 1 }] },
+        query: `SELECT b FROM (
+          SELECT ${left}, 10 AS b FROM x
+          UNION ALL
+          SELECT ${right}, 20 AS d FROM y
+          ORDER BY ${orderBy} LIMIT 1
+        ) t`,
+      }))
+      expect(result).toEqual([{ b }])
+    })
+
+    it.each([
       'SELECT 1 AS a, 2 AS b UNION ALL SELECT 3 AS x, COUNT(*) AS y FROM x',
       'SELECT 3 AS a, COUNT(*) AS b FROM x UNION ALL SELECT 1 AS x, 2 AS y',
       'SELECT 1 AS a, 2 AS b UNION ALL SELECT 3 AS x, COUNT(*) AS y FROM x GROUP BY value',

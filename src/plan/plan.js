@@ -80,6 +80,11 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
   }
   // Deduplicating operators compare whole rows, so only UNION ALL can prune.
   if (compound.operator !== 'UNION' || !compound.all) parentColumns = undefined
+  if (parentColumns) {
+    // Sorting happens after operand projection, so retain its dependencies too.
+    parentColumns = [...parentColumns]
+    for (const term of compound.orderBy) collectColumnsFromExpr(term.expr, parentColumns)
+  }
   // Output names come from the left operand; right columns match by position.
   const rightParentColumns = parentColumns?.map(id => {
     const index = leftColumns.indexOf(id.name)
