@@ -149,7 +149,10 @@ function parseSetOperations(state) {
     // Outer clauses must not replace ordering or limits inside the parentheses.
     return {
       type: 'select', distinct: false,
-      columns: [{ type: 'star', positionStart: left.positionStart, positionEnd: left.positionEnd }],
+      columns: columns.map(col => col.type === 'star' ? col : {
+        ...col,
+        expr: { type: 'identifier', name: col.alias ?? derivedAlias(col.expr), positionStart: col.positionStart, positionEnd: col.positionEnd },
+      }),
       from: { type: 'subquery', query: left, positionStart: left.positionStart, positionEnd: left.positionEnd },
       joins: [], groupBy: [], orderBy, limit, offset,
       positionStart: left.positionStart, positionEnd: state.lastPos,

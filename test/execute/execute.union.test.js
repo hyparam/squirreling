@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
 describe('UNION execution', () => {
+  it.each(['b + 0', 'x + b'])('should preserve original expression bindings when renaming outputs: %s', async expr => {
+    const result = await collect(executeSql({
+      tables: { t: [{ b: 99 }] },
+      query: `SELECT 1 AS a, 2 AS b, 3 AS c UNION ALL SELECT 4 AS x, 5 AS x, ${expr} AS z FROM t`,
+    }))
+    expect(result).toEqual([{ a: 1, b: 2, c: 3 }, { a: 4, b: 5, c: expr === 'b + 0' ? 99 : 104 }])
+  })
+
   it('should preserve grouped positional ordering when duplicate right aliases are renamed', async () => {
     const result = await collect(executeSql({
       tables: { t: [{ g: 1, x: 1 }, { g: 1, x: 100 }, { g: 2, x: 50 }, { g: 2, x: 60 }] },
@@ -19,6 +27,8 @@ describe('UNION execution', () => {
 
   it.each([
     ['(SELECT 1 AS a);', [{ a: 1 }]],
+    ['((SELECT 1 AS a, 2 AS b) LIMIT 1) ORDER BY 2', [{ a: 1, b: 2 }]],
+    ['((SELECT 1 AS a, 2 AS b UNION ALL SELECT 2 AS a, 1 AS b) LIMIT 2) ORDER BY 2', [{ a: 2, b: 1 }, { a: 1, b: 2 }]],
     ['(SELECT 2 AS a UNION SELECT 1 AS a) ORDER BY a;', [{ a: 1 }, { a: 2 }]],
     ['(SELECT 2 AS a UNION SELECT 1 AS a) ORDER BY 1 LIMIT 1 OFFSET 1;', [{ a: 2 }]],
     ['(SELECT 2 AS a UNION SELECT 1 AS a ORDER BY a LIMIT 1) ORDER BY a DESC LIMIT 1;', [{ a: 1 }]],
