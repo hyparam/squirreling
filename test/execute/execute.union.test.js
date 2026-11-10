@@ -15,6 +15,21 @@ describe('UNION execution', () => {
   ]
 
   describe('UNION ALL', () => {
+    it.each(['UNION ALL', 'UNION', 'INTERSECT', 'EXCEPT'])(
+      'should reject duplicate operand aliases in %s before pruning', operator => {
+        for (const operands of [
+          `SELECT 1 AS a, 2 AS b ${operator} SELECT 3 AS x, 4 AS x`,
+          `SELECT 1 AS a, 2 AS a ${operator} SELECT 3 AS x, 4 AS y`,
+          `SELECT 1 AS a, 2 AS a ${operator} SELECT 3 AS a, 4 AS a`,
+        ]) {
+          for (const query of [operands, `SELECT a FROM (${operands}) t`]) {
+            expect(() => executeSql({ tables: {}, query }))
+              .toThrow('Set operation operands must have unique output column names')
+          }
+        }
+      }
+    )
+
     it.each([
       ['x.*, y.*', 'x JOIN y ON true'],
       ['l.*, r.*', 'x AS l JOIN y AS r ON true'],

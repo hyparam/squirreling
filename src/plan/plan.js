@@ -78,6 +78,10 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
   if (leftColumns.length !== rightColumns.length) {
     throw new Error(`Set operation operands must have the same number of columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
   }
+  // Name-keyed cells cannot preserve distinct positions with duplicate names.
+  if (new Set(leftColumns).size !== leftColumns.length || new Set(rightColumns).size !== rightColumns.length) {
+    throw new Error('Set operation operands must have unique output column names')
+  }
   // Deduplicating operators compare whole rows, so only UNION ALL can prune.
   if (compound.operator !== 'UNION' || !compound.all) parentColumns = undefined
   if (parentColumns) {
