@@ -435,7 +435,14 @@ export function inferStatementColumns({ stmt, cteColumns, tables }) {
 
   for (const col of stmt.columns) {
     if (col.type === 'star') {
-      result.push(...sourceColumns)
+      for (const key of sourceColumns) {
+        if (stmt.joins.length) {
+          if (col.table && !key.startsWith(`${col.table}.`)) continue
+          result.push(key.substring(key.indexOf('.') + 1))
+        } else if (!col.table || col.table === fromAlias(stmt.from)) {
+          result.push(key)
+        }
+      }
     } else {
       result.push(col.alias ?? derivedAlias(col.expr))
     }

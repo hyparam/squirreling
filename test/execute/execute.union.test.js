@@ -15,6 +15,27 @@ describe('UNION execution', () => {
   ]
 
   describe('UNION ALL', () => {
+    it.each([
+      ['x.*, y.*', 'x JOIN y ON true'],
+      ['l.*, r.*', 'x AS l JOIN y AS r ON true'],
+      ['l.*, r.*', '(SELECT a FROM x) AS l JOIN (SELECT b FROM y) AS r ON true'],
+      ['*', 'x JOIN y ON true'],
+    ])('should infer wildcard output columns for %s from %s', async (columns, from) => {
+      const result = await collect(executeSql({
+        tables: { x: [{ a: 1 }], y: [{ b: 2 }] },
+        query: `SELECT ${columns} FROM ${from} UNION ALL SELECT 1 AS a, 2 AS b`,
+      }))
+      expect(result).toEqual([{ a: 1, b: 2 }, { a: 1, b: 2 }])
+    })
+
+    it('should combine qualified wildcards on both sides', async () => {
+      const result = await collect(executeSql({
+        tables: { x: [{ a: 1 }], y: [{ b: 2 }] },
+        query: 'SELECT x.*, y.* FROM x JOIN y ON true UNION ALL SELECT x.*, y.* FROM x JOIN y ON true',
+      }))
+      expect(result).toEqual([{ a: 1, b: 2 }, { a: 1, b: 2 }])
+    })
+
     it('should combine results from two queries', async () => {
       const result = await collect(executeSql({
         tables: { users },
