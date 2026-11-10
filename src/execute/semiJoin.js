@@ -11,7 +11,7 @@ import { yieldToEventLoop } from './yield.js'
 
 /**
  * @typedef {{ values: Map<string, Set<SqlPrimitive>>, hasNull: boolean, count: number, firstRow?: AsyncRow }} Membership
- * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership, empty?: Promise<SqlPrimitive> }} MembershipTrie
+ * @typedef {{ groups: Map<string, Map<SqlPrimitive, MembershipTrie>>, membership?: Membership, empty?: Promise<SqlPrimitive>, unsafeGrouping?: boolean }} MembershipTrie
  */
 
 /**
@@ -98,6 +98,9 @@ async function buildTrie(plan, context, filters) {
     context.signal?.throwIfAborted()
     if (++count % 4000 === 0) await yieldToEventLoop()
     const keys = plan.keys ? await Promise.all(inner.columns.slice(offset).map(col => inner.cells[col]())) : []
+    // Serialized object groups may already have merged unequal keys. Even a
+    // primitive probe can equal one of those original objects by coercion.
+    if (plan.fallback && keys.some(value => value !== null && typeof value === 'object')) root.unsafeGrouping = true
     if (keys.some(value => value == null)) continue
     let node = root
     for (const key of keys) {
@@ -157,7 +160,7 @@ async function evaluateMembership(plan, root, row, rowIndex, context) {
   const keys = await Promise.all((plan.keys ?? []).map(node => evaluateExpr({ node, row, rowIndex, context })))
   // Hash aggregation serializes objects, whereas correlation compares their
   // identity. Its grouped rows cannot answer an object-valued probe safely.
-  if (plan.fallback && keys.some(value => value !== null && typeof value === 'object')) {
+  if (plan.fallback && (root.unsafeGrouping || keys.some(value => value !== null && typeof value === 'object'))) {
     return evaluateExpr({ node: plan.fallback, row, rowIndex, context })
   }
   const leaves = keys.some(value => value == null) ? [] : findLeaves(root, keys, 0)

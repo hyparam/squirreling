@@ -21,8 +21,9 @@ export function joinIndex() {
  * @returns {void}
  */
 export function addJoinRow(node, keys, row) {
-  for (const key of keys) {
-    const type = typeof key
+  for (const value of keys) {
+    const type = value instanceof Date ? 'date' : typeof value
+    const key = value instanceof Date ? value.getTime() : value
     let group = node.groups.get(type)
     if (!group) node.groups.set(type, group = new Map())
     let child = group.get(key)
@@ -45,15 +46,16 @@ export function* findJoinRows(node, keys, index = 0) {
     return
   }
   const value = keys[index]
-  const type = typeof value
-  if (type !== 'object' && !Number.isNaN(value)) {
-    const child = node.groups.get(type)?.get(value)
+  const type = value instanceof Date ? 'date' : typeof value
+  const key = value instanceof Date ? value.getTime() : value
+  if (type !== 'object' && !Number.isNaN(key)) {
+    const child = node.groups.get(type)?.get(key)
     if (child) yield* findJoinRows(child, keys, index + 1)
   }
   for (const [candidateType, group] of node.groups) {
     if (candidateType === type && type !== 'object') continue
     for (const [candidate, child] of group) {
-      if (sqlEquals(value, candidate)) yield* findJoinRows(child, keys, index + 1)
+      if (sqlEquals(value, candidateType === 'date' ? new Date(Number(candidate)) : candidate)) yield* findJoinRows(child, keys, index + 1)
     }
   }
 }

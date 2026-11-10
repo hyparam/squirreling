@@ -117,7 +117,30 @@ describe('correlated scalar aggregate joins', () => {
     expect(await collect(executeSql({ tables: { c: data, r: data }, query }))).toEqual([{ n: 3 }, { n: 3 }, { n: 3 }])
   })
 
+  it('preserves coercive matches before array keys are grouped', async () => {
+    for (const keys of [[[null], [NaN]], [[NaN], [null]]]) {
+      const tables = { c: [{ k: 0 }], r: keys.map(k => ({ k })) }
+      for (const aggregate of ['count(*)', 'count(*) + 0', 'array_agg(k)']) {
+        const query = `select (select ${aggregate} from r where r.k = c.k) n from c`
+        const expected = await collect(executeSql({ tables, query: query.replace(') n', ' limit 1) n') }))
+        expect(await collect(executeSql({ tables, query }))).toEqual(expected)
+        if (aggregate.startsWith('count')) expect(expected).toEqual([{ n: 1 }])
+      }
+    }
+  })
+
+  it('preserves composite number and bigint key groups', async () => {
+    const keys = [1, 1n]
+    for (const values of [keys, [...keys].reverse()]) {
+      const tables = { c: [{ k: '1.0', j: 1 }], r: values.map(k => ({ k, j: 1 })) }
+      const query = 'select (select count(*) from r where r.k = c.k and r.j = c.j) n from c'
+      expect(await collect(executeSql({ tables, query }))).toEqual([{ n: 1 }])
+      expect(await collect(executeSql({ tables, query: query.replace(') n', ' limit 1) n') }))).toEqual([{ n: 1 }])
+    }
+  })
+
   it('keeps null keys distinct from their serialized strings', async () => {
+    /** @type {null} */
     const key = null
     const text = 'NULL'
     for (const keys of [[key, text], [text, key]]) {

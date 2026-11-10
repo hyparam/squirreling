@@ -218,8 +218,9 @@ export function stringify(value) {
 export function keyify(...values) {
   if (values.length === 1 && typeof values[0] !== 'object' && typeof values[0] !== 'string') return values[0]
   // Length-prefix strings so a tuple cannot be confused with another that
-  // splits differently, or with the same text as a number or NULL.
-  return values.map(v => typeof v === 'string' ? `${v.length}:${v}` : typeof v === 'object' ? stringify(v) : v).join('|')
+  // splits differently, or with the same text as a number or NULL. Tag
+  // bigints so composite keys preserve the same type distinction as scalars.
+  return values.map(v => typeof v === 'string' ? `${v.length}:${v}` : typeof v === 'object' ? stringify(v) : typeof v === 'bigint' ? `${v}n` : v).join('|')
 }
 
 /**
