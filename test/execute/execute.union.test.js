@@ -36,6 +36,67 @@ describe('UNION execution', () => {
     expect(await collect(executeSql({ tables: {}, query }))).toEqual(expected)
   })
 
+  describe('rewrite scope invariants', () => {
+    const tables = { t: [{ x: 1, a: 0, b: 0, z_2: 0 }, { x: 3, a: 0, b: 0, z_2: 0 }] }
+
+    it.each(['a', 'b', 'z_1'])('keeps source HAVING bindings when generating aliases: %s', async name => {
+      const result = await collect(executeSql({
+        tables: { t: [{ x: 1, [name]: 0 }, { x: 3, [name]: 0 }] },
+        query: `SELECT 0 AS a, 0 AS b UNION ALL (SELECT MIN(x) AS z, MAX(x) AS z FROM t GROUP BY ${name} HAVING ${name} > 0)`,
+      }))
+      expect(result).toEqual([{ a: 0, b: 0 }])
+    })
+
+    it('keeps qualified star columns alongside computed outputs', async () => {
+      expect(await collect(executeSql({
+        tables: { t: [{ x: 1 }] },
+        query: '(SELECT t.*, x + 1 AS next FROM t) LIMIT 1',
+      }))).toEqual([{ x: 1, next: 2 }])
+    })
+
+    it.each(['UNION ALL', 'UNION', 'INTERSECT', 'INTERSECT ALL', 'EXCEPT', 'EXCEPT ALL'])(
+      'preserves HAVING bindings under duplicate output renaming in %s', async operator => {
+        for (const aggregate of ['MIN(x)', 'ARRAY_AGG(x)']) {
+          for (const grouping of ['', 'GROUP BY a, b, z_2']) {
+            for (const having of ['a > 0', 'b > 0', 'z_2 > 0', 'z > 2', 'z < 2', 'z IN (SELECT 3)', 'a IN (SELECT 0)', 'MAX(x) > 2']) {
+              for (const projection of ['*', 'b']) {
+                const suffix = `FROM t ${grouping} HAVING ${having}`
+                const duplicate = `SELECT ${aggregate} AS z, MAX(x) AS z ${suffix}`
+                const distinct = `SELECT ${aggregate} AS first_value, MAX(x) AS z ${suffix}`
+                const left = 'SELECT 1 AS a, 3 AS b'
+                const query = `SELECT ${projection} FROM (${left} ${operator} (${duplicate})) result`
+                const reference = `SELECT ${projection} FROM (${left} ${operator} (${distinct})) result`
+                expect(await collect(executeSql({ tables, query })), query).toEqual(
+                  await collect(executeSql({ tables, query: reference }))
+                )
+              }
+            }
+          }
+        }
+      }
+    )
+
+    it.each([
+      ['t.*', 't'],
+      ['s.*', 't AS s'],
+      ['s.*', '(SELECT x, a FROM t) AS s'],
+      ['t.*, x + 1 AS next', 't'],
+      ['x + 1 AS next, t.*', 't'],
+      ['t.*, u.*', 't JOIN (SELECT 9 AS y) u ON true'],
+    ])('preserves the output of parenthesized %s from %s', async (projection, from) => {
+      for (const inner of ['', 'ORDER BY x DESC LIMIT 1']) {
+        for (const outer of ['LIMIT 1', 'ORDER BY x DESC LIMIT 1', 'ORDER BY x LIMIT 1 OFFSET 1']) {
+          const body = `SELECT ${projection} FROM ${from} ${inner}`
+          const query = `(${body}) ${outer}`
+          const reference = `SELECT * FROM (${body}) result ${outer}`
+          expect(await collect(executeSql({ tables, query })), query).toEqual(
+            await collect(executeSql({ tables, query: reference }))
+          )
+        }
+      }
+    })
+  })
+
   const users = [
     { id: 1, name: 'Alice', age: 30 },
     { id: 2, name: 'Bob', age: 25 },

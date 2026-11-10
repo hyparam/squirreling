@@ -74,7 +74,7 @@ export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumn
  */
 function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumns }) {
   const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
-  const rightStmt = uniqueRightColumns(compound.right, leftColumns, inferStatementColumns({ stmt: compound.right, cteColumns, tables }))
+  const rightStmt = uniqueRightColumns(compound.right, leftColumns, inferStatementColumns({ stmt: compound.right, cteColumns, tables }), { cteColumns, tables })
   const rightColumns = inferStatementColumns({ stmt: rightStmt, cteColumns, tables })
   if (leftColumns.length !== rightColumns.length) {
     throw new Error(`Set operation operands must have the same number of columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
@@ -148,19 +148,28 @@ function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumn
  * @param {Statement} stmt
  * @param {string[]} leftColumns
  * @param {string[]} columns
+ * @param {{ cteColumns?: Map<string, string[]>, tables?: Record<string, AsyncDataSource> }} context
  * @returns {Statement}
  */
-function uniqueRightColumns(stmt, leftColumns, columns) {
+function uniqueRightColumns(stmt, leftColumns, columns, context) {
   if (new Set(columns).size === columns.length) return stmt
   if (stmt.type !== 'select' || stmt.columns.some(col => col.type === 'star')) return stmt
-  const used = new Set(columns)
-  const seen = new Set()
+  // Synthetic names must not shadow source bindings or referenced identifiers.
+  const used = new Set([...columns, ...collectScopeColumns({ select: stmt, ...context })])
+  /** @type {IdentifierNode[]} */
+  const references = []
+  for (const col of stmt.columns) {
+    if (col.type === 'derived') collectColumnsFromExpr(col.expr, references)
+  }
+  for (const expr of [stmt.where, stmt.having, ...stmt.groupBy, ...stmt.orderBy.map(term => term.expr)]) {
+    collectColumnsFromExpr(expr, references)
+  }
+  for (const id of references) used.add(id.name)
   const selectColumns = stmt.columns.map((col, i) => {
     const name = columns[i]
-    if (!seen.has(name)) {
-      seen.add(name)
-      return col
-    }
+    // Name-keyed output cells give the last occurrence ownership of a name.
+    // Keep that binding for HAVING, including expressions with subqueries.
+    if (columns.lastIndexOf(name) === i) return col
     let alias = leftColumns[i]
     for (let n = i + 1; alias === undefined || used.has(alias); n++) alias = `${name}_${n}`
     used.add(alias)
@@ -261,7 +270,8 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
       const qualified = col.table + '.*'
       throw new TableNotFoundError({ table: col.table, qualified, tables: scopeTables, ...col })
     }
-    return col
+    // A single FROM source exposes bare cell keys; only joins qualify them.
+    return col.table && !select.joins.length ? { ...col, table: undefined } : col
   })
   let orderBy = resolveOrderByAliases(select.orderBy, aliases)
   if (aliasSelect) {
