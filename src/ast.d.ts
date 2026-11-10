@@ -11,6 +11,8 @@ export type SqlPrimitive =
 export interface SelectStatement extends AstBase {
   type: 'select'
   distinct: boolean
+  /** Parser-generated wrapper that forwards subquery columns by position. */
+  positional?: boolean
   columns: SelectColumn[]
   from?: FromTable | FromSubquery | FromFunction
   joins: JoinClause[]

@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest'
 import { collect, executeSql } from '../../src/index.js'
 
 describe('UNION execution', () => {
+  it.each([
+    '(SELECT 1 AS x, 2 AS x) LIMIT 1',
+    '((SELECT 1 AS x, 2 AS x) LIMIT 1) OFFSET 0',
+    'WITH c AS (SELECT 1 AS n) SELECT n AS x, n + 1 AS x FROM c',
+    '(WITH c AS (SELECT 1 AS n) SELECT n AS x, n + 1 AS x FROM c) LIMIT 1',
+    'WITH c AS (SELECT 1 AS n) (SELECT n AS x, n + 1 AS x FROM c) LIMIT 1',
+  ])('preserves repeated right output positions through wrappers: %s', async operand => {
+    const query = `SELECT 0 AS a, 0 AS b UNION ALL (${operand})`
+    expect(await collect(executeSql({ tables: {}, query }))).toEqual([{ a: 0, b: 0 }, { a: 1, b: 2 }])
+    expect(await collect(executeSql({ tables: {}, query: `SELECT a FROM (${query}) result` }))).toEqual([{ a: 0 }, { a: 1 }])
+  })
+
+  it.each([
+    '(SELECT MIN(n) AS x, MAX(n) AS x FROM c GROUP BY g ORDER BY 1 LIMIT 2) ORDER BY 1 LIMIT 1',
+    'WITH c AS (SELECT * FROM t) SELECT MIN(n) AS x, MAX(n) AS x FROM c GROUP BY g ORDER BY 1 LIMIT 1',
+  ])('preserves alias and positional ordering bindings through wrappers: %s', async operand => {
+    const tables = { t: [{ g: 1, n: 1 }, { g: 1, n: 100 }, { g: 2, n: 2 }, { g: 2, n: 3 }] }
+    const query = `WITH c AS (SELECT * FROM t) SELECT 0 AS a, 0 AS b UNION ALL (${operand})`
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ a: 0, b: 0 }, { a: 1, b: 100 }])
+  })
+
   it.each(['b + 0', 'x + b'])('should preserve original expression bindings when renaming outputs: %s', async expr => {
     const result = await collect(executeSql({
       tables: { t: [{ b: 99 }] },

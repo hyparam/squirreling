@@ -146,9 +146,12 @@ function parseSetOperations(state) {
   match(state, 'semicolon')
   if (parenthesized) {
     if (!orderBy.length && limit === undefined && offset === undefined) return left
+    const names = columns.map(col => col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : undefined)
+    const positional = !columns.some(col => col.type === 'star') && new Set(names).size < names.length
     // Outer clauses must not replace ordering or limits inside the parentheses.
     return {
       type: 'select', distinct: false,
+      ...positional ? { positional: true } : {},
       // A star already describes the subquery's complete output. Repeating
       // inner stars here would expand the same output multiple times.
       columns: columns.some(col => col.type === 'star')
