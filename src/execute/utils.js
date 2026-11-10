@@ -209,15 +209,18 @@ export function stringify(value) {
 
 /**
  * Returns a value suitable for use as a Set/Map key.
- * Primitives are returned as-is (fast path), objects are stringified.
+ * Non-string primitives are returned as-is; strings are length-prefixed and
+ * objects are stringified so their serialized text cannot collide with strings.
  *
  * @param {SqlPrimitive[]} values
  * @returns {string | number | bigint | boolean}
  */
 export function keyify(...values) {
-  if (values.length === 1 && typeof values[0] !== 'object') return values[0]
-  // Strings must be stringified to avoid collisions when joined
-  return values.map(v => typeof v === 'object' ? stringify(v) : v).join('|')
+  if (values.length === 1 && typeof values[0] !== 'object' && typeof values[0] !== 'string') return values[0]
+  // Length-prefix strings so a tuple cannot be confused with another that
+  // splits differently, or with the same text as a number or NULL. Tag
+  // bigints so composite keys preserve the same type distinction as scalars.
+  return values.map(v => typeof v === 'string' ? `${v.length}:${v}` : typeof v === 'object' ? stringify(v) : typeof v === 'bigint' ? `${v}n` : v).join('|')
 }
 
 /**

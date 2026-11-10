@@ -1,161 +1,13 @@
-import { derivedAlias } from '../expression/alias.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { isAggregateFunc } from '../validation/functions.js'
 import { findWindow } from '../validation/windows.js'
-import { collectColumnsFromExpr, fromAlias, statementScope } from './columns.js'
+import { collectColumnsFromExpr, statementScope } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
 
 /**
- * @import { AsyncDataSource, DerivedColumn, ExprNode, FromSubquery, FromTable, IdentifierNode, OrderByItem, SelectColumn, SelectStatement, Statement } from '../types.js'
+ * @import { AsyncDataSource, DerivedColumn, ExprNode, IdentifierNode, SelectStatement, Statement } from '../types.js'
  * @import { QueryPlan, SemiJoinNode } from './types.js'
  */
-
-/**
- * Replaces eligible scalar aggregates with grouped LEFT JOINs and exact
- * empty-group values. Returns correlated WHERE terms for filtering after joins.
- *
- * @param {object} options
- * @param {SelectStatement} options.select
- * @param {SelectColumn[]} options.columns
- * @param {OrderByItem[]} options.orderBy
- * @param {string[]} options.scopeAliases
- * @param {Set<string>} options.scopeColumns
- * @param {string | undefined} options.sourceAlias
- * @param {boolean} options.rewriteProjection
- * @param {(query: SelectStatement) => QueryPlan} options.planQuery
- * @param {Record<string, AsyncDataSource>} [options.tables]
- * @param {Map<string, string[]>} [options.cteColumns]
- * @param {Map<string, QueryPlan>} [options.ctePlans]
- * @returns {{ select: SelectStatement, columns: SelectColumn[], orderBy: OrderByItem[], scalarJoins: ((left: QueryPlan) => QueryPlan)[], scalarWhere: ExprNode | undefined }}
- */
-export function decorrelateScalars({ select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, rewriteProjection, planQuery, tables, cteColumns, ctePlans }) {
-  columns = [...columns]
-  // Keep original expressions for source column demand; synthetic scalar cells
-  // are computed above the scan and must never appear in pushdown hints.
-  /** @type {((left: QueryPlan) => QueryPlan)[]} */
-  const scalarJoins = []
-  /**
-   * @param {ExprNode} expr
-   * @returns {ExprNode}
-   */
-  function rewriteScalar(expr) {
-    if (expr.type !== 'subquery' || select.limit === 0) return expr
-    const query = expr.subquery
-    if (query.type !== 'select' || query.columns.length !== 1) return expr
-    const column = query.columns[0]
-    if (column.type !== 'derived' || !findAggregate(column.expr) || findWindow(column.expr)) return expr
-    // An uncorrelated bare aggregate is exactly one row: cross join it once.
-    if (isSingleRowAggregate(query, expr, scopeAliases, tables, cteColumns)) {
-      let name = `__scalar_${scalarJoins.length}`
-      while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
-      const position = { positionStart: expr.positionStart, positionEnd: expr.positionEnd }
-      const valueName = name + '_value'
-      const right = planQuery({ ...query, columns: [{ ...column, alias: valueName }], orderBy: [] })
-      scalarJoins.push(left => ({
-        type: 'NestedLoopJoin', joinType: 'INNER', leftAlias: sourceAlias ?? '', rightAlias: name,
-        right: { type: 'Subquery', child: right, scope: statementScope(query) ?? [] },
-        condition: { ...position, type: 'literal', value: true }, left,
-      }))
-      return { ...position, type: 'identifier', prefix: name, name: valueName }
-    }
-    // Reuse EXISTS' residual-reference check without discarding the aggregate.
-    const keys = decorrelateExists(query, scopeAliases, tables, cteColumns, true)
-    if (!keys) return expr
-    const inner = keys.query.columns.map(col => col.type === 'derived' ? col.expr : column.expr)
-    // Hash equality is only equivalent to scalar equality for matching known
-    // primitive types. Unknown schemas and coercive comparisons stay per-row.
-    if (inner.some((key, i) => {
-      if (key.type !== 'identifier') return true
-      const type = correlationType(query, key, tables, ctePlans)
-      return !type || type !== correlationType(select, keys.left[i], tables, ctePlans)
-    })) return expr
-    let name = `__scalar_${scalarJoins.length}`
-    while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
-    const position = { positionStart: expr.positionStart, positionEnd: expr.positionEnd }
-    const valueName = name + '_value'
-    const keyName = name + '_key'
-    const emptyAlias = name + '_empty'
-    const innerKey = scalarCorrelationKey(inner)
-    const outerKey = scalarCorrelationKey(keys.left)
-    /** @type {IdentifierNode} */
-    const joinedKey = { ...position, type: 'identifier', prefix: name, name: keyName }
-    /** @type {SelectStatement} */
-    const grouped = {
-      ...keys.query,
-      groupBy: [innerKey],
-      // Evaluate the original projection before introducing synthetic aliases.
-      columns: [
-        { ...column, alias: valueName },
-        { ...position, type: 'derived', expr: innerKey, alias: keyName },
-      ],
-    }
-    const right = planQuery(grouped)
-    const scope = statementScope(query) ?? []
-    // A scalar aggregate over zero rows computes the exact empty-group value,
-    // including COUNT arithmetic and aggregate expressions with lazy branches.
-    /** @type {QueryPlan} */
-    const empty = {
-      type: 'Subquery', scope,
-      child: {
-        type: 'ScalarAggregate', columns: [{ ...column, alias: valueName }],
-        child: { type: 'Limit', limit: 0, child: { type: 'SingleRow' } },
-      },
-    }
-    /** @type {ExprNode | undefined} */
-    let residual
-    for (const key of keys.left) {
-      // Map treats NaN as equal to itself; SQL equality does not.
-      residual = andPredicate(residual, { ...position, type: 'binary', op: '=', left: key, right: key })
-    }
-    scalarJoins.push(left => ({
-      type: 'HashJoin', joinType: 'LEFT', leftAlias: sourceAlias ?? '', rightAlias: name,
-      leftKeys: [outerKey], rightKeys: [{ ...joinedKey, prefix: undefined }], residual,
-      right: { type: 'Subquery', child: right, scope },
-      left: {
-        type: 'NestedLoopJoin', joinType: 'INNER', leftAlias: sourceAlias ?? '', rightAlias: emptyAlias, right: empty,
-        condition: { ...position, type: 'literal', value: true }, left,
-      },
-    }))
-    return {
-      ...position, type: 'case',
-      whenClauses: [{
-        ...position,
-        condition: { ...position, type: 'unary', op: 'IS NULL', argument: joinedKey },
-        result: { ...position, type: 'identifier', prefix: emptyAlias, name: valueName },
-      }],
-      elseResult: { ...position, type: 'identifier', prefix: name, name: valueName },
-    }
-  }
-  // Outer aggregates need group-aware placement, so retain their existing path.
-  if (rewriteProjection) {
-    for (let i = 0; i < columns.length; i++) {
-      const col = columns[i]
-      if (col.type === 'derived') {
-        const before = scalarJoins.length
-        const expr = mapScalarExpressions(col.expr, rewriteScalar)
-        if (scalarJoins.length > before) columns[i] = { ...col, alias: col.alias ?? derivedAlias(col.expr), expr }
-      }
-    }
-    orderBy = orderBy.map(term => ({ ...term, expr: mapScalarExpressions(term.expr, rewriteScalar) }))
-  }
-  /** @type {ExprNode | undefined} */
-  let scalarWhere
-  if (select.where) {
-    /** @type {ExprNode[]} */
-    const terms = []
-    collectConjuncts(select.where, terms)
-    /** @type {ExprNode | undefined} */
-    let scanWhere
-    for (const term of terms) {
-      const before = scalarJoins.length
-      const rewritten = mapScalarExpressions(term, rewriteScalar)
-      if (scalarJoins.length > before) scalarWhere = andPredicate(scalarWhere, rewritten)
-      else scanWhere = andPredicate(scanWhere, term)
-    }
-    select = { ...select, where: scanWhere }
-  }
-  return { select, columns, orderBy, scalarJoins, scalarWhere }
-}
 
 /**
  * Rewrites IN, EXISTS, and scalar subqueries into identifiers bound to mark
@@ -170,12 +22,11 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
  * @param {Set<string>} options.scopeColumns
  * @param {(query: Statement) => QueryPlan} options.planQuery
  * @param {boolean} [options.uncorrelatedOnly] - for marks above an aggregate
- * @param {boolean} [options.scalarAggregates] - also take aggregate scalars
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @param {Map<string, string[]>} [options.cteColumns]
  * @returns {{ markJoins: Omit<SemiJoinNode, 'left'>[], rewrite: (expr: ExprNode, aggregateOnly?: boolean) => ExprNode }}
  */
-export function markJoinPlanner({ prefix, scopeAliases, scopeColumns, planQuery, uncorrelatedOnly, scalarAggregates, tables, cteColumns }) {
+export function markJoinPlanner({ prefix, scopeAliases, scopeColumns, planQuery, uncorrelatedOnly, tables, cteColumns }) {
   /** @type {Omit<SemiJoinNode, 'left'>[]} */
   const markJoins = []
   // The same node can appear in several clauses (GROUP BY 1, aliases).
@@ -193,9 +44,6 @@ export function markJoinPlanner({ prefix, scopeAliases, scopeColumns, planQuery,
       return existing
     }
     if (expr.type === 'in' && (findAggregate(expr.expr) || findWindow(expr.expr))) return expr
-    // Uncorrelated aggregate scalars are already single-row cross joins.
-    if (expr.type === 'subquery' && !scalarAggregates && expr.subquery.type === 'select' &&
-        expr.subquery.columns.some(col => col.type === 'derived' && findAggregate(col.expr))) return expr
     const join = planMembership({ expr, scopeAliases, tables, cteColumns, planQuery })
     if (!join || uncorrelatedOnly && join.keys) return expr
     let name = `${prefix}${markJoins.length}`
@@ -277,7 +125,8 @@ export function hasSubqueryExpression(expr) {
  * Plans the right input of an IN, EXISTS, or scalar subquery so it is read
  * once per execution. Uncorrelated subqueries are planned as written. Plain
  * equality correlations become keys, and the right input yields [value (IN,
- * scalar), ...keys]. Returns undefined for anything else, which stays per-row.
+ * scalar), ...keys]. A correlated scalar aggregate is grouped by its keys.
+ * Returns undefined for anything else, which stays per-row.
  *
  * @param {object} options
  * @param {ExprNode} options.expr
@@ -307,37 +156,32 @@ export function planMembership({ expr, scopeAliases, planQuery, tables, cteColum
   }
   const value = query.type === 'select' && query.columns.length === 1 ? query.columns[0] : undefined
   if (test !== 'exists' && value?.type !== 'derived') return
+  // An aggregate without grouping is one row per key, whatever DISTINCT says.
+  const aggregate = test === 'scalar' && value?.type === 'derived' && !!findAggregate(value.expr) && !findWindow(value.expr)
   // Decorrelation drops DISTINCT, which decides whether a scalar is one row.
-  if (test === 'scalar' && query.type === 'select' && query.distinct) return
-  const keys = decorrelateExists(query, scopeAliases, tables, cteColumns)
+  if (test === 'scalar' && !aggregate && query.type === 'select' && query.distinct) return
+  const keys = decorrelateExists(query, scopeAliases, tables, cteColumns, aggregate)
   if (!keys) return
+  const scope = statementScope(keys.query) ?? []
+  // Evaluate the original projection before the synthetic key aliases.
   const columns = test !== 'exists' && value?.type === 'derived'
     ? [{ ...value, alias: '__membership_value' }, ...keys.query.columns]
     : keys.query.columns
-  const right = planQuery({ ...keys.query, columns })
+  /** @type {Omit<SemiJoinNode, 'left' | 'not'>} */
+  const join = { type: 'SemiJoin', test, expr: operand, keys: keys.left, right: { type: 'Subquery', child: planQuery({ ...keys.query, columns }), scope } }
+  if (!aggregate || value?.type !== 'derived') return join
+  const groupBy = keys.query.columns.flatMap(col => col.type === 'derived' ? [col.expr] : [])
   return {
-    type: 'SemiJoin', test, expr: operand, keys: keys.left,
-    right: { type: 'Subquery', child: right, scope: statementScope(keys.query) ?? [] },
+    ...join,
+    right: { type: 'Subquery', child: planQuery({ ...keys.query, columns, groupBy }), scope },
+    // A scalar aggregate over zero rows computes the exact empty-group value,
+    // including COUNT arithmetic and aggregate expressions with lazy branches.
+    empty: {
+      type: 'Subquery', scope,
+      child: { type: 'ScalarAggregate', columns: [value], child: { type: 'Limit', limit: 0, child: { type: 'SingleRow' } } },
+    },
+    fallback: expr,
   }
-}
-
-/**
- * True when a scalar subquery produces exactly one row and reads nothing from
- * an enclosing query.
- *
- * @param {SelectStatement} query
- * @param {ExprNode} expr
- * @param {string[]} outerScope
- * @param {Record<string, AsyncDataSource>} [tables]
- * @param {Map<string, string[]>} [cteColumns]
- * @returns {boolean}
- */
-function isSingleRowAggregate(query, expr, outerScope, tables, cteColumns) {
-  if (query.groupBy.length || query.having || query.limit !== undefined || query.offset) return false
-  /** @type {IdentifierNode[]} */
-  const correlated = []
-  collectColumnsFromExpr(expr, correlated, undefined, { tables, cteColumns, outerAliases: new Set(outerScope) })
-  return !correlated.length
 }
 
 /**
@@ -445,113 +289,4 @@ function mapScalarExpressions(node, rewrite, aggregateOnly = false) {
     }
   }
   return aggregateOnly ? node : rewrite(node)
-}
-
-/**
- * Looks up a correlation column's declared primitive type in its lexical
- * scope, following plain column projections through CTEs and derived tables.
- * Computed, set-combined, and untyped columns are unknown and stay per-row.
- * @param {SelectStatement} query
- * @param {IdentifierNode} key
- * @param {Record<string, AsyncDataSource>} [tables]
- * @param {Map<string, QueryPlan>} [ctePlans]
- * @returns {string | undefined}
- */
-function correlationType(query, key, tables, ctePlans) {
-  const { from, joins } = query
-  /** @type {FromTable | FromSubquery | undefined} */
-  let source
-  if (!key.prefix) {
-    // An unqualified name is only unambiguous with a single source.
-    if (!joins.length && from?.type !== 'function') source = from
-  } else if (from && from.type !== 'function' && fromAlias(from) === key.prefix) {
-    source = from
-  } else {
-    const join = joins.find(join => !join.fromFunction && (join.alias ?? join.table) === key.prefix)
-    source = join && (join.subquery ?? { ...join, type: 'table' })
-  }
-  if (!source) return
-  if (source.type === 'subquery') {
-    const { query } = source
-    if (query.type !== 'select') return
-    const column = projectedColumn(query.columns, key.name)
-    return column && correlationType(query, column, tables, ctePlans)
-  }
-  const ctePlan = ctePlans?.get(source.table.toLowerCase())
-  if (ctePlan) return planColumnType(ctePlan, key.name, tables)
-  return tableColumnType(source.table, key.name, tables)
-}
-
-/**
- * Declared primitive type of a named output column of a planned relation.
- * @param {QueryPlan} plan
- * @param {string} name
- * @param {Record<string, AsyncDataSource>} [tables]
- * @returns {string | undefined}
- */
-function planColumnType(plan, name, tables) {
-  if (plan.type === 'Scan') return tableColumnType(plan.table, name, tables)
-  if (plan.type === 'Subquery' || plan.type === 'Filter' || plan.type === 'Sort' || plan.type === 'Distinct' || plan.type === 'Limit') {
-    return planColumnType(plan.child, name, tables)
-  }
-  if (plan.type === 'Project' || plan.type === 'HashAggregate') {
-    const column = projectedColumn(plan.columns, name)
-    return column && planColumnType(plan.child, column.name, tables)
-  }
-}
-
-/**
- * Finds the source column a projection passes through under an output name.
- * Returns undefined when the output is computed or its name is ambiguous.
- * @param {SelectColumn[]} columns
- * @param {string} name
- * @returns {IdentifierNode | undefined}
- */
-function projectedColumn(columns, name) {
-  /** @type {SelectColumn[]} */
-  const matches = columns.filter(col => col.type === 'star' || (col.alias ?? derivedAlias(col.expr)) === name)
-  if (matches.length !== 1) return
-  const [column] = matches
-  const { positionStart, positionEnd } = column
-  if (column.type === 'star') return { type: 'identifier', prefix: column.table, name, positionStart, positionEnd }
-  const { expr } = column
-  if (expr.type !== 'identifier') return
-  // A bare name may read another output alias instead of a source column.
-  if (!expr.prefix && columns.some(col => col !== column && col.type === 'derived' && col.alias === expr.name)) return
-  return expr
-}
-
-/**
- * @param {string} table
- * @param {string} name
- * @param {Record<string, AsyncDataSource>} [tables]
- * @returns {string | undefined}
- */
-function tableColumnType(table, name, tables) {
-  const type = tables?.[table]?.schema?.fields.find(field => field.name === name)?.dataType.type
-  return type && ['string', 'number', 'bigint', 'boolean'].includes(type) ? type : undefined
-}
-
-/**
- * Encodes composite keys with length-prefixed components so ordinary hash
- * grouping and joins cannot confuse tuple boundaries. CONCAT propagates NULL.
- * @param {ExprNode[]} keys
- * @returns {ExprNode}
- */
-function scalarCorrelationKey(keys) {
-  if (keys.length === 1) return keys[0]
-  const { positionStart, positionEnd } = keys[0]
-  const position = { positionStart, positionEnd }
-  return {
-    ...position, type: 'function', funcName: 'CONCAT',
-    args: keys.flatMap(key => {
-      /** @type {ExprNode} */
-      const text = { ...position, type: 'cast', expr: key, toType: 'TEXT' }
-      return [
-        /** @type {ExprNode} */ { ...position, type: 'function', funcName: 'LENGTH', args: [text] },
-        /** @type {ExprNode} */ { ...position, type: 'literal', value: ':' },
-        text,
-      ]
-    }),
-  }
 }

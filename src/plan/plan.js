@@ -8,7 +8,7 @@ import { ColumnNotFoundError, TableNotFoundError } from '../validation/tables.js
 import { validateNoIdentifiers, validateScan, validateTableRefs } from '../validation/tables.js'
 import { collectColumnsFromExpr, collectScopeColumns, extractColumns, fromAlias, inferSelectSourceColumns, inferStatementColumns, statementScope, tableFunctionColumnNames } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
-import { decorrelateScalars, hasSubqueryExpression, hoistAggregateInputs, markJoinPlanner, planMembership } from './subqueries.js'
+import { hasSubqueryExpression, hoistAggregateInputs, markJoinPlanner, planMembership } from './subqueries.js'
 
 /**
  * @import { AsyncDataSource, DerivedColumn, ExprNode, FromFunction, FromSubquery, FromTable, IdentifierNode, JoinClause, OrderByItem, PlanSqlOptions, ScanOptions, SelectColumn, SelectStatement, SetOperationStatement, Statement } from '../types.js'
@@ -351,15 +351,14 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   const hasStar = columns.some(col => col.type === 'star')
   const sourceNames = hasStar ? inferSelectSourceColumns({ select, cteColumns, tables }) : []
   const scalarAggregate = hasAggregate && !select.groupBy.length
-  const marker = outerScope?.length || hasStar && !sourceNames.length ? undefined : markJoinPlanner({
+  const marker = hasStar && !sourceNames.length ? undefined : markJoinPlanner({
     prefix: '__mark_', scopeAliases, scopeColumns, tables, cteColumns, planQuery,
-    scalarAggregates: useGrouping || windows.length > 0,
   })
   /** @type {Omit<SemiJoinNode, 'left'>[]} */
   const semiJoins = []
   /** @type {ExprNode | undefined} */
   let markWhere
-  if (select.where && !outerScope?.length) {
+  if (select.where) {
     /** @type {ExprNode[]} */
     const conjuncts = []
     collectConjuncts(select.where, conjuncts)
@@ -404,7 +403,7 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   const outputs = new Set(columns.map(col => col.type === 'derived' ? col.alias ?? derivedAlias(col.expr) : ''))
   const havingMarker = marker && having && !hasStar ? markJoinPlanner({
     prefix: '__having_mark_', scopeAliases, scopeColumns: new Set([...scopeColumns, ...outputs]), tables, cteColumns, planQuery,
-    uncorrelatedOnly: true, scalarAggregates: true,
+    uncorrelatedOnly: true,
   }) : undefined
   if (havingMarker && having) {
     /** @type {ExprNode[]} */
@@ -437,18 +436,9 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   const markJoins = marker?.markJoins ?? []
   // Marks are extra columns on the source rows; stars must not expose them.
   if (markJoins.length && hasStar) columns = expandStars(columns, sourceNames, sourceAlias, select.joins.length > 0)
-  const scalar = decorrelateScalars({
-    select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns, ctePlans,
-    rewriteProjection: !useGrouping && !windows.length,
-    planQuery: query => planStatement({ stmt: query, tables, ctePlans, cteColumns }),
-  })
-  columns = scalar.columns
-  select = scalar.select
-  orderBy = scalar.orderBy
-  const { scalarJoins, scalarWhere } = scalar
   if (!select.joins.length) {
     hints.where = select.where
-    if (!needsBuffering && !select.distinct && !semiJoins.length && !markWhere && !scalarWhere) {
+    if (!needsBuffering && !select.distinct && !semiJoins.length && !markWhere) {
       hints.limit = select.limit
       hints.offset = select.offset
     }
@@ -479,17 +469,6 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   for (const semiJoin of semiJoins) plan = { ...semiJoin, left: plan }
   for (const markJoin of markJoins) plan = { ...markJoin, left: plan }
   if (markWhere) plan = { type: 'Filter', condition: markWhere, child: plan }
-
-  for (const joinScalar of scalarJoins) plan = joinScalar(plan)
-  if (scalarWhere) plan = { type: 'Filter', condition: scalarWhere, child: plan }
-
-  // Bare stars must only include the original query's relations.
-  columns = scalarJoins.length ? columns.flatMap(col =>
-    col.type === 'star' && !col.table
-      ? [sourceAlias, ...select.joins.map(join => join.alias ?? join.table)]
-        .filter(alias => alias !== undefined).map(table => ({ ...col, table }))
-      : [col]
-  ) : columns
 
   if (useGrouping) {
     // Keep group context in lazy output cells, but only read sort keys after
@@ -572,7 +551,7 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
     // So the order is: Sort -> Project -> Distinct -> Limit
 
     // Fast path for SELECT * without joins
-    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !scalarJoins.length && !markJoins.length
+    const isPassthrough = select.columns.length === 1 && select.columns[0].type === 'star' && !select.joins.length && !markJoins.length
     if (!isPassthrough) {
       let projectColumns = columns
       // When parent only needs specific columns, drop unneeded projections
@@ -584,9 +563,7 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
       // Normalize identifiers to match the child's cell-key layout, so the
       // Project executor can look up cells by exact name instead of relying
       // on the evaluator's suffix-search fallback.
-      const sourceColumns = inferSelectSourceColumns({ select, cteColumns, tables }).map(name =>
-        scalarJoins.length && !name.includes('.') ? `${sourceAlias}.${name}` : name
-      )
+      const sourceColumns = inferSelectSourceColumns({ select, cteColumns, tables })
       projectColumns = projectColumns.map(col =>
         col.type === 'derived'
           ? { ...col, expr: normalizeIdentifiers(col.expr, sourceColumns) }
@@ -599,7 +576,7 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
       plan = { type: 'Distinct', child: plan }
     }
 
-    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length && !markWhere && !scalarWhere) && (select.limit !== undefined || select.offset)) {
+    if (!(isOwnScan && !needsBuffering && !select.distinct && !semiJoins.length && !markWhere) && (select.limit !== undefined || select.offset)) {
       if (select.limit !== undefined) pushLimitIntoSort(plan, select.limit, select.offset)
       plan = { type: 'Limit', limit: select.limit, offset: select.offset, child: plan }
     }

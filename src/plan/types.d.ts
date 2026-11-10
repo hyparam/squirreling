@@ -117,6 +117,11 @@ export interface SemiJoinNode {
   // NOT IN keeps three-valued NULL semantics; NOT EXISTS is an anti-join
   not: boolean
   mark?: string
+  // Grouped aggregate scalar: the right input has one row per key. `empty`
+  // yields the value for a key with no group, and `fallback` is the original
+  // subquery, evaluated for a key that equals more than one group.
+  empty?: QueryPlan
+  fallback?: ExprNode
 }
 
 export interface HashJoinNode {
