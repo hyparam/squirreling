@@ -117,6 +117,45 @@ describe('correlated scalar aggregate joins', () => {
     expect(await collect(executeSql({ tables: { c: data, r: data }, query }))).toEqual([{ n: 3 }, { n: 3 }, { n: 3 }])
   })
 
+  it('keeps null keys distinct from their serialized strings', async () => {
+    const key = null
+    const text = 'NULL'
+    for (const keys of [[key, text], [text, key]]) {
+      const tables = { c: [{ k: text }], r: keys.map(k => ({ k })) }
+      for (const aggregate of ['count(*)', 'count(*) + 0']) {
+        const query = `select (select ${aggregate} from r where r.k = c.k) n from c`
+        expect(await collect(executeSql({ tables, query }))).toEqual([{ n: 1 }])
+        expect(await collect(executeSql({ tables, query: query.replace(') n', ' limit 1) n') }))).toEqual([{ n: 1 }])
+      }
+    }
+  })
+
+  it('keeps object keys distinct from their serialized strings', async () => {
+    const key = { id: 1 }
+    const text = '{"id":1}'
+    for (const keys of [[key, text], [text, key]]) {
+      const tables = { c: [{ k: text }], r: keys.map(k => ({ k })) }
+      for (const aggregate of ['count(*)', 'count(*) + 0']) {
+        const query = `select (select ${aggregate} from r where r.k = c.k) n from c`
+        expect(await collect(executeSql({ tables, query }))).toEqual([{ n: 1 }])
+        expect(await collect(executeSql({ tables, query: query.replace(') n', ' limit 1) n') }))).toEqual([{ n: 1 }])
+      }
+    }
+  })
+
+  it('keeps array keys distinct from their serialized strings', async () => {
+    const key = [1]
+    const text = '[1]'
+    for (const keys of [[key, text], [text, key]]) {
+      const tables = { c: [{ k: text }], r: keys.map(k => ({ k })) }
+      for (const aggregate of ['count(*)', 'count(*) + 0']) {
+        const query = `select (select ${aggregate} from r where r.k = c.k) n from c`
+        expect(await collect(executeSql({ tables, query }))).toEqual([{ n: 1 }])
+        expect(await collect(executeSql({ tables, query: query.replace(') n', ' limit 1) n') }))).toEqual([{ n: 1 }])
+      }
+    }
+  })
+
   it.each([{ id: 1 }, [1]])('preserves identity for object correlation keys %s', async a => {
     const b = Array.isArray(a) ? [...a] : { ...a }
     const tables = { c: [{ k: a }, { k: b }], r: [{ k: a, x: 2 }, { k: b, x: 8 }] }
