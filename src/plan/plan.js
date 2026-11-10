@@ -73,14 +73,20 @@ export function planStatement({ stmt, ctePlans, cteColumns, tables, parentColumn
  * @returns {QueryPlan}
  */
 function planSetOperation({ compound, ctePlans, cteColumns, tables, parentColumns }) {
-  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
-  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns })
   const leftColumns = inferStatementColumns({ stmt: compound.left, cteColumns, tables })
   const rightColumns = inferStatementColumns({ stmt: compound.right, cteColumns, tables })
-
-  if (leftColumns.length !== rightColumns.length || leftColumns.some((col, idx) => col !== rightColumns[idx])) {
-    throw new Error(`Set operation operands must have identical columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
+  if (leftColumns.length !== rightColumns.length) {
+    throw new Error(`Set operation operands must have the same number of columns, got left [${leftColumns.join(', ')}] and right [${rightColumns.join(', ')}]`)
   }
+  // Deduplicating operators compare whole rows, so only UNION ALL can prune.
+  if (compound.operator !== 'UNION' || !compound.all) parentColumns = undefined
+  // Output names come from the left operand; right columns match by position.
+  const rightParentColumns = parentColumns?.map(id => {
+    const index = leftColumns.indexOf(id.name)
+    return index < 0 ? id : { ...id, name: rightColumns[index] }
+  })
+  const left = planStatement({ stmt: compound.left, ctePlans, cteColumns, tables, parentColumns })
+  const right = planStatement({ stmt: compound.right, ctePlans, cteColumns, tables, parentColumns: rightParentColumns })
 
   /** @type {QueryPlan} */
   let plan = {

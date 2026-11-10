@@ -120,15 +120,78 @@ describe('UNION execution', () => {
       expect(result).toHaveLength(3)
     })
 
-    it('should reject set operations with mismatched column names', () => {
-      expect(() => executeSql({
+    it('should take column names from the left operand by position', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT 'user' AS kind, name AS label FROM users WHERE id = 1
+          UNION ALL
+          SELECT 'order', CAST(amount AS STRING) FROM orders WHERE id = 2
+        `,
+      }))
+      expect(result).toEqual([
+        { kind: 'user', label: 'Alice' },
+        { kind: 'order', label: '200' },
+      ])
+    })
+
+    it('should dedupe by position when column names differ', async () => {
+      const result = await collect(executeSql({
         tables: { users },
         query: `
           SELECT id AS a FROM users WHERE id = 1
           UNION
-          SELECT id AS b FROM users WHERE id = 1
+          SELECT id AS b FROM users WHERE id <= 2
         `,
-      })).toThrow('Set operation operands must have identical columns')
+      }))
+      expect(result).toEqual([{ a: 1 }, { a: 2 }])
+    })
+
+    it('should map outer column references onto right names by position', async () => {
+      const result = await collect(executeSql({
+        tables: { users, orders },
+        query: `
+          SELECT k, n FROM (
+            SELECT 'users' AS k, COUNT(*) AS n FROM users
+            UNION ALL
+            SELECT 'orders' AS src, COUNT(*) AS total FROM orders
+            UNION ALL
+            SELECT 'big', amount FROM orders WHERE amount > 150
+          ) t ORDER BY k
+        `,
+      }))
+      expect(result).toEqual([
+        { k: 'big', n: 200 },
+        { k: 'orders', n: 3 },
+        { k: 'users', n: 3 },
+      ])
+    })
+
+    it('should dedupe whole rows when the outer query reads fewer columns', async () => {
+      const result = await collect(executeSql({
+        tables: { users },
+        query: `
+          SELECT k FROM (
+            SELECT 'x' AS k, id AS n FROM users
+            UNION
+            SELECT 'x', age FROM users
+          ) t
+        `,
+      }))
+      expect(result).toEqual([{ k: 'x' }, { k: 'x' }, { k: 'x' }, { k: 'x' }, { k: 'x' }, { k: 'x' }])
+    })
+
+    it('should match columns by position in INTERSECT and EXCEPT', async () => {
+      const intersect = await collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT id AS a FROM users INTERSECT SELECT user_id AS b FROM orders',
+      }))
+      expect(intersect).toEqual([{ a: 1 }, { a: 2 }])
+      const except = await collect(executeSql({
+        tables: { users, orders },
+        query: 'SELECT id AS a FROM users EXCEPT SELECT user_id AS b FROM orders',
+      }))
+      expect(except).toEqual([{ a: 3 }])
     })
 
     it('should reject set operations with mismatched column counts', () => {
@@ -139,7 +202,7 @@ describe('UNION execution', () => {
           UNION
           SELECT id, name FROM users
         `,
-      })).toThrow('Set operation operands must have identical columns')
+      })).toThrow('Set operation operands must have the same number of columns, got left [id] and right [id, name]')
     })
   })
 
