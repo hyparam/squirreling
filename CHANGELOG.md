@@ -1,5 +1,10 @@
 # Squirreling Changelog
 
+## [0.17.5]
+ - Support `CAST(x AS DATE)` and `DATE` literals
+ - Compare dates with strings by parsing the string as a timestamp
+ - Faster IN, EXISTS, and scalar subqueries, planned as mark joins
+
 ## [0.17.4]
  - String functions accept JSON object and array values as JSON text, the same as `CAST(x AS VARCHAR)`, instead of throwing
 
