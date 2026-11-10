@@ -438,7 +438,7 @@ function planSelect({ select, aliasSelect, ctePlans, cteColumns, tables, parentC
   // Marks are extra columns on the source rows; stars must not expose them.
   if (markJoins.length && hasStar) columns = expandStars(columns, sourceNames, sourceAlias, select.joins.length > 0)
   const scalar = decorrelateScalars({
-    select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns,
+    select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, tables, cteColumns, ctePlans,
     rewriteProjection: !useGrouping && !windows.length,
     planQuery: query => planStatement({ stmt: query, tables, ctePlans, cteColumns }),
   })

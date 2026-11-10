@@ -2,11 +2,11 @@ import { derivedAlias } from '../expression/alias.js'
 import { findAggregate } from '../validation/aggregates.js'
 import { isAggregateFunc } from '../validation/functions.js'
 import { findWindow } from '../validation/windows.js'
-import { collectColumnsFromExpr, statementScope } from './columns.js'
+import { collectColumnsFromExpr, fromAlias, statementScope } from './columns.js'
 import { andPredicate, collectConjuncts } from './predicates.js'
 
 /**
- * @import { AsyncDataSource, DerivedColumn, ExprNode, IdentifierNode, OrderByItem, SelectColumn, SelectStatement, Statement } from '../types.js'
+ * @import { AsyncDataSource, DerivedColumn, ExprNode, FromSubquery, FromTable, IdentifierNode, OrderByItem, SelectColumn, SelectStatement, Statement } from '../types.js'
  * @import { QueryPlan, SemiJoinNode } from './types.js'
  */
 
@@ -25,9 +25,10 @@ import { andPredicate, collectConjuncts } from './predicates.js'
  * @param {(query: SelectStatement) => QueryPlan} options.planQuery
  * @param {Record<string, AsyncDataSource>} [options.tables]
  * @param {Map<string, string[]>} [options.cteColumns]
+ * @param {Map<string, QueryPlan>} [options.ctePlans]
  * @returns {{ select: SelectStatement, columns: SelectColumn[], orderBy: OrderByItem[], scalarJoins: ((left: QueryPlan) => QueryPlan)[], scalarWhere: ExprNode | undefined }}
  */
-export function decorrelateScalars({ select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, rewriteProjection, planQuery, tables, cteColumns }) {
+export function decorrelateScalars({ select, columns, orderBy, scopeAliases, scopeColumns, sourceAlias, rewriteProjection, planQuery, tables, cteColumns, ctePlans }) {
   columns = [...columns]
   // Keep original expressions for source column demand; synthetic scalar cells
   // are computed above the scan and must never appear in pushdown hints.
@@ -65,8 +66,8 @@ export function decorrelateScalars({ select, columns, orderBy, scopeAliases, sco
     // primitive types. Unknown schemas and coercive comparisons stay per-row.
     if (inner.some((key, i) => {
       if (key.type !== 'identifier') return true
-      const type = correlationType(query, key, tables, cteColumns)
-      return !type || type !== correlationType(select, keys.left[i], tables, cteColumns)
+      const type = correlationType(query, key, tables, ctePlans)
+      return !type || type !== correlationType(select, keys.left[i], tables, ctePlans)
     })) return expr
     let name = `__scalar_${scalarJoins.length}`
     while ([...scopeColumns, ...scopeAliases].some(col => col === name || col.startsWith(name + '_'))) name += '_'
@@ -447,20 +448,87 @@ function mapScalarExpressions(node, rewrite, aggregateOnly = false) {
 }
 
 /**
- * Looks up a correlation column's declared primitive type in its lexical scope.
- * Derived relations and CTEs need type propagation before they can use this rewrite.
+ * Looks up a correlation column's declared primitive type in its lexical
+ * scope, following plain column projections through CTEs and derived tables.
+ * Computed, set-combined, and untyped columns are unknown and stay per-row.
  * @param {SelectStatement} query
  * @param {IdentifierNode} key
  * @param {Record<string, AsyncDataSource>} [tables]
- * @param {Map<string, string[]>} [cteColumns]
+ * @param {Map<string, QueryPlan>} [ctePlans]
  * @returns {string | undefined}
  */
-function correlationType(query, key, tables, cteColumns) {
-  const { from } = query
-  const table = from?.type === 'table' && (from.alias ?? from.table) === key.prefix ? from.table
-    : query.joins.find(join => !join.subquery && !join.fromFunction && (join.alias ?? join.table) === key.prefix)?.table
-  if (!table || cteColumns?.has(table)) return
-  const type = tables?.[table]?.schema?.fields.find(field => field.name === key.name)?.dataType.type
+function correlationType(query, key, tables, ctePlans) {
+  const { from, joins } = query
+  /** @type {FromTable | FromSubquery | undefined} */
+  let source
+  if (!key.prefix) {
+    // An unqualified name is only unambiguous with a single source.
+    if (!joins.length && from?.type !== 'function') source = from
+  } else if (from && from.type !== 'function' && fromAlias(from) === key.prefix) {
+    source = from
+  } else {
+    const join = joins.find(join => !join.fromFunction && (join.alias ?? join.table) === key.prefix)
+    source = join && (join.subquery ?? { ...join, type: 'table' })
+  }
+  if (!source) return
+  if (source.type === 'subquery') {
+    const { query } = source
+    if (query.type !== 'select') return
+    const column = projectedColumn(query.columns, key.name)
+    return column && correlationType(query, column, tables, ctePlans)
+  }
+  const ctePlan = ctePlans?.get(source.table.toLowerCase())
+  if (ctePlan) return planColumnType(ctePlan, key.name, tables)
+  return tableColumnType(source.table, key.name, tables)
+}
+
+/**
+ * Declared primitive type of a named output column of a planned relation.
+ * @param {QueryPlan} plan
+ * @param {string} name
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @returns {string | undefined}
+ */
+function planColumnType(plan, name, tables) {
+  if (plan.type === 'Scan') return tableColumnType(plan.table, name, tables)
+  if (plan.type === 'Subquery' || plan.type === 'Filter' || plan.type === 'Sort' || plan.type === 'Distinct' || plan.type === 'Limit') {
+    return planColumnType(plan.child, name, tables)
+  }
+  if (plan.type === 'Project' || plan.type === 'HashAggregate') {
+    const column = projectedColumn(plan.columns, name)
+    return column && planColumnType(plan.child, column.name, tables)
+  }
+}
+
+/**
+ * Finds the source column a projection passes through under an output name.
+ * Returns undefined when the output is computed or its name is ambiguous.
+ * @param {SelectColumn[]} columns
+ * @param {string} name
+ * @returns {IdentifierNode | undefined}
+ */
+function projectedColumn(columns, name) {
+  /** @type {SelectColumn[]} */
+  const matches = columns.filter(col => col.type === 'star' || (col.alias ?? derivedAlias(col.expr)) === name)
+  if (matches.length !== 1) return
+  const [column] = matches
+  const { positionStart, positionEnd } = column
+  if (column.type === 'star') return { type: 'identifier', prefix: column.table, name, positionStart, positionEnd }
+  const { expr } = column
+  if (expr.type !== 'identifier') return
+  // A bare name may read another output alias instead of a source column.
+  if (!expr.prefix && columns.some(col => col !== column && col.type === 'derived' && col.alias === expr.name)) return
+  return expr
+}
+
+/**
+ * @param {string} table
+ * @param {string} name
+ * @param {Record<string, AsyncDataSource>} [tables]
+ * @returns {string | undefined}
+ */
+function tableColumnType(table, name, tables) {
+  const type = tables?.[table]?.schema?.fields.find(field => field.name === name)?.dataType.type
   return type && ['string', 'number', 'bigint', 'boolean'].includes(type) ? type : undefined
 }
 

@@ -159,6 +159,60 @@ describe('correlated scalar aggregate joins', () => {
     expect(await collect(executeSql({ tables, query: 'select (select count(*) from r where r.k = c.k) n from c' }))).toEqual([{ n: 0 }])
   })
 
+  it.each([
+    ['a CTE outer', 'with u as (select distinct k from c) select u.k, (select count(*) from r where r.k = u.k) n from u'],
+    ['a derived outer', 'select u.k, (select count(*) from r where r.k = u.k) n from (select distinct k from c) u'],
+    ['a star projection', 'select u.k, (select count(*) from r where r.k = u.k) n from (select * from c where j = 1) u'],
+    ['a renamed column', 'with u as (select k as id from c) select u.id, (select count(*) from r where r.k = u.id) n from u'],
+    ['a grouped CTE', 'with u as (select k, count(*) rows from c group by k) select u.k, (select sum(x) from r where r.k = u.k) n from u'],
+    ['a limited CTE', 'with u as (select k from c where j = 1 order by k limit 2) select u.k, (select count(*) from r where r.k = u.k) n from u'],
+    ['a CTE inner', 'with s as (select k, x from r where j = 1) select c.k, (select count(*) from s where s.k = c.k) n from c'],
+    ['nested relations', 'with u as (select t.k from (select k from c) t) select u.k, (select max(x) from r where r.k = u.k) n from u'],
+    ['a joined outer', 'with u as (select k from c) select u.k, (select count(*) from r where r.k = u.k) n from u join c d on d.k = u.k'],
+  ])('decorrelates through %s', async (_, query) => {
+    expect(JSON.stringify(planSql({ query, tables }))).toContain('"HashJoin","joinType":"LEFT"')
+    // LIMIT on the scalar aggregate prevents decorrelation without changing results.
+    const fallback = query.replace(/(\w\.k = \w\.\w+)\)/, '$1 limit 1)')
+    expect(fallback).not.toEqual(query)
+    expect(await collect(executeSql({ tables, query }))).toEqual(await collect(executeSql({ tables, query: fallback })))
+  })
+
+  it('counts through a CTE outer', async () => {
+    const query = 'with u as (select distinct k from c) select u.k, (select count(*) from r where r.k = u.k) n from u'
+    expect(await collect(executeSql({ tables, query }))).toEqual([{ k: 1, n: 2 }, { k: 2, n: 1 }, { k: 3, n: 0 }, { k: null, n: 0 }])
+  })
+
+  it.each([
+    ['a computed column', 'with u as (select k + 0 as k from c) select (select count(*) from r where r.k = u.k) n from u'],
+    ['an aggregate column', 'with u as (select max(k) as k from c) select (select count(*) from r where r.k = u.k) n from u'],
+    ['a set operation', 'with u as (select k from c union all select k from r) select (select count(*) from r where r.k = u.k) n from u'],
+    ['a joined CTE', 'with u as (select c.k from c join r on r.k = c.k) select (select count(*) from r where r.k = u.k) n from u'],
+    ['an ambiguous output name', 'select (select count(*) from r where r.k = u.k) n from (select *, j as k from c) u'],
+    ['a name that matches another alias', 'select (select count(*) from r where r.k = u.k) n from (select j as k, k as j from c) u'],
+  ])('keeps %s on the per-row path', async (_, query) => {
+    expect(JSON.stringify(planSql({ query, tables }))).not.toContain('"HashJoin","joinType":"LEFT"')
+    const fallback = query.replace('r.k = u.k)', 'r.k = u.k limit 1)')
+    expect(await collect(executeSql({ tables, query }))).toEqual(await collect(executeSql({ tables, query: fallback })))
+  })
+
+  it('keeps mismatched key types behind a CTE on the per-row path', async () => {
+    const query = 'with u as (select k from c) select (select count(*) from r where r.k = u.k) n from u'
+    const tables = { c: typedSource([{ k: 1 }]), r: typedSource([{ k: '1' }], { type: 'string' }) }
+    expect(JSON.stringify(planSql({ query, tables }))).not.toContain('"HashJoin","joinType":"LEFT"')
+    expect(await collect(executeSql({ query, tables }))).toEqual([{ n: 1 }])
+  })
+
+  it('scans the inner table once for a CTE outer', async () => {
+    const source = tables.r
+    let scans = 0
+    /** @type {AsyncDataSource} */
+    const r = { ...source, scan(options) { scans++; return source.scan(options) } }
+    const query = 'with u as (select k from c) select (select count(*) from r where r.k = u.k) n from u'
+    expect((await collect(executeSql({ tables: { ...tables, r }, query }))).map(row => row.n)).toEqual([2, 1, 0, 0])
+    expect(scans).toEqual(1)
+  })
+
+
 })
 
 describe('uncorrelated scalar aggregate joins', () => {
