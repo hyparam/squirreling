@@ -176,6 +176,48 @@ for (const apply of [false, true]) {
       expect(lists(result.b[0].where)).toEqual({})
     })
 
+    it.each([
+      '(SELECT id, sid FROM b) s ON a.id = s.id',
+      '(SELECT * FROM b) s ON a.id = s.id',
+      '(SELECT b.* FROM b) s ON a.id = s.id',
+      '(SELECT sid, id AS k FROM b) s ON a.id = s.k',
+      '(SELECT DISTINCT id FROM b) s ON a.id = s.id',
+      '(SELECT id FROM (SELECT id, keep FROM b) t) s ON a.id = s.id',
+      '(SELECT id, COUNT(*) AS n FROM b GROUP BY id) s ON a.id = s.id',
+      '(SELECT id AS k, MAX(sid) AS m FROM b GROUP BY id, keep HAVING COUNT(*) > 0) s ON a.id = s.k',
+    ])('pushes through a derived table: %s', async derived => {
+      const result = await run(`SELECT a.id FROM a JOIN ${derived} WHERE a.keep = 1`)
+      expect(lists(result.b[0].where).id).toEqual([1])
+      expect(result.rows).toEqual([{ id: 1 }, { id: 1 }])
+    })
+
+    it('pushes through a CTE on each key it passes through', async () => {
+      const result = await run(`WITH s AS (SELECT id AS k, sid, COUNT(*) AS n FROM b GROUP BY id, sid)
+        SELECT a.id, s.n FROM a JOIN s ON a.id = s.k AND a.sid = s.sid WHERE a.keep = 1`)
+      expect(lists(result.b[0].where)).toEqual({ id: [1], sid: ['a'] })
+      expect(result.rows).toEqual([{ id: 1, n: 1 }, { id: 1, n: 1 }])
+    })
+
+    it.each([
+      '(SELECT id + 0 AS id FROM b) s ON a.id = s.id',
+      '(SELECT sid AS id FROM b) s ON a.sid = s.id',
+      '(SELECT keep AS id, * FROM b) s ON a.id = s.id',
+      '(SELECT keep, MAX(id) AS id FROM b GROUP BY keep) s ON a.id = s.id',
+      '(SELECT COUNT(*) AS id FROM b) s ON a.id = s.id',
+      '(SELECT id, ROW_NUMBER() OVER (ORDER BY sid) AS r FROM b) s ON a.id = s.id AND s.r > 0',
+      '(SELECT id FROM b ORDER BY sid LIMIT 2) s ON a.id = s.id',
+    ])('does not push through a derived table: %s', async derived => {
+      const result = await run(`SELECT a.id FROM a JOIN ${derived} WHERE a.keep = 1`)
+      expect(lists(result.b[0].where).id).toBeUndefined()
+    })
+
+    it('builds on the filtered side when the filter sits inside a derived table', async () => {
+      const result = await run(`WITH s AS (SELECT id FROM a WHERE keep = 1), t AS (SELECT id, sid FROM b)
+        SELECT t.sid FROM t JOIN s ON s.id = t.id`, small, small)
+      expect(lists(result.a[0].where)).toEqual({})
+      expect(lists(result.b[0].where)).toEqual({ id: [1] })
+    })
+
     it('preserves existing serialized tuple comparisons', async () => {
       for (const [id, sid, otherId, otherSid] of [
         ['a|b', 'c', 'a', 'b|c'], ['true', 'a', true, 'a'], ['[1]', 'a', [1], 'a'],
