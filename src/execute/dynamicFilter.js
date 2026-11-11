@@ -84,8 +84,9 @@ export function dynamicFilter(count, hash = false) {
 /**
  * Extend a key range by one value. Keys compare with JavaScript's loose
  * equality (sqlEquals), so a range is sound only within one comparison
- * domain: numbers and bigints order numerically against any probe value that
- * equals them, and strings order lexicographically only against strings.
+ * domain: numbers and bigints must stay separate because fractional strings
+ * can equal numbers but fail comparisons with bigint bounds. Strings order
+ * lexicographically only against strings.
  * Booleans and mixed domains give up the range.
  *
  * @param {KeyRange | undefined} range
@@ -95,7 +96,7 @@ export function dynamicFilter(count, hash = false) {
 function widen(range, value) {
   if (!range) return
   if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') return
-  const kind = typeof value === 'string' ? 'string' : 'number'
+  const kind = typeof value === 'string' ? 'string' : typeof value === 'bigint' ? 'bigint' : 'number'
   if (range.kind && range.kind !== kind) return
   const { min, max } = range
   return {

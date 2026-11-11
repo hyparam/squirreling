@@ -188,6 +188,18 @@ for (const apply of [false, true]) {
       }
     })
 
+    it('preserves fractional string matches when number and bigint keys overflow', async () => {
+      const numbers = Array.from({ length: 256 }, (_, i) => ({ id: i + 0.5 }))
+      const probe = [{ id: '1.5' }]
+      const query = 'SELECT b.id FROM b WHERE b.id IN (SELECT id FROM a)'
+      for (const build of [[{ id: 0n }, ...numbers], [...numbers, { id: 0n }]]) {
+        expect((await run(query, build.slice(0, 256), probe)).rows).toEqual(probe)
+        const result = await run(query, build, probe)
+        expect(ranges(result.b[0].where)).toEqual({})
+        expect(result.rows).toEqual(probe)
+      }
+    })
+
     it('falls back to a string key range only for a declared string column', async () => {
       const build = Array.from({ length: 257 }, (_, i) => ({ id: 1, sid: String(100 + i), keep: 1 }))
       const probe = [99, '99', 100, '100', '356', 356, '357'].map(sid => ({ id: 1, sid, keep: 1 }))

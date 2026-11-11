@@ -30,7 +30,7 @@ export type BatchProjection =
 
 /** Bounds of a dynamic join filter's keys within one comparison domain. */
 export interface KeyRange {
-  kind: 'string' | 'number' | undefined
+  kind: 'string' | 'number' | 'bigint' | undefined
   min: string | number | bigint | undefined
   max: string | number | bigint | undefined
 }
