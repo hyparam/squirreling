@@ -123,6 +123,29 @@ test('a cell error closes its source and rejects without a partial chunk', async
   expect(closed).toEqual(true)
 })
 
+test('native column rejections are handled when a later read throws synchronously', async () => {
+  let closed = false
+  /** @type {QueryResults} */
+  const result = {
+    columns: ['a', 'b'],
+    rows() { throw new Error('row adapter used') },
+    async *batches() {
+      try {
+        yield {
+          columns: [
+            { read() { return Promise.reject(new Error('async column failed')) } },
+            { read() { throw new Error('sync column failed') } },
+          ],
+          selection: { type: 'all', length: 1 },
+        }
+      } finally { closed = true }
+    },
+  }
+  await expect(Array.fromAsync(streamRowBatches(result))).rejects.toThrow('sync column failed')
+  await new Promise(resolve => setImmediate(resolve))
+  expect(closed).toEqual(true)
+})
+
 test('empty results and invalid chunk sizes', async () => {
   /** @type {QueryResults} */
   const result = { columns: [], async *rows() {} }

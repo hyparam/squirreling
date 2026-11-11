@@ -26,7 +26,7 @@ export async function* streamRowBatches(results, { batchRows = 1024 } = {}) {
       signal?.throwIfAborted()
       const count = selectedRowCount(batch.selection)
       if (!count) continue
-      const vectors = await resolveColumnResults(batch.columns.map((_, columnIndex) => readBatchColumn({ batch, columnIndex, signal })))
+      const vectors = await resolveColumnResults(batch.columns.map(async (_, columnIndex) => readBatchColumn({ batch, columnIndex, signal })))
       for (let start = 0; start < count; start += batchRows) {
         signal?.throwIfAborted()
         const end = Math.min(start + batchRows, count)
