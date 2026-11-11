@@ -87,45 +87,38 @@ export async function collect(results) {
     return await collectBatches(results.batches(), results.columns, querySignals.get(results))
   }
 
-  // Collect all rows first, then materialize cells concurrently
-  // This enables dataloader-style batching of cell accessors
-  /** @type {AsyncRow[]} */
+  // Materialize pre-resolved rows as they arrive, so a collected row does not
+  // keep its source row (and columns read only to filter it) alive until the
+  // scan ends. Lazy rows are gathered first, then materialized concurrently,
+  // which enables dataloader-style batching of cell accessors.
+  /** @type {Record<string, SqlPrimitive>[]} */
   const rows = []
+  /** @type {number[]} */
+  const lazyIndex = []
+  /** @type {AsyncRow[]} */
+  const lazyRows = []
   for await (const asyncRow of results.rows()) {
-    rows.push(asyncRow)
-  }
-
-  // Fast path: if all rows have pre-materialized data, skip Promise overhead
-  let allMaterialized = rows.length > 0
-  for (let i = 0; i < rows.length; i++) {
-    if (!rows[i].resolved) {
-      allMaterialized = false
-      break
-    }
-  }
-  if (allMaterialized) {
-    const result = new Array(rows.length)
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]
-      /** @type {Record<string, SqlPrimitive>} */
-      const item = {}
-      for (const col of row.columns) {
-        item[col] = row.resolved[col]
-      }
-      result[i] = item
-    }
-    return result
-  }
-
-  return Promise.all(rows.map(async asyncRow => {
-    const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
     /** @type {Record<string, SqlPrimitive>} */
     const item = {}
+    if (asyncRow.resolved) {
+      for (const col of asyncRow.columns) {
+        item[col] = asyncRow.resolved[col]
+      }
+    } else {
+      lazyIndex.push(rows.length)
+      lazyRows.push(asyncRow)
+    }
+    rows.push(item)
+  }
+
+  await Promise.all(lazyRows.map(async (asyncRow, n) => {
+    const values = await Promise.all(asyncRow.columns.map(k => asyncRow.cells[k]()))
+    const item = rows[lazyIndex[n]]
     for (let i = 0; i < asyncRow.columns.length; i++) {
       item[asyncRow.columns[i]] = values[i]
     }
-    return item
   }))
+  return rows
 }
 
 /**
