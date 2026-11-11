@@ -298,7 +298,7 @@ export function executeHashJoin(plan, context) {
 
       if (!probeOuter && !hashMap.groups.size && !buildOuter) return
       if (!probeOuter && hashMap.groups.size) {
-        const filtered = filters.apply(swap ? plan.right : plan.left, probeKeys, swap ? rightTable : leftTable)
+        const filtered = filters.apply(swap ? plan.right : plan.left, probeKeys, swap ? rightTable : leftTable, context.tables)
         probe = executePlan({ plan: filtered, context: { ...context, deferScans: true } })
       }
 

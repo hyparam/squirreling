@@ -43,7 +43,7 @@ export function executeSemiJoin(plan, context) {
       const root = mark ? undefined : await buildTrie(plan, context, pruneKeys.length ? filters : undefined)
       if (root && neverPasses(plan, root)) return
       const probe = executePlan({
-        plan: pruneKeys.length ? filters.apply(plan.left, pruneKeys) : plan.left,
+        plan: pruneKeys.length ? filters.apply(plan.left, pruneKeys, undefined, context.tables) : plan.left,
         context: { ...context, deferScans: true },
       })
       let rowIndex = 0

@@ -27,3 +27,10 @@ export type BatchProjection =
   | { type: 'column', columnIndex: number }
   | { type: 'constant', value: SqlPrimitive }
   | { type: 'expression', expression: CompiledBatchExpression }
+
+/** Bounds of a dynamic join filter's keys within one comparison domain. */
+export interface KeyRange {
+  kind: 'string' | 'number' | undefined
+  min: string | number | bigint | undefined
+  max: string | number | bigint | undefined
+}

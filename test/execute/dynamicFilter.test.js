@@ -4,18 +4,25 @@ import { memorySource } from '../../src/backend/dataSource.js'
 import { evaluateExpr } from '../../src/expression/evaluate.js'
 import { collect, executeSql } from '../../src/index.js'
 
-/** @import { AsyncDataSource, ExprNode, Row, ScanOptions } from '../../src/types.js' */
+/** @import { AsyncDataSource, ExprNode, RelationSchema, Row, ScanOptions } from '../../src/types.js' */
+/** @typedef {Record<string, 'string' | 'number' | 'date'>} ColumnTypes */
 
 /**
  * @param {Row} data
  * @param {ScanOptions[]} calls
  * @param {boolean} apply
+ * @param {ColumnTypes} [types] - declare a schema with these column types
  * @returns {AsyncDataSource}
  */
-function source(data, calls, apply) {
+function source(data, calls, apply, types) {
   const base = memorySource({ data, columns: ['id', 'sid', 'keep'] })
+  /** @type {RelationSchema | undefined} */
+  const schema = types && {
+    fields: base.columns.map((name, id) => ({ id, name, dataType: { type: types[name] ?? 'unknown' }, nullable: true })),
+  }
   return {
     columns: base.columns,
+    ...schema && { schema },
     scan(options) {
       calls.push(options)
       const result = base.scan(options)
@@ -45,6 +52,20 @@ function lists(expr) {
   return { [expr.expr.name]: expr.values.map(value => value?.type === 'literal' ? value.value : undefined) }
 }
 
+/**
+ * @param {ExprNode} expr
+ * @returns {Record<string, unknown[]>}
+ */
+function ranges(expr) {
+  if (expr?.type !== 'binary' || expr.op !== 'AND') return {}
+  const { left, right } = expr
+  if (left.type === 'binary' && left.op === '>=' && right.type === 'binary' && right.op === '<=' &&
+      left.left.type === 'identifier' && left.right.type === 'literal' && right.right.type === 'literal') {
+    return { [left.left.name]: [left.right.value, right.right.value] }
+  }
+  return { ...ranges(left), ...ranges(right) }
+}
+
 const small = [{ id: 1, sid: 'a', keep: 1 }, { id: 1, sid: 'a', keep: 1 }, { id: null, sid: 'b', keep: 1 }]
 const large = [{ id: 1, sid: 'a', keep: 1 }, { id: 2, sid: 'b', keep: 1 }, { id: null, sid: 'c', keep: 1 }]
 
@@ -54,14 +75,15 @@ for (const apply of [false, true]) {
      * @param {string} query
      * @param {Row} [build]
      * @param {Row} [probe]
+     * @param {ColumnTypes} [types] - probe column types
      * @returns {Promise<{ a: ScanOptions[], b: ScanOptions[], rows: Row }>}
      */
-    async function run(query, build = small, probe = large) {
+    async function run(query, build = small, probe = large, types) {
       /** @type {ScanOptions[]} */
       const a = []
       /** @type {ScanOptions[]} */
       const b = []
-      const tables = { a: source(build, a, apply), b: source(probe, b, apply) }
+      const tables = { a: source(build, a, apply), b: source(probe, b, apply, types) }
       const rows = await collect(executeSql({ tables, query }))
       // Compare with pushdown disabled only in this test, without a public switch.
       const unpushed = vi.spyOn(dynamicFilters, 'dynamicFilter').mockReturnValue({
@@ -70,7 +92,7 @@ for (const apply of [false, true]) {
       })
       try {
         const fallback = await collect(executeSql({
-          tables: { a: source(build, [], apply), b: source(probe, [], apply) }, query,
+          tables: { a: source(build, [], apply), b: source(probe, [], apply, types) }, query,
         }))
         expect(rows).toEqual(fallback)
       } finally {
@@ -108,6 +130,7 @@ for (const apply of [false, true]) {
       const build = Array.from({ length: 257 }, (_, id) => ({ id, sid: 'a', keep: 1 }))
       const result = await run('SELECT a.id FROM a JOIN b ON a.id = b.id AND a.sid = b.sid WHERE a.keep = 1', build)
       expect(lists(result.b[0].where)).toEqual({ sid: ['a'] })
+      expect(ranges(result.b[0].where)).toEqual({ id: [0, 256] })
     })
 
     it.each([{ build: [] }, { build: [{ id: null, sid: 'a', keep: 1 }] }])('skips the probe with no matchable build keys: $build', async ({ build }) => {
@@ -150,6 +173,38 @@ for (const apply of [false, true]) {
       const query = 'SELECT a.id FROM a JOIN b ON a.id = b.id WHERE a.keep = 1'
       expect(lists((await run(query, build)).b[0].where)).toEqual({})
       expect(lists((await run(query, build.slice(0, 256))).b[0].where).id).toHaveLength(256)
+    })
+
+    it('falls back to a numeric key range past the cap', async () => {
+      const build = Array.from({ length: 257 }, (_, i) => ({ id: i + 10, sid: 'a', keep: 1 }))
+      const probe = [5, 10, '11', 266, 267, 9007199254740993n].map(id => ({ id, sid: 'a', keep: 1 }))
+      for (const query of [
+        'SELECT b.id FROM b JOIN a ON a.id = b.id WHERE a.keep = 1',
+        'SELECT b.id FROM b WHERE b.id IN (SELECT id FROM a)',
+      ]) {
+        const result = await run(query, build, probe)
+        expect(ranges(result.b[0].where)).toEqual({ id: [10, 266] })
+        expect(result.rows.map(row => row.id)).toEqual([10, '11', 266])
+      }
+    })
+
+    it('falls back to a string key range only for a declared string column', async () => {
+      const build = Array.from({ length: 257 }, (_, i) => ({ id: 1, sid: String(100 + i), keep: 1 }))
+      const probe = [99, '99', 100, '100', '356', 356, '357'].map(sid => ({ id: 1, sid, keep: 1 }))
+      const query = 'SELECT b.sid FROM b JOIN a ON a.sid = b.sid WHERE a.keep = 1'
+      expect(ranges((await run(query, build, probe, { sid: 'string' })).b[0].where)).toEqual({ sid: ['100', '356'] })
+      // Strings order differently from the numbers and dates they equal
+      /** @type {(ColumnTypes | undefined)[]} */
+      const domains = [undefined, { sid: 'number' }, { sid: 'date' }]
+      for (const types of domains) {
+        expect(ranges((await run(query, build, probe, types)).b[0].where)).toEqual({})
+      }
+    })
+
+    it('gives up the range on mixed key domains', async () => {
+      const build = Array.from({ length: 257 }, (_, i) => ({ id: i % 2 ? i : String(i), sid: 'a', keep: 1 }))
+      const result = await run('SELECT b.id FROM b JOIN a ON a.id = b.id WHERE a.keep = 1', build, large, { id: 'string' })
+      expect(ranges(result.b[0].where)).toEqual({})
     })
 
     it('pushes each chained join and rebuilds filters on repeated iteration', async () => {
