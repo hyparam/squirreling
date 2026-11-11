@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.7]
+ - Faster joins with many distinct keys: when the join key list is too large to push down, scans now get a min/max key range filter instead of no filter
+
 ## [0.17.6]
  - Match `UNION`, `INTERSECT`, and `EXCEPT` columns by position instead of by name
  - Parse parenthesized set operands, such as `(SELECT ...) UNION (SELECT ...)`
