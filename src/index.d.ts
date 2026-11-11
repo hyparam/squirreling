@@ -115,6 +115,13 @@ export function tokenizeSql(query: string): Token[]
  */
 export function collect(results: QueryResults): Promise<Record<string, SqlPrimitive>[]>
 
+/**
+ * Streams resolved object rows in bounded chunks. Native source batches and
+ * blocking operators can retain additional memory. Honors the query signal.
+ * Lazy cells are read concurrently within each chunk (1024 rows by default).
+ */
+export function streamRowBatches(results: QueryResults, options?: { batchRows?: number }): AsyncGenerator<Record<string, SqlPrimitive>[]>
+
 export function asyncRow(row: Record<string, SqlPrimitive>, columns: string[]): AsyncRow
 
 export function cachedDataSource(source: AsyncDataSource): AsyncDataSource

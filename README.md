@@ -74,6 +74,24 @@ console.log(`Collected rows:`, rows)
 // Collected rows: [ { active: true, cnt: 2 }, { active: false, cnt: 1 } ]
 ```
 
+To consume resolved rows without collecting the entire result, use
+`streamRowBatches`, which yields arrays of up to 1024 rows by default:
+
+```javascript
+import { executeSql, streamRowBatches } from 'squirreling'
+
+const results = executeSql({ tables: { users }, query: 'SELECT id, name FROM users', signal })
+for await (const rows of streamRowBatches(results, { batchRows: 1024 })) {
+  await writeRows(rows)
+}
+```
+
+The helper honors the execution signal and closes the source when iteration
+stops early. Lazy cell reads run concurrently within each chunk. Native source
+batches and blocking operators, such as sorting, can still use additional
+memory; this bounds output buffering, not the whole query. Keep `collect` when
+you need the complete array.
+
 ### User-Defined Functions
 
 Pass custom functions via the `functions` option. UDFs can be sync or async, making them ideal for calling APIs, models, or other external services:

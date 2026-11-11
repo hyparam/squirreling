@@ -101,46 +101,51 @@ export function executePlan({ plan, context }) {
   if (context.currentTimestamp === undefined) {
     context = { ...context, currentTimestamp: new Date().toISOString() }
   }
+  /** @type {QueryResults} */
+  let results
   if (plan.type === 'Scan') {
-    return executeScan(plan, context)
+    results = executeScan(plan, context)
   } else if (plan.type === 'SingleRow') {
-    return executeSingleRow()
+    results = executeSingleRow()
   } else if (plan.type === 'ShowTables') {
-    return executeShowTables(context)
+    results = executeShowTables(context)
   } else if (plan.type === 'Count') {
-    return executeCount(plan, context)
+    results = executeCount(plan, context)
   } else if (plan.type === 'Filter') {
-    return executeFilter(plan, context)
+    results = executeFilter(plan, context)
   } else if (plan.type === 'Project') {
-    return executeProject(plan, context)
+    results = executeProject(plan, context)
   } else if (plan.type === 'SemiJoin') {
-    return executeSemiJoin(plan, context)
+    results = executeSemiJoin(plan, context)
   } else if (plan.type === 'HashJoin') {
-    return executeHashJoin(plan, context)
+    results = executeHashJoin(plan, context)
   } else if (plan.type === 'NestedLoopJoin') {
-    return executeNestedLoopJoin(plan, context)
+    results = executeNestedLoopJoin(plan, context)
   } else if (plan.type === 'PositionalJoin') {
-    return executePositionalJoin(plan, context)
+    results = executePositionalJoin(plan, context)
   } else if (plan.type === 'HashAggregate') {
-    return executeHashAggregate(plan, context)
+    results = executeHashAggregate(plan, context)
   } else if (plan.type === 'ScalarAggregate') {
-    return executeScalarAggregate(plan, context)
+    results = executeScalarAggregate(plan, context)
   } else if (plan.type === 'Sort') {
-    return executeSort(plan, context)
+    results = executeSort(plan, context)
   } else if (plan.type === 'Distinct') {
-    return executeDistinct(plan, context)
+    results = executeDistinct(plan, context)
   } else if (plan.type === 'Limit') {
-    return executeLimit(plan, context)
+    results = executeLimit(plan, context)
   } else if (plan.type === 'SetOperation') {
-    return executeSetOperation(plan, context)
+    results = executeSetOperation(plan, context)
   } else if (plan.type === 'Subquery') {
-    return executePlan({ plan: plan.child, context: { ...context, scope: plan.scope } })
+    results = executePlan({ plan: plan.child, context: { ...context, scope: plan.scope } })
   } else if (plan.type === 'TableFunction') {
-    return executeTableFunction(plan, context)
+    results = executeTableFunction(plan, context)
   } else if (plan.type === 'Window') {
-    return executeWindow(plan, context)
+    results = executeWindow(plan, context)
+  } else {
+    results = { columns: [], async *rows() {} }
   }
-  return { columns: [], async *rows() {} }
+  if (context.signal) results.signal = context.signal
+  return results
 }
 
 /**
@@ -170,6 +175,7 @@ function executeShowTables(context) {
   const columns = ['name']
   const names = Object.keys(context.tables).sort()
   return {
+    ...context.signal ? { signal: context.signal } : {},
     columns,
     numRows: names.length,
     maxRows: names.length,
@@ -716,6 +722,9 @@ function executeCount(plan, context) {
         signal?.throwIfAborted()
         return count
       })()
+
+      // Observe failures before yielding: a cancelled consumer may never read a cell.
+      await countPromise
 
       /** @type {AsyncCells} */
       const cells = {}

@@ -4,6 +4,7 @@ export { parseSql } from './parse/parse.js'
 export { planSql } from './plan/plan.js'
 export { tokenizeSql } from './parse/tokenize.js'
 export { collect } from './execute/utils.js'
+export { streamRowBatches } from './execute/stream.js'
 export { asyncRow, cachedDataSource } from './backend/dataSource.js'
 export {
   composeSelections,
