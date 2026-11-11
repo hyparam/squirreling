@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.8]
+ - Lower memory use when collecting query results: each row is materialized as it arrives instead of holding every source row until the scan ends
+
 ## [0.17.7]
  - Faster joins with many distinct keys: when the join key list is too large to push down, scans now get a min/max key range filter instead of no filter
 
