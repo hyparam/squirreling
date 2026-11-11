@@ -9,6 +9,8 @@ export { QueryPlan } from './plan/types.js'
  * Result of executing a SQL query.
  */
 export interface QueryResults {
+  /** Execution signal, also checked while materializing collected or streamed output. */
+  signal?: AbortSignal
   columns: string[]
   rows(): AsyncGenerator<AsyncRow>
   batches?(): AsyncIterable<AsyncBatch>

@@ -7,19 +7,15 @@ import { toDate } from '../expression/date.js'
 
 const primitiveTypes = new Set(['number', 'bigint', 'boolean', 'string'])
 
-/** @type {WeakMap<QueryResults, AbortSignal>} */
-const querySignals = new WeakMap()
-
 /**
- * Associates an execution signal with results without expanding the public
- * result shape solely for the collection adapter.
+ * Attaches the execution signal and checks it around source iteration.
  *
  * @param {QueryResults} results
  * @param {AbortSignal} [signal]
  * @returns {QueryResults}
  */
 export function bindQuerySignal(results, signal) {
-  if (!signal || querySignals.get(results) === signal) return results
+  if (!signal || results.signal === signal) return results
 
   const { batches, rows } = results
   results.rows = async function* boundRows() {
@@ -34,7 +30,7 @@ export function bindQuerySignal(results, signal) {
       signal.throwIfAborted()
     }
   }
-  querySignals.set(results, signal)
+  results.signal = signal
   return results
 }
 
@@ -83,8 +79,10 @@ export function compareForTerm(a, b, term) {
  * @returns {Promise<Record<string, SqlPrimitive>[]>} array of all yielded values
  */
 export async function collect(results) {
+  const { signal } = results
+  signal?.throwIfAborted()
   if (results.batches) {
-    return await collectBatches(results.batches(), results.columns, querySignals.get(results))
+    return await collectBatches(results.batches(), results.columns, signal)
   }
 
   // Materialize pre-resolved rows as they arrive, so a collected row does not
@@ -98,6 +96,7 @@ export async function collect(results) {
   /** @type {AsyncRow[]} */
   const lazyRows = []
   for await (const asyncRow of results.rows()) {
+    signal?.throwIfAborted()
     /** @type {Record<string, SqlPrimitive>} */
     const item = {}
     if (asyncRow.resolved) {
@@ -118,6 +117,7 @@ export async function collect(results) {
       item[asyncRow.columns[i]] = values[i]
     }
   }))
+  signal?.throwIfAborted()
   return rows
 }
 
