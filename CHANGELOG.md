@@ -1,5 +1,8 @@
 # Squirreling Changelog
 
+## [0.17.9]
+ - Add `streamRowBatches` to stream resolved rows in bounded batches (1024 rows by default) without collecting the whole result
+
 ## [0.17.8]
  - Lower memory use when collecting query results: each row is materialized as it arrives instead of holding every source row until the scan ends
 
