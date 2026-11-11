@@ -89,7 +89,7 @@ export async function* streamRowBatches(results, { batchRows = 1024 } = {}) {
  */
 async function resolveLazy(lazy) {
   await Promise.all(lazy.map(async ({ row, item }) => {
-    const values = await Promise.all(row.columns.map(key => row.cells[key]()))
+    const values = await Promise.all(row.columns.map(async key => row.cells[key]()))
     for (let i = 0; i < values.length; i++) item[row.columns[i]] = values[i]
   }))
 }
