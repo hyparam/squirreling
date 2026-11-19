@@ -193,11 +193,6 @@ describe('parseSql error handling', () => {
         .toThrow('ROW_NUMBER() requires an OVER clause')
     })
 
-    it('should throw error for RANK window function', () => {
-      expect(() => parseSql({ query: 'SELECT RANK() OVER (ORDER BY id) FROM t' }))
-        .toThrow('Window function "RANK" is not supported')
-    })
-
     it('should throw error for DENSE_RANK window function', () => {
       expect(() => parseSql({ query: 'SELECT DENSE_RANK() OVER (ORDER BY id) FROM t' }))
         .toThrow('Window function "DENSE_RANK" is not supported')

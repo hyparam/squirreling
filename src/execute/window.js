@@ -142,6 +142,10 @@ async function computeWindow(spec, rows, output, context) {
     // Order within the partition. Empty ORDER BY → input order.
     /** @type {number[]} */
     let ordered
+    // tied[k] is true when ordered[k] ties with ordered[k - 1] on every
+    // ORDER BY term. Undefined without ORDER BY, where all rows are peers.
+    /** @type {boolean[] | undefined} */
+    let tied
     if (spec.orderBy.length) {
       /** @type {{ idx: number, values: SqlPrimitive[], pos: number }[]} */
       const entries = new Array(bucket.length)
@@ -169,11 +173,16 @@ async function computeWindow(spec, rows, output, context) {
         return a.pos - b.pos
       })
       ordered = entries.map(e => e.idx)
+      if (spec.funcName === 'RANK') {
+        tied = entries.map((entry, k) => k > 0 && spec.orderBy.every((term, i) =>
+          compareForTerm(entries[k - 1].values[i], entry.values[i], term) === 0
+        ))
+      }
     } else {
       ordered = bucket
     }
 
-    await applyWindowFunction(spec, ordered, rows, output, context)
+    await applyWindowFunction(spec, ordered, tied, rows, output, context)
   }
 }
 
@@ -182,14 +191,24 @@ async function computeWindow(spec, rows, output, context) {
  *
  * @param {WindowSpec} spec
  * @param {number[]} ordered - row indices in window order
+ * @param {boolean[] | undefined} tied - whether each ordered row ties with the one before it
  * @param {AsyncRow[]} rows
  * @param {SqlPrimitive[]} output
  * @param {ExecuteContext} context
  */
-async function applyWindowFunction(spec, ordered, rows, output, context) {
+async function applyWindowFunction(spec, ordered, tied, rows, output, context) {
   if (spec.funcName === 'ROW_NUMBER') {
     for (let k = 0; k < ordered.length; k++) {
       output[ordered[k]] = k + 1
+    }
+    return
+  }
+  if (spec.funcName === 'RANK') {
+    // Ties share the rank of their first peer, leaving gaps after them
+    let rank = 1
+    for (let k = 0; k < ordered.length; k++) {
+      if (tied && !tied[k]) rank = k + 1
+      output[ordered[k]] = rank
     }
     return
   }

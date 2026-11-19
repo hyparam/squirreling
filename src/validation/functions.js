@@ -31,7 +31,7 @@ export function isMathFunc(name) {
  * @returns {boolean}
  */
 export function isWindowFunc(name) {
-  return ['ROW_NUMBER', 'LAG', 'LEAD'].includes(name)
+  return ['ROW_NUMBER', 'RANK', 'LAG', 'LEAD'].includes(name)
 }
 
 /**
@@ -241,6 +241,7 @@ export const FUNCTION_SIGNATURES = {
 
   // Window functions
   ROW_NUMBER: { min: 0, max: 0, signature: '' },
+  RANK: { min: 0, max: 0, signature: '' },
   LAG: { min: 1, max: 3, signature: 'value[, offset[, default]]' },
   LEAD: { min: 1, max: 3, signature: 'value[, offset[, default]]' },
 

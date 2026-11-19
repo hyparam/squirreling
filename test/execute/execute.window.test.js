@@ -300,4 +300,119 @@ describe('window functions', () => {
       })).toThrow('LEAD() requires an OVER clause at position 7')
     })
   })
+
+  describe('RANK', () => {
+    const scores = [
+      { id: 1, team: 'a', score: 90 },
+      { id: 2, team: 'a', score: 80 },
+      { id: 3, team: 'a', score: 90 },
+      { id: 4, team: 'a', score: 70 },
+      { id: 5, team: 'b', score: 50 },
+      { id: 6, team: 'b', score: 50 },
+    ]
+
+    it('should give ties the same rank and leave gaps', async () => {
+      const result = await collect(executeSql({
+        tables: { scores },
+        query: 'SELECT id, RANK() OVER (ORDER BY score DESC) AS r FROM scores',
+      }))
+      expect(result).toEqual([
+        { id: 1, r: 1 },
+        { id: 2, r: 3 },
+        { id: 3, r: 1 },
+        { id: 4, r: 4 },
+        { id: 5, r: 5 },
+        { id: 6, r: 5 },
+      ])
+    })
+
+    it('should rank within partitions', async () => {
+      const result = await collect(executeSql({
+        tables: { scores },
+        query: 'SELECT id, RANK() OVER (PARTITION BY team ORDER BY score) AS r FROM scores',
+      }))
+      expect(result).toEqual([
+        { id: 1, r: 3 },
+        { id: 2, r: 2 },
+        { id: 3, r: 3 },
+        { id: 4, r: 1 },
+        { id: 5, r: 1 },
+        { id: 6, r: 1 },
+      ])
+    })
+
+    it('should break ties using all ORDER BY terms', async () => {
+      const result = await collect(executeSql({
+        tables: { scores },
+        query: 'SELECT id, RANK() OVER (ORDER BY score DESC, team, id DESC) AS r FROM scores',
+      }))
+      expect(result).toEqual([
+        { id: 1, r: 2 },
+        { id: 2, r: 3 },
+        { id: 3, r: 1 },
+        { id: 4, r: 4 },
+        { id: 5, r: 6 },
+        { id: 6, r: 5 },
+      ])
+    })
+
+    it('should rank every row 1 when ORDER BY is omitted', async () => {
+      const result = await collect(executeSql({
+        tables: { scores },
+        query: 'SELECT id, RANK() OVER (PARTITION BY team) AS r FROM scores',
+      }))
+      expect(result).toEqual([
+        { id: 1, r: 1 },
+        { id: 2, r: 1 },
+        { id: 3, r: 1 },
+        { id: 4, r: 1 },
+        { id: 5, r: 1 },
+        { id: 6, r: 1 },
+      ])
+    })
+
+    it('should treat NULLs as peers', async () => {
+      const data = [
+        { id: 1, v: null },
+        { id: 2, v: 5 },
+        { id: 3, v: null },
+        { id: 4, v: 7 },
+      ]
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT id, RANK() OVER (ORDER BY v NULLS LAST) AS r FROM data',
+      }))
+      expect(result).toEqual([
+        { id: 1, r: 3 },
+        { id: 2, r: 1 },
+        { id: 3, r: 3 },
+        { id: 4, r: 2 },
+      ])
+    })
+
+    it('should default to rank as column alias without AS', async () => {
+      const result = await collect(executeSql({
+        tables: { scores },
+        query: 'SELECT id, RANK() OVER (ORDER BY score DESC) FROM scores WHERE team = \'b\'',
+      }))
+      expect(result).toEqual([
+        { id: 5, rank: 1 },
+        { id: 6, rank: 1 },
+      ])
+    })
+
+    it('should throw on RANK without OVER', () => {
+      expect(() => executeSql({
+        tables: { scores },
+        query: 'SELECT RANK() FROM scores',
+      })).toThrow('RANK() requires an OVER clause at position 7')
+    })
+
+    it('should throw on RANK with arguments', () => {
+      expect(() => executeSql({
+        tables: { scores },
+        query: 'SELECT RANK(score) OVER (ORDER BY score) FROM scores',
+      })).toThrow('RANK() function requires 0 arguments, got 1')
+    })
+  })
 })
