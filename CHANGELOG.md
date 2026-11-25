@@ -1,5 +1,9 @@
 # Squirreling Changelog
 
+## [0.17.10]
+ - Add `RANK()` window function
+ - Add JSON `->` and `->>` operators for extracting object fields and array elements
+
 ## [0.17.9]
  - Add `streamRowBatches` to stream resolved rows in bounded batches (1024 rows by default) without collecting the whole result
 
