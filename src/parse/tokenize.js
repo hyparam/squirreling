@@ -184,6 +184,19 @@ export function tokenizeSql(query) {
       continue
     }
 
+    // JSON access operators
+    if (ch === '-' && next === '>') {
+      const value = query[i + 2] === '>' ? '->>' : '->'
+      i += value.length
+      tokens.push({
+        type: 'operator',
+        value,
+        positionStart,
+        positionEnd: i,
+      })
+      continue
+    }
+
     // operators
     if ('<>!=+-*/%'.includes(ch)) {
       let op = nextChar()

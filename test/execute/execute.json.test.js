@@ -953,4 +953,86 @@ describe('string functions', () => {
     })
   })
 
+  describe('-> and ->> operators', () => {
+    const data = [
+      { id: 1, json: '{"name":"Alice","tags":["x","y"],"user":{"age":30}}' },
+      { id: 2, json: '{"name":"Bob"}' },
+      { id: 3, json: NULL },
+    ]
+
+    it('should extract a key from a JSON string', async () => {
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT json->\'name\' AS name, json->>\'user\' AS user FROM data',
+      }))
+      expect(result).toEqual([
+        { name: 'Alice', user: '{"age":30}' },
+        { name: 'Bob', user: NULL },
+        { name: NULL, user: NULL },
+      ])
+    })
+
+    it('should chain object keys and array indexes', async () => {
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT json->\'tags\'->0 AS first, json->\'tags\'->-1 AS last, json->\'user\'->>\'age\' AS age FROM data WHERE id = 1',
+      }))
+      expect(result).toEqual([{ first: 'x', last: 'y', age: '30' }])
+    })
+
+    it('should read JSON objects directly', async () => {
+      const objects = [{ obj: { items: [10, 20], 'a.b': 'dotted' } }]
+      const result = await collect(executeSql({
+        tables: { objects },
+        query: 'SELECT obj->\'items\' AS items, obj->\'items\'->1 AS second, obj->>\'a.b\' AS dotted FROM objects',
+      }))
+      expect(result).toEqual([{ items: [10, 20], second: 20, dotted: 'dotted' }])
+    })
+
+    it('should use a column as the key', async () => {
+      const keyed = [
+        { obj: { a: 1, b: 2 }, key: 'b' },
+        { obj: { a: 1, b: 2 }, key: 'c' },
+      ]
+      const result = await collect(executeSql({
+        tables: { keyed },
+        query: 'SELECT obj->key AS val FROM keyed',
+      }))
+      expect(result).toEqual([{ val: 2 }, { val: NULL }])
+    })
+
+    it('should return null for a mismatched key type', async () => {
+      const objects = [{ obj: { items: [10, 20] } }]
+      const result = await collect(executeSql({
+        tables: { objects },
+        query: 'SELECT obj->0 AS a, obj->\'items\'->\'0\' AS b, obj->\'items\'->\'x\'->\'y\' AS c FROM objects',
+      }))
+      expect(result).toEqual([{ a: NULL, b: NULL, c: NULL }])
+    })
+
+    it('should bind tighter than arithmetic and comparison', async () => {
+      const objects = [{ obj: { n: 3, s: 'hi' } }, { obj: { n: 5, s: 'yo' } }]
+      const result = await collect(executeSql({
+        tables: { objects },
+        query: 'SELECT obj->\'n\' * 2 + 1 AS n, obj->>\'s\' || \'!\' AS s FROM objects WHERE obj->\'n\' > 4',
+      }))
+      expect(result).toEqual([{ n: 11, s: 'yo!' }])
+    })
+
+    it('should derive a default alias', async () => {
+      const result = await collect(executeSql({
+        tables: { data },
+        query: 'SELECT json->>\'name\' FROM data WHERE id = 2',
+      }))
+      expect(result).toEqual([{ 'json_->>_name': 'Bob' }])
+    })
+
+    it('should throw on an invalid JSON string', async () => {
+      const bad = [{ json: 'not json' }]
+      await expect(collect(executeSql({
+        tables: { bad },
+        query: 'SELECT json->\'a\' FROM bad',
+      }))).rejects.toThrow('Invalid JSON string for -> operator')
+    })
+  })
 })
