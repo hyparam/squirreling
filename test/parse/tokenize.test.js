@@ -142,6 +142,11 @@ describe('tokenize', () => {
     expect(tokens.map(t => t.value)).toEqual(['=', '==', '!=', '<>', '<', '>', '<=', '>=', '+', '-', '*', '/', '%', '/', '/', '!', '!', '||', ''])
   })
 
+  it('should tokenize JSON access operators', () => {
+    const tokens = tokenizeSql('a->b->>c - >')
+    expect(tokens.map(t => t.value)).toEqual(['a', '->', 'b', '->>', 'c', '-', '>', ''])
+  })
+
   it('should throw on single pipe character', () => {
     expect(() => tokenizeSql('SELECT a | b')).toThrow('Unexpected character "|" at position 9')
   })

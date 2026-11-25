@@ -3,7 +3,7 @@ import { ExecutionError } from '../validation/executionErrors.js'
 import { toDate } from './date.js'
 
 /**
- * @import { BinaryOp, ExprNode, LiteralNode, SqlPrimitive } from '../types.js'
+ * @import { BinaryOp, ExprNode, JsonOp, LiteralNode, SqlPrimitive } from '../types.js'
  */
 
 const COMPARISON_OPS = new Set(['=', '==', '!=', '<>', '<', '<=', '>', '>='])
@@ -27,6 +27,64 @@ export function stringLiteral(node) {
  */
 export function isComparisonOp(op) {
   return COMPARISON_OPS.has(op)
+}
+
+/**
+ * Returns true for the JSON access operators -> and ->>.
+ *
+ * @param {BinaryOp} op
+ * @returns {op is JsonOp}
+ */
+export function isJsonOp(op) {
+  return op === '->' || op === '->>'
+}
+
+/**
+ * Applies a JSON access operator: -> returns the value at a key or array
+ * index, ->> returns it as text. A missing key or index, or a value that is
+ * not an object or array, gives null.
+ *
+ * @param {ExprNode & { type: 'binary' }} node
+ * @param {SqlPrimitive} json
+ * @param {SqlPrimitive} key
+ * @returns {SqlPrimitive}
+ */
+function applyJsonOp(node, json, key) {
+  if (json == null || key == null) return null
+  if (typeof json === 'string') {
+    try {
+      json = JSON.parse(json)
+    } catch {
+      throw new ExecutionError({
+        message: `Invalid JSON string for ${node.op} operator`,
+        positionStart: node.left.positionStart,
+        positionEnd: node.left.positionEnd,
+      })
+    }
+  }
+  if (typeof json !== 'object' || json === null || json instanceof Date) return null
+
+  /** @type {any} */
+  let value
+  if (Array.isArray(json)) {
+    if (typeof key !== 'number' && typeof key !== 'bigint') return null
+    let index = Number(key)
+    if (!Number.isInteger(index)) return null
+    if (index < 0) index += json.length
+    value = json[index]
+  } else {
+    if (typeof key !== 'string') return null
+    if (!Object.hasOwn(json, key)) return null
+    /** @type {Record<string, any>} */
+    const object = json
+    value = object[key]
+  }
+
+  if (value == null) return null
+  if (node.op === '->>') {
+    return typeof value === 'object' && !(value instanceof Date) ? stringify(value) : String(value)
+  }
+  return value
 }
 
 /**
@@ -72,6 +130,9 @@ export function parseTimestampLiteral(literal) {
  * @returns {SqlPrimitive}
  */
 export function applyBinaryNode(node, left, right) {
+  if (isJsonOp(node.op)) {
+    return applyJsonOp(node, left, right)
+  }
   if (isComparisonOp(node.op)) {
     const leftLiteral = stringLiteral(node.left)
     const rightLiteral = stringLiteral(node.right)

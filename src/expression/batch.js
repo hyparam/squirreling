@@ -3,7 +3,7 @@ import { isPlainObject, sqlEquals } from '../execute/utils.js'
 import { yieldToEventLoop } from '../execute/yield.js'
 import { isStringFunc } from '../validation/functions.js'
 import { ColumnNotFoundError } from '../validation/tables.js'
-import { applyBinaryNode, applyBinaryOp, isComparisonOp, stringLiteral, typeLiteral } from './binary.js'
+import { applyBinaryNode, applyBinaryOp, isComparisonOp, isJsonOp, stringLiteral, typeLiteral } from './binary.js'
 import { evaluateRegexpLike } from './regexp.js'
 import { applyCast, applyUnaryOp, evaluateJsonExtract } from './scalar.js'
 import { evaluateStringFunc } from './strings.js'
@@ -700,6 +700,7 @@ function binaryApplier(node) {
   if (isComparisonOp(node.op) && (stringLiteral(node.left) || stringLiteral(node.right))) {
     return applyBinaryNode
   }
+  if (isJsonOp(node.op)) return applyBinaryNode
   return function applyOperator(binary, left, right) {
     return applyBinaryOp(binary.op, left, right)
   }

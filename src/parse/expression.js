@@ -281,13 +281,41 @@ function parseAdditive(state) {
  * @returns {ExprNode}
  */
 function parseMultiplicative(state) {
-  let left = parsePrimary(state)
+  let left = parseJsonAccess(state)
   while (true) {
     const tok = current(state)
     if (tok.type === 'operator' && (tok.value === '*' || tok.value === '/' || tok.value === '%')) {
       consume(state)
-      const right = parsePrimary(state)
+      const right = parseJsonAccess(state)
       // Recursively build left-associative tree for multiplicative operators
+      left = {
+        type: 'binary',
+        op: tok.value,
+        left,
+        right,
+        positionStart: left.positionStart,
+        positionEnd: right.positionEnd,
+      }
+    } else {
+      break
+    }
+  }
+  return left
+}
+
+/**
+ * Parses JSON access operators -> and ->>, which bind tighter than arithmetic.
+ *
+ * @param {ParserState} state
+ * @returns {ExprNode}
+ */
+function parseJsonAccess(state) {
+  let left = parsePrimary(state)
+  while (true) {
+    const tok = current(state)
+    if (tok.type === 'operator' && (tok.value === '->' || tok.value === '->>')) {
+      consume(state)
+      const right = parsePrimary(state)
       left = {
         type: 'binary',
         op: tok.value,
