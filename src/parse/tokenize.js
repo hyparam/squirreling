@@ -184,6 +184,16 @@ export function tokenizeSql(query) {
       continue
     }
 
+    // JSON arrow operators are not supported
+    if (ch === '-' && next === '>') {
+      const op = query[i + 2] === '>' ? '->>' : '->'
+      throw new ParseError({
+        message: `Operator "${op}" is not supported at position ${positionStart}. Use JSON_VALUE(expr, '$.key') instead`,
+        positionStart,
+        positionEnd: positionStart + op.length,
+      })
+    }
+
     // operators
     if ('<>!=+-*/%'.includes(ch)) {
       let op = nextChar()

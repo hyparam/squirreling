@@ -264,6 +264,13 @@ describe('parseSql error handling', () => {
         .toThrow('Expected expression after ">" but found end of query at position 31')
     })
 
+    it('should throw error on unsupported JSON arrow operators', () => {
+      expect(() => parseSql({ query: 'SELECT data->\'a\' FROM t' }))
+        .toThrow('Operator "->" is not supported at position 11. Use JSON_VALUE(expr, \'$.key\') instead')
+      expect(() => parseSql({ query: 'SELECT data->>\'a\' FROM t' }))
+        .toThrow('Operator "->>" is not supported at position 11. Use JSON_VALUE(expr, \'$.key\') instead')
+    })
+
     it('should throw error when expecting closing paren in WHERE', () => {
       expect(() => parseSql({ query: 'SELECT * FROM users WHERE (age > 18(' }))
         .toThrow('Expected ) after "18" but found "(" at position 35')
